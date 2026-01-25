@@ -38,9 +38,7 @@ public class SubmitTaskRequest {
     @NotNull(message = "引用格式不能为空")
     private Integer citationStyle;
     
-    @NotNull(message = "页数要求不能为空")
-    @Positive(message = "页数必须大于0")
-    private Integer pageLength;
+    private Integer pageLength; // 页数要求，可选
     
     private String specialInstructions;
 }

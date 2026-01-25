@@ -32,9 +32,7 @@ public class TaskDomainService {
             throw new IllegalArgumentException("截止时间不能早于当前时间");
         }
         
-        if (task.getPageLength() == null || task.getPageLength() <= 0) {
-            throw new IllegalArgumentException("页数要求必须大于0");
-        }
+        // pageLength 为可选字段，允许为 null 或 "Not Specified"
         
         log.debug("任务验证通过: {}", task.getTaskTitle());
     }

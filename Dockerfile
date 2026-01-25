@@ -2,40 +2,20 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 
 # 设置 Maven 内存限制，避免 OOM
-# 注意：如果服务器内存有限，需要合理分配
-ENV MAVEN_OPTS="-Xmx512m -Xms256m -XX:+UseSerialGC"
+# 使用 SerialGC 减少内存占用
+ENV MAVEN_OPTS="-Xmx768m -Xms256m -XX:+UseSerialGC"
 
 # 设置工作目录
 WORKDIR /app
 
-# 复制 pom.xml 文件（利用 Docker 缓存）
-COPY pom.xml .
-COPY agent-api/pom.xml agent-api/
-COPY agent-service/pom.xml agent-service/
-COPY agent-infra/pom.xml agent-infra/
-COPY agent-start/pom.xml agent-start/
-
-# 创建空的 src 目录结构，让 Maven 能解析依赖
-RUN mkdir -p agent-api/src/main/java \
-    agent-service/src/main/java \
-    agent-infra/src/main/java \
-    agent-start/src/main/java
-
-# 复制源代码
+# 复制所有文件
 COPY . .
 
-# 分步构建：先编译子模块，减少单次内存占用
-RUN mvn clean compile -pl agent-api -DskipTests -B --offline || \
-    mvn clean compile -pl agent-api -DskipTests -B
-
-RUN mvn compile -pl agent-infra -DskipTests -B --offline || \
-    mvn compile -pl agent-infra -DskipTests -B
-
-RUN mvn compile -pl agent-service -DskipTests -B --offline || \
-    mvn compile -pl agent-service -DskipTests -B
-
-# 最终打包
-RUN mvn package -pl agent-start -am -DskipTests -B -Dmaven.compile.fork=false
+# 一次性构建整个项目，Maven reactor 会自动处理模块依赖顺序
+# -am (also-make) 会自动构建 agent-start 依赖的所有模块
+RUN mvn clean package -pl agent-start -am -DskipTests -B \
+    -Dmaven.compile.fork=false \
+    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
 
 # 运行阶段
 FROM eclipse-temurin:17-jre-alpine

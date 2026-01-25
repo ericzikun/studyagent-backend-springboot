@@ -11,6 +11,11 @@ public interface PythonBackendClient {
      * 执行任务
      */
     void executeTask(TaskId taskId);
+
+    /**
+     * 停止任务
+     */
+    void stopTask(TaskId taskId);
     
     /**
      * 追问任务（生成追问问题）

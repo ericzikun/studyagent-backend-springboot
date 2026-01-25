@@ -8,7 +8,8 @@ public enum TaskStatus {
     PENDING(1, "待执行"),
     IN_PROGRESS(2, "执行中"),
     COMPLETED(3, "已完成"),
-    FAILED(4, "失败");
+    FAILED(4, "失败"),
+    CANCELLED(5, "已取消");
     
     private final Integer code;
     private final String desc;

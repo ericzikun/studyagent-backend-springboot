@@ -200,6 +200,77 @@ public class TaskApplicationService {
         return draftId;
     }
 
+    /**
+     * 停止任务
+     * @param request 停止任务请求
+     * @return taskId
+     */
+    @Transactional
+    public Long stopTask(com.studyagent.service.application.request.StopTaskRequest request) {
+        ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
+
+        Task task = taskRepository.findById(TaskId.of(request.getTaskId()))
+            .orElseThrow(() -> new RuntimeException("任务不存在: " + request.getTaskId()));
+
+        if (!userInfo.clerkUserId.equals(task.getClerkUserId())) {
+            throw new RuntimeException("无权限停止该任务");
+        }
+
+        if (task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.FAILED) {
+            return task.getId().getValue();
+        }
+
+        if (task.getStatus() != TaskStatus.CANCELLED) {
+            Task cancelled = Task.builder()
+                .id(task.getId())
+                .clerkUserId(task.getClerkUserId())
+                .taskTitle(task.getTaskTitle())
+                .taskDesc(task.getTaskDesc())
+                .subject(task.getSubject())
+                .academicLevel(task.getAcademicLevel())
+                .priorityLevel(task.getPriorityLevel())
+                .dueDate(task.getDueDate())
+                .format(task.getFormat())
+                .citationStyle(task.getCitationStyle())
+                .pageLength(task.getPageLength())
+                .specialInstructions(task.getSpecialInstructions())
+                .status(TaskStatus.CANCELLED)
+                .startTime(task.getStartTime())
+                .finishTime(LocalDateTime.now())
+                .costTime(task.getStartTime() != null
+                    ? (int) java.time.Duration.between(task.getStartTime(), LocalDateTime.now()).getSeconds()
+                    : null)
+                .completePercent(task.getCompletePercent())
+                .taskCompletedSize(task.getTaskCompletedSize())
+                .activeAgentSize(task.getActiveAgentSize())
+                .estRemainingTime(task.getEstRemainingTime())
+                .requirementJson(task.getRequirementJson())
+                .finalResult(task.getFinalResult())
+                .errorMessage("任务已取消")
+                .build();
+
+            taskRepository.save(cancelled);
+        }
+
+        Long taskId = task.getId().getValue();
+
+        TransactionSynchronizationManager.registerSynchronization(
+            new org.springframework.transaction.support.TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        pythonBackendClient.stopTask(TaskId.of(taskId));
+                        log.info("成功调用 Python 后端停止任务: taskId={}", taskId);
+                    } catch (Exception e) {
+                        log.error("调用 Python 后端停止任务失败: taskId={}", taskId, e);
+                    }
+                }
+            }
+        );
+
+        return taskId;
+    }
+
     private String normalizeToken(String token) {
         if (token == null) {
             return null;

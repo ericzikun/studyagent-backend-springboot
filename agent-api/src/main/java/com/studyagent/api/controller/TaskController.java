@@ -7,11 +7,13 @@ import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.ClarifyTaskRequest;
 import com.studyagent.api.dto.request.RateTaskRequest;
 import com.studyagent.api.dto.request.SaveDraftRequest;
+import com.studyagent.api.dto.request.StopTaskRequest;
 import com.studyagent.api.dto.request.SubmitTaskRequest;
 import com.studyagent.api.dto.request.TaskDetailRequest;
 import com.studyagent.api.dto.request.TaskListRequest;
 import com.studyagent.api.dto.response.ClarifyTaskResponse;
 import com.studyagent.api.dto.response.SaveDraftResponse;
+import com.studyagent.api.dto.response.StopTaskResponse;
 import com.studyagent.api.dto.response.SubmitTaskResponse;
 import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
@@ -136,6 +138,26 @@ public class TaskController {
         SaveDraftResponse response = SaveDraftResponse.builder()
             .draftId(draftId)
             .savedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+            .build();
+
+        return Result.success(response);
+    }
+
+    @PostMapping("/stop")
+    public Result<StopTaskResponse> stopTask(
+            @Valid @RequestBody StopTaskRequest request,
+            @RequestHeader("Authorization") String token) {
+        com.studyagent.service.application.request.StopTaskRequest appRequest =
+            com.studyagent.service.application.request.StopTaskRequest.builder()
+                .taskId(request.getTaskId())
+                .token(token)
+                .build();
+
+        Long taskId = taskApplicationService.stopTask(appRequest);
+
+        StopTaskResponse response = StopTaskResponse.builder()
+            .taskId(taskId)
+            .message("任务已停止")
             .build();
 
         return Result.success(response);

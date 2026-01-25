@@ -45,6 +45,26 @@ public class PythonBackendClientImpl implements PythonBackendClient {
             throw new RuntimeException("Failed to execute task in Python backend", e);
         }
     }
+
+    @Override
+    public void stopTask(TaskId taskId) {
+        try {
+            Map<String, Object> request = new HashMap<>();
+            request.put("task_id", taskId.getValue());
+
+            webClient.post()
+                .uri(pythonBackendUrl + "/v1/task/stop")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .block();
+
+            log.info("Successfully called Python backend to stop task: {}", taskId.getValue());
+        } catch (Exception e) {
+            log.error("Failed to call Python backend to stop task: {}", taskId.getValue(), e);
+            throw new RuntimeException("Failed to stop task in Python backend", e);
+        }
+    }
     
     @Override
     public ClarifyTaskResult clarifyTask(Map<String, Object> request) {

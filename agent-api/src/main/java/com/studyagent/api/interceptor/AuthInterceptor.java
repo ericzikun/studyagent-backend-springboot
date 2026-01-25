@@ -33,12 +33,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 获取 Authorization header
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            // 某些接口允许未登录访问（如任务列表、详情）
-            String uri = request.getRequestURI();
-            if (uri.startsWith("/v1/task/list") || uri.startsWith("/v1/task/detail")) {
-                return true;
-            }
-            
+            // 任务列表和详情接口需要登录，不允许未登录访问
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }

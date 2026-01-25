@@ -143,9 +143,12 @@ public class TaskController {
     @PostMapping("/list")
     public Result<TaskListResponse> getTaskList(
             @RequestBody(required = false) TaskListRequest request,
-            @RequestHeader(value = "Authorization", required = false) String token) {
-        // TODO: 解析用户身份（从 token 或 request attribute）
-        String clerkUserId = null; // 从拦截器获取
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
         
         // 如果 request 为 null，使用默认值
         if (request == null) {
@@ -227,9 +230,12 @@ public class TaskController {
             @RequestParam(value = "order", required = false) Integer order,
             @RequestParam(value = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
-            @RequestHeader(value = "Authorization", required = false) String token) {
-        // TODO: 解析用户身份（从 token 或 request attribute）
-        String clerkUserId = null; // 从拦截器获取
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
         
         // 设置默认值
         if (pageNo == null || pageNo < 1) {
@@ -306,13 +312,24 @@ public class TaskController {
     @PostMapping("/detail")
     public Result<TaskDetailResponse> getTaskDetail(
             @Valid @RequestBody TaskDetailRequest request,
-            @RequestHeader(value = "Authorization", required = false) String token) {
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
+        
         Long taskId = request.getTaskId();
         
         // 1. 查询任务基本信息
         TaskEntity taskEntity = taskMapper.selectById(taskId);
         if (taskEntity == null) {
             return Result.error(1003, "任务不存在");
+        }
+        
+        // 2. 验证任务是否属于当前用户
+        if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
+            return Result.error(1004, "无权访问该任务");
         }
         
         // 2. 构建任务基础信息
@@ -621,7 +638,22 @@ public class TaskController {
     
     @PostMapping("/rate")
     public Result<Void> rateTask(
-            @Valid @RequestBody RateTaskRequest request) {
+            @Valid @RequestBody RateTaskRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
+        
+        // 验证任务是否属于当前用户
+        TaskEntity taskEntity = taskMapper.selectById(request.getTaskId());
+        if (taskEntity == null) {
+            return Result.error(1003, "任务不存在");
+        }
+        if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
+            return Result.error(1004, "无权评价该任务");
+        }
+        
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.RateTaskRequest appRequest = 
             com.studyagent.service.application.request.RateTaskRequest.builder()

@@ -20,11 +20,13 @@ public class CorsConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
         
-        // 允许的源
+        // 允许的源（包括生产域名）
         config.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "http://localhost:5173",
-            "http://localhost:8080"
+            "http://localhost:8080",
+            "https://verla.io",
+            "https://www.verla.io"
         ));
         
         // 允许的HTTP方法

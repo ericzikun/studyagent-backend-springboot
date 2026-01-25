@@ -20,6 +20,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 允许 OPTIONS 预检请求（CORS）
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        
         // 健康检查接口不需要认证
         if (request.getRequestURI().equals("/health")) {
             return true;

@@ -2,7 +2,8 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 
 # 设置 Maven 内存限制，避免 OOM（Java 17 不支持 MaxPermSize）
-ENV MAVEN_OPTS="-Xmx512m -XX:+UseG1GC"
+# 使用更小的内存限制
+ENV MAVEN_OPTS="-Xmx256m -XX:+UseG1GC -XX:MaxMetaspaceSize=128m"
 
 # 设置工作目录
 WORKDIR /app
@@ -14,15 +15,15 @@ COPY agent-service/pom.xml agent-service/
 COPY agent-infra/pom.xml agent-infra/
 COPY agent-start/pom.xml agent-start/
 
-# 下载依赖（利用 Docker 缓存）
-# 使用 -T 1 限制并发线程数，减少内存占用
-RUN mvn dependency:go-offline -B -T 1
+# 下载依赖（跳过 go-offline，直接构建时下载，减少内存占用）
+# 如果内存仍然不足，可以注释掉这行，直接构建时会自动下载依赖
+RUN mvn dependency:resolve -B -T 1C || true
 
 # 复制源代码
 COPY . .
 
-# 构建项目（限制并发线程数）
-RUN mvn clean package -DskipTests -T 1
+# 构建项目（单线程，跳过测试，减少内存占用）
+RUN mvn clean package -DskipTests -T 1C -Dmaven.test.skip=true -Dmaven.compile.fork=false
 
 # 运行阶段
 FROM eclipse-temurin:17-jre-alpine

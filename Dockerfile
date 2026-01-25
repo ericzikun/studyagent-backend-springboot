@@ -1,8 +1,8 @@
 # SpringBoot 后端 Dockerfile
 FROM maven:3.9-eclipse-temurin-17 AS build
 
-# 设置 Maven 内存限制，避免 OOM
-ENV MAVEN_OPTS="-Xmx512m -XX:MaxPermSize=256m"
+# 设置 Maven 内存限制，避免 OOM（Java 17 不支持 MaxPermSize）
+ENV MAVEN_OPTS="-Xmx512m -XX:+UseG1GC"
 
 # 设置工作目录
 WORKDIR /app

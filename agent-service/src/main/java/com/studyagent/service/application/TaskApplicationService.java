@@ -49,15 +49,28 @@ public class TaskApplicationService {
         // 1. 验证用户身份
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
         
-        // 2. 创建任务领域模型
+        Task existing = null;
+        if (request.getDraftId() != null) {
+            existing = taskRepository.findById(TaskId.of(request.getDraftId()))
+                .orElseThrow(() -> new RuntimeException("草稿不存在: " + request.getDraftId()));
+            if (!userInfo.clerkUserId.equals(existing.getClerkUserId())) {
+                throw new RuntimeException("无权限提交该草稿");
+            }
+            if (existing.getStatus() != TaskStatus.DRAFT) {
+                throw new RuntimeException("仅允许提交草稿状态的任务");
+            }
+        }
+
+        // 2. 创建任务领域模型（草稿存在时复用同一个 ID）
         // 如果 dueDate 为 null，默认设置为当前日期加一个月
-        LocalDateTime dueDate = request.getDueDate();
+        LocalDateTime dueDate = firstNonNull(request.getDueDate(), existing != null ? existing.getDueDate() : null);
         if (dueDate == null) {
             dueDate = LocalDateTime.now().plusMonths(1);
         }
         
         Task task = Task.builder()
-            .clerkUserId(userInfo.clerkUserId)
+            .id(existing != null ? existing.getId() : null)
+            .clerkUserId(existing != null ? existing.getClerkUserId() : userInfo.clerkUserId)
             .taskTitle(request.getTaskTitle())
             .taskDesc(request.getTaskDesc())
             .subject(request.getSubject())
@@ -68,6 +81,7 @@ public class TaskApplicationService {
             .citationStyle(request.getCitationStyle())
             .pageLength(request.getPageLength())
             .specialInstructions(request.getSpecialInstructions())
+            .requirementJson(existing != null ? existing.getRequirementJson() : null)
             .status(TaskStatus.DRAFT)
             .build();
         
@@ -82,7 +96,8 @@ public class TaskApplicationService {
         Long taskId = savedTask.getId().getValue();
         
         // 6. 关联文件到任务（如果提供了文件objectIds）
-        if (request.getObjectIds() != null && !request.getObjectIds().isEmpty()) {
+        if (request.getObjectIds() != null) {
+            taskFileRepository.removeByTaskId(taskId);
             int order = 0;
             for (String objectId : request.getObjectIds()) {
                 // 根据 objectId 查找文件

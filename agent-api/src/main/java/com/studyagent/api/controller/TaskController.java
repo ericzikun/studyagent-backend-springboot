@@ -83,6 +83,7 @@ public class TaskController {
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.SubmitTaskRequest appRequest = 
             com.studyagent.service.application.request.SubmitTaskRequest.builder()
+                .draftId(request.getDraftId())
                 .taskTitle(request.getTaskTitle())
                 .taskDesc(request.getTaskDesc())
                 .subject(request.getSubject())

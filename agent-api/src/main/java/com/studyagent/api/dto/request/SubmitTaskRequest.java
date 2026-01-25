@@ -13,6 +13,8 @@ import java.util.List;
  */
 @Data
 public class SubmitTaskRequest {
+    private Long draftId; // 草稿ID（可选）
+
     @NotBlank(message = "任务标题不能为空")
     private String taskTitle;
     

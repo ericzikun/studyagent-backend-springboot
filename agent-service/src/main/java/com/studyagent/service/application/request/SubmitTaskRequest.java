@@ -16,6 +16,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SubmitTaskRequest {
+    private Long draftId;
     private String taskTitle;
     private String taskDesc;
     private Integer subject;

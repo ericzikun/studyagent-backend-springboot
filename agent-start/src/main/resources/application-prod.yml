@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    # 生产环境配置
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=false
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+logging:
+  level:
+    com.studyagent: INFO
+    org.springframework: WARN
+    # 完全关闭 MyBatis SQL 日志
+    org.mybatis: ERROR
+    org.apache.ibatis: ERROR
+    com.baomidou.mybatisplus: ERROR
+    com.studyagent.infra.mapper: ERROR
+    org.springframework.jdbc: ERROR
+

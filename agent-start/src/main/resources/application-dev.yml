@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    # 开发环境配置（使用 Docker MySQL，端口 13306）
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:13306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:studyagent}
+    password: ${DB_PASSWORD:studyagent2024}
+
+logging:
+  level:
+    com.studyagent: DEBUG
+    org.springframework.web: DEBUG
+    # 完全关闭 SQL 日志
+    org.springframework.jdbc: ERROR
+    org.mybatis: ERROR
+    org.apache.ibatis: ERROR
+    com.baomidou.mybatisplus: ERROR
+    com.studyagent.infra.mapper: ERROR
+    com.zaxxer.hikari: WARN
+    com.mysql.cj: WARN
+

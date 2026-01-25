@@ -1,0 +1,39 @@
+# Maven
+target/
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Storage
+storage/
+
+# Environment variables (敏感信息，不要提交)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# 但保留示例文件
+!env.example
+
+# Docker
+docker-compose.override.yml
+

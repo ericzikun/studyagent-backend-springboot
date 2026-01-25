@@ -1,0 +1,51 @@
+spring:
+  datasource:
+    # 本地环境配置
+    # 如果使用 Docker 启动 MySQL，端口可能是 13306
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:fzk971228}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+# Clerk 配置（本地环境）
+clerk:
+  secret-key: ${CLERK_SECRET_KEY:sk_test_xxx}
+  publishable-key: ${CLERK_PUBLISHABLE_KEY:pk_test_xxx}
+  api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
+  frontend-api-url: ${CLERK_FRONTEND_API_URL:}
+
+# Python 后端配置（本地环境）
+python-backend:
+  url: ${PYTHON_BACKEND_URL:http://localhost:8000}
+  timeout: 30000
+
+# 文件存储配置（本地环境使用相对于项目根目录的路径）
+# 注意：由于启动目录是 agent-start，使用 ../storage 指向项目根目录 studyagent-backend
+file:
+  storage:
+    base-path: ${FILE_STORAGE_PATH:../storage}
+    upload-path: ${FILE_UPLOAD_PATH:../storage/uploads}
+    output-path: ${FILE_OUTPUT_PATH:../storage/outputs}
+
+# 日志配置
+logging:
+  level:
+    # 完全关闭 MyBatis SQL 日志
+    org.mybatis: ERROR
+    org.apache.ibatis: ERROR
+    com.baomidou.mybatisplus: ERROR
+    com.studyagent.infra.mapper: ERROR
+    # 关闭 HikariCP 连接池日志
+    com.zaxxer.hikari: WARN
+    com.zaxxer.hikari.pool.HikariPool: WARN
+    # 关闭数据库驱动日志
+    com.mysql.cj: WARN
+    # 关闭 Spring JDBC 日志
+    org.springframework.jdbc: ERROR
+  file:
+    name: logs/studyagent-backend.log

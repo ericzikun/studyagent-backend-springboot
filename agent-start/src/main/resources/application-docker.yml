@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    # Docker 环境配置
+    # 使用 Docker Compose 中的服务名 'mysql'
+    url: jdbc:mysql://mysql:3306/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:studyagent}
+    password: ${DB_PASSWORD:studyagent2024}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+# Python 后端配置（Docker 环境使用服务名）
+python-backend:
+  url: ${PYTHON_BACKEND_URL:http://backend:8000}
+  timeout: 30000
+
+# 文件存储配置（Docker 环境使用绝对路径）
+file:
+  storage:
+    base-path: ${FILE_STORAGE_PATH:/app/storage}
+    upload-path: ${FILE_UPLOAD_PATH:/app/storage/uploads}
+    output-path: ${FILE_OUTPUT_PATH:/app/storage/outputs}
+
+# 日志配置
+logging:
+  level:
+    # 完全关闭 MyBatis SQL 日志
+    org.mybatis: ERROR
+    org.apache.ibatis: ERROR
+    com.baomidou.mybatisplus: ERROR
+    com.studyagent.infra.mapper: ERROR
+    org.springframework.jdbc: ERROR
+  file:
+    name: /app/logs/studyagent-backend.log
+

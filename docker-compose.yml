@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # SpringBoot 后端服务
+  springboot-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: studyagent-springboot-backend
+    restart: always
+    ports:
+      - "${SPRINGBOOT_BACKEND_PORT:-8080}:8080"
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: docker
+      
+      # 数据库配置（使用 Docker Compose 中的 MySQL 服务）
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-studyagent}
+      DB_USERNAME: ${MYSQL_USER:-studyagent}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-studyagent2024}
+      
+      # Clerk 配置
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_xxx}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-pk_test_xxx}
+      CLERK_API_URL: ${CLERK_API_URL:-https://api.clerk.dev/v1}
+      
+      # Stripe 配置
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_xxx}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-pk_test_xxx}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_xxx}
+      STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-price_xxx}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-price_xxx}
+      STRIPE_PRICE_ACADEMIC: ${STRIPE_PRICE_ACADEMIC:-price_xxx}
+      
+      # Python 后端配置（使用 Docker Compose 中的服务名）
+      PYTHON_BACKEND_URL: ${PYTHON_BACKEND_URL:-http://backend:8000}
+      
+      # 文件存储配置
+      FILE_STORAGE_PATH: /app/storage
+      FILE_UPLOAD_PATH: /app/storage/uploads
+      FILE_OUTPUT_PATH: /app/storage/outputs
+      
+      # 支付配置
+      PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL:-http://localhost:3000/success}
+      PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL:-http://localhost:3000/cancel}
+    volumes:
+      # 文件存储目录（bind mount，方便查看和备份）
+      - ./storage:/app/storage
+      # 日志目录
+      - ./logs:/app/logs
+    # 注意: MySQL 服务在 docker/docker-compose.yml 中定义
+    # 如果 MySQL 未启动，请先启动: cd docker && docker-compose up -d mysql
+    networks:
+      - studyagent-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  studyagent-network:
+    # 使用外部网络（docker/docker-compose.yml 中已创建）
+    # 如果网络不存在，请先运行: cd docker && docker-compose up -d mysql
+    external: true
+    name: studyagent-network
+

@@ -1,0 +1,114 @@
+spring:
+  application:
+    name: studyagent-backend
+  
+  datasource:
+    # 数据库连接配置
+    # 本地环境: localhost:3306 (或 13306 如果使用 Docker MySQL)
+    # Docker环境: mysql:3306 (使用服务名)
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:studyagent}
+    password: ${DB_PASSWORD:studyagent2024}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 连接池配置
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8080
+
+# MyBatis Plus
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # SQL 日志通过日志级别控制（已设置为 ERROR，如需调试可改为 DEBUG）
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.studyagent.infra.entity
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deletedAt
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# Clerk 配置
+clerk:
+  secret-key: ${CLERK_SECRET_KEY:sk_test_xxx}
+  publishable-key: ${CLERK_PUBLISHABLE_KEY:pk_test_xxx}
+  api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
+  # Frontend API URL（用于验证 session token）
+  # 格式：https://<your-app>.clerk.accounts.dev
+  # 例如：https://splendid-roughy-33.clerk.accounts.dev
+  frontend-api-url: ${CLERK_FRONTEND_API_URL:}
+
+# Stripe 配置
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:sk_test_xxx}
+  publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_xxx}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxx}
+  price:
+    starter: ${STRIPE_PRICE_STARTER:price_xxx}
+    pro: ${STRIPE_PRICE_PRO:price_xxx}
+    academic: ${STRIPE_PRICE_ACADEMIC:price_xxx}
+
+# 文件存储配置（默认使用相对于项目根目录的路径）
+# 注意：由于启动目录是 agent-start，使用 ../storage 指向项目根目录
+file:
+  storage:
+    base-path: ${FILE_STORAGE_PATH:../storage}
+    upload-path: ${FILE_UPLOAD_PATH:../storage/uploads}
+    output-path: ${FILE_OUTPUT_PATH:../storage/outputs}
+
+# Python 后端配置
+python-backend:
+  url: ${PYTHON_BACKEND_URL:http://localhost:8000}
+  timeout: 30000
+
+# 支付配置
+payment:
+  success-url: ${PAYMENT_SUCCESS_URL:http://localhost:3000/success}
+  cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/cancel}
+
+# 日志配置
+logging:
+  level:
+    com.studyagent: DEBUG
+    org.springframework: INFO
+    # 完全关闭 MyBatis SQL 日志
+    org.mybatis: ERROR
+    org.apache.ibatis: ERROR
+    com.baomidou.mybatisplus: ERROR
+    # 关闭 Mapper 接口的 SQL 日志
+    com.studyagent.infra.mapper: ERROR
+    # 关闭 HikariCP 连接池日志
+    com.zaxxer.hikari: WARN
+    com.zaxxer.hikari.pool.HikariPool: WARN
+    # 关闭数据库驱动日志
+    com.mysql.cj: WARN
+    # 关闭 Spring JDBC 日志
+    org.springframework.jdbc: WARN
+    org.springframework.jdbc.core: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/studyagent-backend.log
+
+# Swagger配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+

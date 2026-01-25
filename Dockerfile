@@ -23,6 +23,9 @@ RUN mvn clean package -DskipTests
 # 运行阶段
 FROM eclipse-temurin:17-jre-alpine
 
+# 安装 wget 用于健康检查
+RUN apk add --no-cache wget
+
 # 设置工作目录
 WORKDIR /app
 
@@ -30,6 +33,7 @@ WORKDIR /app
 RUN mkdir -p /app/storage/uploads /app/storage/outputs /app/logs
 
 # 从构建阶段复制 JAR 文件
+# 注意：Spring Boot Maven Plugin 会生成可执行的 JAR 文件
 COPY --from=build /app/agent-start/target/agent-start-*.jar app.jar
 
 # 设置环境变量
@@ -40,7 +44,7 @@ ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC"
 EXPOSE 8080
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # 启动应用

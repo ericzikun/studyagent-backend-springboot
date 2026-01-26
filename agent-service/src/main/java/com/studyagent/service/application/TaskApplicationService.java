@@ -338,18 +338,9 @@ public class TaskApplicationService {
      * @return 任务统计数据（包含已完成数量、进行中数量、平均质量分）
      */
     public TaskSummaryData getTaskSummary(String clerkUserId) {
-        // 获取当前用户的所有任务
-        List<Task> allTasks = taskRepository.findByClerkUserId(clerkUserId);
-        
-        // 统计已完成任务数量
-        long completedCount = allTasks.stream()
-            .filter(task -> task.getStatus() == TaskStatus.COMPLETED)
-            .count();
-        
-        // 统计进行中任务数量（IN_PROGRESS）
-        long inProgressCount = allTasks.stream()
-            .filter(task -> task.getStatus() == TaskStatus.IN_PROGRESS)
-            .count();
+        // 直接在数据库侧统计，避免加载全部任务
+        long completedCount = taskRepository.countByStatus(clerkUserId, TaskStatus.COMPLETED);
+        long inProgressCount = taskRepository.countByStatus(clerkUserId, TaskStatus.IN_PROGRESS);
         
         return new TaskSummaryData((int) completedCount, (int) inProgressCount, 0.0);
     }

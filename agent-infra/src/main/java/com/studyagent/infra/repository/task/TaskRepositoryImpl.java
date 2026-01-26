@@ -101,6 +101,19 @@ public class TaskRepositoryImpl implements TaskRepository {
     }
     
     @Override
+    public long countByStatus(String clerkUserId, TaskStatus status) {
+        LambdaQueryWrapper<TaskEntity> queryWrapper = new LambdaQueryWrapper<>();
+        if (clerkUserId != null && !clerkUserId.isEmpty()) {
+            queryWrapper.eq(TaskEntity::getClerkUserId, clerkUserId);
+        }
+        if (status != null) {
+            queryWrapper.eq(TaskEntity::getStatus, status.getCode());
+        }
+        Long count = taskMapper.selectCount(queryWrapper);
+        return count == null ? 0L : count;
+    }
+    
+    @Override
     public TaskRepository.PageResult<Task> findWithPagination(
             String clerkUserId, 
             TaskStatus status, 

@@ -390,33 +390,7 @@ public class TaskController {
             .estRemainingTime(taskEntity.getEstRemainingTime() != null ? taskEntity.getEstRemainingTime() : 0)
             .build();
         
-        // 3. 查询 Agent 信息列表
-        List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
-            new LambdaQueryWrapper<TaskAgentEntity>()
-                .eq(TaskAgentEntity::getTaskId, taskId)
-        );
-        
-        List<TaskDetailResponse.AgentInfoResponse> agentInfoList;
-        if (!agentEntities.isEmpty()) {
-            agentInfoList = agentEntities.stream()
-                .map(agent -> TaskDetailResponse.AgentInfoResponse.builder()
-                    .agentName(agent.getAgentName())
-                    .agentStatus(agent.getAgentStatus())
-                    .completePercent(agent.getCompletePercent() != null ? 
-                        agent.getCompletePercent().doubleValue() : 0.0)
-                    .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                    .agentStartTime(agent.getAgentStartTime() != null ? 
-                        agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                    .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
-                    .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
-                    .build())
-                .collect(Collectors.toList());
-        } else {
-            // 如果 Agent 列表为空，尝试从子任务和活动日志中提取 Agent 信息
-            agentInfoList = extractAgentsFromSubtasksAndActivities(taskId);
-        }
-        
-        // 4. 查询子任务信息列表
+        // 3. 查询子任务信息列表
         List<SubTaskEntity> subTaskEntities = subTaskMapper.selectList(
             new LambdaQueryWrapper<SubTaskEntity>()
                 .eq(SubTaskEntity::getTaskId, taskId)
@@ -447,7 +421,7 @@ public class TaskController {
                 )
             ));
         
-        // 5. 查询活动日志（最近50条，按时间降序）
+        // 4. 查询活动日志（最近50条，按时间降序）
         List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
             new LambdaQueryWrapper<TaskActivityEntity>()
                 .eq(TaskActivityEntity::getTaskId, taskId)
@@ -488,6 +462,32 @@ public class TaskController {
                 .agentName(agentName)
                 .activityDesc(activityDesc)
                 .build());
+        }
+        
+        // 5. 查询 Agent 信息列表
+        List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
+            new LambdaQueryWrapper<TaskAgentEntity>()
+                .eq(TaskAgentEntity::getTaskId, taskId)
+        );
+        
+        List<TaskDetailResponse.AgentInfoResponse> agentInfoList;
+        if (!agentEntities.isEmpty()) {
+            agentInfoList = agentEntities.stream()
+                .map(agent -> TaskDetailResponse.AgentInfoResponse.builder()
+                    .agentName(agent.getAgentName())
+                    .agentStatus(agent.getAgentStatus())
+                    .completePercent(agent.getCompletePercent() != null ? 
+                        agent.getCompletePercent().doubleValue() : 0.0)
+                    .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
+                    .agentStartTime(agent.getAgentStartTime() != null ? 
+                        agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                    .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
+                    .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
+                    .build())
+                .collect(Collectors.toList());
+        } else {
+            // 如果 Agent 列表为空，尝试从子任务和活动日志中提取 Agent 信息
+            agentInfoList = extractAgentsFromSubtasksAndActivities(subTaskEntities, activityEntities);
         }
         
         // 6. 查询输出文件
@@ -543,9 +543,23 @@ public class TaskController {
                 .orderByAsc(TaskFileEntity::getFileOrder)
         );
         
+        Map<Long, FileEntity> fileEntityById = new HashMap<>();
+        if (!taskFileEntities.isEmpty()) {
+            Set<Long> fileIds = taskFileEntities.stream()
+                .map(TaskFileEntity::getFileId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+            if (!fileIds.isEmpty()) {
+                List<FileEntity> fileEntities = fileMapper.selectBatchIds(fileIds);
+                fileEntityById = fileEntities.stream()
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toMap(FileEntity::getId, file -> file));
+            }
+        }
+        
         List<TaskDetailResponse.UploadedFileInfoResponse> uploadedFileInfoList = new ArrayList<>();
         for (TaskFileEntity taskFile : taskFileEntities) {
-            FileEntity fileEntity = fileMapper.selectById(taskFile.getFileId());
+            FileEntity fileEntity = fileEntityById.get(taskFile.getFileId());
             if (fileEntity != null) {
                 // 处理文件扩展名（去掉点）
                 String fileType = fileEntity.getFileExtension();
@@ -589,22 +603,23 @@ public class TaskController {
     /**
      * 从子任务和活动日志中提取 Agent 信息（当 task_agents 表为空时使用）
      */
-    private List<TaskDetailResponse.AgentInfoResponse> extractAgentsFromSubtasksAndActivities(Long taskId) {
+    private List<TaskDetailResponse.AgentInfoResponse> extractAgentsFromSubtasksAndActivities(
+            List<SubTaskEntity> subtasks,
+            List<TaskActivityEntity> activities) {
+        if (subtasks == null) {
+            subtasks = new ArrayList<>();
+        }
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        
         // 从子任务中提取 Agent 名称
-        List<SubTaskEntity> subtasks = subTaskMapper.selectList(
-            new LambdaQueryWrapper<SubTaskEntity>()
-                .eq(SubTaskEntity::getTaskId, taskId)
-        );
         Set<String> agentNamesFromSubtasks = subtasks.stream()
             .filter(st -> st.getAgentName() != null && !st.getAgentName().trim().isEmpty())
             .map(st -> st.getAgentName().trim())
             .collect(Collectors.toSet());
         
         // 从活动日志中提取 Agent 名称
-        List<TaskActivityEntity> activities = taskActivityMapper.selectList(
-            new LambdaQueryWrapper<TaskActivityEntity>()
-                .eq(TaskActivityEntity::getTaskId, taskId)
-        );
         Set<String> agentNamesFromActivities = activities.stream()
             .filter(act -> act.getAgentName() != null && !act.getAgentName().trim().isEmpty())
             .map(act -> act.getAgentName().trim())

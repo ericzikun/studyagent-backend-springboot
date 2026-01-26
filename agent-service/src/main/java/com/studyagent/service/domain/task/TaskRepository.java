@@ -16,6 +16,14 @@ public interface TaskRepository {
     List<Task> findByKeyword(String keyword);
     
     /**
+     * 统计指定用户在某状态下的任务数量
+     * @param clerkUserId 用户ID
+     * @param status 任务状态
+     * @return 任务数量
+     */
+    long countByStatus(String clerkUserId, TaskStatus status);
+    
+    /**
      * 分页查询任务列表（支持排序和筛选）
      * @param clerkUserId 用户ID（可选）
      * @param status 任务状态（可选）

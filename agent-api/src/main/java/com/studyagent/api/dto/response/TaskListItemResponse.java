@@ -75,5 +75,10 @@ public class TaskListItemResponse {
     private String finalResult; // 可能为 null
     
     private String errorMessage; // 可能为 null
+
+    /**
+     * 任务前方排队数量（为0表示已开始执行或无需排队）
+     */
+    private Integer queueAheadCount;
 }
 

@@ -106,6 +106,11 @@ public class TaskDetailResponse {
         private Integer activeAgentSize;
         
         private Integer estRemainingTime;
+
+        /**
+         * 任务前方排队数量（为0表示已开始执行）
+         */
+        private Integer queueAheadCount;
     }
     
     /**

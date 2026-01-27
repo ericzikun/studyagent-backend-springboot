@@ -16,6 +16,16 @@ public interface PythonBackendClient {
      * 停止任务
      */
     void stopTask(TaskId taskId);
+
+    /**
+     * 查询任务队列信息
+     */
+    TaskQueueInfo getTaskQueueInfo(TaskId taskId);
+
+    /**
+     * 批量查询任务队列信息
+     */
+    java.util.Map<Long, TaskQueueInfo> getTaskQueueBatchInfo(java.util.List<TaskId> taskIds);
     
     /**
      * 追问任务（生成追问问题）
@@ -42,6 +52,24 @@ public interface PythonBackendClient {
         
         public String getSuggestions() {
             return suggestions;
+        }
+    }
+
+    class TaskQueueInfo {
+        private final int aheadCount;
+        private final boolean running;
+
+        public TaskQueueInfo(int aheadCount, boolean running) {
+            this.aheadCount = aheadCount;
+            this.running = running;
+        }
+
+        public int getAheadCount() {
+            return aheadCount;
+        }
+
+        public boolean isRunning() {
+            return running;
         }
     }
 }

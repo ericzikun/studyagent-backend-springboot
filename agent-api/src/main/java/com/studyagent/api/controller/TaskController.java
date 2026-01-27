@@ -36,6 +36,7 @@ import com.studyagent.infra.entity.FileEntity;
 import com.studyagent.service.application.TaskApplicationService;
 import com.studyagent.service.domain.task.PythonBackendClient;
 import com.studyagent.service.domain.task.Task;
+import com.studyagent.service.domain.task.TaskId;
 import com.studyagent.service.domain.task.TaskRepository;
 import com.studyagent.service.domain.task.TaskStatus;
 import jakarta.validation.Valid;
@@ -202,9 +203,12 @@ public class TaskController {
         // 调用应用服务，获取分页结果
         TaskRepository.PageResult<Task> pageResult = taskApplicationService.getTaskList(appRequest);
         
+        // 批量查询队列信息，避免逐条请求
+        Map<Long, PythonBackendClient.TaskQueueInfo> queueInfoMap = fetchQueueInfoBatch(pageResult.getItems());
+        
         // 转换为响应 DTO（驼峰命名）
         List<TaskListItemResponse> taskListItems = pageResult.getItems().stream()
-            .map(this::convertToTaskListItemResponse)
+            .map(task -> convertToTaskListItemResponse(task, queueInfoMap.get(task.getId().getValue())))
             .collect(Collectors.toList());
         
         TaskListResponse response = TaskListResponse.builder()
@@ -282,9 +286,12 @@ public class TaskController {
         // 调用应用服务，获取分页结果
         TaskRepository.PageResult<Task> pageResult = taskApplicationService.getTaskList(appRequest);
         
+        // 批量查询队列信息，避免逐条请求
+        Map<Long, PythonBackendClient.TaskQueueInfo> queueInfoMap = fetchQueueInfoBatch(pageResult.getItems());
+        
         // 转换为响应 DTO（驼峰命名）
         List<TaskListItemResponse> taskListItems = pageResult.getItems().stream()
-            .map(this::convertToTaskListItemResponse)
+            .map(task -> convertToTaskListItemResponse(task, queueInfoMap.get(task.getId().getValue())))
             .collect(Collectors.toList());
         
         TaskListResponse response = TaskListResponse.builder()
@@ -300,8 +307,15 @@ public class TaskController {
     /**
      * 将 Task 域对象转换为 TaskListItemResponse DTO
      */
-    private TaskListItemResponse convertToTaskListItemResponse(Task task) {
+    private TaskListItemResponse convertToTaskListItemResponse(
+            Task task,
+            PythonBackendClient.TaskQueueInfo queueInfo
+    ) {
         DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+        int queueAheadCount = 0;
+        if (task.getStatus() == TaskStatus.IN_PROGRESS && queueInfo != null) {
+            queueAheadCount = queueInfo.getAheadCount();
+        }
         
         return TaskListItemResponse.builder()
             .id(TaskListItemResponse.IdValue.builder()
@@ -329,7 +343,24 @@ public class TaskController {
             .requirementJson(task.getRequirementJson())
             .finalResult(task.getFinalResult())
             .errorMessage(task.getErrorMessage())
+            .queueAheadCount(queueAheadCount)
             .build();
+    }
+
+    private Map<Long, PythonBackendClient.TaskQueueInfo> fetchQueueInfoBatch(List<Task> tasks) {
+        try {
+            List<TaskId> taskIds = tasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.IN_PROGRESS)
+                .map(Task::getId)
+                .collect(Collectors.toList());
+            if (taskIds.isEmpty()) {
+                return new HashMap<>();
+            }
+            return pythonBackendClient.getTaskQueueBatchInfo(taskIds);
+        } catch (Exception e) {
+            log.warn("批量获取任务队列信息失败: error={}", e.getMessage());
+            return new HashMap<>();
+        }
     }
     
     @PostMapping("/detail")
@@ -353,6 +384,16 @@ public class TaskController {
         // 2. 验证任务是否属于当前用户
         if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
             return Result.error(1004, "无权访问该任务");
+        }
+
+        int queueAheadCount = 0;
+        try {
+            PythonBackendClient.TaskQueueInfo queueInfo = pythonBackendClient.getTaskQueueInfo(TaskId.of(taskId));
+            if (queueInfo != null) {
+                queueAheadCount = queueInfo.getAheadCount();
+            }
+        } catch (Exception e) {
+            log.warn("获取任务队列信息失败: task_id={}, error={}", taskId, e.getMessage());
         }
         
         // 2. 构建任务基础信息
@@ -388,6 +429,7 @@ public class TaskController {
             .taskCompletedSize(taskEntity.getTaskCompletedSize() != null ? taskEntity.getTaskCompletedSize() : 0)
             .activeAgentSize(taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0)
             .estRemainingTime(taskEntity.getEstRemainingTime() != null ? taskEntity.getEstRemainingTime() : 0)
+            .queueAheadCount(queueAheadCount)
             .build();
         
         // 3. 查询子任务信息列表

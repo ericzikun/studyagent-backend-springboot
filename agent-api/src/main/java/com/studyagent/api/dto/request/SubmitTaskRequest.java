@@ -43,5 +43,11 @@ public class SubmitTaskRequest {
     private Integer pageLength; // 页数要求，可选
     
     private String specialInstructions;
+
+    /** 追问问题与回答（JSON字符串） */
+    private String clarifyingQuestions;
+
+    /** 需求补充（JSON字符串） */
+    private String requirementsJson;
 }
 

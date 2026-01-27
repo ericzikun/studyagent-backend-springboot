@@ -1,5 +1,7 @@
 package com.studyagent.service.application;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 import com.studyagent.service.application.request.SubmitTaskRequest;
 import com.studyagent.service.application.request.SaveDraftRequest;
 import com.studyagent.service.application.request.GetTaskListRequest;
@@ -21,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,6 +42,7 @@ public class TaskApplicationService {
     private final ClerkClient clerkClient;
     private final FileRepository fileRepository;
     private final TaskFileRepository taskFileRepository;
+    private final Gson gson = new Gson();
     
     /**
      * 提交任务
@@ -68,6 +73,12 @@ public class TaskApplicationService {
             dueDate = LocalDateTime.now().plusMonths(1);
         }
         
+        String mergedRequirementJson = mergeRequirementJson(
+            existing != null ? existing.getRequirementJson() : null,
+            request.getRequirementsJson(),
+            request.getClarifyingQuestions()
+        );
+        
         Task task = Task.builder()
             .id(existing != null ? existing.getId() : null)
             .clerkUserId(existing != null ? existing.getClerkUserId() : userInfo.clerkUserId)
@@ -81,7 +92,7 @@ public class TaskApplicationService {
             .citationStyle(request.getCitationStyle())
             .pageLength(request.getPageLength())
             .specialInstructions(request.getSpecialInstructions())
-            .requirementJson(existing != null ? existing.getRequirementJson() : null)
+            .requirementJson(mergedRequirementJson)
             .status(TaskStatus.DRAFT)
             .build();
         
@@ -163,6 +174,12 @@ public class TaskApplicationService {
             dueDate = LocalDateTime.now().plusMonths(1);
         }
         
+        String mergedRequirementJson = mergeRequirementJson(
+            existing != null ? existing.getRequirementJson() : null,
+            request.getRequirementsJson(),
+            request.getClarifyingQuestions()
+        );
+        
         Task.TaskBuilder builder = Task.builder()
             .id(existing != null ? existing.getId() : null)
             .clerkUserId(userInfo.clerkUserId)
@@ -176,7 +193,7 @@ public class TaskApplicationService {
             .citationStyle(firstNonNull(request.getCitationStyle(), existing != null ? existing.getCitationStyle() : null))
             .pageLength(firstNonNull(request.getPageLength(), existing != null ? existing.getPageLength() : null))
             .specialInstructions(firstNonNull(request.getSpecialInstructions(), existing != null ? existing.getSpecialInstructions() : null))
-            .requirementJson(firstNonNull(request.getRequirementsJson(), existing != null ? existing.getRequirementJson() : null))
+            .requirementJson(mergedRequirementJson)
             .status(TaskStatus.DRAFT);
 
         Task savedTask = taskRepository.save(builder.build());
@@ -198,6 +215,45 @@ public class TaskApplicationService {
         }
 
         return draftId;
+    }
+
+    private String mergeRequirementJson(String existingJson, String requirementsJson, String clarifyingQuestions) {
+        boolean hasRequirements = requirementsJson != null && !requirementsJson.trim().isEmpty();
+        boolean hasClarifying = clarifyingQuestions != null && !clarifyingQuestions.trim().isEmpty();
+        if (!hasRequirements && !hasClarifying) {
+            return existingJson;
+        }
+
+        Map<String, Object> merged = new HashMap<>();
+        if (existingJson != null && !existingJson.trim().isEmpty()) {
+            Object parsedExisting = parseJsonOrString(existingJson);
+            if (parsedExisting instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> existingMap = (Map<String, Object>) parsedExisting;
+                merged.putAll(existingMap);
+            } else {
+                merged.put("existingRequirementJson", parsedExisting);
+            }
+        }
+        if (hasRequirements) {
+            merged.put("requirementsJson", parseJsonOrString(requirementsJson));
+        }
+        if (hasClarifying) {
+            merged.put("clarifyingQuestions", parseJsonOrString(clarifyingQuestions));
+        }
+
+        return gson.toJson(merged);
+    }
+
+    private Object parseJsonOrString(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return raw;
+        }
+        try {
+            return gson.fromJson(raw, Object.class);
+        } catch (JsonSyntaxException e) {
+            return raw;
+        }
     }
 
     /**

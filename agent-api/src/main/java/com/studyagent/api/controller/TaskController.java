@@ -98,6 +98,8 @@ public class TaskController {
                 .pageLength(request.getPageLength())
                 .specialInstructions(request.getSpecialInstructions())
                 .objectIds(request.getObjectIds())
+                .clarifyingQuestions(request.getClarifyingQuestions())
+                .requirementsJson(request.getRequirementsJson())
                 .token(token)
                 .build();
         

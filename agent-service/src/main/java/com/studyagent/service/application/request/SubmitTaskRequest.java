@@ -29,5 +29,7 @@ public class SubmitTaskRequest {
     private String specialInstructions;
     private List<String> objectIds;
     private String token; // Clerk token
+    private String clarifyingQuestions;
+    private String requirementsJson;
 }
 

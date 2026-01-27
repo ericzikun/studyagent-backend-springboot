@@ -432,6 +432,7 @@ public class TaskController {
             .activeAgentSize(taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0)
             .estRemainingTime(taskEntity.getEstRemainingTime() != null ? taskEntity.getEstRemainingTime() : 0)
             .queueAheadCount(queueAheadCount)
+            .requirementJson(taskEntity.getRequirementJson())
             .build();
         
         // 3. 查询子任务信息列表

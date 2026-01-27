@@ -111,6 +111,11 @@ public class TaskDetailResponse {
          * 任务前方排队数量（为0表示已开始执行）
          */
         private Integer queueAheadCount;
+
+        /**
+         * 需求理解 JSON
+         */
+        private String requirementJson;
     }
     
     /**

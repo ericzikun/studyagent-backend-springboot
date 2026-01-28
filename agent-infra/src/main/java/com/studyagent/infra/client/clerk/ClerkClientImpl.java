@@ -25,6 +25,15 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ClerkClientImpl implements ClerkClient {
     
+    /**
+     * Token 过期异常 - 用于区分"token 过期"和"token 格式错误"
+     */
+    private static class TokenExpiredException extends RuntimeException {
+        TokenExpiredException(String message) {
+            super(message);
+        }
+    }
+    
     private final WebClient webClient;
     private final UserRepository userRepository;
     
@@ -131,20 +140,12 @@ public class ClerkClientImpl implements ClerkClient {
                         }
                     }
                     
-                    // 如果是 session ID (sid)，需要先获取 session 信息
+                    // 如果是 session ID (sid)，尝试从其他字段获取用户 ID
+                    // 注意：不再调用 Clerk API 获取 session 信息（网络问题）
                     if (clerkUserId == null || clerkUserId.isEmpty()) {
-                        String sessionId = (String) claims.get("sid");
-                        if (sessionId != null && !sessionId.isEmpty()) {
-                            log.debug("从 session ID 获取用户 ID: {}", sessionId);
-                            Map<String, Object> sessionData = getSession(sessionId);
-                            if (sessionData != null) {
-                                Object userIdObj = sessionData.get("user_id");
-                                if (userIdObj != null) {
-                                    clerkUserId = userIdObj.toString();
-                                    log.debug("从 session 获取到用户 ID: {}", clerkUserId);
-                                }
-                            }
-                        }
+                        // 尝试从 azp (Authorized party) 或其他字段获取
+                        // Clerk JWT 通常在 sub 字段有用户 ID
+                        log.warn("JWT 中缺少用户 ID (sub)，检查 claims: {}", claims.keySet());
                     }
                     
                     if (clerkUserId != null && !clerkUserId.isEmpty()) {
@@ -172,31 +173,14 @@ public class ClerkClientImpl implements ClerkClient {
                             .or(() -> Optional.ofNullable((String) claims.get("image_url")))
                             .orElse(null);
                         
-                        // 性能优化：只在 JWT 中缺少关键信息时才调用 Backend API
-                        // 如果 JWT 中已经有足够的信息，直接使用，避免网络请求
-                        boolean needBackendApi = (userInfo.email == null && userInfo.displayName == null);
-                        
-                        if (needBackendApi && clerkSecretKey != null && !clerkSecretKey.isEmpty()) {
-                            // 只有在缺少关键信息时才调用 Backend API
-                            log.debug("JWT 中缺少关键信息，调用 Backend API 获取用户详细信息: {}", clerkUserId);
-                            long apiStartTime = System.currentTimeMillis();
-                            Map<String, Object> userData = getClerkUser(clerkUserId);
-                            long apiDuration = System.currentTimeMillis() - apiStartTime;
-                            
-                            if (userData != null) {
-                                log.debug("Backend API 验证成功，用户 ID: {} (耗时: {}ms)", userData.get("id"), apiDuration);
-                                UserInfo detailedUserInfo = extractUserInfo(userData);
-                                // 合并信息：优先使用 Backend API 返回的详细信息
-                                if (detailedUserInfo.email != null) userInfo.email = detailedUserInfo.email;
-                                if (detailedUserInfo.displayName != null) userInfo.displayName = detailedUserInfo.displayName;
-                                if (detailedUserInfo.avatarUrl != null) userInfo.avatarUrl = detailedUserInfo.avatarUrl;
-                                userInfo.emailVerified = detailedUserInfo.emailVerified;
-                            } else {
-                                log.debug("Backend API 调用失败或返回空 (耗时: {}ms)，使用 JWT 中的基本信息", apiDuration);
-                            }
-                        } else {
-                            log.debug("使用 JWT 中的基本信息，跳过 Backend API 调用 (性能优化)");
-                        }
+                        // ============================================
+                        // 性能优化：完全禁用 Clerk Backend API 调用
+                        // 原因：
+                        // 1. 服务器在国内，访问 api.clerk.dev 经常超时
+                        // 2. JWT 中的 clerkUserId 已足够用于用户认证
+                        // 3. email/displayName 可以从前端的 Clerk 用户信息获取
+                        // ============================================
+                        log.debug("使用 JWT 中的信息完成认证，跳过 Clerk Backend API 调用 (网络优化)");
                         
                         // 存入缓存
                         tokenCache.set(token, userInfo);
@@ -207,6 +191,11 @@ public class ClerkClientImpl implements ClerkClient {
                         log.warn("无法从 JWT 中提取用户 ID，JWT claims: {}", claims);
                     }
                 }
+            } catch (TokenExpiredException expiredError) {
+                // Token 过期，抛出明确的过期异常
+                long duration = System.currentTimeMillis() - startTime;
+                log.warn("Clerk token 验证失败：Token 已过期 (耗时: {}ms)", duration);
+                throw new RuntimeException("Invalid token: Token expired", expiredError);
             } catch (Exception jwtError) {
                 log.error("JWT 解析失败: {}", jwtError.getMessage(), jwtError);
             }
@@ -265,14 +254,18 @@ public class ClerkClientImpl implements ClerkClient {
                 return null;
             }
             
-            // 检查 token 是否过期（可选，不影响解析性能）
+            // 检查 token 是否过期（必须验证，过期 token 应该被拒绝）
             if (claimsMap.containsKey("exp")) {
                 Object expObj = claimsMap.get("exp");
                 if (expObj instanceof Number) {
                     long expTime = ((Number) expObj).longValue();
                     long currentTime = System.currentTimeMillis() / 1000;
                     if (expTime < currentTime) {
-                        log.warn("Token 已过期：过期时间 {}, 当前时间 {}", expTime, currentTime);
+                        long expiredSeconds = currentTime - expTime;
+                        log.warn("Token 已过期：过期时间 {}, 当前时间 {}, 已过期 {} 秒", 
+                            expTime, currentTime, expiredSeconds);
+                        // 抛出明确的过期异常，让调用方能区分过期和其他错误
+                        throw new TokenExpiredException("Token expired " + expiredSeconds + " seconds ago");
                     } else {
                         log.debug("Token 未过期，剩余时间: {} 秒", expTime - currentTime);
                     }
@@ -326,10 +319,14 @@ public class ClerkClientImpl implements ClerkClient {
     /**
      * 从 Clerk Backend API 获取用户信息
      * 与 Python 后端的 get_clerk_user 方法保持一致
+     * 
+     * 优化：添加超时控制和网络容错
+     * - 如果 Clerk API 不可达，不应该阻塞用户请求
+     * - 使用 JWT 中的基本信息作为降级方案
      */
     private Map<String, Object> getClerkUser(String clerkUserId) {
         if (clerkSecretKey == null || clerkSecretKey.isEmpty()) {
-            log.error("Clerk Secret Key 未配置");
+            log.debug("Clerk Secret Key 未配置，跳过 Backend API 调用");
             return null;
         }
         
@@ -349,24 +346,39 @@ public class ClerkClientImpl implements ClerkClient {
             String userUrl = clerkApiUrl + "/users/" + clerkUserId;
             log.debug("正在从 Clerk 获取用户信息: {}", userUrl);
             
+            // 添加超时控制（5秒），使用 Reactor 的 timeout 操作符
             Map<String, Object> response = webClient.get()
                 .uri(userUrl)
                 .header("Authorization", "Bearer " + clerkSecretKey)
                 .header("Content-Type", "application/json")
                 .retrieve()
                 .bodyToMono(Map.class)
+                .timeout(java.time.Duration.ofSeconds(5)) // 5秒超时
+                .onErrorResume(java.util.concurrent.TimeoutException.class, e -> {
+                    log.warn("Clerk API 请求超时 (5秒): {}", userUrl);
+                    return reactor.core.publisher.Mono.empty();
+                })
+                .onErrorResume(io.netty.handler.timeout.ReadTimeoutException.class, e -> {
+                    log.warn("Clerk API 读取超时: {}", userUrl);
+                    return reactor.core.publisher.Mono.empty();
+                })
+                .onErrorResume(java.net.ConnectException.class, e -> {
+                    log.warn("Clerk API 连接失败: {} - {}", userUrl, e.getMessage());
+                    return reactor.core.publisher.Mono.empty();
+                })
                 .block();
             
             if (response != null) {
                 return response;
             } else {
-                log.warn("获取 Clerk 用户信息失败: 响应为空");
+                log.debug("Clerk API 返回空响应或请求被跳过");
             }
         } catch (WebClientResponseException e) {
             log.warn("获取 Clerk 用户信息失败: Status={}, Response={}", 
                 e.getStatusCode(), e.getResponseBodyAsString());
         } catch (Exception e) {
-            log.error("从 Clerk 获取用户信息异常: {}", e.getMessage(), e);
+            // 网络异常不应该阻塞认证流程，记录警告并返回 null
+            log.warn("从 Clerk 获取用户信息异常 (将使用 JWT 信息): {}", e.getMessage());
         }
         return null;
     }

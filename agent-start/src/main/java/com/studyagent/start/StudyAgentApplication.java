@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * StudyAgent 后端应用启动类
  */
 @SpringBootApplication(scanBasePackages = {
+    "com.studyagent.common",
     "com.studyagent.api",
     "com.studyagent.service",
     "com.studyagent.infra",

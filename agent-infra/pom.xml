@@ -16,6 +16,12 @@
     <packaging>jar</packaging>
 
     <dependencies>
+        <!-- Common Module (日志、工具类) -->
+        <dependency>
+            <groupId>com.studyagent</groupId>
+            <artifactId>agent-common</artifactId>
+        </dependency>
+        
         <!-- Service Layer (接口) -->
         <dependency>
             <groupId>com.studyagent</groupId>

@@ -99,10 +99,17 @@ logging:
     org.springframework.jdbc: WARN
     org.springframework.jdbc.core: WARN
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    # 日志格式包含 traceId、userId，方便链路追踪和问题排查
+    # 格式: 时间 [线程] 级别 [traceId] [userId] 日志器 - 消息
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] [%X{userId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] [%X{userId:-}] %logger{36} - %msg%n"
   file:
     name: logs/studyagent-backend.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 3GB
 
 # Swagger配置
 springdoc:

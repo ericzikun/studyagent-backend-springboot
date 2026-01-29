@@ -1,5 +1,6 @@
 package com.studyagent.infra.client.python;
 
+import com.studyagent.common.log.annotation.ExternalLog;
 import com.studyagent.service.domain.task.PythonBackendClient;
 import com.studyagent.service.domain.task.TaskId;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class PythonBackendClientImpl implements PythonBackendClient {
     private String pythonBackendUrl;
     
     @Override
+    @ExternalLog(service = "Python后端", api = "执行任务")
     public void executeTask(TaskId taskId) {
         try {
             Map<String, Object> request = new HashMap<>();
@@ -48,6 +50,7 @@ public class PythonBackendClientImpl implements PythonBackendClient {
     }
 
     @Override
+    @ExternalLog(service = "Python后端", api = "停止任务")
     public void stopTask(TaskId taskId) {
         try {
             Map<String, Object> request = new HashMap<>();
@@ -68,6 +71,7 @@ public class PythonBackendClientImpl implements PythonBackendClient {
     }
     
     @Override
+    @ExternalLog(service = "Python后端", api = "追问任务", slowThreshold = 10000)
     public ClarifyTaskResult clarifyTask(Map<String, Object> request) {
         try {
             log.info("Calling Python backend to clarify task: {}", request);
@@ -119,6 +123,7 @@ public class PythonBackendClientImpl implements PythonBackendClient {
     }
 
     @Override
+    @ExternalLog(service = "Python后端", api = "获取任务队列信息", ignoreException = true)
     public TaskQueueInfo getTaskQueueInfo(TaskId taskId) {
         try {
             Map<String, Object> request = new HashMap<>();
@@ -181,6 +186,7 @@ public class PythonBackendClientImpl implements PythonBackendClient {
     }
 
     @Override
+    @ExternalLog(service = "Python后端", api = "批量获取任务队列信息", ignoreException = true)
     public Map<Long, TaskQueueInfo> getTaskQueueBatchInfo(List<TaskId> taskIds) {
         try {
             List<Long> ids = taskIds.stream().map(TaskId::getValue).collect(Collectors.toList());

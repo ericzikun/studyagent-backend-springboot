@@ -1,5 +1,6 @@
 package com.studyagent.infra.client.clerk;
 
+import com.studyagent.common.log.annotation.ExternalLog;
 import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
@@ -50,6 +51,7 @@ public class ClerkClientImpl implements ClerkClient {
     private String clerkFrontendApiUrl;
     
     @Override
+    @ExternalLog(service = "Clerk", api = "验证Token", logRequest = false, logResponse = false)
     public UserInfo verifyToken(String token) {
         long startTime = System.currentTimeMillis();
         
@@ -424,6 +426,7 @@ public class ClerkClientImpl implements ClerkClient {
     }
     
     @Override
+    @ExternalLog(service = "Clerk", api = "获取或创建用户")
     public User getOrCreateUser(String clerkUserId) {
         Optional<User> existing = userRepository.findByClerkUserId(clerkUserId);
         if (existing.isPresent()) {

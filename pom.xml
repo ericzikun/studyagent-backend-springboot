@@ -14,6 +14,7 @@
     <description>StudyAgent Backend Parent POM</description>
 
     <modules>
+        <module>agent-common</module>
         <module>agent-api</module>
         <module>agent-service</module>
         <module>agent-infra</module>
@@ -113,6 +114,13 @@
                 <groupId>com.google.code.gson</groupId>
                 <artifactId>gson</artifactId>
                 <version>${gson.version}</version>
+            </dependency>
+            
+            <!-- Agent Common (内部模块) -->
+            <dependency>
+                <groupId>com.studyagent</groupId>
+                <artifactId>agent-common</artifactId>
+                <version>${project.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

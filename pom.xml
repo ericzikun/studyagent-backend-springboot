@@ -39,6 +39,9 @@
         <!-- Stripe -->
         <stripe.version>24.0.0</stripe.version>
         
+        <!-- Clerk SDK -->
+        <clerk.version>4.1.2</clerk.version>
+        
         <!-- Swagger -->
         <swagger.version>2.2.0</swagger.version>
         
@@ -87,6 +90,13 @@
                 <groupId>com.stripe</groupId>
                 <artifactId>stripe-java</artifactId>
                 <version>${stripe.version}</version>
+            </dependency>
+            
+            <!-- Clerk SDK (官方 Java SDK) -->
+            <dependency>
+                <groupId>com.clerk</groupId>
+                <artifactId>backend-api</artifactId>
+                <version>${clerk.version}</version>
             </dependency>
             
             <!-- Swagger -->

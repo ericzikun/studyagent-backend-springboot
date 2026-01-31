@@ -60,6 +60,12 @@
             <artifactId>stripe-java</artifactId>
         </dependency>
         
+        <!-- Clerk SDK (官方 Java SDK，用于验证 token) -->
+        <dependency>
+            <groupId>com.clerk</groupId>
+            <artifactId>backend-api</artifactId>
+        </dependency>
+        
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

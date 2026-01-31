@@ -50,17 +50,35 @@ public class TokenCache {
     
     /**
      * 生成缓存 key
-     * 使用 token 的 hash 值作为 key（避免存储完整 token）
-     * 性能优化：使用更可靠的 hash 算法，避免 hash 冲突
+     * 
+     * 重要修复：使用 JWT 的 signature 部分作为缓存 key
+     * 
+     * 原问题：之前使用 token 前 32 个字符的 hash + 长度作为 key，
+     * 但是 Clerk JWT token 的前 32 个字符对于同一个应用的所有用户都是相同的（JWT Header），
+     * 加上 token 长度也非常相似，导致不同用户的 token 可能产生相同的缓存 key，
+     * 造成用户 A 的请求返回用户 B 的 UserInfo！
+     * 
+     * 修复方案：使用 JWT 的 signature 部分（最后一个点之后的内容）作为 key，
+     * 因为签名部分对于每个 token 都是唯一的。
      */
     private String getCacheKey(String token) {
         if (token == null || token.isEmpty()) {
             return "token:null";
         }
-        // 使用 token 的前32个字符的 hash，更可靠且性能好
-        // 对于 JWT token，前32个字符通常包含足够的信息来区分不同的 token
-        String tokenPrefix = token.length() > 32 ? token.substring(0, 32) : token;
-        return "token:" + tokenPrefix.hashCode() + ":" + token.length();
+        
+        // JWT 格式：header.payload.signature
+        // signature 部分对于每个 token 都是唯一的
+        int lastDot = token.lastIndexOf('.');
+        if (lastDot > 0 && lastDot < token.length() - 1) {
+            // 使用 signature 部分作为 key（确保唯一性）
+            String signature = token.substring(lastDot + 1);
+            // signature 本身就是唯一的，直接使用
+            return "token:sig:" + signature;
+        }
+        
+        // 非 JWT 格式的降级处理：使用完整 token 的 hash
+        // 这种情况不应该发生，但作为防御性编程保留
+        return "token:full:" + token.hashCode() + ":" + token.length();
     }
     
     /**

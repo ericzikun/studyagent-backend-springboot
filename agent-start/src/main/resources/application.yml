@@ -50,6 +50,11 @@ clerk:
   # 格式：https://<your-app>.clerk.accounts.dev
   # 例如：https://splendid-roughy-33.clerk.accounts.dev
   frontend-api-url: ${CLERK_FRONTEND_API_URL:}
+  
+  # 是否启用 Clerk 官方 SDK 验证 token（验证 JWT 签名）
+  # true: 使用 Clerk SDK 验证（更安全，验证签名）
+  # false: 使用本地 JWT 解析（更快，但不验证签名）
+  enable-sdk-verification: ${CLERK_ENABLE_SDK_VERIFICATION:true}
 
 # Stripe 配置
 stripe:

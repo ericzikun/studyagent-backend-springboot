@@ -1,22 +1,31 @@
 package com.studyagent.api.interceptor;
 
+import com.clerk.backend_api.helpers.security.AuthenticateRequest;
+import com.clerk.backend_api.helpers.security.models.AuthenticateRequestOptions;
+import com.clerk.backend_api.helpers.security.models.RequestState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.domain.user.ClerkClient;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 认证拦截器
  * 
- * 增强版：提供详细的错误信息，帮助前端做出正确的响应
+ * 增强版：
+ * 1. 支持使用 Clerk 官方 SDK 验证 token（验证 JWT 签名，更安全）
+ * 2. 提供详细的错误信息，帮助前端做出正确的响应
+ * 3. 可配置是否使用 SDK 验证（通过 clerk.enable-sdk-verification 配置）
+ * 
+ * @see <a href="https://github.com/clerk/clerk-sdk-java">Clerk Java SDK</a>
  */
 @Slf4j
 @Component
@@ -25,6 +34,21 @@ public class AuthInterceptor implements HandlerInterceptor {
     
     private final ClerkClient clerkClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    /**
+     * Clerk Secret Key，用于 SDK 验证
+     */
+    @Value("${clerk.secret-key:}")
+    private String clerkSecretKey;
+    
+    /**
+     * 是否启用 Clerk SDK 验证
+     * 启用后会调用 Clerk 官方 SDK 验证 token（验证 JWT 签名），更安全但可能有网络延迟
+     * 默认关闭，使用本地 JWT 解析（已修复缓存问题）
+     */
+    @Value("${clerk.enable-sdk-verification:false}")
+    private boolean enableSdkVerification;
+    
     
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -41,7 +65,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 获取 Authorization header
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            // 任务列表和详情接口需要登录，不允许未登录访问
             sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                 "MISSING_TOKEN", "Authorization header is missing or invalid");
             return false;
@@ -58,19 +81,38 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         
         try {
-            // 验证 token
-            ClerkClient.UserInfo userInfo = clerkClient.verifyToken(token);
+            ClerkClient.UserInfo userInfo;
+            
+            // 根据配置选择验证方式
+            if (enableSdkVerification && clerkSecretKey != null && !clerkSecretKey.isEmpty()
+                    && !clerkSecretKey.equals("sk_test_xxx")) {
+                // 方式 1: 使用 Clerk 官方 SDK 验证（验证 JWT 签名，更安全）
+                userInfo = verifyWithClerkSdk(request, token);
+            } else {
+                // 方式 2: 使用本地 JWT 解析（更快，但不验证签名）
+                userInfo = clerkClient.verifyToken(token);
+            }
             
             if (userInfo == null) {
-                // token 验证失败（可能是过期或无效）
                 sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                     "TOKEN_EXPIRED", "Token is expired or invalid, please re-login");
+                return false;
+            }
+            
+            // 验证 clerkUserId 不为空（增强的防御性检查）
+            if (userInfo.clerkUserId == null || userInfo.clerkUserId.isEmpty()) {
+                log.error("[AuthInterceptor] Token 验证成功但 clerkUserId 为空！");
+                sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
+                    "USER_ID_MISSING", "Failed to extract user ID from token");
                 return false;
             }
             
             // 将用户信息存储到 request 属性中
             request.setAttribute("clerkUserId", userInfo.clerkUserId);
             request.setAttribute("userInfo", userInfo);
+            
+            log.debug("[AuthInterceptor] 用户 {} 请求 {} {}", 
+                userInfo.clerkUserId, request.getMethod(), request.getRequestURI());
             
             return true;
         } catch (RuntimeException e) {
@@ -83,18 +125,106 @@ public class AuthInterceptor implements HandlerInterceptor {
                     errorCode = "TOKEN_EXPIRED";
                 } else if (errorMessage.contains("JWT parsing failed")) {
                     errorCode = "TOKEN_MALFORMED";
+                } else if (errorMessage.contains("signature")) {
+                    errorCode = "TOKEN_SIGNATURE_INVALID";
                 }
             }
             
-            log.warn("Token验证失败: {} (错误码: {})", errorMessage, errorCode);
+            log.warn("[AuthInterceptor] Token验证失败: {} (错误码: {}), URI: {}", 
+                errorMessage, errorCode, request.getRequestURI());
             sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                 errorCode, errorMessage != null ? errorMessage : "Token validation failed");
             return false;
         } catch (Exception e) {
-            log.error("Token验证异常: {}", e.getMessage(), e);
+            log.error("[AuthInterceptor] Token验证异常: {}, URI: {}", 
+                e.getMessage(), request.getRequestURI(), e);
             sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
                 "AUTH_ERROR", "Authentication service error");
             return false;
+        }
+    }
+    
+    /**
+     * 使用 Clerk 官方 SDK 验证 token
+     * 
+     * 优点：
+     * 1. 验证 JWT 签名，确保 token 未被篡改
+     * 2. 使用官方库，安全性更高
+     * 3. 自动处理 token 过期等情况
+     * 
+     * @param servletRequest Servlet 请求
+     * @param token Bearer token
+     * @return 用户信息，验证失败返回 null 或抛出异常
+     */
+    private ClerkClient.UserInfo verifyWithClerkSdk(HttpServletRequest servletRequest, String token) {
+        try {
+            // 构建 headers map（Clerk SDK 需要 Map<String, List<String>> 格式）
+            Map<String, List<String>> headersMap = new HashMap<>();
+            Enumeration<String> headerNames = servletRequest.getHeaderNames();
+            while (headerNames.hasMoreElements()) {
+                String headerName = headerNames.nextElement();
+                List<String> headerValues = Collections.list(servletRequest.getHeaders(headerName));
+                headersMap.put(headerName.toLowerCase(), headerValues);
+            }
+            
+            // 构建验证选项
+            AuthenticateRequestOptions options = AuthenticateRequestOptions
+                .secretKey(clerkSecretKey)
+                .build();
+            
+            // 调用 Clerk SDK 验证
+            RequestState requestState = AuthenticateRequest.authenticateRequest(headersMap, options);
+            
+            if (requestState.isSignedIn()) {
+                // 验证成功，从 claims 中提取用户信息
+                Optional<Claims> claimsOpt = requestState.claims();
+                
+                ClerkClient.UserInfo userInfo = new ClerkClient.UserInfo();
+                
+                if (claimsOpt.isPresent()) {
+                    Claims claims = claimsOpt.get();
+                    userInfo.clerkUserId = claims.getSubject(); // sub claim
+                    userInfo.email = claims.get("email", String.class);
+                    userInfo.emailVerified = Boolean.TRUE.equals(claims.get("email_verified", Boolean.class));
+                    
+                    // 尝试获取显示名称
+                    userInfo.displayName = claims.get("name", String.class);
+                    if (userInfo.displayName == null) {
+                        userInfo.displayName = claims.get("username", String.class);
+                    }
+                    if (userInfo.displayName == null) {
+                        userInfo.displayName = claims.get("first_name", String.class);
+                    }
+                    
+                    // 尝试获取头像
+                    userInfo.avatarUrl = claims.get("picture", String.class);
+                    if (userInfo.avatarUrl == null) {
+                        userInfo.avatarUrl = claims.get("image_url", String.class);
+                    }
+                }
+                
+                log.debug("[AuthInterceptor] Clerk SDK 验证成功: userId={}", userInfo.clerkUserId);
+                return userInfo;
+            } else {
+                // 验证失败，记录原因
+                String reason = requestState.reason()
+                    .map(Object::toString)
+                    .orElse("Unknown reason");
+                log.warn("[AuthInterceptor] Clerk SDK 验证失败: {}", reason);
+                
+                // 根据失败原因抛出适当的异常
+                if (reason.contains("expired") || reason.contains("EXPIRED")) {
+                    throw new RuntimeException("Invalid token: Token expired");
+                }
+                throw new RuntimeException("Invalid token: " + reason);
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[AuthInterceptor] Clerk SDK 验证异常: {}", e.getMessage(), e);
+            // SDK 验证失败时，降级使用本地 JWT 解析
+            log.info("[AuthInterceptor] SDK 验证失败，降级使用本地 JWT 解析");
+            return clerkClient.verifyToken(token);
         }
     }
     
@@ -122,4 +252,3 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
     }
 }
-

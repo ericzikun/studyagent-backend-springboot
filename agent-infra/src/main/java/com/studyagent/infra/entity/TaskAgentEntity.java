@@ -21,6 +21,13 @@ public class TaskAgentEntity extends BaseEntity {
     @TableField("agent_name")
     private String agentName;
     
+    /**
+     * 子任务ID，用于区分同一 Agent 类型处理不同子任务的输出
+     * 关联到 sub_tasks.subtask_code
+     */
+    @TableField("subtask_id")
+    private String subtaskId;
+    
     @TableField("agent_desc")
     private String agentDesc;
     

@@ -442,29 +442,65 @@ public class TaskController {
                 .orderByAsc(SubTaskEntity::getOrderIndex)
         );
         
-        List<TaskDetailResponse.SubTaskInfoResponse> subTaskInfoList = subTaskEntities.stream()
-            .map(st -> TaskDetailResponse.SubTaskInfoResponse.builder()
-                .title(st.getTitle())
-                .desc(st.getDescription() != null ? st.getDescription() : "")
-                .processDesc(st.getProcessDesc() != null ? st.getProcessDesc() : "")
-                .agentName(st.getAgentName() != null ? st.getAgentName() : "")
-                .build())
-            .collect(Collectors.toList());
+        // 4. 查询 Agent 信息列表（提前查询，用于关联到子任务）
+        List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
+            new LambdaQueryWrapper<TaskAgentEntity>()
+                .eq(TaskAgentEntity::getTaskId, taskId)
+        );
         
-        // 按 Agent 分组
-        Map<String, List<TaskDetailResponse.SubTaskInfoResponse>> subTaskInfoMap = subTaskEntities.stream()
-            .collect(Collectors.groupingBy(
-                st -> st.getAgentName() != null && !st.getAgentName().isEmpty() ? st.getAgentName() : "未分配",
-                Collectors.mapping(
-                    st -> TaskDetailResponse.SubTaskInfoResponse.builder()
+        // 构建 subtaskCode -> TaskAgentEntity 的映射（通过 subtaskId 关联）
+        Map<String, TaskAgentEntity> subtaskCodeToAgentMap = agentEntities.stream()
+            .filter(agent -> agent.getSubtaskId() != null && !agent.getSubtaskId().isEmpty())
+            .collect(Collectors.toMap(
+                TaskAgentEntity::getSubtaskId,
+                agent -> agent,
+                (a, b) -> a // 如果有重复，保留第一个
+            ));
+        
+        // 构建 agentName -> TaskAgentEntity 的映射（用于回退匹配）
+        Map<String, TaskAgentEntity> agentNameToAgentMap = agentEntities.stream()
+            .collect(Collectors.toMap(
+                TaskAgentEntity::getAgentName,
+                agent -> agent,
+                (a, b) -> a // 如果有重复，保留第一个
+            ));
+        
+        // 构建子任务列表，每个子任务直接嵌入对应的 Agent 信息
+        List<TaskDetailResponse.SubTaskInfoResponse> subTaskInfoList = subTaskEntities.stream()
+            .map(st -> {
+                // 查找对应的 Agent：优先通过 subtaskCode 匹配，否则通过 agentName 匹配
+                TaskAgentEntity agent = null;
+                if (st.getSubtaskCode() != null && !st.getSubtaskCode().isEmpty()) {
+                    agent = subtaskCodeToAgentMap.get(st.getSubtaskCode());
+                }
+                if (agent == null && st.getAgentName() != null && !st.getAgentName().isEmpty()) {
+                    agent = agentNameToAgentMap.get(st.getAgentName());
+                }
+                
+                // 构建子任务响应，包含内嵌的 Agent 信息
+                TaskDetailResponse.SubTaskInfoResponse.SubTaskInfoResponseBuilder builder = 
+                    TaskDetailResponse.SubTaskInfoResponse.builder()
                         .title(st.getTitle())
                         .desc(st.getDescription() != null ? st.getDescription() : "")
                         .processDesc(st.getProcessDesc() != null ? st.getProcessDesc() : "")
                         .agentName(st.getAgentName() != null ? st.getAgentName() : "")
-                        .build(),
-                    Collectors.toList()
-                )
-            ));
+                        .subtaskCode(st.getSubtaskCode());
+                
+                // 如果找到对应的 Agent，填充 Agent 信息
+                if (agent != null) {
+                    builder.agentStatus(agent.getAgentStatus())
+                           .agentCompletePercent(agent.getCompletePercent() != null ? 
+                               agent.getCompletePercent().doubleValue() : 0.0)
+                           .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
+                           .agentStartTime(agent.getAgentStartTime() != null ? 
+                               agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                           .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
+                           .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
+                }
+                
+                return builder.build();
+            })
+            .collect(Collectors.toList());
         
         // 4. 查询活动日志（最近50条，按时间降序）
         List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
@@ -509,26 +545,41 @@ public class TaskController {
                 .build());
         }
         
-        // 5. 查询 Agent 信息列表
-        List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
-            new LambdaQueryWrapper<TaskAgentEntity>()
-                .eq(TaskAgentEntity::getTaskId, taskId)
-        );
+        // 5. 构建 Agent 信息列表（agentEntities 已在步骤4中查询）
+        // 构建 subtaskCode -> SubTaskEntity 的映射，用于关联子任务标题
+        Map<String, SubTaskEntity> subtaskCodeMap = subTaskEntities.stream()
+            .filter(st -> st.getSubtaskCode() != null && !st.getSubtaskCode().isEmpty())
+            .collect(Collectors.toMap(
+                SubTaskEntity::getSubtaskCode,
+                st -> st,
+                (a, b) -> a // 如果有重复，保留第一个
+            ));
         
         List<TaskDetailResponse.AgentInfoResponse> agentInfoList;
         if (!agentEntities.isEmpty()) {
             agentInfoList = agentEntities.stream()
-                .map(agent -> TaskDetailResponse.AgentInfoResponse.builder()
-                    .agentName(agent.getAgentName())
-                    .agentStatus(agent.getAgentStatus())
-                    .completePercent(agent.getCompletePercent() != null ? 
-                        agent.getCompletePercent().doubleValue() : 0.0)
-                    .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                    .agentStartTime(agent.getAgentStartTime() != null ? 
-                        agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                    .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
-                    .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
-                    .build())
+                .map(agent -> {
+                    // 通过 subtaskId 查找关联的子任务标题
+                    String subtaskId = agent.getSubtaskId();
+                    String subtaskTitle = "";
+                    if (subtaskId != null && subtaskCodeMap.containsKey(subtaskId)) {
+                        subtaskTitle = subtaskCodeMap.get(subtaskId).getTitle();
+                    }
+                    
+                    return TaskDetailResponse.AgentInfoResponse.builder()
+                        .agentName(agent.getAgentName())
+                        .subtaskId(subtaskId)
+                        .subtaskTitle(subtaskTitle)
+                        .agentStatus(agent.getAgentStatus())
+                        .completePercent(agent.getCompletePercent() != null ? 
+                            agent.getCompletePercent().doubleValue() : 0.0)
+                        .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
+                        .agentStartTime(agent.getAgentStartTime() != null ? 
+                            agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                        .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
+                        .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
+                        .build();
+                })
                 .collect(Collectors.toList());
         } else {
             // 如果 Agent 列表为空，尝试从子任务和活动日志中提取 Agent 信息
@@ -629,12 +680,11 @@ public class TaskController {
             }
         }
         
-        // 构建完整响应
+        // 构建完整响应（已移除 subTaskInfoMap，Agent 信息直接嵌入 subTaskInfoList）
         TaskDetailResponse response = TaskDetailResponse.builder()
             .taskBaseInfo(taskBaseInfo)
             .agentInfoList(agentInfoList)
             .subTaskInfoList(subTaskInfoList)
-            .subTaskInfoMap(subTaskInfoMap)
             .activityInfoList(activityInfoList)
             .activityInfoMap(activityInfoMap)
             .outputSummaryInfo(outputSummaryInfo)

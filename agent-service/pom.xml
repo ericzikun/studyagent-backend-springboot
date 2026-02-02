@@ -16,6 +16,13 @@
     <packaging>jar</packaging>
 
     <dependencies>
+        <!-- 内部模块依赖 -->
+        <dependency>
+            <groupId>com.studyagent</groupId>
+            <artifactId>agent-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
         <!-- Spring Context (不包含 Web) -->
         <dependency>
             <groupId>org.springframework</groupId>

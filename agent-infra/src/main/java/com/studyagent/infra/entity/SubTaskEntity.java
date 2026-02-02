@@ -15,6 +15,13 @@ public class SubTaskEntity extends BaseEntity {
     @TableField("task_id")
     private Long taskId;
     
+    /**
+     * Python端生成的子任务ID，如 "0.0", "0.1", "0.2.1" 等
+     * 用于与 task_agents.subtask_id 进行关联
+     */
+    @TableField("subtask_code")
+    private String subtaskCode;
+    
     private String title;
     private String description;
     

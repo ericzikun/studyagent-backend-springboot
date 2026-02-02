@@ -23,7 +23,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/health", 
                 "/swagger-ui/**", 
                 "/v3/api-docs/**",
-                "/actuator/**"
+                "/actuator/**",
+                "/api/v1/agent-events/**"  // Python Agent 事件接口，使用 Token 验证
             );
     }
 }

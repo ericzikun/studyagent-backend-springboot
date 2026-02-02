@@ -33,10 +33,7 @@ public class TaskDetailResponse {
      */
     private List<SubTaskInfoResponse> subTaskInfoList;
     
-    /**
-     * 子任务信息映射（按Agent分组）
-     */
-    private Map<String, List<SubTaskInfoResponse>> subTaskInfoMap;
+    // 已移除 subTaskInfoMap，每个子任务的 Agent 信息现在直接嵌入到 subTaskInfoList 中
     
     /**
      * 活动信息列表
@@ -128,6 +125,17 @@ public class TaskDetailResponse {
     public static class AgentInfoResponse {
         private String agentName;
         
+        /**
+         * 子任务ID，用于唯一标识（同一 agentName 可能对应多个子任务）
+         * 格式如 "0.0", "0.1" 等
+         */
+        private String subtaskId;
+        
+        /**
+         * 关联的子任务标题
+         */
+        private String subtaskTitle;
+        
         private Integer agentStatus;
         
         private Double completePercent;
@@ -142,7 +150,7 @@ public class TaskDetailResponse {
     }
     
     /**
-     * 子任务信息
+     * 子任务信息（包含关联的 Agent 信息）
      */
     @Data
     @Builder
@@ -155,6 +163,44 @@ public class TaskDetailResponse {
         private String processDesc;
         
         private String agentName;
+        
+        /**
+         * Python端生成的子任务ID
+         * 格式如 "0.0", "0.1" 等
+         */
+        private String subtaskCode;
+        
+        // ========== 内嵌的 Agent 信息（与 agentName 平级）==========
+        
+        /**
+         * Agent 状态：0-待执行, 1-等待中, 2-运行中, 3-已完成, 4-失败
+         */
+        private Integer agentStatus;
+        
+        /**
+         * Agent 完成百分比
+         */
+        private Double agentCompletePercent;
+        
+        /**
+         * Agent 描述
+         */
+        private String agentDesc;
+        
+        /**
+         * Agent 开始时间（Unix时间戳，秒）
+         */
+        private Long agentStartTime;
+        
+        /**
+         * Agent 优先级
+         */
+        private Integer agentPriority;
+        
+        /**
+         * Agent 输出内容
+         */
+        private String agentOutput;
     }
     
     /**

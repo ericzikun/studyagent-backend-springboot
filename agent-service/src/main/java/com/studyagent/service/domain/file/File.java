@@ -18,6 +18,7 @@ public class File {
     String fileHash;
     String storagePath;
     Integer storageType;
+    String ossKey;           // OSS 对象的 Key
     String markdownContent;
     Integer markdownStatus;
     String markdownError;

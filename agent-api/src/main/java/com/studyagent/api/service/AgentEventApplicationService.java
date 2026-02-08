@@ -8,9 +8,12 @@ import com.studyagent.infra.repository.event.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,6 +38,13 @@ public class AgentEventApplicationService {
     private final TaskAgentEntityRepository taskAgentRepository;
     private final TaskActivityEntityRepository taskActivityRepository;
     private final TaskOutputEntityRepository taskOutputRepository;
+    
+    // 🆕 Markdown 转 TipTap JSON 服务 URL
+    @Value("${frontend.markdown-service-url:http://localhost:3000/api/markdown-to-tiptap}")
+    private String markdownServiceUrl;
+    
+    // 🆕 RestTemplate 用于调用前端服务
+    private final RestTemplate restTemplate = new RestTemplate();
     
     /**
      * 简单的内存去重缓存（生产环境建议使用 Redis）
@@ -516,6 +526,11 @@ public class AgentEventApplicationService {
 
     /**
      * 处理输出创建事件
+     * 
+     * 🆕 增强逻辑：
+     * - 如果 format=MARKDOWN 且 contentText 不为空，自动调用 MD 转 JSON 服务
+     * - 将转换后的 TipTap JSON 存储到 contentJson 字段
+     * - 支持前端富文本编辑器正常渲染
      */
     @Transactional
     protected void handleOutputCreated(AgentEventRequest request) {
@@ -532,15 +547,45 @@ public class AgentEventApplicationService {
         output.setPageSize(getIntValue(payload, "pageCount", 0));
         output.setFormat(parseFormat(getStringValue(payload, "format")));
         output.setOutputType(parseOutputType(getStringValue(payload, "outputType")));
-        output.setContentText(getStringValue(payload, "contentText"));
-        output.setContentJson(getStringValue(payload, "contentJson"));
+        
+        // 获取内容
+        String contentText = getStringValue(payload, "contentText");
+        String contentJson = getStringValue(payload, "contentJson");
+        
+        output.setContentText(contentText);
         output.setLogText(getStringValue(payload, "logText"));
+        
+        // 🆕 如果是 Markdown 格式且有内容，尝试转换为 TipTap JSON
+        if (isMarkdownFormat(getStringValue(payload, "format")) && 
+            contentText != null && !contentText.trim().isEmpty() &&
+            (contentJson == null || contentJson.isEmpty())) {
+            
+            log.info("检测到 Markdown 内容，开始转换为 TipTap JSON: taskId={}, contentLength={}", 
+                    taskId, contentText.length());
+            
+            String convertedJson = convertMarkdownToTiptapJson(contentText);
+            if (convertedJson != null && !convertedJson.isEmpty()) {
+                output.setContentJson(convertedJson);
+                log.info("✅ Markdown 转 JSON 成功: taskId={}, jsonLength={}", taskId, convertedJson.length());
+            } else {
+                log.warn("⚠️ Markdown 转 JSON 失败或服务不可用，仅保存 Markdown 文本: taskId={}", taskId);
+                // 即使转换失败，也保存 Markdown 文本
+                output.setContentJson(null);
+            }
+        } else {
+            // 直接使用 Python 端提供的 contentJson
+            output.setContentJson(contentJson);
+        }
+        
         output.setCreatedAt(LocalDateTime.now());
         output.setUpdatedAt(LocalDateTime.now());
         
         taskOutputRepository.save(output);
         
-        log.info("输出创建: taskId={}, title={}", taskId, output.getTitle());
+        log.info("输出创建: taskId={}, title={}, format={}, hasContentText={}, hasContentJson={}", 
+                taskId, output.getTitle(), getStringValue(payload, "format"), 
+                (contentText != null && !contentText.isEmpty()),
+                (output.getContentJson() != null && !output.getContentJson().isEmpty()));
     }
 
     /**
@@ -712,5 +757,120 @@ public class AgentEventApplicationService {
         if (sizeBytes < 1024 * 1024) return String.format("%.1fKB", sizeBytes / 1024.0);
         if (sizeBytes < 1024 * 1024 * 1024) return String.format("%.1fMB", sizeBytes / (1024.0 * 1024));
         return String.format("%.1fGB", sizeBytes / (1024.0 * 1024 * 1024));
+    }
+    
+    // ========== Markdown 转换相关方法 ==========
+    
+    /**
+     * 判断是否为 Markdown 格式
+     */
+    private boolean isMarkdownFormat(String format) {
+        if (format == null) return false;
+        return "MARKDOWN".equalsIgnoreCase(format) || "CODE".equalsIgnoreCase(format);
+    }
+    
+    /**
+     * 将 Markdown 内容转换为 TipTap JSON 格式
+     * 
+     * @param markdownContent Markdown 内容
+     * @return TipTap JSON 字符串，失败返回 null
+     */
+    private String convertMarkdownToTiptapJson(String markdownContent) {
+        if (markdownContent == null || markdownContent.trim().isEmpty()) {
+            log.debug("Markdown 内容为空，跳过转换");
+            return null;
+        }
+        
+        try {
+            log.info("🔄 调用 Markdown 转 TipTap JSON 服务: {}", markdownServiceUrl);
+            log.debug("📝 Markdown 内容长度: {} 字符", markdownContent.length());
+            
+            // 构造请求体
+            Map<String, String> requestBody = new HashMap<>();
+            requestBody.put("markdown", markdownContent);
+            
+            // 设置请求头
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            // 创建请求实体
+            HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(requestBody, headers);
+            
+            // 发送 POST 请求
+            ResponseEntity<Map> response = restTemplate.exchange(
+                markdownServiceUrl,
+                HttpMethod.POST,
+                requestEntity,
+                Map.class
+            );
+            
+            log.debug("📡 响应状态码: {}", response.getStatusCode());
+            
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<String, Object> responseBody = response.getBody();
+                log.debug("📦 响应内容: {}", responseBody.keySet());
+                
+                if (responseBody.containsKey("json")) {
+                    Object tiptapJson = responseBody.get("json");
+                    
+                    // 将 TipTap JSON 对象转换为字符串
+                    String jsonString = convertObjectToJsonString(tiptapJson);
+                    
+                    if (jsonString != null && !jsonString.isEmpty()) {
+                        log.info("✅ Markdown 转换成功，JSON 大小: {} 字符", jsonString.length());
+                        return jsonString;
+                    } else {
+                        log.warn("⚠️ 转换服务返回的 JSON 为空");
+                        return null;
+                    }
+                } else {
+                    log.warn("⚠️ 转换服务返回格式异常，缺少 'json' 字段。响应内容: {}", responseBody);
+                    return null;
+                }
+            } else {
+                log.warn("⚠️ 转换服务请求失败: HTTP {}", response.getStatusCode());
+                return null;
+            }
+            
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                log.warn("⚠️ 转换服务请求参数错误: {}", e.getMessage());
+            } else {
+                log.warn("⚠️ 转换服务客户端错误: HTTP {} - {}", 
+                        e.getStatusCode(), e.getMessage());
+            }
+            return null;
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            log.warn("⚠️ 转换服务内部错误: HTTP {} - {}", 
+                    e.getStatusCode(), e.getMessage());
+            return null;
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            log.warn("⚠️ 无法连接到转换服务: {}，错误: {}", markdownServiceUrl, e.getMessage());
+            log.info("💡 提示: 请确保前端服务正在运行，且 URL 配置正确");
+            return null;
+        } catch (Exception e) {
+            log.warn("⚠️ Markdown 转 TipTap JSON 失败: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * 将对象转换为 JSON 字符串
+     */
+    private String convertObjectToJsonString(Object obj) {
+        try {
+            if (obj == null) {
+                return null;
+            }
+            
+            // 使用 Jackson 或其他 JSON 库序列化
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = 
+                new com.fasterxml.jackson.databind.ObjectMapper();
+            return objectMapper.writeValueAsString(obj);
+            
+        } catch (Exception e) {
+            log.error("❌ 对象转 JSON 字符串失败: {}", e.getMessage());
+            return null;
+        }
     }
 }

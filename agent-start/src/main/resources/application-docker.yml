@@ -17,6 +17,10 @@ python-backend:
   url: ${PYTHON_BACKEND_URL:http://backend:8000}
   timeout: 30000
 
+# 前端服务配置（Docker 环境使用服务名）
+frontend:
+  markdown-service-url: ${FRONTEND_MARKDOWN_SERVICE_URL:http://frontend:3000/api/markdown-to-tiptap}
+
 # 文件存储配置（Docker 环境使用绝对路径）
 file:
   storage:

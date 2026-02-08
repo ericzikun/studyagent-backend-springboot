@@ -2,6 +2,13 @@ spring:
   application:
     name: studyagent-backend
   
+  # Jackson 配置 - 增加字符串长度限制（用于处理大文件 base64 上传）
+  jackson:
+    # Spring Boot 3.x 使用 StreamReadConstraints 配置
+    # 默认限制是 20MB，这里增加到 100MB
+    stream-read-constraints:
+      max-string-length: 100000000
+  
   datasource:
     # 数据库连接配置
     # 本地环境: localhost:3306 (或 13306 如果使用 Docker MySQL)
@@ -74,10 +81,34 @@ file:
     upload-path: ${FILE_UPLOAD_PATH:../storage/uploads}
     output-path: ${FILE_OUTPUT_PATH:../storage/outputs}
 
+# 阿里云 OSS 配置
+aliyun:
+  oss:
+    # 是否启用 OSS 备份（true: 上传文件同时备份到 OSS）
+    enabled: ${OSS_ENABLED:true}
+    # OSS 访问域名，例如：oss-cn-hangzhou.aliyuncs.com
+    # 需要注意服务器上要配置内网 https://help.aliyun.com/zh/oss/user-guide/regions-and-endpoints?spm=a2c4g.11186623.0.0.4a7411a2wEs7cr
+    endpoint: ${OSS_ENDPOINT:oss-us-west-1.aliyuncs.com}
+    # AccessKey ID
+    access-key-id: ${OSS_ACCESS_KEY_ID:your_access_key_id}
+    # AccessKey Secret
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:your_access_key_secret}
+    # Bucket 名称
+    bucket-name: ${OSS_BUCKET_NAME:studyagent}
+    # 存储目录前缀（可选，例如：studyagent/uploads）
+    path-prefix: ${OSS_PATH_PREFIX:studyagent/uploads}
+
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}
   timeout: 30000
+
+# 前端服务配置
+frontend:
+  # Markdown 转 TipTap JSON 服务 URL
+  # 本地环境: http://localhost:3000/api/markdown-to-tiptap
+  # Docker 环境: http://frontend:3000/api/markdown-to-tiptap
+  markdown-service-url: ${FRONTEND_MARKDOWN_SERVICE_URL:http://localhost:3000/api/markdown-to-tiptap}
 
 # 支付配置
 payment:

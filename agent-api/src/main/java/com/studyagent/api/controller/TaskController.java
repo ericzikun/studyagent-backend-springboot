@@ -364,6 +364,31 @@ public class TaskController {
             return new HashMap<>();
         }
     }
+
+    /** 总预估时间 15 分钟（秒），剩余时间 = 总时间 * (1 - 完成百分比/100) */
+    private static final int TOTAL_ESTIMATED_SECONDS = 15 * 60;
+
+    /**
+     * 根据 15 分钟总时长与完成百分比计算剩余时间（秒），供 workflow 的 Est. Time Remaining 展示。
+     * 已完成/失败/已取消返回 0；执行中/待执行按 15min * (1 - completePercent/100) 计算。
+     */
+    private int computeEstRemainingTime(TaskEntity taskEntity) {
+        Integer status = taskEntity.getStatus();
+        if (status == null) {
+            status = TaskStatus.DRAFT.getCode();
+        }
+        if (status.equals(TaskStatus.COMPLETED.getCode())
+                || status.equals(TaskStatus.FAILED.getCode())
+                || status.equals(TaskStatus.CANCELLED.getCode())) {
+            return 0;
+        }
+        double percent = taskEntity.getCompletePercent() != null
+                ? taskEntity.getCompletePercent().doubleValue()
+                : 0.0;
+        percent = Math.max(0.0, Math.min(100.0, percent));
+        int remaining = (int) Math.round(TOTAL_ESTIMATED_SECONDS * (1.0 - percent / 100.0));
+        return Math.max(0, remaining);
+    }
     
     @PostMapping("/detail")
     public Result<TaskDetailResponse> getTaskDetail(
@@ -430,7 +455,7 @@ public class TaskController {
                 taskEntity.getCompletePercent().doubleValue() : 0.0)
             .taskCompletedSize(taskEntity.getTaskCompletedSize() != null ? taskEntity.getTaskCompletedSize() : 0)
             .activeAgentSize(taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0)
-            .estRemainingTime(taskEntity.getEstRemainingTime() != null ? taskEntity.getEstRemainingTime() : 0)
+            .estRemainingTime(computeEstRemainingTime(taskEntity))
             .queueAheadCount(queueAheadCount)
             .requirementJson(taskEntity.getRequirementJson())
             .build();

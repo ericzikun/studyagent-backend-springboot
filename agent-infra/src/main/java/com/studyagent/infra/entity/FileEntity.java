@@ -19,6 +19,7 @@ public class FileEntity extends BaseEntity {
     private String fileHash;
     private String storagePath;
     private Integer storageType;
+    private String ossKey;           // OSS 对象的 Key
     private String markdownContent;
     private Integer markdownStatus;
     private String markdownError;

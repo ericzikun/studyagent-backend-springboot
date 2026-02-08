@@ -26,6 +26,7 @@ public class FileConverter {
             .fileHash(entity.getFileHash())
             .storagePath(entity.getStoragePath())
             .storageType(entity.getStorageType())
+            .ossKey(entity.getOssKey())
             .markdownContent(entity.getMarkdownContent())
             .markdownStatus(entity.getMarkdownStatus())
             .markdownError(entity.getMarkdownError())
@@ -47,6 +48,7 @@ public class FileConverter {
         entity.setFileHash(domain.getFileHash());
         entity.setStoragePath(domain.getStoragePath());
         entity.setStorageType(domain.getStorageType());
+        entity.setOssKey(domain.getOssKey());
         entity.setMarkdownContent(domain.getMarkdownContent());
         entity.setMarkdownStatus(domain.getMarkdownStatus());
         entity.setMarkdownError(domain.getMarkdownError());

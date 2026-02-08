@@ -1,6 +1,7 @@
 package com.studyagent.infra.repository.file;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.studyagent.infra.converter.FileConverter;
 import com.studyagent.infra.entity.FileEntity;
 import com.studyagent.infra.mapper.FileMapper;
@@ -59,6 +60,17 @@ public class FileRepositoryImpl implements FileRepository {
     @Override
     public void delete(FileId id) {
         fileMapper.deleteById(id.getValue());
+    }
+    
+    @Override
+    public boolean updateOssKey(String objectId, String ossKey) {
+        int rows = fileMapper.update(null, 
+            new LambdaUpdateWrapper<FileEntity>()
+                .eq(FileEntity::getObjectId, objectId)
+                .set(FileEntity::getOssKey, ossKey)
+                .set(FileEntity::getUpdatedAt, LocalDateTime.now())
+        );
+        return rows > 0;
     }
 }
 

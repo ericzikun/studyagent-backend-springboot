@@ -1,9 +1,9 @@
 package com.studyagent.service.application;
 
 import com.studyagent.service.domain.file.File;
-import com.studyagent.service.domain.file.FileId;
 import com.studyagent.service.domain.file.FileRepository;
 import com.studyagent.service.domain.file.FileDomainService;
+import com.studyagent.service.domain.file.OssStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +27,7 @@ public class FileApplicationService {
     
     private final FileRepository fileRepository;
     private final FileDomainService fileDomainService;
+    private final OssStorageService ossStorageService;
     
     @Value("${file.storage.upload-path:./storage/uploads}")
     private String uploadPath;
@@ -67,6 +68,12 @@ public class FileApplicationService {
         File savedFile = fileRepository.save(file);
         
         log.info("文件上传成功: objectId={}, filename={}", savedFile.getObjectId(), filename);
+        
+        // 7. 异步上传到阿里云 OSS 作为备份
+        if (ossStorageService.isEnabled()) {
+            log.info("开始异步上传文件到 OSS: objectId={}", savedFile.getObjectId());
+            ossStorageService.uploadFileAsync(fileContent, savedFile.getObjectId(), filename);
+        }
         
         return savedFile.getObjectId();
     }

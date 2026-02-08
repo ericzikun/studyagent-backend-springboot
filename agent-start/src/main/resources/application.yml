@@ -29,9 +29,27 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
-
+      # 🆕 增加文件上传超时时间，避免大文件上传时超时
+      # 默认值较小，可能导致大文件上传中断
+      file-size-threshold: 0  # 不使用临时文件，直接写入目标位置
+      
 server:
   port: 8080
+  # 🆕 增加连接超时配置，避免上传过程中连接中断
+  tomcat:
+    connection-timeout: 300000  # 连接超时 300 秒（5分钟），增加以支持大响应传输
+    max-connections: 10000      # 最大连接数
+    threads:
+      max: 200                  # 最大工作线程数
+      min-spare: 10             # 最小空闲线程数
+    max-http-form-post-size: 104857600  # POST 表单最大大小 100MB (100 * 1024 * 1024)
+    max-http-response-header-size: 8KB  # 响应头最大大小
+  
+  # 🆕 启用响应压缩，减少传输数据量，避免 Broken pipe
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024  # 大于 1KB 的响应才压缩（JSON 响应通常压缩率 60-80%）
 
 # MyBatis Plus
 mybatis-plus:

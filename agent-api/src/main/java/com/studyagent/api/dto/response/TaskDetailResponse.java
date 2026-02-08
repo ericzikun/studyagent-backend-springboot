@@ -40,10 +40,8 @@ public class TaskDetailResponse {
      */
     private List<ActivityInfoResponse> activityInfoList;
     
-    /**
-     * 活动信息映射（按时间戳）
-     */
-    private Map<String, ActivityInfoResponse> activityInfoMap;
+    // 已移除 activityInfoMap，前端可根据 activityInfoList 自行构建索引
+    // 这样可以减少响应大小，避免 Broken pipe 错误
     
     /**
      * 输出汇总信息

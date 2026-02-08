@@ -1,5 +1,6 @@
 package com.studyagent.start.config;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
@@ -14,12 +15,14 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
  * String length (xxx) exceeds the maximum length (20000000)
  * 
  * 将字符串最大长度从默认的 20MB 增加到 100MB
+ * 
+ * 同时优化流式写入，避免大响应导致 Broken pipe 错误
  */
 @Configuration
 public class JacksonConfig {
 
     /**
-     * 配置 ObjectMapper，增加字符串长度限制
+     * 配置 ObjectMapper，增加字符串长度限制并优化流式写入
      */
     @Bean
     @Primary
@@ -35,6 +38,13 @@ public class JacksonConfig {
                 .build();
         
         objectMapper.getFactory().setStreamReadConstraints(streamReadConstraints);
+        
+        // 🆕 优化流式写入，避免大响应导致 Broken pipe
+        // 不自动关闭输出流，交由容器管理（避免客户端断开时异常）
+        objectMapper.configure(JsonGenerator.Feature.AUTO_CLOSE_TARGET, false);
+        
+        // 🆕 启用自动刷新，提高写入效率
+        objectMapper.configure(JsonGenerator.Feature.FLUSH_PASSED_TO_STREAM, true);
         
         return objectMapper;
     }

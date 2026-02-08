@@ -529,12 +529,13 @@ public class TaskController {
             })
             .collect(Collectors.toList());
         
-        // 4. 查询活动日志（最近50条，按时间降序）
+        // 4. 查询活动日志（优化：首次只返回最近 10 条，避免响应过大导致 Broken pipe）
+        // 如果需要更多日志，前端可通过分页接口按需加载
         List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
             new LambdaQueryWrapper<TaskActivityEntity>()
                 .eq(TaskActivityEntity::getTaskId, taskId)
                 .orderByDesc(TaskActivityEntity::getActivityTime)
-                .last("LIMIT 50")
+                .last("LIMIT 10")  // 优化：从 50 条减少到 10 条，减少响应大小
         );
         
         List<TaskDetailResponse.ActivityInfoResponse> activityInfoList = activityEntities.stream()
@@ -545,32 +546,6 @@ public class TaskController {
                 .activityDesc(act.getActivityDesc())
                 .build())
             .collect(Collectors.toList());
-        
-        // 按时间戳映射（使用组合键避免重复：时间戳_agent名称_描述前缀）
-        Map<String, TaskDetailResponse.ActivityInfoResponse> activityInfoMap = new HashMap<>();
-        for (TaskActivityEntity act : activityEntities) {
-            long timestamp = act.getActivityTime() != null ? 
-                act.getActivityTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L;
-            String agentName = act.getAgentName() != null ? act.getAgentName() : "";
-            String activityDesc = act.getActivityDesc() != null ? act.getActivityDesc() : "";
-            // 使用组合键：时间戳_agent名称_描述前缀（取前20个字符）
-            String descPrefix = activityDesc.length() > 20 ? activityDesc.substring(0, 20) : activityDesc;
-            String key = timestamp + "_" + agentName + "_" + descPrefix.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5]", "_");
-            
-            // 如果键已存在，添加序号后缀
-            String finalKey = key;
-            int suffix = 1;
-            while (activityInfoMap.containsKey(finalKey)) {
-                finalKey = key + "_" + suffix;
-                suffix++;
-            }
-            
-            activityInfoMap.put(finalKey, TaskDetailResponse.ActivityInfoResponse.builder()
-                .activityTime(timestamp)
-                .agentName(agentName)
-                .activityDesc(activityDesc)
-                .build());
-        }
         
         // 5. 构建 Agent 信息列表（agentEntities 已在步骤4中查询）
         // 构建 subtaskCode -> SubTaskEntity 的映射，用于关联子任务标题
@@ -709,13 +684,12 @@ public class TaskController {
             }
         }
         
-        // 构建完整响应（已移除 subTaskInfoMap，Agent 信息直接嵌入 subTaskInfoList）
+        // 构建完整响应（已移除 activityInfoMap，前端可自行根据 activityInfoList 构建索引）
         TaskDetailResponse response = TaskDetailResponse.builder()
             .taskBaseInfo(taskBaseInfo)
             .agentInfoList(agentInfoList)
             .subTaskInfoList(subTaskInfoList)
             .activityInfoList(activityInfoList)
-            .activityInfoMap(activityInfoMap)
             .outputSummaryInfo(outputSummaryInfo)
             .outputDetailInfoList(outputDetailInfoList)
             .uploadedFileInfoList(uploadedFileInfoList)
@@ -976,6 +950,99 @@ public class TaskController {
         return filename.replaceAll("[<>:\"/\\|?*]", "_")
                       .replaceAll("\\s+", "_")
                       .trim();
+    }
+    
+    /**
+     * 分页查询任务活动日志
+     * 
+     * GET /v1/task/{taskId}/activities?pageNo=1&pageSize=10
+     * 
+     * 用于按需加载更多活动日志，避免一次性返回大量数据导致 Broken pipe
+     * 
+     * @param taskId 任务ID
+     * @param pageNo 页码（从1开始）
+     * @param pageSize 每页大小（默认10条）
+     * @param clerkUserId 用户ID（从拦截器获取）
+     * @return 分页的活动日志列表
+     */
+    @GetMapping("/{taskId}/activities")
+    public Result<TaskActivitiesPageResponse> getTaskActivities(
+            @PathVariable Long taskId,
+            @RequestParam(value = "pageNo", defaultValue = "1") Integer pageNo,
+            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        
+        // 验证用户登录
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("用户未登录");
+        }
+        
+        // 验证任务是否存在且属于当前用户
+        TaskEntity taskEntity = taskMapper.selectById(taskId);
+        if (taskEntity == null) {
+            return Result.error(1003, "任务不存在");
+        }
+        if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
+            return Result.error(1004, "无权访问该任务");
+        }
+        
+        // 参数校验
+        if (pageNo == null || pageNo < 1) {
+            pageNo = 1;
+        }
+        if (pageSize == null || pageSize < 1 || pageSize > 100) {
+            pageSize = 10;
+        }
+        
+        // 计算偏移量
+        int offset = (pageNo - 1) * pageSize;
+        
+        // 查询总数
+        Long total = taskActivityMapper.selectCount(
+            new LambdaQueryWrapper<TaskActivityEntity>()
+                .eq(TaskActivityEntity::getTaskId, taskId)
+        );
+        
+        // 分页查询活动日志
+        List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
+            new LambdaQueryWrapper<TaskActivityEntity>()
+                .eq(TaskActivityEntity::getTaskId, taskId)
+                .orderByDesc(TaskActivityEntity::getActivityTime)
+                .last("LIMIT " + pageSize + " OFFSET " + offset)
+        );
+        
+        // 转换为响应 DTO
+        List<TaskDetailResponse.ActivityInfoResponse> activityList = activityEntities.stream()
+            .map(act -> TaskDetailResponse.ActivityInfoResponse.builder()
+                .activityTime(act.getActivityTime() != null ? 
+                    act.getActivityTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                .agentName(act.getAgentName())
+                .activityDesc(act.getActivityDesc())
+                .build())
+            .collect(Collectors.toList());
+        
+        TaskActivitiesPageResponse response = TaskActivitiesPageResponse.builder()
+            .activityList(activityList)
+            .total(total.intValue())
+            .pageNo(pageNo)
+            .pageSize(pageSize)
+            .build();
+        
+        return Result.success(response);
+    }
+    
+    /**
+     * 任务活动日志分页响应
+     */
+    @lombok.Data
+    @lombok.Builder
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
+    public static class TaskActivitiesPageResponse {
+        private List<TaskDetailResponse.ActivityInfoResponse> activityList;
+        private Integer total;
+        private Integer pageNo;
+        private Integer pageSize;
     }
 }
 

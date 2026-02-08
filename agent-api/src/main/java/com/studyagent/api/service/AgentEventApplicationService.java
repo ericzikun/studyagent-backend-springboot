@@ -298,7 +298,9 @@ public class AgentEventApplicationService {
             return;
         }
         
-        Double completePercent = getDoubleValue(payload, "completePercent", 0.0);
+        // 限制在 [0, 100]，避免上游异常导致 >100%（如 200%）展示
+        double raw = getDoubleValue(payload, "completePercent", 0.0);
+        double completePercent = Math.max(0.0, Math.min(100.0, raw));
         task.setCompletePercent(new BigDecimal(String.valueOf(completePercent)));
         task.setTaskCompletedSize(getIntValue(payload, "completedSubtaskCount", 0));
         task.setActiveAgentSize(getIntValue(payload, "activeAgentCount", 0));

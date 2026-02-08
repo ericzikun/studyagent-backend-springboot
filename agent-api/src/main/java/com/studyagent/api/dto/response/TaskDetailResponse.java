@@ -124,28 +124,34 @@ public class TaskDetailResponse {
     @AllArgsConstructor
     public static class AgentInfoResponse {
         private String agentName;
-        
+
         /**
          * 子任务ID，用于唯一标识（同一 agentName 可能对应多个子任务）
          * 格式如 "0.0", "0.1" 等
          */
         private String subtaskId;
-        
+
         /**
          * 关联的子任务标题
          */
         private String subtaskTitle;
-        
+
         private Integer agentStatus;
-        
+
         private Double completePercent;
-        
+
         private String agentDesc;
-        
+
         private Long agentStartTime; // Unix时间戳（秒）
-        
+
+        /**
+         * Agent完成时间（Unix时间戳，秒）
+         * 仅在Agent完成（status=3）或失败（status=4）时有值
+         */
+        private Long agentFinishTime;
+
         private Integer agentPriority;
-        
+
         private String agentOutput;
     }
     
@@ -191,12 +197,18 @@ public class TaskDetailResponse {
          * Agent 开始时间（Unix时间戳，秒）
          */
         private Long agentStartTime;
-        
+
+        /**
+         * Agent 完成时间（Unix时间戳，秒）
+         * 仅在Agent完成（status=3）或失败（status=4）时有值
+         */
+        private Long agentFinishTime;
+
         /**
          * Agent 优先级
          */
         private Integer agentPriority;
-        
+
         /**
          * Agent 输出内容
          */

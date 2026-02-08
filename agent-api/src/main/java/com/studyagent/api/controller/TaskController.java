@@ -489,11 +489,13 @@ public class TaskController {
                 // 如果找到对应的 Agent，填充 Agent 信息
                 if (agent != null) {
                     builder.agentStatus(agent.getAgentStatus())
-                           .agentCompletePercent(agent.getCompletePercent() != null ? 
+                           .agentCompletePercent(agent.getCompletePercent() != null ?
                                agent.getCompletePercent().doubleValue() : 0.0)
                            .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                           .agentStartTime(agent.getAgentStartTime() != null ? 
+                           .agentStartTime(agent.getAgentStartTime() != null ?
                                agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                           .agentFinishTime(agent.getAgentFinishTime() != null ?
+                               agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
                            .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
                            .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
                 }
@@ -571,11 +573,13 @@ public class TaskController {
                         .subtaskId(subtaskId)
                         .subtaskTitle(subtaskTitle)
                         .agentStatus(agent.getAgentStatus())
-                        .completePercent(agent.getCompletePercent() != null ? 
+                        .completePercent(agent.getCompletePercent() != null ?
                             agent.getCompletePercent().doubleValue() : 0.0)
                         .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                        .agentStartTime(agent.getAgentStartTime() != null ? 
+                        .agentStartTime(agent.getAgentStartTime() != null ?
                             agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                        .agentFinishTime(agent.getAgentFinishTime() != null ?
+                            agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
                         .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
                         .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
                         .build();
@@ -761,6 +765,7 @@ public class TaskController {
                 .completePercent(completePercent)
                 .agentDesc("AI Agent: " + agentName)
                 .agentStartTime(agentStartTime)
+                .agentFinishTime(null) // 运行中的 Agent 没有完成时间
                 .agentPriority(1)
                 .agentOutput("")
                 .build());

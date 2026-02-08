@@ -96,19 +96,19 @@ public class FileApplicationService {
     public String exportFile(String objectId) {
         Optional<File> fileOpt = fileRepository.findByObjectId(objectId);
         if (fileOpt.isEmpty()) {
-            throw new RuntimeException("文件不存在: " + objectId);
+            throw new RuntimeException("File not found: " + objectId);
         }
-        
+
         File file = fileOpt.get();
-        
-        // 从存储读取文件
+
+        // Read file from storage
         try {
             Path filePath = Paths.get(file.getStoragePath());
             byte[] fileContent = Files.readAllBytes(filePath);
             return fileDomainService.encodeBase64(fileContent);
         } catch (Exception e) {
-            log.error("读取文件失败: {}", file.getStoragePath(), e);
-            throw new RuntimeException("读取文件失败", e);
+            log.error("Failed to read file: {}", file.getStoragePath(), e);
+            throw new RuntimeException("Failed to read file", e);
         }
     }
     
@@ -147,8 +147,8 @@ public class FileApplicationService {
             // 返回绝对路径，确保 Python 后端能够找到文件
             return filePath.toAbsolutePath().toString();
         } catch (Exception e) {
-            log.error("保存文件失败", e);
-            throw new RuntimeException("保存文件失败", e);
+            log.error("Failed to save file", e);
+            throw new RuntimeException("Failed to save file", e);
         }
     }
     

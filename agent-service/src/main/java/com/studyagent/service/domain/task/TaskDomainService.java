@@ -16,20 +16,20 @@ public class TaskDomainService {
      */
     public void validateTask(Task task) {
         if (task == null) {
-            throw new IllegalArgumentException("任务不能为空");
+            throw new IllegalArgumentException("Task cannot be null");
         }
         
         if (task.getTaskTitle() == null || task.getTaskTitle().trim().isEmpty()) {
-            throw new IllegalArgumentException("任务标题不能为空");
+            throw new IllegalArgumentException("Task title is required");
         }
         
         if (task.getTaskDesc() == null || task.getTaskDesc().trim().isEmpty()) {
-            throw new IllegalArgumentException("任务描述不能为空");
+            throw new IllegalArgumentException("Task description is required");
         }
         
-        // dueDate 为可选字段，如果提供了则验证不能早于当前时间
+        // dueDate is optional, if provided validate it's not in the past
         if (task.getDueDate() != null && task.getDueDate().isBefore(java.time.LocalDateTime.now())) {
-            throw new IllegalArgumentException("截止时间不能早于当前时间");
+            throw new IllegalArgumentException("Due date cannot be in the past");
         }
         
         // pageLength 为可选字段，允许为 null 或 "Not Specified"
@@ -52,11 +52,11 @@ public class TaskDomainService {
      */
     public void validateTaskCanBeRated(Task task) {
         if (task == null) {
-            throw new IllegalArgumentException("任务不存在");
+            throw new IllegalArgumentException("Task not found");
         }
-        
+
         if (task.getStatus() != TaskStatus.COMPLETED) {
-            throw new IllegalStateException("只能评价已完成的任务");
+            throw new IllegalStateException("Can only rate completed tasks");
         }
     }
 }

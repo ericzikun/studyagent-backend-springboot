@@ -41,7 +41,7 @@ public class Task {
      */
     public Task submit() {
         if (this.status != TaskStatus.DRAFT) {
-            throw new IllegalStateException("只能提交草稿状态的任务");
+            throw new IllegalStateException("Can only submit tasks with DRAFT status");
         }
         return Task.builder()
             .id(this.id)
@@ -66,7 +66,7 @@ public class Task {
      */
     public Task complete() {
         if (this.status != TaskStatus.IN_PROGRESS) {
-            throw new IllegalStateException("只能完成执行中的任务");
+            throw new IllegalStateException("Can only complete tasks in IN_PROGRESS status");
         }
         return Task.builder()
             .id(this.id)

@@ -57,12 +57,12 @@ public class TaskApplicationService {
         Task existing = null;
         if (request.getDraftId() != null) {
             existing = taskRepository.findById(TaskId.of(request.getDraftId()))
-                .orElseThrow(() -> new RuntimeException("草稿不存在: " + request.getDraftId()));
+                .orElseThrow(() -> new RuntimeException("Draft not found: " + request.getDraftId()));
             if (!userInfo.clerkUserId.equals(existing.getClerkUserId())) {
-                throw new RuntimeException("无权限提交该草稿");
+                throw new RuntimeException("No permission to submit this draft");
             }
             if (existing.getStatus() != TaskStatus.DRAFT) {
-                throw new RuntimeException("仅允许提交草稿状态的任务");
+                throw new RuntimeException("Only tasks with DRAFT status can be submitted");
             }
         }
 
@@ -159,12 +159,12 @@ public class TaskApplicationService {
         Task existing = null;
         if (request.getDraftId() != null) {
             existing = taskRepository.findById(TaskId.of(request.getDraftId()))
-                .orElseThrow(() -> new RuntimeException("草稿不存在: " + request.getDraftId()));
+                .orElseThrow(() -> new RuntimeException("Draft not found: " + request.getDraftId()));
             if (!userInfo.clerkUserId.equals(existing.getClerkUserId())) {
-                throw new RuntimeException("无权限更新该草稿");
+                throw new RuntimeException("No permission to update this draft");
             }
             if (existing.getStatus() != TaskStatus.DRAFT) {
-                throw new RuntimeException("仅允许更新草稿状态的任务");
+                throw new RuntimeException("Only tasks with DRAFT status can be updated");
             }
         }
 
@@ -266,10 +266,10 @@ public class TaskApplicationService {
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
 
         Task task = taskRepository.findById(TaskId.of(request.getTaskId()))
-            .orElseThrow(() -> new RuntimeException("任务不存在: " + request.getTaskId()));
+            .orElseThrow(() -> new RuntimeException("Task not found: " + request.getTaskId()));
 
         if (!userInfo.clerkUserId.equals(task.getClerkUserId())) {
-            throw new RuntimeException("无权限停止该任务");
+            throw new RuntimeException("No permission to stop this task");
         }
 
         if (task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.FAILED) {
@@ -302,7 +302,7 @@ public class TaskApplicationService {
                 .estRemainingTime(task.getEstRemainingTime())
                 .requirementJson(task.getRequirementJson())
                 .finalResult(task.getFinalResult())
-                .errorMessage("任务已取消")
+                .errorMessage("Task cancelled")
                 .build();
 
             taskRepository.save(cancelled);

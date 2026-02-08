@@ -17,20 +17,20 @@ public class FileDomainService {
      */
     public void validateFile(byte[] fileContent, String filename) {
         if (fileContent == null || fileContent.length == 0) {
-            throw new IllegalArgumentException("文件内容不能为空");
+            throw new IllegalArgumentException("File content cannot be empty");
         }
-        
+
         if (filename == null || filename.trim().isEmpty()) {
-            throw new IllegalArgumentException("文件名不能为空");
+            throw new IllegalArgumentException("Filename is required");
         }
-        
-        // 文件大小限制：100MB
+
+        // File size limit: 100MB
         long maxSize = 100 * 1024 * 1024;
         if (fileContent.length > maxSize) {
-            throw new IllegalArgumentException("文件大小不能超过100MB");
+            throw new IllegalArgumentException("File size cannot exceed 100MB");
         }
-        
-        log.debug("文件验证通过: {}, 大小: {} bytes", filename, fileContent.length);
+
+        log.debug("File validation passed: {}, size: {} bytes", filename, fileContent.length);
     }
     
     /**
@@ -40,7 +40,7 @@ public class FileDomainService {
         try {
             return Base64.getDecoder().decode(base64Content);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("无效的 base64 编码", e);
+            throw new IllegalArgumentException("Invalid base64 encoding", e);
         }
     }
     

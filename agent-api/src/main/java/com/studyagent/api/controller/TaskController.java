@@ -173,7 +173,7 @@ public class TaskController {
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error("User not logged in");
         }
         
         // 如果 request 为 null，使用默认值
@@ -232,7 +232,7 @@ public class TaskController {
     public Result<TaskSummaryResponse> getTaskSummary(
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error("User not logged in");
         }
         
         // 调用应用服务获取统计数据
@@ -263,7 +263,7 @@ public class TaskController {
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error("User not logged in");
         }
         
         // 设置默认值
@@ -397,7 +397,7 @@ public class TaskController {
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error("User not logged in");
         }
         
         Long taskId = request.getTaskId();
@@ -805,7 +805,7 @@ public class TaskController {
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error("User not logged in");
         }
         
         // 验证任务是否属于当前用户

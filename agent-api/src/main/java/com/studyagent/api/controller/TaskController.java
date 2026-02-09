@@ -467,67 +467,176 @@ public class TaskController {
                 .orderByAsc(SubTaskEntity::getOrderIndex)
         );
         
+        // 🆕 动态统计已完成子任务数（status=2 表示已完成）
+        // 替代原来从 tasks.task_completed_size 静态读取的方式，确保实时准确
+        int completedSubtaskCount = 0;
+        for (SubTaskEntity subTask : subTaskEntities) {
+            if (subTask.getStatus() != null && subTask.getStatus() == 2) {
+                completedSubtaskCount++;
+            }
+        }
+        taskBaseInfo.setTaskCompletedSize(completedSubtaskCount);
+        taskBaseInfo.setActiveAgentSize(subTaskEntities.size()); // 总子任务数作为"已起草章节数"
+        
         // 4. 查询 Agent 信息列表（提前查询，用于关联到子任务）
+        // 🔧 修复：过滤掉 subtask_id 为空的记录（这些是 Agent 启动时的临时记录，没有输出内容）
+        // 只保留有 subtask_id 的记录（这些包含完整的 agent_output）
         List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
             new LambdaQueryWrapper<TaskAgentEntity>()
                 .eq(TaskAgentEntity::getTaskId, taskId)
+                .isNotNull(TaskAgentEntity::getSubtaskId)
+                .ne(TaskAgentEntity::getSubtaskId, "")
+                .orderByDesc(TaskAgentEntity::getUpdatedAt)  // 按更新时间倒序，确保获取最新的记录
         );
         
-        // 构建 subtaskCode -> TaskAgentEntity 的映射（通过 subtaskId 关联）
-        Map<String, TaskAgentEntity> subtaskCodeToAgentMap = agentEntities.stream()
-            .filter(agent -> agent.getSubtaskId() != null && !agent.getSubtaskId().isEmpty())
-            .collect(Collectors.toMap(
-                TaskAgentEntity::getSubtaskId,
-                agent -> agent,
-                (a, b) -> a // 如果有重复，保留第一个
-            ));
+        log.info("🔍 任务 {} 查询到 {} 个 Agent", taskId, agentEntities.size());
         
-        // 构建 agentName -> TaskAgentEntity 的映射（用于回退匹配）
-        Map<String, TaskAgentEntity> agentNameToAgentMap = agentEntities.stream()
-            .collect(Collectors.toMap(
-                TaskAgentEntity::getAgentName,
-                agent -> agent,
-                (a, b) -> a // 如果有重复，保留第一个
-            ));
+        // 🐛 调试日志：检查每个 Agent 的 agentOutput 字段
+        for (TaskAgentEntity agent : agentEntities) {
+            String outputStatus = agent.getAgentOutput() == null ? "NULL" 
+                                : agent.getAgentOutput().isEmpty() ? "EMPTY" 
+                                : "有数据(" + agent.getAgentOutput().length() + "字符)";
+            log.info("  📌 Agent: name='{}', subtaskId='{}', status={}, agentOutput={}, preview='{}'",
+                agent.getAgentName(),
+                agent.getSubtaskId(),
+                agent.getAgentStatus(),
+                outputStatus,
+                agent.getAgentOutput() != null ? agent.getAgentOutput().substring(0, Math.min(100, agent.getAgentOutput().length())) : "null"
+            );
+        }
+        
+        // 构建 subtaskCode -> TaskAgentEntity 的映射（通过 subtaskId 关联）
+        // 注意：task_agents.subtask_id 对应 sub_tasks.subtask_code
+        Map<String, TaskAgentEntity> subtaskCodeToAgentMap = new HashMap<>();
+        Map<String, TaskAgentEntity> agentNameToAgentMap = new HashMap<>();
+        
+        for (TaskAgentEntity agent : agentEntities) {
+            String subtaskId = agent.getSubtaskId();
+            String agentName = agent.getAgentName();
+            
+            log.info("📌 Agent记录: name='{}', subtaskId='{}', status={}", 
+                agentName != null ? agentName : "NULL", 
+                subtaskId != null ? subtaskId : "NULL", 
+                agent.getAgentStatus());
+            
+            // 优先通过 subtaskId 建立映射
+            if (subtaskId != null && !subtaskId.trim().isEmpty()) {
+                subtaskCodeToAgentMap.put(subtaskId.trim(), agent);
+                log.info("  ✅ 建立映射: subtaskCode='{}' -> Agent '{}'", subtaskId.trim(), agentName);
+            }
+            
+            // 同时通过 agentName 建立映射（用于回退）
+            if (agentName != null && !agentName.trim().isEmpty()) {
+                // 如果已存在同名 Agent，优先保留有 subtaskId 的那个
+                TaskAgentEntity existing = agentNameToAgentMap.get(agentName);
+                if (existing == null || 
+                    (existing.getSubtaskId() == null || existing.getSubtaskId().isEmpty()) && 
+                    (subtaskId != null && !subtaskId.isEmpty())) {
+                    agentNameToAgentMap.put(agentName, agent);
+                }
+            } else {
+                log.warn("  ⚠️ Agent名称为空或NULL: subtaskId={}", subtaskId);
+            }
+        }
+        
+        log.info("📊 建立映射: subtaskCode->Agent {} 条, agentName->Agent {} 条", 
+            subtaskCodeToAgentMap.size(), agentNameToAgentMap.size());
         
         // 构建子任务列表，每个子任务直接嵌入对应的 Agent 信息
-        List<TaskDetailResponse.SubTaskInfoResponse> subTaskInfoList = subTaskEntities.stream()
-            .map(st -> {
-                // 查找对应的 Agent：优先通过 subtaskCode 匹配，否则通过 agentName 匹配
-                TaskAgentEntity agent = null;
-                if (st.getSubtaskCode() != null && !st.getSubtaskCode().isEmpty()) {
-                    agent = subtaskCodeToAgentMap.get(st.getSubtaskCode());
-                }
-                if (agent == null && st.getAgentName() != null && !st.getAgentName().isEmpty()) {
-                    agent = agentNameToAgentMap.get(st.getAgentName());
-                }
-                
-                // 构建子任务响应，包含内嵌的 Agent 信息
-                TaskDetailResponse.SubTaskInfoResponse.SubTaskInfoResponseBuilder builder = 
-                    TaskDetailResponse.SubTaskInfoResponse.builder()
-                        .title(st.getTitle())
-                        .desc(st.getDescription() != null ? st.getDescription() : "")
-                        .processDesc(st.getProcessDesc() != null ? st.getProcessDesc() : "")
-                        .agentName(st.getAgentName() != null ? st.getAgentName() : "")
-                        .subtaskCode(st.getSubtaskCode());
-                
-                // 如果找到对应的 Agent，填充 Agent 信息
+        List<TaskDetailResponse.SubTaskInfoResponse> subTaskInfoList = new ArrayList<>();
+        
+        for (SubTaskEntity st : subTaskEntities) {
+            // 查找对应的 Agent：优先通过 subtaskCode 匹配，否则通过 agentName 匹配
+            TaskAgentEntity agent = null;
+            String subtaskCode = st.getSubtaskCode();
+            String agentName = st.getAgentName();
+            
+            log.info("🔍 处理子任务: title='{}', code='{}', agentName='{}'", 
+                st.getTitle(), 
+                subtaskCode != null ? subtaskCode : "NULL",
+                agentName != null ? agentName : "NULL");
+            
+            // 1. 优先通过 subtaskCode 精确匹配
+            if (subtaskCode != null && !subtaskCode.trim().isEmpty()) {
+                agent = subtaskCodeToAgentMap.get(subtaskCode.trim());
                 if (agent != null) {
-                    builder.agentStatus(agent.getAgentStatus())
-                           .agentCompletePercent(agent.getCompletePercent() != null ?
-                               agent.getCompletePercent().doubleValue() : 0.0)
-                           .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                           .agentStartTime(agent.getAgentStartTime() != null ?
-                               agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                           .agentFinishTime(agent.getAgentFinishTime() != null ?
-                               agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
-                           .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
-                           .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
+                    log.info("  ✅ 通过 subtaskCode='{}' 匹配到 Agent: name='{}', status={}", 
+                        subtaskCode, agent.getAgentName(), agent.getAgentStatus());
+                } else {
+                    log.warn("  ❌ subtaskCode='{}' 未匹配到 Agent", subtaskCode);
                 }
-                
-                return builder.build();
-            })
-            .collect(Collectors.toList());
+            }
+            
+            // 2. 如果没找到，通过 agentName 回退匹配
+            if (agent == null && agentName != null && !agentName.trim().isEmpty()) {
+                agent = agentNameToAgentMap.get(agentName.trim());
+                if (agent != null) {
+                    log.info("  ⚠️ 通过 agentName='{}' 回退匹配到 Agent: subtaskId={}", 
+                        agentName, agent.getSubtaskId());
+                }
+            }
+            
+            // 3. 如果还是没找到，记录警告
+            if (agent == null) {
+                log.warn("  ❌ 子任务 '{}' (code='{}', agentName='{}') 未找到对应的 Agent", 
+                    st.getTitle(), 
+                    subtaskCode != null ? subtaskCode : "NULL", 
+                    agentName != null ? agentName : "NULL");
+            }
+            
+            // 🆕 确定最终使用的 agentName：优先使用 Agent 表的，回退到 SubTask 表的
+            String finalAgentName = agentName;
+            if (agent != null) {
+                // 如果找到了 Agent，无论子任务的 agentName 是否为空，都使用 Agent 的名称（更准确）
+                String agentTableName = agent.getAgentName();
+                if (agentTableName != null && !agentTableName.trim().isEmpty()) {
+                    finalAgentName = agentTableName;
+                    if (agentName == null || agentName.isEmpty()) {
+                        log.info("  🔄 子任务 agentName 为空，从 Agent 表回填: '{}'", finalAgentName);
+                    } else if (!agentTableName.equals(agentName)) {
+                        log.info("  🔄 使用 Agent 表的名称 '{}' 替代子任务的 '{}'", agentTableName, agentName);
+                    }
+                }
+            }
+            
+            log.info("  📝 最终 agentName: '{}'", finalAgentName != null ? finalAgentName : "EMPTY");
+            
+            // 构建子任务响应，包含内嵌的 Agent 信息
+            TaskDetailResponse.SubTaskInfoResponse.SubTaskInfoResponseBuilder builder = 
+                TaskDetailResponse.SubTaskInfoResponse.builder()
+                    .title(st.getTitle())
+                    .desc(st.getDescription() != null ? st.getDescription() : "")
+                    .processDesc(st.getProcessDesc() != null ? st.getProcessDesc() : "")
+                    .agentName(finalAgentName != null ? finalAgentName : "")  // ✅ 使用回填后的名称
+                    .subtaskCode(subtaskCode);
+            
+            // 如果找到对应的 Agent，填充 Agent 信息
+            if (agent != null) {
+                builder.agentStatus(agent.getAgentStatus())
+                       .agentCompletePercent(agent.getCompletePercent() != null ?
+                           agent.getCompletePercent().doubleValue() : 0.0)
+                       .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
+                       .agentStartTime(agent.getAgentStartTime() != null ?
+                           agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                       .agentFinishTime(agent.getAgentFinishTime() != null ?
+                           agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
+                       .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
+                       .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
+            } else {
+                // 如果没找到 Agent，设置默认值
+                builder.agentStatus(0)
+                       .agentCompletePercent(0.0)
+                       .agentDesc("")
+                       .agentStartTime(0L)
+                       .agentFinishTime(null)
+                       .agentPriority(1)
+                       .agentOutput("");
+            }
+            
+            subTaskInfoList.add(builder.build());
+        }
+        
+        log.info("📝 构建了 {} 个子任务响应", subTaskInfoList.size());
         
         // 4. 查询活动日志（优化：首次只返回最近 10 条，避免响应过大导致 Broken pipe）
         // 如果需要更多日志，前端可通过分页接口按需加载
@@ -568,7 +677,18 @@ public class TaskController {
                         subtaskTitle = subtaskCodeMap.get(subtaskId).getTitle();
                     }
                     
-                    return TaskDetailResponse.AgentInfoResponse.builder()
+                    // 🐛 调试日志：构建响应前检查数据
+                    String outputPreview = agent.getAgentOutput() == null ? "NULL" 
+                                        : agent.getAgentOutput().isEmpty() ? "EMPTY"
+                                        : agent.getAgentOutput().substring(0, Math.min(50, agent.getAgentOutput().length()));
+                    log.info("  🔧 构建 AgentInfoResponse: name='{}', subtaskId='{}', outputLen={}, preview='{}'",
+                        agent.getAgentName(),
+                        subtaskId,
+                        agent.getAgentOutput() != null ? agent.getAgentOutput().length() : 0,
+                        outputPreview
+                    );
+                    
+                    TaskDetailResponse.AgentInfoResponse response = TaskDetailResponse.AgentInfoResponse.builder()
                         .agentName(agent.getAgentName())
                         .subtaskId(subtaskId)
                         .subtaskTitle(subtaskTitle)
@@ -583,6 +703,12 @@ public class TaskController {
                         .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
                         .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
                         .build();
+                    
+                    // 🐛 验证构建后的对象
+                    log.info("  ✅ 构建完成: response.agentOutput.length={}", 
+                        response.getAgentOutput() != null ? response.getAgentOutput().length() : 0);
+                    
+                    return response;
                 })
                 .collect(Collectors.toList());
         } else {
@@ -694,6 +820,16 @@ public class TaskController {
             .outputDetailInfoList(outputDetailInfoList)
             .uploadedFileInfoList(uploadedFileInfoList)
             .build();
+        
+        // 🐛 调试日志：验证最终响应中的 agentInfoList
+        log.info("📦 最终响应: agentInfoList.size={}", response.getAgentInfoList().size());
+        for (TaskDetailResponse.AgentInfoResponse agent : response.getAgentInfoList()) {
+            log.info("  📋 Agent: name='{}', subtaskId='{}', outputLen={}", 
+                agent.getAgentName(),
+                agent.getSubtaskId(),
+                agent.getAgentOutput() != null ? agent.getAgentOutput().length() : 0
+            );
+        }
         
         return Result.success(response);
     }

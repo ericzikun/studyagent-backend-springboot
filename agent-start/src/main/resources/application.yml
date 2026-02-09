@@ -19,11 +19,13 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 连接池配置
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      # 🚀 优化配置 (4核32G服务器)
+      maximum-pool-size: 100     # 50 → 100 (支持更高并发)
+      minimum-idle: 30           # 20 → 30 (保持更多空闲连接)
+      connection-timeout: 30000  # 连接超时30秒
+      idle-timeout: 600000       # 空闲连接超时10分钟
+      max-lifetime: 1800000      # 连接最大存活时间30分钟
+      leak-detection-threshold: 60000  # 连接泄漏检测阈值60秒
   
   servlet:
     multipart:

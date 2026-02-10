@@ -346,7 +346,10 @@ public class TaskApplicationService {
             cancelTaskInTransaction(task);
         }
 
-        // 5. 异步调用 Python 后端停止任务
+        // 5. 逻辑删除任务（停止后从用户任务列表移除）
+        taskRepository.logicalDelete(TaskId.of(taskId));
+
+        // 6. 异步调用 Python 后端停止任务
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 pythonBackendClient.stopTask(TaskId.of(taskId));

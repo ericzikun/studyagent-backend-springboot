@@ -10,6 +10,11 @@ public interface TaskRepository {
     Optional<Task> findById(TaskId id);
     Task save(Task task);
     void delete(TaskId id);
+    
+    /**
+     * 逻辑删除任务：将 is_deleted 置为 1，不物理删除数据
+     */
+    void logicalDelete(TaskId id);
     List<Task> findByClerkUserId(String clerkUserId);
     List<Task> findAll();
     List<Task> findByStatus(TaskStatus status);

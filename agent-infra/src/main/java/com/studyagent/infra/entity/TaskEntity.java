@@ -1,5 +1,6 @@
 package com.studyagent.infra.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -35,5 +36,8 @@ public class TaskEntity extends BaseEntity {
     private String requirementJson;
     private String finalResult;
     private String errorMessage;
+    /** 逻辑删除: 0-未删除, 1-已删除 */
+    @TableField("is_deleted")
+    private Integer isDeleted;
 }
 

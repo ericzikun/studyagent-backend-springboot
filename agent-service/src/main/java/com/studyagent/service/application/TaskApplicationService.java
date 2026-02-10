@@ -284,6 +284,42 @@ public class TaskApplicationService {
     }
 
     /**
+     * 批量逻辑删除任务（将 is_deleted 置为 1，不物理删除数据）
+     * 逐个校验归属，成功删除的计入 deletedCount，失败（不存在/无权限）的计入 failedTaskIds
+     *
+     * @param taskIds 任务ID列表
+     * @param clerkUserId 当前用户ID
+     * @return [deletedCount, failedTaskIds]
+     */
+    @Transactional(timeout = 10)
+    public DeleteTasksResult deleteTasks(List<Long> taskIds, String clerkUserId) {
+        int deletedCount = 0;
+        List<Long> failedTaskIds = new java.util.ArrayList<>();
+        for (Long taskId : taskIds) {
+            try {
+                Task task = taskRepository.findById(TaskId.of(taskId))
+                        .orElseThrow(() -> new RuntimeException("任务不存在或已删除: " + taskId));
+                if (!clerkUserId.equals(task.getClerkUserId())) {
+                    failedTaskIds.add(taskId);
+                    continue;
+                }
+                taskRepository.logicalDelete(TaskId.of(taskId));
+                deletedCount++;
+                log.debug("任务逻辑删除成功: taskId={}", taskId);
+            } catch (RuntimeException e) {
+                failedTaskIds.add(taskId);
+            }
+        }
+        if (deletedCount > 0) {
+            log.info("批量逻辑删除任务完成: deletedCount={}, failedCount={}", deletedCount, failedTaskIds.size());
+        }
+        return new DeleteTasksResult(deletedCount, failedTaskIds);
+    }
+
+    /** 批量删除结果 */
+    public record DeleteTasksResult(int deletedCount, List<Long> failedTaskIds) {}
+
+    /**
      * 停止任务
      *
      * @param request 停止任务请求

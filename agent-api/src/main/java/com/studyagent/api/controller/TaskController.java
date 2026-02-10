@@ -9,12 +9,14 @@ import com.studyagent.api.dto.request.RateTaskRequest;
 import com.studyagent.api.dto.request.SaveDraftRequest;
 import com.studyagent.api.dto.request.StopTaskRequest;
 import com.studyagent.api.dto.request.SubmitTaskRequest;
+import com.studyagent.api.dto.request.DeleteTasksRequest;
 import com.studyagent.api.dto.request.TaskDetailRequest;
 import com.studyagent.api.dto.request.TaskListRequest;
 import com.studyagent.api.dto.response.ClarifyTaskResponse;
 import com.studyagent.api.dto.response.SaveDraftResponse;
 import com.studyagent.api.dto.response.StopTaskResponse;
 import com.studyagent.api.dto.response.SubmitTaskResponse;
+import com.studyagent.api.dto.response.DeleteTasksResponse;
 import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
 import com.studyagent.api.dto.response.TaskListItemResponse;
@@ -305,6 +307,27 @@ public class TaskController {
         
         return Result.success(response);
     }
+
+    /**
+     * 批量逻辑删除任务（不物理删除，仅将 is_deleted 置为 1）
+     * 支持传入多个 taskId，逐个校验归属后删除，返回成功数与失败列表
+     */
+    @PostMapping("/delete")
+    public Result<DeleteTasksResponse> deleteTasks(
+            @Valid @RequestBody DeleteTasksRequest request,
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("User not logged in");
+        }
+        TaskApplicationService.DeleteTasksResult result = taskApplicationService.deleteTasks(
+                request.getTaskIds(), clerkUserId);
+        DeleteTasksResponse response = DeleteTasksResponse.builder()
+                .deletedCount(result.deletedCount())
+                .failedTaskIds(result.failedTaskIds())
+                .build();
+        return Result.success(response);
+    }
     
     /**
      * 将 Task 域对象转换为 TaskListItemResponse DTO
@@ -365,12 +388,12 @@ public class TaskController {
         }
     }
 
-    /** 总预估时间 15 分钟（秒），剩余时间 = 总时间 * (1 - 完成百分比/100) */
-    private static final int TOTAL_ESTIMATED_SECONDS = 15 * 60;
+    /** 总预估时间 30 分钟（秒），剩余时间 = 总时间 * (1 - 完成百分比/100) */
+    private static final int TOTAL_ESTIMATED_SECONDS = 30 * 60;
 
     /**
-     * 根据 15 分钟总时长与完成百分比计算剩余时间（秒），供 workflow 的 Est. Time Remaining 展示。
-     * 已完成/失败/已取消返回 0；执行中/待执行按 15min * (1 - completePercent/100) 计算。
+     * 根据 30 分钟总时长与完成百分比计算剩余时间（秒），供 workflow 的 Est. Time Remaining 展示。
+     * 已完成/失败/已取消返回 0；执行中/待执行按 30min * (1 - completePercent/100) 计算。
      */
     private int computeEstRemainingTime(TaskEntity taskEntity) {
         Integer status = taskEntity.getStatus();
@@ -402,9 +425,9 @@ public class TaskController {
         
         Long taskId = request.getTaskId();
         
-        // 1. 查询任务基本信息
+        // 1. 查询任务基本信息（排除已逻辑删除的任务）
         TaskEntity taskEntity = taskMapper.selectById(taskId);
-        if (taskEntity == null) {
+        if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
             return Result.error(1003, "任务不存在");
         }
         
@@ -918,9 +941,9 @@ public class TaskController {
             return Result.error("User not logged in");
         }
         
-        // 验证任务是否属于当前用户
+        // 验证任务是否属于当前用户（排除已逻辑删除的任务）
         TaskEntity taskEntity = taskMapper.selectById(request.getTaskId());
-        if (taskEntity == null) {
+        if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
             return Result.error(1003, "任务不存在");
         }
         if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
@@ -1113,9 +1136,9 @@ public class TaskController {
             return Result.error("用户未登录");
         }
         
-        // 验证任务是否存在且属于当前用户
+        // 验证任务是否存在且属于当前用户（排除已逻辑删除的任务）
         TaskEntity taskEntity = taskMapper.selectById(taskId);
-        if (taskEntity == null) {
+        if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
             return Result.error(1003, "任务不存在");
         }
         if (!clerkUserId.equals(taskEntity.getClerkUserId())) {

@@ -1,5 +1,6 @@
 package com.studyagent.infra.repository.task;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -30,7 +31,10 @@ public class TaskRepositoryImpl implements TaskRepository {
     
     @Override
     public Optional<Task> findById(TaskId id) {
-        TaskEntity entity = taskMapper.selectById(id.getValue());
+        LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getId, id.getValue());
+        notDeleted(wrapper);
+        TaskEntity entity = taskMapper.selectOne(wrapper);
         return Optional.ofNullable(converter.toDomain(entity));
     }
     
@@ -52,17 +56,30 @@ public class TaskRepositoryImpl implements TaskRepository {
         return converter.toDomain(entity);
     }
     
+    /** 未删除条件：兼容 is_deleted 为 NULL 的旧数据 */
+    private static void notDeleted(LambdaQueryWrapper<TaskEntity> wrapper) {
+        wrapper.and(w -> w.isNull(TaskEntity::getIsDeleted).or().eq(TaskEntity::getIsDeleted, 0));
+    }
+
     @Override
     public void delete(TaskId id) {
         taskMapper.deleteById(id.getValue());
     }
+
+    @Override
+    public void logicalDelete(TaskId id) {
+        taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                .eq(TaskEntity::getId, id.getValue())
+                .set(TaskEntity::getIsDeleted, 1)
+                .set(TaskEntity::getUpdatedAt, java.time.LocalDateTime.now()));
+    }
     
     @Override
     public List<Task> findByClerkUserId(String clerkUserId) {
-        List<TaskEntity> entities = taskMapper.selectList(
-            new LambdaQueryWrapper<TaskEntity>()
-                .eq(TaskEntity::getClerkUserId, clerkUserId)
-        );
+        LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getClerkUserId, clerkUserId);
+        notDeleted(wrapper);
+        List<TaskEntity> entities = taskMapper.selectList(wrapper);
         return entities.stream()
             .map(converter::toDomain)
             .collect(Collectors.toList());
@@ -70,7 +87,9 @@ public class TaskRepositoryImpl implements TaskRepository {
     
     @Override
     public List<Task> findAll() {
-        List<TaskEntity> entities = taskMapper.selectList(null);
+        LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<>();
+        notDeleted(wrapper);
+        List<TaskEntity> entities = taskMapper.selectList(wrapper);
         return entities.stream()
             .map(converter::toDomain)
             .collect(Collectors.toList());
@@ -78,10 +97,10 @@ public class TaskRepositoryImpl implements TaskRepository {
     
     @Override
     public List<Task> findByStatus(TaskStatus status) {
-        List<TaskEntity> entities = taskMapper.selectList(
-            new LambdaQueryWrapper<TaskEntity>()
-                .eq(TaskEntity::getStatus, status.getCode())
-        );
+        LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getStatus, status.getCode());
+        notDeleted(wrapper);
+        List<TaskEntity> entities = taskMapper.selectList(wrapper);
         return entities.stream()
             .map(converter::toDomain)
             .collect(Collectors.toList());
@@ -89,12 +108,12 @@ public class TaskRepositoryImpl implements TaskRepository {
     
     @Override
     public List<Task> findByKeyword(String keyword) {
-        List<TaskEntity> entities = taskMapper.selectList(
-            new LambdaQueryWrapper<TaskEntity>()
+        LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
                 .like(TaskEntity::getTaskTitle, keyword)
                 .or()
-                .like(TaskEntity::getTaskDesc, keyword)
-        );
+                .like(TaskEntity::getTaskDesc, keyword);
+        notDeleted(wrapper);
+        List<TaskEntity> entities = taskMapper.selectList(wrapper);
         return entities.stream()
             .map(converter::toDomain)
             .collect(Collectors.toList());
@@ -103,6 +122,7 @@ public class TaskRepositoryImpl implements TaskRepository {
     @Override
     public long countByStatus(String clerkUserId, TaskStatus status) {
         LambdaQueryWrapper<TaskEntity> queryWrapper = new LambdaQueryWrapper<>();
+        notDeleted(queryWrapper);
         if (clerkUserId != null && !clerkUserId.isEmpty()) {
             queryWrapper.eq(TaskEntity::getClerkUserId, clerkUserId);
         }
@@ -124,6 +144,7 @@ public class TaskRepositoryImpl implements TaskRepository {
         
         // 构建查询条件
         LambdaQueryWrapper<TaskEntity> queryWrapper = new LambdaQueryWrapper<>();
+        notDeleted(queryWrapper);
         
         // 用户ID筛选
         if (clerkUserId != null && !clerkUserId.isEmpty()) {

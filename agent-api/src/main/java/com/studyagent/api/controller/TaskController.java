@@ -456,8 +456,11 @@ public class TaskController {
             return Result.error(1003, "任务不存在");
         }
         
-        // 2. 验证任务是否属于当前用户
-        if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
+        // 2. 验证任务访问权限：管理员可查看所有任务，普通用户仅能查看自己的任务
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        if (!isAdmin && !clerkUserId.equals(taskEntity.getClerkUserId())) {
             return Result.error(1004, "无权访问该任务");
         }
 

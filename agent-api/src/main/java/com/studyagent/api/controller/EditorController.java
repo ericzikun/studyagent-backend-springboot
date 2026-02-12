@@ -4,8 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.SaveEditorContentRequest;
 import com.studyagent.api.dto.response.GetEditorContentResponse;
+import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.TaskOutputEntity;
+import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.mapper.TaskOutputMapper;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
 import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +20,7 @@ import java.util.Map;
 
 /**
  * 文本编辑器控制器
+ * 权限：管理员可访问任意任务的编辑器，普通用户仅能访问自己的任务
  */
 @RestController
 @RequestMapping("/v1/editor")
@@ -23,11 +28,18 @@ import java.util.Map;
 public class EditorController {
     
     private final TaskOutputMapper taskOutputMapper;
+    private final TaskMapper taskMapper;
+    private final UserRepository userRepository;
     private final Gson gson = new Gson();
     
     @GetMapping("/content/{taskId}")
     public Result<GetEditorContentResponse> getEditorContent(
-            @PathVariable Long taskId) {
+            @PathVariable Long taskId,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        Result<?> permissionError = checkEditorPermission(taskId, clerkUserId);
+        if (permissionError != null) {
+            return (Result<GetEditorContentResponse>) permissionError;
+        }
         // 查找该任务的终稿输出（output_type=1）
         TaskOutputEntity taskOutput = taskOutputMapper.selectOne(
             new LambdaQueryWrapper<TaskOutputEntity>()
@@ -70,7 +82,12 @@ public class EditorController {
     @PutMapping("/content/{taskId}")
     public Result<Map<String, Object>> saveEditorContent(
             @PathVariable Long taskId,
-            @RequestBody SaveEditorContentRequest request) {
+            @RequestBody SaveEditorContentRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        Result<?> permissionError = checkEditorPermission(taskId, clerkUserId);
+        if (permissionError != null) {
+            return (Result<Map<String, Object>>) permissionError;
+        }
         // 查找或创建终稿输出记录
         TaskOutputEntity taskOutput = taskOutputMapper.selectOne(
             new LambdaQueryWrapper<TaskOutputEntity>()
@@ -114,6 +131,27 @@ public class EditorController {
         response.put("created", created);
         
         return Result.success(response);
+    }
+    
+    /**
+     * 校验编辑器访问权限：管理员可访问任意任务，普通用户仅能访问自己的任务
+     * @return 若有权限问题返回错误 Result，否则返回 null
+     */
+    private Result<?> checkEditorPermission(Long taskId, String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error("User not logged in");
+        }
+        TaskEntity taskEntity = taskMapper.selectById(taskId);
+        if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
+            return Result.error(1003, "任务不存在");
+        }
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        if (!isAdmin && !clerkUserId.equals(taskEntity.getClerkUserId())) {
+            return Result.error(1004, "无权访问该任务");
+        }
+        return null;
     }
 }
 

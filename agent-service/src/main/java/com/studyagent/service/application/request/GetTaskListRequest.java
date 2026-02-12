@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class GetTaskListRequest {
     private String clerkUserId;
+    private Boolean isAdmin; // 是否管理员：true=可看全部任务，false/null=仅看自己的任务
     private Integer status; // 任务状态（可选，0-全部）
     private String keyword; // 关键词（可选）
     private Integer order; // 排序方式：1-最新优先, 2-最旧优先, 3-标题A-Z, 4-标题Z-A, 5-更新时间最新优先

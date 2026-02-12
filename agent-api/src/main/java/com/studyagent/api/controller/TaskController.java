@@ -41,6 +41,8 @@ import com.studyagent.service.domain.task.Task;
 import com.studyagent.service.domain.task.TaskId;
 import com.studyagent.service.domain.task.TaskRepository;
 import com.studyagent.service.domain.task.TaskStatus;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +72,7 @@ import java.util.stream.Collectors;
 public class TaskController {
     
     private final TaskApplicationService taskApplicationService;
+    private final UserRepository userRepository;
     private final PythonBackendClient pythonBackendClient;
     private final TaskMapper taskMapper;
     private final TaskAgentMapper taskAgentMapper;
@@ -193,10 +196,16 @@ public class TaskController {
             request.setPageSize(10);
         }
         
+        // 判断是否为管理员：管理员可查看全部任务，普通用户仅能查看自己的任务
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.GetTaskListRequest appRequest = 
             com.studyagent.service.application.request.GetTaskListRequest.builder()
                 .clerkUserId(clerkUserId)
+                .isAdmin(isAdmin)
                 .status(request.getTaskStatus())
                 .keyword(request.getTaskKeyword())
                 .order(request.getOrder())
@@ -276,10 +285,16 @@ public class TaskController {
             pageSize = 10;
         }
         
+        // 判断是否为管理员：管理员可查看全部任务，普通用户仅能查看自己的任务
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        
         // 将查询参数转换为应用层的 Request Model
         com.studyagent.service.application.request.GetTaskListRequest appRequest = 
             com.studyagent.service.application.request.GetTaskListRequest.builder()
                 .clerkUserId(clerkUserId)
+                .isAdmin(isAdmin)
                 .status(taskStatus)
                 .keyword(taskKeyword)
                 .order(order)
@@ -361,10 +376,10 @@ public class TaskController {
             .startTime(task.getStartTime() != null ? task.getStartTime().format(formatter) : null)
             .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(formatter) : null)
             .costTime(task.getCostTime())
-            .completePercent(task.getCompletePercent())
+            .completePercent(task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
             .taskCompletedSize(task.getTaskCompletedSize())
             .activeAgentSize(task.getActiveAgentSize())
-            .estRemainingTime(task.getEstRemainingTime())
+            .estRemainingTime(computeEstRemainingTime(task))
             .requirementJson(task.getRequirementJson())
             .finalResult(task.getFinalResult())
             .errorMessage(task.getErrorMessage())
@@ -392,25 +407,35 @@ public class TaskController {
     private static final int TOTAL_ESTIMATED_SECONDS = 30 * 60;
 
     /**
-     * 根据 30 分钟总时长与完成百分比计算剩余时间（秒），供 workflow 的 Est. Time Remaining 展示。
+     * 统一计算剩余时间（秒），list 与 detail 共用，修改时只需改此处。
      * 已完成/失败/已取消返回 0；执行中/待执行按 30min * (1 - completePercent/100) 计算。
+     *
+     * @param statusCode   任务状态码（0-5）
+     * @param completePercent 完成百分比，可为 null
      */
-    private int computeEstRemainingTime(TaskEntity taskEntity) {
-        Integer status = taskEntity.getStatus();
-        if (status == null) {
-            status = TaskStatus.DRAFT.getCode();
+    private int computeEstRemainingTime(Integer statusCode, java.math.BigDecimal completePercent) {
+        if (statusCode == null) {
+            statusCode = TaskStatus.DRAFT.getCode();
         }
-        if (status.equals(TaskStatus.COMPLETED.getCode())
-                || status.equals(TaskStatus.FAILED.getCode())
-                || status.equals(TaskStatus.CANCELLED.getCode())) {
+        if (statusCode.equals(TaskStatus.COMPLETED.getCode())
+                || statusCode.equals(TaskStatus.FAILED.getCode())
+                || statusCode.equals(TaskStatus.CANCELLED.getCode())) {
             return 0;
         }
-        double percent = taskEntity.getCompletePercent() != null
-                ? taskEntity.getCompletePercent().doubleValue()
-                : 0.0;
+        double percent = completePercent != null ? completePercent.doubleValue() : 0.0;
         percent = Math.max(0.0, Math.min(100.0, percent));
         int remaining = (int) Math.round(TOTAL_ESTIMATED_SECONDS * (1.0 - percent / 100.0));
         return Math.max(0, remaining);
+    }
+
+    private int computeEstRemainingTime(Task task) {
+        return computeEstRemainingTime(
+                task.getStatus() != null ? task.getStatus().getCode() : TaskStatus.DRAFT.getCode(),
+                task.getCompletePercent());
+    }
+
+    private int computeEstRemainingTime(TaskEntity taskEntity) {
+        return computeEstRemainingTime(taskEntity.getStatus(), taskEntity.getCompletePercent());
     }
     
     @PostMapping("/detail")

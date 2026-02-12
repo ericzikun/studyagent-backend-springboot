@@ -465,8 +465,11 @@ public class TaskApplicationService {
             pageSize = 100;
         }
 
+        // 管理员可查看全部任务（传 null 不按用户过滤）；普通用户仅能查看自己的任务
+        String filterByUserId = (Boolean.TRUE.equals(request.getIsAdmin())) ? null : request.getClerkUserId();
+
         return taskRepository.findWithPagination(
-                request.getClerkUserId(),
+                filterByUserId,
                 taskStatus,
                 request.getKeyword(),
                 request.getOrder(),

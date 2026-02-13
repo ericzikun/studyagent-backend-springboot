@@ -266,7 +266,7 @@ public class TaskApplicationService {
             merged.put("requirementsJson", parseJsonOrString(requirementsJson));
         }
         if (hasClarifying) {
-            merged.put("clarifyingQuestions", parseJsonOrString(clarifyingQuestions));
+            merged.put("clarifyingQuestions", clarifyingQuestions); // 原样存储传入的 JSON 字符串，不解析
         }
 
         return gson.toJson(merged);

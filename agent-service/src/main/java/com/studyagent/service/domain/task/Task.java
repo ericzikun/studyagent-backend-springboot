@@ -56,6 +56,7 @@ public class Task {
             .citationStyle(this.citationStyle)
             .pageLength(this.pageLength)
             .specialInstructions(this.specialInstructions)
+            .requirementJson(this.requirementJson)
             .status(TaskStatus.PENDING)
             .startTime(LocalDateTime.now())
             .build();
@@ -81,6 +82,7 @@ public class Task {
             .citationStyle(this.citationStyle)
             .pageLength(this.pageLength)
             .specialInstructions(this.specialInstructions)
+            .requirementJson(this.requirementJson)
             .status(TaskStatus.COMPLETED)
             .startTime(this.startTime)
             .finishTime(LocalDateTime.now())

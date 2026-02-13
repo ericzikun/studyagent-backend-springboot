@@ -27,7 +27,7 @@ public class CorsConfig {
             "http://localhost:8080",
             "https://verla.io",
             "https://www.verla.io",
-            "http://101.251.176.55:13000/"
+            "http://101.251.176.55:13000"
         ));
         
         // 允许的HTTP方法

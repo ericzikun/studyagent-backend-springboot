@@ -16,5 +16,10 @@ import lombok.NoArgsConstructor;
 public class SubmitTaskResponse {
     private Meta meta;
     private Long taskId;
+
+    /**
+     * 任务提交额度信息（普通用户有值，管理员为 null；不限额时也为 null）
+     */
+    private SubmitQuotaInfo quota;
 }
 

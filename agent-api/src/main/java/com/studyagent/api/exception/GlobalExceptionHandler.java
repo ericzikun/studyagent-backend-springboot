@@ -2,7 +2,10 @@ package com.studyagent.api.exception;
 
 import com.studyagent.api.common.Meta;
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.response.SubmitQuotaExceededResponse;
+import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.QuotaExceededException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
@@ -38,7 +41,7 @@ public class GlobalExceptionHandler {
         });
         
         log.warn("参数验证失败: {}", errors);
-        return Result.error(1001, "参数验证失败: " + errors);
+        return Result.error(ApiCode.PARAM_VALIDATION_FAILED, errors);
     }
     
     /**
@@ -52,13 +55,34 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 任务提交额度超限异常
+     * 返回带额度信息的响应体，供前端展示「今日已用 X/Y 次，将于 Z 时重置」
+     */
+    @ExceptionHandler(QuotaExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<SubmitQuotaExceededResponse> handleQuotaExceededException(QuotaExceededException ex) {
+        log.warn("任务提交额度超限: code={}, message={}", ex.getCode(), ex.getMessage());
+        var data = ex.getQuotaData();
+        SubmitQuotaExceededResponse response = SubmitQuotaExceededResponse.builder()
+                .dailyLimit(data != null ? data.getDailyLimit() : null)
+                .usedToday(data != null ? data.getUsedToday() : null)
+                .remainingQuota(data != null ? data.getRemainingQuota() : 0)
+                .quotaResetAt(data != null ? data.getQuotaResetAt() : null)
+                .build();
+        Result<SubmitQuotaExceededResponse> result = new Result<>();
+        result.setMeta(Meta.error(ex.getCode(), ex.getMessage()));
+        result.setData(response);
+        return result;
+    }
+
+    /**
      * 业务异常（参数错误等）
      */
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleIllegalArgumentException(IllegalArgumentException ex) {
         log.warn("业务异常: {}", ex.getMessage());
-        return Result.error(1001, ex.getMessage());
+        return Result.error(ApiCode.PARAM_ERROR.getCode(), ex.getMessage());
     }
     
     /**
@@ -68,7 +92,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleIllegalStateException(IllegalStateException ex) {
         log.warn("状态异常: {}", ex.getMessage());
-        return Result.error(1002, ex.getMessage());
+        return Result.error(ApiCode.ILLEGAL_STATE);
     }
     
     /**
@@ -89,13 +113,13 @@ public class GlobalExceptionHandler {
         String errorMsg = ex.getMessage();
         if (errorMsg != null && errorMsg.contains("Stream ended unexpectedly")) {
             log.warn("文件上传流中断（可能是网络问题或用户取消上传）: {}", ex.getMessage());
-            return Result.error(4001, "文件上传失败：上传过程中断，请检查网络连接后重试");
+            return Result.error(ApiCode.FILE_UPLOAD_STREAM_INTERRUPTED);
         } else if (errorMsg != null && errorMsg.contains("maximum upload size")) {
             log.warn("文件上传失败：文件过大 - {}", ex.getMessage());
-            return Result.error(4002, "文件上传失败：文件大小超过限制（最大 100MB）");
+            return Result.error(ApiCode.FILE_UPLOAD_SIZE_EXCEEDED);
         } else {
             log.warn("文件上传失败: {}", ex.getMessage());
-            return Result.error(4000, "文件上传失败：" + ex.getMessage());
+            return Result.error(ApiCode.FILE_UPLOAD_FAILED, ex.getMessage());
         }
     }
     
@@ -145,7 +169,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleRuntimeException(RuntimeException ex) {
         log.error("运行时异常", ex);
-        return Result.error(9999, ex.getMessage());
+        return Result.error(ApiCode.UNKNOWN_ERROR_WITH_MSG, ex.getMessage());
     }
     
     /**
@@ -155,7 +179,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleException(Exception ex) {
         log.error("系统异常", ex);
-        return Result.error(9999, "系统异常: " + ex.getMessage());
+        return Result.error(ApiCode.UNKNOWN_ERROR_WITH_MSG, "System error: " + ex.getMessage());
     }
 }
 

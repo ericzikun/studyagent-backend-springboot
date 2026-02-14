@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyagent.api.common.Result;
+import com.studyagent.common.api.ApiCode;
 import com.studyagent.api.dto.request.SaveEditorContentRequest;
 import com.studyagent.api.dto.response.GetEditorContentResponse;
 import com.studyagent.infra.entity.TaskEntity;
@@ -139,17 +140,17 @@ public class EditorController {
      */
     private Result<?> checkEditorPermission(Long taskId, String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         TaskEntity taskEntity = taskMapper.selectById(taskId);
         if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
-            return Result.error(1003, "任务不存在");
+            return Result.error(ApiCode.TASK_NOT_FOUND);
         }
         boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
                 .map(User::getIsAdmin)
                 .orElse(false);
         if (!isAdmin && !clerkUserId.equals(taskEntity.getClerkUserId())) {
-            return Result.error(1004, "无权访问该任务");
+            return Result.error(ApiCode.NO_PERMISSION);
         }
         return null;
     }

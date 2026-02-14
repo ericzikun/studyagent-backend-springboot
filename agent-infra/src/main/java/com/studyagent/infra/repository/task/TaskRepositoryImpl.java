@@ -14,7 +14,9 @@ import com.studyagent.service.domain.task.TaskStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -129,6 +131,24 @@ public class TaskRepositoryImpl implements TaskRepository {
         if (status != null) {
             queryWrapper.eq(TaskEntity::getStatus, status.getCode());
         }
+        Long count = taskMapper.selectCount(queryWrapper);
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public long countSubmittedToday(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return 0L;
+        }
+        LocalDate today = LocalDate.now();
+        LocalDateTime dayStart = today.atStartOfDay();
+        LocalDateTime dayEnd = today.atTime(LocalTime.MAX);
+        LambdaQueryWrapper<TaskEntity> queryWrapper = new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getClerkUserId, clerkUserId)
+                .ge(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
+                .ge(TaskEntity::getCreatedAt, dayStart)
+                .le(TaskEntity::getCreatedAt, dayEnd);
+        notDeleted(queryWrapper);
         Long count = taskMapper.selectCount(queryWrapper);
         return count == null ? 0L : count;
     }

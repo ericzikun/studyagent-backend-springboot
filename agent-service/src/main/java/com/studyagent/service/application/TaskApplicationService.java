@@ -24,16 +24,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.QuotaExceededData;
+import com.studyagent.common.exception.QuotaExceededException;
 import com.studyagent.service.application.dto.TaskDetailDTO;
+import com.studyagent.service.config.TaskSubmitConfig;
 import com.studyagent.service.application.dto.TaskListItemDTO;
 import com.studyagent.service.application.dto.TaskListResult;
 import com.studyagent.service.application.request.GetTaskDetailRequest;
@@ -54,13 +59,20 @@ public class TaskApplicationService {
     private final TaskFileRepository taskFileRepository;
     private final TaskDetailReader taskDetailReader;
     private final UserRepository userRepository;
+    private final TaskSubmitConfig taskSubmitConfig;
     private final Gson gson = new Gson();
+
+    /** 提交任务结果 */
+    public record SubmitTaskResult(long taskId, QuotaInfo quota) {
+        public record QuotaInfo(int dailyLimit, int usedToday, int remainingQuota, String quotaResetAt) {}
+    }
 
     /**
      * 提交任务
      *
      * @param request 提交任务请求
-     * @return taskId
+     * @return 提交结果（含 taskId 和额度信息）
+     * @throws QuotaExceededException 普通用户当日提交次数达上限时抛出
      * <p>
      * 优化说明：移除方法级 @Transactional，只在必要的数据库操作时开启事务
      * 这样可以：
@@ -68,11 +80,14 @@ public class TaskApplicationService {
      * 2. 验证和构建对象在事务外执行
      * 3. Python 后端调用在事务外异步执行
      */
-    public Long submitTask(SubmitTaskRequest request) {
+    public SubmitTaskResult submitTask(SubmitTaskRequest request) {
         // 1. 验证用户身份（事务外执行）
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
 
-        // 2. 查询现有草稿（只读操作，使用 readOnly 事务）
+        // 2. 额度校验：普通用户且启用限额时，检查当日提交次数
+        SubmitTaskResult.QuotaInfo quotaInfo = checkAndBuildQuota(userInfo.clerkUserId);
+
+        // 3. 查询现有草稿（只读操作，使用 readOnly 事务）
         Task existing = null;
         if (request.getDraftId() != null) {
             existing = findExistingDraftWithValidation(request.getDraftId(), userInfo.clerkUserId);
@@ -130,7 +145,79 @@ public class TaskApplicationService {
             }
         });
 
-        return taskId;
+        // 8. 更新额度信息：提交成功后 usedToday+1，remainingQuota-1
+        SubmitTaskResult.QuotaInfo finalQuota = quotaInfo != null
+                ? new SubmitTaskResult.QuotaInfo(quotaInfo.dailyLimit(), quotaInfo.usedToday() + 1,
+                        quotaInfo.remainingQuota() - 1, quotaInfo.quotaResetAt())
+                : null;
+
+        return new SubmitTaskResult(taskId, finalQuota);
+    }
+
+    /**
+     * 额度校验：普通用户且启用限额时，检查当日提交次数；超限则抛出 QuotaExceededException
+     * 管理员或不限额时返回 null
+     */
+    private SubmitTaskResult.QuotaInfo checkAndBuildQuota(String clerkUserId) {
+        if (!taskSubmitConfig.isLimitEnabled()) {
+            return null;
+        }
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        if (isAdmin) {
+            return null;
+        }
+        int limit = taskSubmitConfig.getDailyLimitPerUser();
+        long usedToday = taskRepository.countSubmittedToday(clerkUserId);
+        String quotaResetAt = LocalDate.now().plusDays(1).atStartOfDay()
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        int remaining = Math.max(0, limit - (int) usedToday);
+
+        if (usedToday >= limit) {
+            QuotaExceededData data = QuotaExceededData.builder()
+                    .dailyLimit(limit)
+                    .usedToday((int) usedToday)
+                    .remainingQuota(0)
+                    .quotaResetAt(quotaResetAt)
+                    .build();
+            String message = ApiCode.QUOTA_EXCEEDED.formatEn(limit);
+            throw new QuotaExceededException(message, data);
+        }
+
+        return new SubmitTaskResult.QuotaInfo(limit, (int) usedToday, remaining, quotaResetAt);
+    }
+
+    /**
+     * 追问前额度校验：追问属于任务创建流程，若当日已达上限则抛出 QuotaExceededException
+     */
+    public void checkQuotaBeforeClarify(String clerkUserId) {
+        checkAndBuildQuota(clerkUserId);
+    }
+
+    /**
+     * 获取当前用户的任务提交额度（用于提交前展示）
+     * 管理员或不限额时返回 null
+     */
+    public SubmitTaskResult.QuotaInfo getSubmitQuota(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return null;
+        }
+        if (!taskSubmitConfig.isLimitEnabled()) {
+            return null;
+        }
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        if (isAdmin) {
+            return null;
+        }
+        int limit = taskSubmitConfig.getDailyLimitPerUser();
+        long usedToday = taskRepository.countSubmittedToday(clerkUserId);
+        String quotaResetAt = LocalDate.now().plusDays(1).atStartOfDay()
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        int remaining = Math.max(0, limit - (int) usedToday);
+        return new SubmitTaskResult.QuotaInfo(limit, (int) usedToday, remaining, quotaResetAt);
     }
 
     /**
@@ -550,12 +637,12 @@ public class TaskApplicationService {
         Long taskId = request.getTaskId();
         String clerkUserId = request.getClerkUserId();
         if (taskId == null || clerkUserId == null || clerkUserId.isEmpty()) {
-            throw new BusinessException(1001, "参数错误");
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), ApiCode.PARAM_ERROR.getMessage());
         }
 
         Optional<Task> taskOpt = taskRepository.findById(TaskId.of(taskId));
         if (taskOpt.isEmpty()) {
-            throw new BusinessException(1003, "任务不存在");
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), ApiCode.TASK_NOT_FOUND.getMessage());
         }
         Task task = taskOpt.get();
 
@@ -563,12 +650,12 @@ public class TaskApplicationService {
                 .map(User::getIsAdmin)
                 .orElse(false);
         if (!isAdmin && !clerkUserId.equals(task.getClerkUserId())) {
-            throw new BusinessException(1004, "无权访问该任务");
+            throw new BusinessException(ApiCode.NO_PERMISSION.getCode(), ApiCode.NO_PERMISSION.getMessage());
         }
 
         Optional<TaskDetailDTO> detailOpt = taskDetailReader.loadByTaskId(taskId);
         if (detailOpt.isEmpty()) {
-            throw new BusinessException(1003, "任务不存在");
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), ApiCode.TASK_NOT_FOUND.getMessage());
         }
         TaskDetailDTO detail = detailOpt.get();
 

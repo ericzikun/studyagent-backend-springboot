@@ -27,6 +27,15 @@ public interface TaskRepository {
      * @return 任务数量
      */
     long countByStatus(String clerkUserId, TaskStatus status);
+
+    /**
+     * 统计指定用户当日的已提交任务数量（status >= 1，非草稿）
+     * 按 created_at 所在自然日统计，使用服务器默认时区
+     *
+     * @param clerkUserId 用户ID
+     * @return 当日已提交任务数量
+     */
+    long countSubmittedToday(String clerkUserId);
     
     /**
      * 分页查询任务列表（支持排序和筛选）

@@ -109,14 +109,20 @@ aliyun:
     # OSS 访问域名，例如：oss-cn-hangzhou.aliyuncs.com
     # 需要注意服务器上要配置内网 https://help.aliyun.com/zh/oss/user-guide/regions-and-endpoints?spm=a2c4g.11186623.0.0.4a7411a2wEs7cr
     endpoint: ${OSS_ENDPOINT:oss-us-west-1.aliyuncs.com}
-    # AccessKey ID
-    access-key-id: ${OSS_ACCESS_KEY_ID:your_access_key_id}
-    # AccessKey Secret
-    access-key-secret: ${OSS_ACCESS_KEY_SECRET:your_access_key_secret}
+    # AccessKey ID（通过环境变量 OSS_ACCESS_KEY_ID 配置，勿提交真实密钥）
+    access-key-id: ${OSS_ACCESS_KEY_ID:}
+    # AccessKey Secret（通过环境变量 OSS_ACCESS_KEY_SECRET 配置，勿提交真实密钥）
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
     # Bucket 名称
     bucket-name: ${OSS_BUCKET_NAME:studyagent}
     # 存储目录前缀（可选，例如：studyagent/uploads）
     path-prefix: ${OSS_PATH_PREFIX:studyagent/uploads}
+
+# 任务提交配置
+# 普通用户每日任务提交上限，0 或负数表示不限制；管理员不受限制
+task:
+  submit:
+    daily-limit-per-user: ${TASK_DAILY_LIMIT_PER_USER:3}
 
 # Python 后端配置
 python-backend:

@@ -1,6 +1,7 @@
 package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.common.api.ApiCode;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Price;
@@ -64,26 +65,23 @@ public class PaymentController {
             // 检查 Stripe 配置
             if (stripeSecretKey == null || stripeSecretKey.isEmpty()) {
                 log.error("Stripe Secret Key 未配置");
-                return Result.error(500, "Stripe 未配置");
+                return Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
             }
             
             // 获取套餐配置
             String configuredPriceId = getPriceId(request.getPackageType());
             if (configuredPriceId == null || configuredPriceId.isEmpty()) {
                 log.error("无效的套餐类型: {}", request.getPackageType());
-                return Result.error(400, "无效的套餐类型: " + request.getPackageType());
+                return Result.error(ApiCode.INVALID_PACKAGE_TYPE, request.getPackageType());
             }
             
             // 验证配置值：必须是 Price ID (price_...) 或 Product ID (prod_...)，不能是数字价格
             if (!configuredPriceId.startsWith("price_") && !configuredPriceId.startsWith("prod_")) {
                 log.error("配置错误: {} 套餐的 Price ID 配置无效: {}。应该是 Stripe Price ID (price_xxxxx) 或 Product ID (prod_xxxxx)，不能是数字价格", 
                     request.getPackageType(), configuredPriceId);
-                return Result.error(500, String.format(
-                    "%s 套餐的 Price ID 配置错误。请在 Stripe 后台创建产品并获取 Price ID，然后配置环境变量 STRIPE_PRICE_%s=price_xxxxx 或 STRIPE_PRICE_%s=prod_xxxxx",
-                    getPackageName(request.getPackageType()),
-                    request.getPackageType().toUpperCase(),
-                    request.getPackageType().toUpperCase()
-                ));
+                return Result.error(ApiCode.PRICE_CONFIG_ERROR, 
+                    getPackageName(request.getPackageType()), 
+                    request.getPackageType().toUpperCase());
             }
             
             // 如果配置的是 Product ID (prod_...)，尝试查找其下的第一个 Price
@@ -103,11 +101,11 @@ public class PaymentController {
                         log.info("找到 Price ID: {}", targetPriceId);
                     } else {
                         log.error("产品 {} 下没有找到有效的价格 ID", configuredPriceId);
-                        return Result.error(400, "产品 " + configuredPriceId + " 下没有找到有效的价格 ID");
+                        return Result.error(ApiCode.PRICE_NOT_FOUND, configuredPriceId);
                     }
                 } catch (StripeException e) {
                     log.error("查找 Price 失败: {}", e.getMessage());
-                    return Result.error(500, "查找价格失败: " + e.getMessage());
+                    return Result.error(ApiCode.INTERNAL_ERROR, "Find price failed: " + e.getMessage());
                 }
             }
             
@@ -152,10 +150,10 @@ public class PaymentController {
             return Result.success(response);
         } catch (StripeException e) {
             log.error("Stripe API 错误: {}", e.getMessage(), e);
-            return Result.error(500, "Stripe 错误: " + e.getMessage());
+            return Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("创建支付会话失败: {}", e.getMessage(), e);
-            return Result.error(500, "创建支付会话失败");
+            return Result.error(ApiCode.PAYMENT_SESSION_CREATE_FAILED);
         }
     }
     
@@ -164,7 +162,7 @@ public class PaymentController {
             @RequestParam(value = "sessionId", required = false) String sessionId) {
         // 兼容两种参数名：session_id 和 sessionId（向后兼容）
         if (sessionId == null || sessionId.isEmpty()) {
-            return Result.error(400, "sessionId 参数不能为空");
+            return Result.error(ApiCode.SESSION_ID_REQUIRED);
         }
         try {
             Session session = Session.retrieve(sessionId);
@@ -183,7 +181,7 @@ public class PaymentController {
             
             return Result.success(data);
         } catch (StripeException e) {
-            return Result.error(9999, "查询会话状态失败: " + e.getMessage());
+            return Result.error(ApiCode.SESSION_QUERY_FAILED, e.getMessage());
         }
     }
     

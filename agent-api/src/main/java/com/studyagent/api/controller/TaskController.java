@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyagent.api.common.Result;
+import com.studyagent.common.api.ApiCode;
 import com.studyagent.api.dto.request.ClarifyTaskRequest;
 import com.studyagent.api.dto.request.RateTaskRequest;
 import com.studyagent.api.dto.request.SaveDraftRequest;
@@ -13,6 +14,7 @@ import com.studyagent.api.dto.request.TaskListRequest;
 import com.studyagent.api.dto.response.ClarifyTaskResponse;
 import com.studyagent.api.dto.response.SaveDraftResponse;
 import com.studyagent.api.dto.response.StopTaskResponse;
+import com.studyagent.api.dto.response.SubmitQuotaInfo;
 import com.studyagent.api.dto.response.SubmitTaskResponse;
 import com.studyagent.api.dto.response.DeleteTasksResponse;
 import com.studyagent.api.converter.TaskDetailConverter;
@@ -65,6 +67,29 @@ public class TaskController {
     private final TaskActivityMapper taskActivityMapper;
     private final TaskOutputMapper taskOutputMapper;
     
+    /**
+     * 查询当前用户的任务提交额度（提交前可调用以展示剩余次数）
+     * 管理员或不限额时 quota 为 null
+     */
+    @GetMapping("/submit-quota")
+    public Result<SubmitQuotaInfo> getSubmitQuota(
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        var quota = taskApplicationService.getSubmitQuota(clerkUserId);
+        if (quota == null) {
+            return Result.success(null);  // 管理员或不限额，无额度信息
+        }
+        SubmitQuotaInfo response = SubmitQuotaInfo.builder()
+                .dailyLimit(quota.dailyLimit())
+                .usedToday(quota.usedToday())
+                .remainingQuota(quota.remainingQuota())
+                .quotaResetAt(quota.quotaResetAt())
+                .build();
+        return Result.success(response);
+    }
+
     @PostMapping("/submit")
     public Result<SubmitTaskResponse> submitTask(
             @Valid @RequestBody SubmitTaskRequest request,
@@ -89,12 +114,23 @@ public class TaskController {
                 .token(token)
                 .build();
         
-        Long taskId = taskApplicationService.submitTask(appRequest);
-        
+        var result = taskApplicationService.submitTask(appRequest);
+
+        SubmitQuotaInfo quota = null;
+        if (result.quota() != null) {
+            quota = SubmitQuotaInfo.builder()
+                    .dailyLimit(result.quota().dailyLimit())
+                    .usedToday(result.quota().usedToday())
+                    .remainingQuota(result.quota().remainingQuota())
+                    .quotaResetAt(result.quota().quotaResetAt())
+                    .build();
+        }
+
         SubmitTaskResponse response = SubmitTaskResponse.builder()
-            .taskId(taskId)
-            .build();
-        
+                .taskId(result.taskId())
+                .quota(quota)
+                .build();
+
         return Result.success(response);
     }
 
@@ -158,7 +194,7 @@ public class TaskController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         if (request == null) {
             request = new TaskListRequest();
@@ -191,7 +227,7 @@ public class TaskController {
     public Result<TaskSummaryResponse> getTaskSummary(
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         
         // 调用应用服务获取统计数据
@@ -217,7 +253,7 @@ public class TaskController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         int pn = (pageNo == null || pageNo < 1) ? 1 : pageNo;
         int ps = (pageSize == null || pageSize < 1) ? 10 : pageSize;
@@ -246,7 +282,7 @@ public class TaskController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         TaskApplicationService.DeleteTasksResult result = taskApplicationService.deleteTasks(
                 request.getTaskIds(), clerkUserId);
@@ -264,7 +300,7 @@ public class TaskController {
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         GetTaskDetailRequest appRequest = GetTaskDetailRequest.builder()
                 .taskId(request.getTaskId())
@@ -280,16 +316,16 @@ public class TaskController {
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("User not logged in");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         
         // 验证任务是否属于当前用户（排除已逻辑删除的任务）
         TaskEntity taskEntity = taskMapper.selectById(request.getTaskId());
         if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
-            return Result.error(1003, "任务不存在");
+            return Result.error(ApiCode.TASK_NOT_FOUND);
         }
         if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
-            return Result.error(1004, "无权评价该任务");
+            return Result.error(ApiCode.NO_PERMISSION);
         }
         
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
@@ -307,7 +343,14 @@ public class TaskController {
     
     @PostMapping("/clarify")
     public Result<ClarifyTaskResponse> clarifyTask(
-            @RequestBody ClarifyTaskRequest request) {
+            @RequestBody ClarifyTaskRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isEmpty()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        // 追问属于任务创建流程，需校验当日额度
+        taskApplicationService.checkQuotaBeforeClarify(clerkUserId);
+
         try {
             log.info("收到追问请求: taskTitle={}, taskDesc={}", request.getTaskTitle(), request.getTaskDesc());
             
@@ -364,7 +407,7 @@ public class TaskController {
             return Result.success(response);
         } catch (Exception e) {
             log.error("追问服务调用失败", e);
-            return Result.error(500, "追问服务调用失败: " + e.getMessage());
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
         }
     }
     
@@ -475,16 +518,16 @@ public class TaskController {
         
         // 验证用户登录
         if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error("用户未登录");
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         
         // 验证任务是否存在且属于当前用户（排除已逻辑删除的任务）
         TaskEntity taskEntity = taskMapper.selectById(taskId);
         if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
-            return Result.error(1003, "任务不存在");
+            return Result.error(ApiCode.TASK_NOT_FOUND);
         }
         if (!clerkUserId.equals(taskEntity.getClerkUserId())) {
-            return Result.error(1004, "无权访问该任务");
+            return Result.error(ApiCode.NO_PERMISSION);
         }
         
         // 参数校验

@@ -404,7 +404,7 @@ public class TaskController {
     }
 
     /** 总预估时间 30 分钟（秒），剩余时间 = 总时间 * (1 - 完成百分比/100) */
-    private static final int TOTAL_ESTIMATED_SECONDS = 30 * 60;
+    private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
 
     /**
      * 统一计算剩余时间（秒），list 与 detail 共用，修改时只需改此处。

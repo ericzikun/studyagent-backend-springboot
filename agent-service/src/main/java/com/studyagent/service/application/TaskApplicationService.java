@@ -13,7 +13,10 @@ import com.studyagent.service.domain.task.TaskStatus;
 import com.studyagent.service.domain.task.TaskDomainService;
 import com.studyagent.service.domain.task.PythonBackendClient;
 import com.studyagent.service.domain.task.TaskFileRepository;
+import com.studyagent.service.domain.task.TaskDetailReader;
 import com.studyagent.service.domain.user.ClerkClient;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
 import com.studyagent.service.domain.file.FileRepository;
 import com.studyagent.service.domain.file.FileId;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +27,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+
+import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.dto.TaskDetailDTO;
+import com.studyagent.service.application.dto.TaskListItemDTO;
+import com.studyagent.service.application.dto.TaskListResult;
+import com.studyagent.service.application.request.GetTaskDetailRequest;
 
 /**
  * 任务应用服务
@@ -41,6 +52,8 @@ public class TaskApplicationService {
     private final ClerkClient clerkClient;
     private final FileRepository fileRepository;
     private final TaskFileRepository taskFileRepository;
+    private final TaskDetailReader taskDetailReader;
+    private final UserRepository userRepository;
     private final Gson gson = new Gson();
 
     /**
@@ -424,65 +437,153 @@ public class TaskApplicationService {
         return value != null ? value : fallback;
     }
 
+    private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
+    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
     /**
-     * 查询任务列表（支持分页和排序）
-     * @param request 查询任务列表请求
-     * @return 分页结果
-     */
-    /**
-     * 查询任务列表（分页）
+     * 查询任务列表（分页），含队列信息与列表项转换
      * <p>
-     * 优化：使用只读事务，提高并发性能
-     * - readOnly = true: 告诉数据库这是只读操作，可以优化锁策略
-     * - timeout = 5: 5秒超时，避免慢查询
+     * 优化：使用只读事务，批量获取队列信息，避免 N+1 查询
      */
     @Transactional(readOnly = true, timeout = 5)
-    public TaskRepository.PageResult<Task> getTaskList(GetTaskListRequest request) {
-        // 转换状态
+    public TaskListResult getTaskList(GetTaskListRequest request) {
         TaskStatus taskStatus = null;
-        // 修复：允许状态为 0（DRAFT），之前使用 > 0 导致 DRAFT 状态无法筛选
-        // 只有当 status 不为 null 时才进行转换（包括 0）
-        if (request.getStatus() != null) {
-            // 验证状态码是否有效（0-4）
-            Integer statusCode = request.getStatus();
-            if (statusCode >= 0 && statusCode <= 4) {
-                taskStatus = TaskStatus.fromCode(statusCode);
-            }
-            // 如果状态码无效，taskStatus 保持为 null，将查询所有状态
+        if (request.getStatus() != null && request.getStatus() >= 0 && request.getStatus() <= 4) {
+            taskStatus = TaskStatus.fromCode(request.getStatus());
         }
 
-        // 设置默认值
         Integer pageNo = request.getPageNo();
         Integer pageSize = request.getPageSize();
-        if (pageNo == null || pageNo < 1) {
-            pageNo = 1;
-        }
-        if (pageSize == null || pageSize < 1) {
-            pageSize = 10;
-        }
-        // 限制每页最大数量，防止一次性查询过多数据
-        if (pageSize > 100) {
-            pageSize = 100;
-        }
+        if (pageNo == null || pageNo < 1) pageNo = 1;
+        if (pageSize == null || pageSize < 1) pageSize = 10;
+        if (pageSize > 100) pageSize = 100;
 
-        // 管理员可查看全部任务（传 null 不按用户过滤）；普通用户仅能查看自己的任务
         String filterByUserId = (Boolean.TRUE.equals(request.getIsAdmin())) ? null : request.getClerkUserId();
+        TaskRepository.PageResult<Task> pageResult = taskRepository.findWithPagination(
+                filterByUserId, taskStatus, request.getKeyword(), request.getOrder(), pageNo, pageSize);
 
-        return taskRepository.findWithPagination(
-                filterByUserId,
-                taskStatus,
-                request.getKeyword(),
-                request.getOrder(),
-                pageNo,
-                pageSize
-        );
+        Map<Long, PythonBackendClient.TaskQueueInfo> queueInfoMap = fetchQueueInfoBatch(pageResult.getItems());
+        List<TaskListItemDTO> items = pageResult.getItems().stream()
+                .map(task -> convertToTaskListItemDTO(task, queueInfoMap.get(task.getId().getValue())))
+                .toList();
+
+        return TaskListResult.builder()
+                .taskList(items)
+                .total(pageResult.getTotal().intValue())
+                .pageNo(pageNo)
+                .pageSize(pageSize)
+                .build();
+    }
+
+    private Map<Long, PythonBackendClient.TaskQueueInfo> fetchQueueInfoBatch(List<Task> tasks) {
+        try {
+            List<TaskId> taskIds = tasks.stream()
+                    .filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS)
+                    .map(Task::getId)
+                    .toList();
+            if (taskIds.isEmpty()) return Map.of();
+            return pythonBackendClient.getTaskQueueBatchInfo(taskIds);
+        } catch (Exception e) {
+            log.warn("批量获取任务队列信息失败: error={}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private TaskListItemDTO convertToTaskListItemDTO(Task task, PythonBackendClient.TaskQueueInfo queueInfo) {
+        int queueAheadCount = 0;
+        if (task.getStatus() == TaskStatus.IN_PROGRESS && queueInfo != null) {
+            queueAheadCount = queueInfo.getAheadCount();
+        }
+        return TaskListItemDTO.builder()
+                .id(TaskListItemDTO.IdValue.builder().value(task.getId().getValue()).build())
+                .clerkUserId(task.getClerkUserId())
+                .taskTitle(task.getTaskTitle())
+                .taskDesc(task.getTaskDesc())
+                .subject(task.getSubject())
+                .academicLevel(task.getAcademicLevel())
+                .priorityLevel(task.getPriorityLevel())
+                .dueDate(task.getDueDate() != null ? task.getDueDate().format(ISO_FORMATTER) : null)
+                .format(task.getFormat())
+                .citationStyle(task.getCitationStyle())
+                .pageLength(task.getPageLength())
+                .specialInstructions(task.getSpecialInstructions())
+                .status(task.getStatus().name())
+                .startTime(task.getStartTime() != null ? task.getStartTime().format(ISO_FORMATTER) : null)
+                .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(ISO_FORMATTER) : null)
+                .costTime(task.getCostTime())
+                .completePercent(task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
+                .taskCompletedSize(task.getTaskCompletedSize())
+                .activeAgentSize(task.getActiveAgentSize())
+                .estRemainingTime(computeEstRemainingTime(task))
+                .requirementJson(task.getRequirementJson())
+                .finalResult(task.getFinalResult())
+                .errorMessage(task.getErrorMessage())
+                .queueAheadCount(queueAheadCount)
+                .build();
+    }
+
+    private int computeEstRemainingTime(Task task) {
+        Integer code = task.getStatus() != null ? task.getStatus().getCode() : TaskStatus.DRAFT.getCode();
+        java.math.BigDecimal percent = task.getCompletePercent();
+        if (code.equals(TaskStatus.COMPLETED.getCode()) || code.equals(TaskStatus.FAILED.getCode())
+                || code.equals(TaskStatus.CANCELLED.getCode())) {
+            return 0;
+        }
+        double p = percent != null ? percent.doubleValue() : 0.0;
+        p = Math.max(0.0, Math.min(100.0, p));
+        return Math.max(0, (int) Math.round(TOTAL_ESTIMATED_SECONDS * (1.0 - p / 100.0)));
     }
 
     /**
      * 查询任务详情（仅返回任务基本信息）
      */
-    public Optional<Task> getTaskDetail(Long taskId) {
+    public Optional<Task> findTaskById(Long taskId) {
         return taskRepository.findById(TaskId.of(taskId));
+    }
+
+    /**
+     * 获取任务详情（含子任务、Agent、活动、输出等完整信息）
+     * 包含权限校验：管理员可查看所有任务，普通用户仅能查看自己的任务
+     */
+    @Transactional(readOnly = true, timeout = 10)
+    public TaskDetailDTO getTaskDetail(GetTaskDetailRequest request) {
+        Long taskId = request.getTaskId();
+        String clerkUserId = request.getClerkUserId();
+        if (taskId == null || clerkUserId == null || clerkUserId.isEmpty()) {
+            throw new BusinessException(1001, "参数错误");
+        }
+
+        Optional<Task> taskOpt = taskRepository.findById(TaskId.of(taskId));
+        if (taskOpt.isEmpty()) {
+            throw new BusinessException(1003, "任务不存在");
+        }
+        Task task = taskOpt.get();
+
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        if (!isAdmin && !clerkUserId.equals(task.getClerkUserId())) {
+            throw new BusinessException(1004, "无权访问该任务");
+        }
+
+        Optional<TaskDetailDTO> detailOpt = taskDetailReader.loadByTaskId(taskId);
+        if (detailOpt.isEmpty()) {
+            throw new BusinessException(1003, "任务不存在");
+        }
+        TaskDetailDTO detail = detailOpt.get();
+
+        int queueAheadCount = 0;
+        try {
+            PythonBackendClient.TaskQueueInfo queueInfo = pythonBackendClient.getTaskQueueInfo(TaskId.of(taskId));
+            if (queueInfo != null) {
+                queueAheadCount = queueInfo.getAheadCount();
+            }
+        } catch (Exception e) {
+            log.warn("获取任务队列信息失败: taskId={}, error={}", taskId, e.getMessage());
+        }
+        detail.getTaskBaseInfo().setQueueAheadCount(queueAheadCount);
+
+        return detail;
     }
 
     /**

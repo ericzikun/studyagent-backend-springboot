@@ -2,6 +2,7 @@ package com.studyagent.api.exception;
 
 import com.studyagent.api.common.Meta;
 import com.studyagent.api.common.Result;
+import com.studyagent.common.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
@@ -41,7 +42,17 @@ public class GlobalExceptionHandler {
     }
     
     /**
-     * 业务异常
+     * 业务异常（带错误码）
+     */
+    @ExceptionHandler(BusinessException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleBusinessException(BusinessException ex) {
+        log.warn("业务异常: code={}, message={}", ex.getCode(), ex.getMessage());
+        return Result.error(ex.getCode(), ex.getMessage());
+    }
+
+    /**
+     * 业务异常（参数错误等）
      */
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

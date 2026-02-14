@@ -1,8 +1,6 @@
 package com.studyagent.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.ClarifyTaskRequest;
 import com.studyagent.api.dto.request.RateTaskRequest;
@@ -17,30 +15,20 @@ import com.studyagent.api.dto.response.SaveDraftResponse;
 import com.studyagent.api.dto.response.StopTaskResponse;
 import com.studyagent.api.dto.response.SubmitTaskResponse;
 import com.studyagent.api.dto.response.DeleteTasksResponse;
+import com.studyagent.api.converter.TaskDetailConverter;
+import com.studyagent.api.converter.TaskListConverter;
 import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
-import com.studyagent.api.dto.response.TaskListItemResponse;
 import com.studyagent.api.dto.response.TaskSummaryResponse;
 import com.studyagent.infra.entity.TaskEntity;
-import com.studyagent.infra.entity.TaskAgentEntity;
-import com.studyagent.infra.entity.SubTaskEntity;
 import com.studyagent.infra.entity.TaskActivityEntity;
 import com.studyagent.infra.entity.TaskOutputEntity;
 import com.studyagent.infra.mapper.TaskMapper;
-import com.studyagent.infra.mapper.TaskAgentMapper;
-import com.studyagent.infra.mapper.SubTaskMapper;
 import com.studyagent.infra.mapper.TaskActivityMapper;
 import com.studyagent.infra.mapper.TaskOutputMapper;
-import com.studyagent.infra.mapper.TaskFileMapper;
-import com.studyagent.infra.mapper.FileMapper;
-import com.studyagent.infra.entity.TaskFileEntity;
-import com.studyagent.infra.entity.FileEntity;
 import com.studyagent.service.application.TaskApplicationService;
+import com.studyagent.service.application.request.GetTaskDetailRequest;
 import com.studyagent.service.domain.task.PythonBackendClient;
-import com.studyagent.service.domain.task.Task;
-import com.studyagent.service.domain.task.TaskId;
-import com.studyagent.service.domain.task.TaskRepository;
-import com.studyagent.service.domain.task.TaskStatus;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import jakarta.validation.Valid;
@@ -53,7 +41,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.lang.reflect.Type;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
@@ -75,14 +62,8 @@ public class TaskController {
     private final UserRepository userRepository;
     private final PythonBackendClient pythonBackendClient;
     private final TaskMapper taskMapper;
-    private final TaskAgentMapper taskAgentMapper;
-    private final SubTaskMapper subTaskMapper;
     private final TaskActivityMapper taskActivityMapper;
     private final TaskOutputMapper taskOutputMapper;
-    private final TaskFileMapper taskFileMapper;
-    private final FileMapper fileMapper;
-    private final Gson gson = new Gson();
-    private final Type formatListType = new TypeToken<List<Integer>>(){}.getType();
     
     @PostMapping("/submit")
     public Result<SubmitTaskResponse> submitTask(
@@ -176,62 +157,29 @@ public class TaskController {
             @RequestBody(required = false) TaskListRequest request,
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error("User not logged in");
         }
-        
-        // 如果 request 为 null，使用默认值
         if (request == null) {
             request = new TaskListRequest();
             request.setPageNo(1);
             request.setPageSize(10);
         }
-        
-        // 设置默认值
-        if (request.getPageNo() == null || request.getPageNo() < 1) {
-            request.setPageNo(1);
-        }
-        if (request.getPageSize() == null || request.getPageSize() < 1) {
-            request.setPageSize(10);
-        }
-        
-        // 判断是否为管理员：管理员可查看全部任务，普通用户仅能查看自己的任务
-        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
-                .map(User::getIsAdmin)
-                .orElse(false);
-        
-        // 将 API 层的 Request DTO 转换为应用层的 Request Model
-        com.studyagent.service.application.request.GetTaskListRequest appRequest = 
-            com.studyagent.service.application.request.GetTaskListRequest.builder()
+        int pageNo = (request.getPageNo() == null || request.getPageNo() < 1) ? 1 : request.getPageNo();
+        int pageSize = (request.getPageSize() == null || request.getPageSize() < 1) ? 10 : request.getPageSize();
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId).map(User::getIsAdmin).orElse(false);
+
+        var appRequest = com.studyagent.service.application.request.GetTaskListRequest.builder()
                 .clerkUserId(clerkUserId)
                 .isAdmin(isAdmin)
                 .status(request.getTaskStatus())
                 .keyword(request.getTaskKeyword())
                 .order(request.getOrder())
-                .pageNo(request.getPageNo())
-                .pageSize(request.getPageSize())
+                .pageNo(pageNo)
+                .pageSize(pageSize)
                 .build();
-        
-        // 调用应用服务，获取分页结果
-        TaskRepository.PageResult<Task> pageResult = taskApplicationService.getTaskList(appRequest);
-        
-        // 批量查询队列信息，避免逐条请求
-        Map<Long, PythonBackendClient.TaskQueueInfo> queueInfoMap = fetchQueueInfoBatch(pageResult.getItems());
-        
-        // 转换为响应 DTO（驼峰命名）
-        List<TaskListItemResponse> taskListItems = pageResult.getItems().stream()
-            .map(task -> convertToTaskListItemResponse(task, queueInfoMap.get(task.getId().getValue())))
-            .collect(Collectors.toList());
-        
-        TaskListResponse response = TaskListResponse.builder()
-            .taskList(taskListItems)
-            .total(pageResult.getTotal().intValue())
-            .pageNo(request.getPageNo())
-            .pageSize(request.getPageSize())
-            .build();
-        
-        return Result.success(response);
+        var result = taskApplicationService.getTaskList(appRequest);
+        return Result.success(TaskListConverter.toResponse(result));
     }
     
     /**
@@ -259,10 +207,6 @@ public class TaskController {
         return Result.success(response);
     }
     
-    /**
-     * GET 方法支持（用于浏览器直接访问或测试）
-     * 使用查询参数，兼容 POST 方法的功能
-     */
     @GetMapping("/list")
     public Result<TaskListResponse> getTaskListByGet(
             @RequestParam(value = "taskKeyword", required = false) String taskKeyword,
@@ -272,55 +216,24 @@ public class TaskController {
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error("User not logged in");
         }
-        
-        // 设置默认值
-        if (pageNo == null || pageNo < 1) {
-            pageNo = 1;
-        }
-        if (pageSize == null || pageSize < 1) {
-            pageSize = 10;
-        }
-        
-        // 判断是否为管理员：管理员可查看全部任务，普通用户仅能查看自己的任务
-        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
-                .map(User::getIsAdmin)
-                .orElse(false);
-        
-        // 将查询参数转换为应用层的 Request Model
-        com.studyagent.service.application.request.GetTaskListRequest appRequest = 
-            com.studyagent.service.application.request.GetTaskListRequest.builder()
+        int pn = (pageNo == null || pageNo < 1) ? 1 : pageNo;
+        int ps = (pageSize == null || pageSize < 1) ? 10 : pageSize;
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId).map(User::getIsAdmin).orElse(false);
+
+        var appRequest = com.studyagent.service.application.request.GetTaskListRequest.builder()
                 .clerkUserId(clerkUserId)
                 .isAdmin(isAdmin)
                 .status(taskStatus)
                 .keyword(taskKeyword)
                 .order(order)
-                .pageNo(pageNo)
-                .pageSize(pageSize)
+                .pageNo(pn)
+                .pageSize(ps)
                 .build();
-        
-        // 调用应用服务，获取分页结果
-        TaskRepository.PageResult<Task> pageResult = taskApplicationService.getTaskList(appRequest);
-        
-        // 批量查询队列信息，避免逐条请求
-        Map<Long, PythonBackendClient.TaskQueueInfo> queueInfoMap = fetchQueueInfoBatch(pageResult.getItems());
-        
-        // 转换为响应 DTO（驼峰命名）
-        List<TaskListItemResponse> taskListItems = pageResult.getItems().stream()
-            .map(task -> convertToTaskListItemResponse(task, queueInfoMap.get(task.getId().getValue())))
-            .collect(Collectors.toList());
-        
-        TaskListResponse response = TaskListResponse.builder()
-            .taskList(taskListItems)
-            .total(pageResult.getTotal().intValue())
-            .pageNo(pageNo)
-            .pageSize(pageSize)
-            .build();
-        
-        return Result.success(response);
+        var result = taskApplicationService.getTaskList(appRequest);
+        return Result.success(TaskListConverter.toResponse(result));
     }
 
     /**
@@ -344,620 +257,21 @@ public class TaskController {
         return Result.success(response);
     }
     
-    /**
-     * 将 Task 域对象转换为 TaskListItemResponse DTO
-     */
-    private TaskListItemResponse convertToTaskListItemResponse(
-            Task task,
-            PythonBackendClient.TaskQueueInfo queueInfo
-    ) {
-        DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-        int queueAheadCount = 0;
-        if (task.getStatus() == TaskStatus.IN_PROGRESS && queueInfo != null) {
-            queueAheadCount = queueInfo.getAheadCount();
-        }
-        
-        return TaskListItemResponse.builder()
-            .id(TaskListItemResponse.IdValue.builder()
-                .value(task.getId().getValue())
-                .build())
-            .clerkUserId(task.getClerkUserId())
-            .taskTitle(task.getTaskTitle())
-            .taskDesc(task.getTaskDesc())
-            .subject(task.getSubject())
-            .academicLevel(task.getAcademicLevel())
-            .priorityLevel(task.getPriorityLevel())
-            .dueDate(task.getDueDate() != null ? task.getDueDate().format(formatter) : null)
-            .format(task.getFormat())
-            .citationStyle(task.getCitationStyle())
-            .pageLength(task.getPageLength())
-            .specialInstructions(task.getSpecialInstructions())
-            .status(task.getStatus().name()) // 枚举转字符串
-            .startTime(task.getStartTime() != null ? task.getStartTime().format(formatter) : null)
-            .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(formatter) : null)
-            .costTime(task.getCostTime())
-            .completePercent(task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
-            .taskCompletedSize(task.getTaskCompletedSize())
-            .activeAgentSize(task.getActiveAgentSize())
-            .estRemainingTime(computeEstRemainingTime(task))
-            .requirementJson(task.getRequirementJson())
-            .finalResult(task.getFinalResult())
-            .errorMessage(task.getErrorMessage())
-            .queueAheadCount(queueAheadCount)
-            .build();
-    }
-
-    private Map<Long, PythonBackendClient.TaskQueueInfo> fetchQueueInfoBatch(List<Task> tasks) {
-        try {
-            List<TaskId> taskIds = tasks.stream()
-                .filter(task -> task.getStatus() == TaskStatus.IN_PROGRESS)
-                .map(Task::getId)
-                .collect(Collectors.toList());
-            if (taskIds.isEmpty()) {
-                return new HashMap<>();
-            }
-            return pythonBackendClient.getTaskQueueBatchInfo(taskIds);
-        } catch (Exception e) {
-            log.warn("批量获取任务队列信息失败: error={}", e.getMessage());
-            return new HashMap<>();
-        }
-    }
-
-    /** 总预估时间 30 分钟（秒），剩余时间 = 总时间 * (1 - 完成百分比/100) */
-    private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
-
-    /**
-     * 统一计算剩余时间（秒），list 与 detail 共用，修改时只需改此处。
-     * 已完成/失败/已取消返回 0；执行中/待执行按 30min * (1 - completePercent/100) 计算。
-     *
-     * @param statusCode   任务状态码（0-5）
-     * @param completePercent 完成百分比，可为 null
-     */
-    private int computeEstRemainingTime(Integer statusCode, java.math.BigDecimal completePercent) {
-        if (statusCode == null) {
-            statusCode = TaskStatus.DRAFT.getCode();
-        }
-        if (statusCode.equals(TaskStatus.COMPLETED.getCode())
-                || statusCode.equals(TaskStatus.FAILED.getCode())
-                || statusCode.equals(TaskStatus.CANCELLED.getCode())) {
-            return 0;
-        }
-        double percent = completePercent != null ? completePercent.doubleValue() : 0.0;
-        percent = Math.max(0.0, Math.min(100.0, percent));
-        int remaining = (int) Math.round(TOTAL_ESTIMATED_SECONDS * (1.0 - percent / 100.0));
-        return Math.max(0, remaining);
-    }
-
-    private int computeEstRemainingTime(Task task) {
-        return computeEstRemainingTime(
-                task.getStatus() != null ? task.getStatus().getCode() : TaskStatus.DRAFT.getCode(),
-                task.getCompletePercent());
-    }
-
-    private int computeEstRemainingTime(TaskEntity taskEntity) {
-        return computeEstRemainingTime(taskEntity.getStatus(), taskEntity.getCompletePercent());
-    }
     
     @PostMapping("/detail")
     public Result<TaskDetailResponse> getTaskDetail(
             @Valid @RequestBody TaskDetailRequest request,
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        // 从拦截器获取用户ID（拦截器已验证token并将用户ID设置到request attribute）
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error("User not logged in");
         }
-        
-        Long taskId = request.getTaskId();
-        
-        // 1. 查询任务基本信息（排除已逻辑删除的任务）
-        TaskEntity taskEntity = taskMapper.selectById(taskId);
-        if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
-            return Result.error(1003, "任务不存在");
-        }
-        
-        // 2. 验证任务访问权限：管理员可查看所有任务，普通用户仅能查看自己的任务
-        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
-                .map(User::getIsAdmin)
-                .orElse(false);
-        if (!isAdmin && !clerkUserId.equals(taskEntity.getClerkUserId())) {
-            return Result.error(1004, "无权访问该任务");
-        }
-
-        int queueAheadCount = 0;
-        try {
-            PythonBackendClient.TaskQueueInfo queueInfo = pythonBackendClient.getTaskQueueInfo(TaskId.of(taskId));
-            if (queueInfo != null) {
-                queueAheadCount = queueInfo.getAheadCount();
-            }
-        } catch (Exception e) {
-            log.warn("获取任务队列信息失败: task_id={}, error={}", taskId, e.getMessage());
-        }
-        
-        // 2. 构建任务基础信息
-        List<Integer> formatList = new ArrayList<>();
-        if (taskEntity.getFormat() != null && !taskEntity.getFormat().isEmpty()) {
-            try {
-                formatList = gson.fromJson(taskEntity.getFormat(), formatListType);
-            } catch (Exception e) {
-                // 解析失败，使用空列表
-            }
-        }
-        
-        TaskDetailResponse.TaskBaseInfoResponse taskBaseInfo = TaskDetailResponse.TaskBaseInfoResponse.builder()
-            .taskTitle(taskEntity.getTaskTitle())
-            .taskDesc(taskEntity.getTaskDesc() != null ? taskEntity.getTaskDesc() : "")
-            .taskStatus(taskEntity.getStatus())
-            .startTime(taskEntity.getStartTime() != null ? 
-                taskEntity.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-            .dueTime(taskEntity.getDueDate() != null ? 
-                taskEntity.getDueDate().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-            .finishTime(taskEntity.getFinishTime() != null ? 
-                taskEntity.getFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-            .costTime(taskEntity.getCostTime() != null ? taskEntity.getCostTime() : 0)
-            .subject(taskEntity.getSubject())
-            .academicLevel(taskEntity.getAcademicLevel())
-            .priorityLevel(taskEntity.getPriorityLevel() != null ? taskEntity.getPriorityLevel() : 0)
-            .citationStyle(taskEntity.getCitationStyle() != null ? taskEntity.getCitationStyle() : 0)
-            .pageLength(taskEntity.getPageLength() != null ? taskEntity.getPageLength() : 0)
-            .formatList(formatList)
-            .specialInstructions(taskEntity.getSpecialInstructions() != null ? taskEntity.getSpecialInstructions() : "")
-            .completePercent(taskEntity.getCompletePercent() != null ? 
-                taskEntity.getCompletePercent().doubleValue() : 0.0)
-            .taskCompletedSize(taskEntity.getTaskCompletedSize() != null ? taskEntity.getTaskCompletedSize() : 0)
-            .activeAgentSize(taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0)
-            .estRemainingTime(computeEstRemainingTime(taskEntity))
-            .queueAheadCount(queueAheadCount)
-            .requirementJson(taskEntity.getRequirementJson())
-            .build();
-        
-        // 3. 查询子任务信息列表
-        List<SubTaskEntity> subTaskEntities = subTaskMapper.selectList(
-            new LambdaQueryWrapper<SubTaskEntity>()
-                .eq(SubTaskEntity::getTaskId, taskId)
-                .orderByAsc(SubTaskEntity::getOrderIndex)
-        );
-        
-        // 🆕 动态统计已完成子任务数（status=2 表示已完成）
-        // 替代原来从 tasks.task_completed_size 静态读取的方式，确保实时准确
-        int completedSubtaskCount = 0;
-        for (SubTaskEntity subTask : subTaskEntities) {
-            if (subTask.getStatus() != null && subTask.getStatus() == 2) {
-                completedSubtaskCount++;
-            }
-        }
-        taskBaseInfo.setTaskCompletedSize(completedSubtaskCount);
-        taskBaseInfo.setActiveAgentSize(subTaskEntities.size()); // 总子任务数作为"已起草章节数"
-        
-        // 4. 查询 Agent 信息列表（提前查询，用于关联到子任务）
-        // 🔧 修复：过滤掉 subtask_id 为空的记录（这些是 Agent 启动时的临时记录，没有输出内容）
-        // 只保留有 subtask_id 的记录（这些包含完整的 agent_output）
-        List<TaskAgentEntity> agentEntities = taskAgentMapper.selectList(
-            new LambdaQueryWrapper<TaskAgentEntity>()
-                .eq(TaskAgentEntity::getTaskId, taskId)
-                .isNotNull(TaskAgentEntity::getSubtaskId)
-                .ne(TaskAgentEntity::getSubtaskId, "")
-                .orderByDesc(TaskAgentEntity::getUpdatedAt)  // 按更新时间倒序，确保获取最新的记录
-        );
-        
-        log.info("🔍 任务 {} 查询到 {} 个 Agent", taskId, agentEntities.size());
-        
-        // 🐛 调试日志：检查每个 Agent 的 agentOutput 字段
-        for (TaskAgentEntity agent : agentEntities) {
-            String outputStatus = agent.getAgentOutput() == null ? "NULL" 
-                                : agent.getAgentOutput().isEmpty() ? "EMPTY" 
-                                : "有数据(" + agent.getAgentOutput().length() + "字符)";
-            log.info("  📌 Agent: name='{}', subtaskId='{}', status={}, agentOutput={}, preview='{}'",
-                agent.getAgentName(),
-                agent.getSubtaskId(),
-                agent.getAgentStatus(),
-                outputStatus,
-                agent.getAgentOutput() != null ? agent.getAgentOutput().substring(0, Math.min(100, agent.getAgentOutput().length())) : "null"
-            );
-        }
-        
-        // 构建 subtaskCode -> TaskAgentEntity 的映射（通过 subtaskId 关联）
-        // 注意：task_agents.subtask_id 对应 sub_tasks.subtask_code
-        Map<String, TaskAgentEntity> subtaskCodeToAgentMap = new HashMap<>();
-        Map<String, TaskAgentEntity> agentNameToAgentMap = new HashMap<>();
-        
-        for (TaskAgentEntity agent : agentEntities) {
-            String subtaskId = agent.getSubtaskId();
-            String agentName = agent.getAgentName();
-            
-            log.info("📌 Agent记录: name='{}', subtaskId='{}', status={}", 
-                agentName != null ? agentName : "NULL", 
-                subtaskId != null ? subtaskId : "NULL", 
-                agent.getAgentStatus());
-            
-            // 优先通过 subtaskId 建立映射
-            if (subtaskId != null && !subtaskId.trim().isEmpty()) {
-                subtaskCodeToAgentMap.put(subtaskId.trim(), agent);
-                log.info("  ✅ 建立映射: subtaskCode='{}' -> Agent '{}'", subtaskId.trim(), agentName);
-            }
-            
-            // 同时通过 agentName 建立映射（用于回退）
-            if (agentName != null && !agentName.trim().isEmpty()) {
-                // 如果已存在同名 Agent，优先保留有 subtaskId 的那个
-                TaskAgentEntity existing = agentNameToAgentMap.get(agentName);
-                if (existing == null || 
-                    (existing.getSubtaskId() == null || existing.getSubtaskId().isEmpty()) && 
-                    (subtaskId != null && !subtaskId.isEmpty())) {
-                    agentNameToAgentMap.put(agentName, agent);
-                }
-            } else {
-                log.warn("  ⚠️ Agent名称为空或NULL: subtaskId={}", subtaskId);
-            }
-        }
-        
-        log.info("📊 建立映射: subtaskCode->Agent {} 条, agentName->Agent {} 条", 
-            subtaskCodeToAgentMap.size(), agentNameToAgentMap.size());
-        
-        // 构建子任务列表，每个子任务直接嵌入对应的 Agent 信息
-        List<TaskDetailResponse.SubTaskInfoResponse> subTaskInfoList = new ArrayList<>();
-        
-        for (SubTaskEntity st : subTaskEntities) {
-            // 查找对应的 Agent：优先通过 subtaskCode 匹配，否则通过 agentName 匹配
-            TaskAgentEntity agent = null;
-            String subtaskCode = st.getSubtaskCode();
-            String agentName = st.getAgentName();
-            
-            log.info("🔍 处理子任务: title='{}', code='{}', agentName='{}'", 
-                st.getTitle(), 
-                subtaskCode != null ? subtaskCode : "NULL",
-                agentName != null ? agentName : "NULL");
-            
-            // 1. 优先通过 subtaskCode 精确匹配
-            if (subtaskCode != null && !subtaskCode.trim().isEmpty()) {
-                agent = subtaskCodeToAgentMap.get(subtaskCode.trim());
-                if (agent != null) {
-                    log.info("  ✅ 通过 subtaskCode='{}' 匹配到 Agent: name='{}', status={}", 
-                        subtaskCode, agent.getAgentName(), agent.getAgentStatus());
-                } else {
-                    log.warn("  ❌ subtaskCode='{}' 未匹配到 Agent", subtaskCode);
-                }
-            }
-            
-            // 2. 如果没找到，通过 agentName 回退匹配
-            if (agent == null && agentName != null && !agentName.trim().isEmpty()) {
-                agent = agentNameToAgentMap.get(agentName.trim());
-                if (agent != null) {
-                    log.info("  ⚠️ 通过 agentName='{}' 回退匹配到 Agent: subtaskId={}", 
-                        agentName, agent.getSubtaskId());
-                }
-            }
-            
-            // 3. 如果还是没找到，记录警告
-            if (agent == null) {
-                log.warn("  ❌ 子任务 '{}' (code='{}', agentName='{}') 未找到对应的 Agent", 
-                    st.getTitle(), 
-                    subtaskCode != null ? subtaskCode : "NULL", 
-                    agentName != null ? agentName : "NULL");
-            }
-            
-            // 🆕 确定最终使用的 agentName：优先使用 Agent 表的，回退到 SubTask 表的
-            String finalAgentName = agentName;
-            if (agent != null) {
-                // 如果找到了 Agent，无论子任务的 agentName 是否为空，都使用 Agent 的名称（更准确）
-                String agentTableName = agent.getAgentName();
-                if (agentTableName != null && !agentTableName.trim().isEmpty()) {
-                    finalAgentName = agentTableName;
-                    if (agentName == null || agentName.isEmpty()) {
-                        log.info("  🔄 子任务 agentName 为空，从 Agent 表回填: '{}'", finalAgentName);
-                    } else if (!agentTableName.equals(agentName)) {
-                        log.info("  🔄 使用 Agent 表的名称 '{}' 替代子任务的 '{}'", agentTableName, agentName);
-                    }
-                }
-            }
-            
-            log.info("  📝 最终 agentName: '{}'", finalAgentName != null ? finalAgentName : "EMPTY");
-            
-            // 构建子任务响应，包含内嵌的 Agent 信息
-            TaskDetailResponse.SubTaskInfoResponse.SubTaskInfoResponseBuilder builder = 
-                TaskDetailResponse.SubTaskInfoResponse.builder()
-                    .title(st.getTitle())
-                    .desc(st.getDescription() != null ? st.getDescription() : "")
-                    .processDesc(st.getProcessDesc() != null ? st.getProcessDesc() : "")
-                    .agentName(finalAgentName != null ? finalAgentName : "")  // ✅ 使用回填后的名称
-                    .subtaskCode(subtaskCode);
-            
-            // 如果找到对应的 Agent，填充 Agent 信息
-            if (agent != null) {
-                builder.agentStatus(agent.getAgentStatus())
-                       .agentCompletePercent(agent.getCompletePercent() != null ?
-                           agent.getCompletePercent().doubleValue() : 0.0)
-                       .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                       .agentStartTime(agent.getAgentStartTime() != null ?
-                           agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                       .agentFinishTime(agent.getAgentFinishTime() != null ?
-                           agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
-                       .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
-                       .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
-            } else {
-                // 如果没找到 Agent，设置默认值
-                builder.agentStatus(0)
-                       .agentCompletePercent(0.0)
-                       .agentDesc("")
-                       .agentStartTime(0L)
-                       .agentFinishTime(null)
-                       .agentPriority(1)
-                       .agentOutput("");
-            }
-            
-            subTaskInfoList.add(builder.build());
-        }
-        
-        log.info("📝 构建了 {} 个子任务响应", subTaskInfoList.size());
-        
-        // 4. 查询活动日志（优化：首次只返回最近 10 条，避免响应过大导致 Broken pipe）
-        // 如果需要更多日志，前端可通过分页接口按需加载
-        List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
-            new LambdaQueryWrapper<TaskActivityEntity>()
-                .eq(TaskActivityEntity::getTaskId, taskId)
-                .orderByDesc(TaskActivityEntity::getActivityTime)
-                .last("LIMIT 10")  // 优化：从 50 条减少到 10 条，减少响应大小
-        );
-        
-        List<TaskDetailResponse.ActivityInfoResponse> activityInfoList = activityEntities.stream()
-            .map(act -> TaskDetailResponse.ActivityInfoResponse.builder()
-                .activityTime(act.getActivityTime() != null ? 
-                    act.getActivityTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                .agentName(act.getAgentName())
-                .activityDesc(act.getActivityDesc())
-                .build())
-            .collect(Collectors.toList());
-        
-        // 5. 构建 Agent 信息列表（agentEntities 已在步骤4中查询）
-        // 构建 subtaskCode -> SubTaskEntity 的映射，用于关联子任务标题
-        Map<String, SubTaskEntity> subtaskCodeMap = subTaskEntities.stream()
-            .filter(st -> st.getSubtaskCode() != null && !st.getSubtaskCode().isEmpty())
-            .collect(Collectors.toMap(
-                SubTaskEntity::getSubtaskCode,
-                st -> st,
-                (a, b) -> a // 如果有重复，保留第一个
-            ));
-        
-        List<TaskDetailResponse.AgentInfoResponse> agentInfoList;
-        if (!agentEntities.isEmpty()) {
-            agentInfoList = agentEntities.stream()
-                .map(agent -> {
-                    // 通过 subtaskId 查找关联的子任务标题
-                    String subtaskId = agent.getSubtaskId();
-                    String subtaskTitle = "";
-                    if (subtaskId != null && subtaskCodeMap.containsKey(subtaskId)) {
-                        subtaskTitle = subtaskCodeMap.get(subtaskId).getTitle();
-                    }
-                    
-                    // 🐛 调试日志：构建响应前检查数据
-                    String outputPreview = agent.getAgentOutput() == null ? "NULL" 
-                                        : agent.getAgentOutput().isEmpty() ? "EMPTY"
-                                        : agent.getAgentOutput().substring(0, Math.min(50, agent.getAgentOutput().length()));
-                    log.info("  🔧 构建 AgentInfoResponse: name='{}', subtaskId='{}', outputLen={}, preview='{}'",
-                        agent.getAgentName(),
-                        subtaskId,
-                        agent.getAgentOutput() != null ? agent.getAgentOutput().length() : 0,
-                        outputPreview
-                    );
-                    
-                    TaskDetailResponse.AgentInfoResponse response = TaskDetailResponse.AgentInfoResponse.builder()
-                        .agentName(agent.getAgentName())
-                        .subtaskId(subtaskId)
-                        .subtaskTitle(subtaskTitle)
-                        .agentStatus(agent.getAgentStatus())
-                        .completePercent(agent.getCompletePercent() != null ?
-                            agent.getCompletePercent().doubleValue() : 0.0)
-                        .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
-                        .agentStartTime(agent.getAgentStartTime() != null ?
-                            agent.getAgentStartTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
-                        .agentFinishTime(agent.getAgentFinishTime() != null ?
-                            agent.getAgentFinishTime().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
-                        .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
-                        .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "")
-                        .build();
-                    
-                    // 🐛 验证构建后的对象
-                    log.info("  ✅ 构建完成: response.agentOutput.length={}", 
-                        response.getAgentOutput() != null ? response.getAgentOutput().length() : 0);
-                    
-                    return response;
-                })
-                .collect(Collectors.toList());
-        } else {
-            // 如果 Agent 列表为空，尝试从子任务和活动日志中提取 Agent 信息
-            agentInfoList = extractAgentsFromSubtasksAndActivities(subTaskEntities, activityEntities);
-        }
-        
-        // 6. 查询输出文件
-        List<TaskOutputEntity> outputEntities = taskOutputMapper.selectList(
-            new LambdaQueryWrapper<TaskOutputEntity>()
-                .eq(TaskOutputEntity::getTaskId, taskId)
-        );
-        
-        List<TaskDetailResponse.OutputInfoResponse> outputDetailInfoList = outputEntities.stream()
-            .map(out -> {
-                // 构建下载URL：/v1/task/output/download/{outputId}
-                String downloadUrl = "/v1/task/output/download/" + out.getId();
-                
-                return TaskDetailResponse.OutputInfoResponse.builder()
-                    .title(out.getTitle())
-                    .desc(out.getDescription() != null ? out.getDescription() : "")
-                    .url(downloadUrl) // 使用构建的下载URL
-                    .sizeDesc(out.getSizeDesc() != null ? out.getSizeDesc() : "")
-                    .pageSize(out.getPageSize() != null ? out.getPageSize() : 0)
-                    .format(out.getFormat() != null && out.getFormat() <= 4 ? out.getFormat() : 4) // 修正无效的format值
-                    .outputType(out.getOutputType() != null ? out.getOutputType() : 0) // 输出类型：0-日志文件，1-报告内容
-                    .build();
-            })
-            .collect(Collectors.toList());
-        
-        // 主输出（取第一个终稿，output_type=1）
-        TaskOutputEntity mainOutput = outputEntities.stream()
-            .filter(o -> o.getOutputType() != null && o.getOutputType() == 1)
-            .findFirst()
-            .orElse(outputEntities.isEmpty() ? null : outputEntities.get(0));
-        
-        TaskDetailResponse.OutputInfoResponse outputSummaryInfo = null;
-        if (mainOutput != null) {
-            // 构建下载URL：/v1/task/output/download/{outputId}
-            String downloadUrl = "/v1/task/output/download/" + mainOutput.getId();
-            
-            outputSummaryInfo = TaskDetailResponse.OutputInfoResponse.builder()
-                .title(mainOutput.getTitle())
-                .desc(mainOutput.getDescription() != null ? mainOutput.getDescription() : "")
-                .url(downloadUrl) // 使用构建的下载URL
-                .sizeDesc(mainOutput.getSizeDesc() != null ? mainOutput.getSizeDesc() : "")
-                .pageSize(mainOutput.getPageSize() != null ? mainOutput.getPageSize() : 0)
-                .format(mainOutput.getFormat() != null && mainOutput.getFormat() <= 4 ? 
-                    mainOutput.getFormat() : 4) // 修正无效的format值
-                .outputType(mainOutput.getOutputType() != null ? mainOutput.getOutputType() : 0) // 输出类型：0-日志文件，1-报告内容
+        GetTaskDetailRequest appRequest = GetTaskDetailRequest.builder()
+                .taskId(request.getTaskId())
+                .clerkUserId(clerkUserId)
                 .build();
-        }
-        
-        // 7. 查询上传的文件信息
-        List<TaskFileEntity> taskFileEntities = taskFileMapper.selectList(
-            new LambdaQueryWrapper<TaskFileEntity>()
-                .eq(TaskFileEntity::getTaskId, taskId)
-                .orderByAsc(TaskFileEntity::getFileOrder)
-        );
-        
-        Map<Long, FileEntity> fileEntityById = new HashMap<>();
-        if (!taskFileEntities.isEmpty()) {
-            Set<Long> fileIds = taskFileEntities.stream()
-                .map(TaskFileEntity::getFileId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-            if (!fileIds.isEmpty()) {
-                List<FileEntity> fileEntities = fileMapper.selectBatchIds(fileIds);
-                fileEntityById = fileEntities.stream()
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toMap(FileEntity::getId, file -> file));
-            }
-        }
-        
-        List<TaskDetailResponse.UploadedFileInfoResponse> uploadedFileInfoList = new ArrayList<>();
-        for (TaskFileEntity taskFile : taskFileEntities) {
-            FileEntity fileEntity = fileEntityById.get(taskFile.getFileId());
-            if (fileEntity != null) {
-                // 处理文件扩展名（去掉点）
-                String fileType = fileEntity.getFileExtension();
-                if (fileType != null && fileType.startsWith(".")) {
-                    fileType = fileType.substring(1);
-                }
-                
-                // 构建下载链接
-                String downloadUrl = "/v1/file/download/" + fileEntity.getObjectId();
-                
-                uploadedFileInfoList.add(
-                    TaskDetailResponse.UploadedFileInfoResponse.builder()
-                        .objectId(fileEntity.getObjectId())
-                        .fileName(fileEntity.getOriginalFilename())
-                        .fileType(fileType)
-                        .fileSize(fileEntity.getFileSize())
-                        .uploadTime(fileEntity.getCreatedAt() != null ? 
-                            fileEntity.getCreatedAt().atZone(ZoneId.systemDefault()).toEpochSecond() : null)
-                        .downloadUrl(downloadUrl)
-                        .build()
-                );
-            }
-        }
-        
-        // 构建完整响应（已移除 activityInfoMap，前端可自行根据 activityInfoList 构建索引）
-        TaskDetailResponse response = TaskDetailResponse.builder()
-            .taskBaseInfo(taskBaseInfo)
-            .agentInfoList(agentInfoList)
-            .subTaskInfoList(subTaskInfoList)
-            .activityInfoList(activityInfoList)
-            .outputSummaryInfo(outputSummaryInfo)
-            .outputDetailInfoList(outputDetailInfoList)
-            .uploadedFileInfoList(uploadedFileInfoList)
-            .build();
-        
-        // 🐛 调试日志：验证最终响应中的 agentInfoList
-        log.info("📦 最终响应: agentInfoList.size={}", response.getAgentInfoList().size());
-        for (TaskDetailResponse.AgentInfoResponse agent : response.getAgentInfoList()) {
-            log.info("  📋 Agent: name='{}', subtaskId='{}', outputLen={}", 
-                agent.getAgentName(),
-                agent.getSubtaskId(),
-                agent.getAgentOutput() != null ? agent.getAgentOutput().length() : 0
-            );
-        }
-        
-        return Result.success(response);
-    }
-    
-    /**
-     * 从子任务和活动日志中提取 Agent 信息（当 task_agents 表为空时使用）
-     */
-    private List<TaskDetailResponse.AgentInfoResponse> extractAgentsFromSubtasksAndActivities(
-            List<SubTaskEntity> subtasks,
-            List<TaskActivityEntity> activities) {
-        if (subtasks == null) {
-            subtasks = new ArrayList<>();
-        }
-        if (activities == null) {
-            activities = new ArrayList<>();
-        }
-        
-        // 从子任务中提取 Agent 名称
-        Set<String> agentNamesFromSubtasks = subtasks.stream()
-            .filter(st -> st.getAgentName() != null && !st.getAgentName().trim().isEmpty())
-            .map(st -> st.getAgentName().trim())
-            .collect(Collectors.toSet());
-        
-        // 从活动日志中提取 Agent 名称
-        Set<String> agentNamesFromActivities = activities.stream()
-            .filter(act -> act.getAgentName() != null && !act.getAgentName().trim().isEmpty())
-            .map(act -> act.getAgentName().trim())
-            .collect(Collectors.toSet());
-        
-        // 合并所有 Agent 名称
-        Set<String> allAgentNames = new HashSet<>();
-        allAgentNames.addAll(agentNamesFromSubtasks);
-        allAgentNames.addAll(agentNamesFromActivities);
-        
-        if (allAgentNames.isEmpty()) {
-            return new ArrayList<>();
-        }
-        
-        // 为每个 Agent 创建 AgentInfo
-        List<TaskDetailResponse.AgentInfoResponse> agentInfoList = new ArrayList<>();
-        for (String agentName : allAgentNames.stream().sorted().collect(Collectors.toList())) {
-            // 计算该 Agent 的完成百分比（基于其负责的子任务）
-            List<SubTaskEntity> agentSubtasks = subtasks.stream()
-                .filter(st -> agentName.equals(st.getAgentName()))
-                .collect(Collectors.toList());
-            
-            double completePercent = 0.0;
-            if (!agentSubtasks.isEmpty()) {
-                long completedCount = agentSubtasks.stream()
-                    .filter(st -> st.getStatus() != null && st.getStatus() == 2) // 2-已完成
-                    .count();
-                completePercent = (completedCount * 100.0) / agentSubtasks.size();
-            }
-            
-            // 获取 Agent 的开始时间（从活动日志中最早的时间）
-            long agentStartTime = 0L;
-            Optional<TaskActivityEntity> earliestActivity = activities.stream()
-                .filter(act -> agentName.equals(act.getAgentName()))
-                .min(Comparator.comparing(TaskActivityEntity::getActivityTime));
-            if (earliestActivity.isPresent() && earliestActivity.get().getActivityTime() != null) {
-                agentStartTime = earliestActivity.get().getActivityTime()
-                    .atZone(ZoneId.systemDefault()).toEpochSecond();
-            }
-            
-            agentInfoList.add(TaskDetailResponse.AgentInfoResponse.builder()
-                .agentName(agentName)
-                .agentStatus(2) // 默认运行中
-                .completePercent(completePercent)
-                .agentDesc("AI Agent: " + agentName)
-                .agentStartTime(agentStartTime)
-                .agentFinishTime(null) // 运行中的 Agent 没有完成时间
-                .agentPriority(1)
-                .agentOutput("")
-                .build());
-        }
-        
-        return agentInfoList;
+        var dto = taskApplicationService.getTaskDetail(appRequest);
+        return Result.success(TaskDetailConverter.toResponse(dto));
     }
     
     @PostMapping("/rate")

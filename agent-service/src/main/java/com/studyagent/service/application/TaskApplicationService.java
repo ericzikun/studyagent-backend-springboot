@@ -27,6 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
@@ -170,8 +173,12 @@ public class TaskApplicationService {
         }
         int limit = taskSubmitConfig.getDailyLimitPerUser();
         long usedToday = taskRepository.countSubmittedToday(clerkUserId);
-        String quotaResetAt = LocalDate.now().plusDays(1).atStartOfDay()
-                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        LocalDateTime resetLocal = LocalDate.now().plusDays(1).atStartOfDay();
+        String quotaResetAt = resetLocal.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        ZoneId serverZone = ZoneId.systemDefault();
+        String quotaResetAtUtc = ZonedDateTime.of(resetLocal, serverZone)
+                .withZoneSameInstant(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " UTC";
         int remaining = Math.max(0, limit - (int) usedToday);
 
         if (usedToday >= limit) {
@@ -180,8 +187,10 @@ public class TaskApplicationService {
                     .usedToday((int) usedToday)
                     .remainingQuota(0)
                     .quotaResetAt(quotaResetAt)
+                    .quotaResetAtUtc(quotaResetAtUtc)
                     .build();
-            String message = ApiCode.QUOTA_EXCEEDED.formatEn(limit);
+            String message = ApiCode.QUOTA_EXCEEDED.formatEn(limit)
+                    + " Quota resets at " + quotaResetAt + " " + serverZone.getId() + " (" + quotaResetAtUtc + ").";
             throw new QuotaExceededException(message, data);
         }
 

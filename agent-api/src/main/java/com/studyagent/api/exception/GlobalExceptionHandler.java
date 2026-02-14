@@ -68,6 +68,7 @@ public class GlobalExceptionHandler {
                 .usedToday(data != null ? data.getUsedToday() : null)
                 .remainingQuota(data != null ? data.getRemainingQuota() : 0)
                 .quotaResetAt(data != null ? data.getQuotaResetAt() : null)
+                .quotaResetAtUtc(data != null ? data.getQuotaResetAtUtc() : null)
                 .build();
         Result<SubmitQuotaExceededResponse> result = new Result<>();
         result.setMeta(Meta.error(ex.getCode(), ex.getMessage()));

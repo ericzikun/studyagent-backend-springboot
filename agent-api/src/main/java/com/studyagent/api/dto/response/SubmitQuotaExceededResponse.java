@@ -32,7 +32,12 @@ public class SubmitQuotaExceededResponse {
     private Integer remainingQuota;
 
     /**
-     * 额度重置时间（次日零点），格式：yyyy-MM-dd HH:mm:ss
+     * 额度重置时间（服务器时区），格式：yyyy-MM-dd HH:mm:ss
      */
     private String quotaResetAt;
+
+    /**
+     * 额度重置时间（UTC），格式：yyyy-MM-dd HH:mm:ss UTC，供海外用户自行换算
+     */
+    private String quotaResetAtUtc;
 }

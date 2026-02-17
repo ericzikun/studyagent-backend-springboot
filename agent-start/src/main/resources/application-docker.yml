@@ -2,7 +2,7 @@ spring:
   datasource:
     # Docker 环境配置
     # 使用 Docker Compose 中的服务名 'mysql'
-    url: jdbc:mysql://mysql:3306/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:studyagent}
     password: ${DB_PASSWORD:studyagent2024}
     hikari:

@@ -29,6 +29,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
     private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
     private static final int ACTIVITY_LIMIT = 10;
     private static final int SUBTASK_STATUS_COMPLETED = 2;
+    private static final String PHASE_COMPOSE = "COMPOSE";
 
     private final com.studyagent.infra.mapper.TaskMapper taskMapper;
     private final TaskAgentMapper taskAgentMapper;
@@ -52,11 +53,13 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         List<SubTaskEntity> subTaskEntities = loadSubTasks(taskId);
         List<TaskAgentEntity> agentEntities = loadAgents(taskId);
 
-        int completedSubtaskCount = (int) subTaskEntities.stream()
+        // COMPLETED TASKS: 仅统计 PLANNING 阶段已完成的子任务数（不含 COMPOSE 阶段）
+        int planningCompletedCount = (int) subTaskEntities.stream()
                 .filter(st -> st.getStatus() != null && st.getStatus() == SUBTASK_STATUS_COMPLETED)
+                .filter(st -> isPlanningPhase(st))
                 .count();
-        taskBaseInfo.setTaskCompletedSize(completedSubtaskCount);
-        taskBaseInfo.setActiveAgentSize(subTaskEntities.size());
+        taskBaseInfo.setTaskCompletedSize(planningCompletedCount);
+        // activeAgentSize (SECTIONS DRAFTED) 已在 buildTaskBaseInfo 中通过 resolveActiveAgentSize 设置为 compose_total_rounds，不再覆盖
 
         Map<String, TaskAgentEntity> subtaskCodeToAgent = buildSubtaskToAgentMap(agentEntities);
         Map<String, TaskAgentEntity> agentNameToAgent = buildAgentNameToAgentMap(agentEntities);
@@ -85,6 +88,24 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         return entity.getIsDeleted() != null && entity.getIsDeleted() == 1;
     }
 
+    /**
+     * 判断子任务是否属于 PLANNING 阶段（排除 COMPOSE 阶段）
+     * - subtask_code 以 "compose." 开头则为 COMPOSE 阶段
+     * - phase=COMPOSE 则为 COMPOSE 阶段
+     * - 其余视为 PLANNING
+     */
+    private boolean isPlanningPhase(SubTaskEntity st) {
+        String code = st.getSubtaskCode();
+        if (code != null && code.startsWith("compose.")) {
+            return false;
+        }
+        String phase = st.getPhase();
+        if (phase != null && PHASE_COMPOSE.equalsIgnoreCase(phase)) {
+            return false;
+        }
+        return true;
+    }
+
     private TaskDetailDTO.TaskBaseInfo buildTaskBaseInfo(TaskEntity taskEntity) {
         List<Integer> formatList = parseFormatList(taskEntity.getFormat());
         int estRemainingTime = computeEstRemainingTime(taskEntity.getStatus(), taskEntity.getCompletePercent());
@@ -106,11 +127,23 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                 .specialInstructions(taskEntity.getSpecialInstructions() != null ? taskEntity.getSpecialInstructions() : "")
                 .completePercent(taskEntity.getCompletePercent() != null ? taskEntity.getCompletePercent().doubleValue() : 0.0)
                 .taskCompletedSize(taskEntity.getTaskCompletedSize() != null ? taskEntity.getTaskCompletedSize() : 0)
-                .activeAgentSize(taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0)
+                .activeAgentSize(resolveActiveAgentSize(taskEntity))
                 .estRemainingTime(estRemainingTime)
                 .queueAheadCount(0)
                 .requirementJson(taskEntity.getRequirementJson())
                 .build();
+    }
+
+    /**
+     * 解析 SECTIONS DRAFTED (activeAgentSize) 的值：
+     * - 若任务已进入 COMPOSE 阶段（compose_total_rounds > 0），则使用 compose_total_rounds 表示计划章节数
+     * - 否则使用原 active_agent_size（未进入 compose 或拿不到则为 0）
+     */
+    private int resolveActiveAgentSize(TaskEntity taskEntity) {
+        if (taskEntity.getComposeTotalRounds() != null && taskEntity.getComposeTotalRounds() > 0) {
+            return taskEntity.getComposeTotalRounds();
+        }
+        return taskEntity.getActiveAgentSize() != null ? taskEntity.getActiveAgentSize() : 0;
     }
 
     private List<Integer> parseFormatList(String format) {

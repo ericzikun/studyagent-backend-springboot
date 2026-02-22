@@ -32,6 +32,12 @@ public class TaskEntity extends BaseEntity {
     private java.math.BigDecimal completePercent;
     private Integer taskCompletedSize;
     private Integer activeAgentSize;
+    /**
+     * COMPOSE 阶段总轮数（计划章节数），进入 COMPOSE 后由 Python 写入。
+     * 用于 SECTIONS DRAFTED 展示，优先于 activeAgentSize。
+     */
+    @TableField("compose_total_rounds")
+    private Integer composeTotalRounds;
     private Integer estRemainingTime;
     private String requirementJson;
     private String finalResult;

@@ -38,5 +38,11 @@ public class SubTaskEntity extends BaseEntity {
     
     @TableField("order_index")
     private Integer orderIndex;
+
+    /**
+     * 子任务阶段: PLANNING-规划拆解阶段, COMPOSE-汇总阶段
+     * 用于区分 COMPLETED TASKS 仅统计 PLANNING 阶段的完成数
+     */
+    private String phase;
 }
 

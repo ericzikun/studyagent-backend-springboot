@@ -77,6 +77,18 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 限流超限异常
+     * 返回 429 状态码，提示用户稍后重试
+     */
+    @ExceptionHandler(com.studyagent.common.exception.RateLimitExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public Result<Void> handleRateLimitExceededException(com.studyagent.common.exception.RateLimitExceededException ex) {
+        log.warn("限流触发: endpoint={}, message={}", ex.getEndpoint(), ex.getMessage());
+        return Result.error(429, ex.getMessage());
+    }
+
+
+    /**
      * 业务异常（参数错误等）
      */
     @ExceptionHandler(IllegalArgumentException.class)

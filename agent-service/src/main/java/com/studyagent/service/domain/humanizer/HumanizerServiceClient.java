@@ -26,6 +26,15 @@ public interface HumanizerServiceClient {
     HumanizerResult humanize(String text);
 
     /**
+     * AI 检测（普通 POST，非 SSE）
+     * 调用 Python 服务的 POST /predict 端点
+     *
+     * @param text 待检测文本
+     * @return 检测结果
+     */
+    DetectResult detectAI(String text);
+
+    /**
      * Humanizer 服务返回结果（领域模型）
      * 对应 Python /process 端点的响应
      */
@@ -40,6 +49,27 @@ public interface HumanizerServiceClient {
         private String msg;
         /** 改写后的文本 */
         private String result;
+        /** 耗时（秒） */
+        private Double elapsedSeconds;
+    }
+
+    /**
+     * AI 检测返回结果（领域模型）
+     * 对应 Python /predict 端点的响应
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    class DetectResult {
+        /** 响应码（200=成功） */
+        private int code;
+        /** 响应消息（错误时有值） */
+        private String msg;
+        /** AI 生成概率（0~1） */
+        private Double probability;
+        /** 标签：AI Generated / Human Written */
+        private String label;
         /** 耗时（秒） */
         private Double elapsedSeconds;
     }

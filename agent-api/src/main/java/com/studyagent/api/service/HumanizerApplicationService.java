@@ -1,9 +1,11 @@
 package com.studyagent.api.service;
 
+import com.studyagent.api.dto.response.HumanizerDetectResponse;
 import com.studyagent.api.dto.response.HumanizerProcessResponse;
 import com.studyagent.common.exception.RateLimitExceededException;
 import com.studyagent.infra.client.humanizer.HumanizerServiceClientImpl;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
+import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -67,6 +69,26 @@ public class HumanizerApplicationService {
             throw new RateLimitExceededException(endpoint);
         }
         timestamps.addLast(now);
+    }
+
+    /**
+     * AI 检测（普通 POST，非 SSE）
+     *
+     * @param text 待检测文本
+     * @return 检测响应
+     */
+    public HumanizerDetectResponse detectAI(String text) {
+        DetectResult result = humanizerServiceClient.detectAI(text);
+
+        if (result.getCode() != 200) {
+            throw new RuntimeException(result.getMsg() != null ? result.getMsg() : "AI detect service error");
+        }
+
+        return HumanizerDetectResponse.builder()
+            .probability(result.getProbability())
+            .label(result.getLabel())
+            .elapsedSeconds(result.getElapsedSeconds())
+            .build();
     }
 
     /**

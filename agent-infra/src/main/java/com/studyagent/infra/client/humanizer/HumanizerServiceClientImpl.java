@@ -1,6 +1,7 @@
 package com.studyagent.infra.client.humanizer;
 
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
+import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,9 +19,10 @@ import java.util.Map;
  * Humanizer 服务客户端实现
  * <p>
  * 通过 WebClient 调用 Python Flask 服务（端口 9000）。
- * 提供两个能力：
+ * 提供三个能力：
  * 1. humanize() - 同步调用 /process（文本改写）
- * 2. detectAIStream() - 返回 Flux 消费 /predict_stream 的 SSE 流
+ * 2. detectAI() - 同步调用 /predict（AI 检测，普通 POST）
+ * 3. detectAIStream() - 返回 Flux 消费 /predict_stream 的 SSE 流
  */
 @Slf4j
 @Component
@@ -100,6 +102,54 @@ public class HumanizerServiceClientImpl implements HumanizerServiceClient {
                 .code(500)
                 .msg("Failed to call Humanizer service: " + e.getMessage())
                 .build();
+        }
+    }
+
+    /**
+     * AI 检测（普通 POST，非 SSE）
+     * 调用 Python /predict 端点，返回整体检测结果
+     */
+    @Override
+    public DetectResult detectAI(String text) {
+        try {
+            log.info("调用 AI 检测 /predict，文本长度: {} 字符", text.length());
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = humanizerWebClient.post()
+                .uri(humanizerServiceUrl + "/predict")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("text", text))
+                .retrieve()
+                .bodyToMono(Map.class)
+                .block();
+
+            if (response == null) {
+                return DetectResult.builder().code(500).msg("AI detect service returned empty response").build();
+            }
+
+            // 解析 Python 响应: {"code": 200, "probability": 0.87, "label": "AI Generated", "elapsed_seconds": 1.23}
+            int code = response.get("code") instanceof Number ? ((Number) response.get("code")).intValue() : 500;
+            String msg = response.get("msg") != null ? response.get("msg").toString() : null;
+            Double probability = response.get("probability") instanceof Number
+                ? ((Number) response.get("probability")).doubleValue() : null;
+            String label = response.get("label") != null ? response.get("label").toString() : null;
+            Double elapsed = response.get("elapsed_seconds") instanceof Number
+                ? ((Number) response.get("elapsed_seconds")).doubleValue() : null;
+
+            log.info("AI 检测 /predict 完成: code={}, label={}, prob={}, 耗时={}s", code, label, probability, elapsed);
+            return DetectResult.builder()
+                .code(code).msg(msg).probability(probability).label(label).elapsedSeconds(elapsed)
+                .build();
+
+        } catch (WebClientRequestException e) {
+            log.error("AI 检测服务不可达: {}", e.getMessage());
+            return DetectResult.builder().code(503).msg("AI detect service unavailable").build();
+        } catch (WebClientResponseException e) {
+            log.error("AI 检测服务返回错误: status={}", e.getStatusCode());
+            return DetectResult.builder().code(e.getStatusCode().value()).msg("AI detect service error: " + e.getMessage()).build();
+        } catch (Exception e) {
+            log.error("调用 AI 检测 /predict 失败", e);
+            return DetectResult.builder().code(500).msg("Failed to call AI detect service: " + e.getMessage()).build();
         }
     }
 

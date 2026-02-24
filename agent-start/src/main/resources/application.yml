@@ -126,7 +126,7 @@ task:
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
-  url: ${HUMANIZER_SERVICE_URL:http://172.21.255.238:9000}
+  url: ${HUMANIZER_SERVICE_URL:http://47.88.58.79:9000}
   rate-limit:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数

@@ -178,4 +178,27 @@ public class HumanizerServiceClientImpl implements HumanizerServiceClient {
             .doOnError(e -> !(e instanceof WebClientRequestException),
                 e -> log.error("Humanizer SSE 流错误", e));
     }
+
+    /**
+     * Humanizer 改写 SSE 流式调用
+     * 消费 Python /process_stream 的 SSE 流（estimate → result → done）
+     *
+     * @param text 待改写文本
+     * @return Flux 响应式流
+     */
+    public Flux<String> humanizeStream(String text) {
+        log.info("调用 Humanizer /process_stream SSE，文本长度: {} 字符", text.length());
+
+        return humanizerWebClient.post()
+            .uri(humanizerServiceUrl + "/process_stream")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("text", text))
+            .accept(MediaType.TEXT_EVENT_STREAM)
+            .retrieve()
+            .bodyToFlux(String.class)
+            .doOnError(WebClientRequestException.class,
+                e -> log.error("Humanizer SSE 服务不可达: {}", e.getMessage()))
+            .doOnError(e -> !(e instanceof WebClientRequestException),
+                e -> log.error("Humanizer SSE 流错误", e));
+    }
 }

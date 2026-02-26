@@ -174,4 +174,63 @@ public class HumanizerApplicationService {
             .elapsedSeconds(result.getElapsedSeconds())
             .build();
     }
+
+    /**
+     * 文本人性化改写 SSE 流式接口
+     * <p>
+     * 消费 Python /process_stream 的 SSE 流（estimate → result），
+     * 通过 SseEmitter 透传给前端。
+     *
+     * @param text 待改写文本
+     * @return SseEmitter 用于 SSE 响应
+     */
+    public SseEmitter humanizeStream(String text) {
+        // 10 分钟超时，humanizer 改写耗时较长
+        SseEmitter emitter = new SseEmitter(600_000L);
+
+        Disposable subscription = humanizerServiceClientImpl.humanizeStream(text)
+            .subscribe(
+                rawLine -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(rawLine));
+                    } catch (IOException e) {
+                        log.warn("Humanizer SSE 发送失败: {}", e.getMessage());
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> {
+                    log.error("Humanizer SSE 流错误", error);
+                    try {
+                        emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data("{\"msg\":\"" + error.getMessage().replace("\"", "'") + "\"}"));
+                    } catch (IOException ignored) {
+                    }
+                    emitter.completeWithError(error);
+                },
+                () -> {
+                    log.info("Humanizer SSE 流完成");
+                    emitter.complete();
+                }
+            );
+
+        emitter.onCompletion(() -> {
+            if (!subscription.isDisposed()) {
+                subscription.dispose();
+            }
+        });
+        emitter.onTimeout(() -> {
+            log.warn("Humanizer SSE 连接超时");
+            if (!subscription.isDisposed()) {
+                subscription.dispose();
+            }
+        });
+        emitter.onError(e -> {
+            if (!subscription.isDisposed()) {
+                subscription.dispose();
+            }
+        });
+
+        return emitter;
+    }
 }

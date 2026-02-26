@@ -260,8 +260,10 @@ def predict_stream():
             try:
                 chunks = split_text_into_sentences(text)
                 total = len(chunks)
+                total_chars = sum(len(c) for c in chunks)
                 w_sum, w_total = 0.0, 0
                 for i, chunk in enumerate(chunks):
+                    chunk_start = time.time()
                     try:
                         prob = predict_chunk(chunk)
                         label = "AI" if prob >= 0.5 else "Human"
@@ -271,6 +273,15 @@ def predict_stream():
                     except Exception as e:
                         logger.error(f"Chunk {i+1} failed: {e}", extra=log_extra())
                         evt = {"index": i+1, "total": total, "sentence": chunk[:80]+("..." if len(chunk)>80 else ""), "fullSentence": chunk, "probability": 0, "label": "Error", "weight": len(chunk)}
+                    # 第一个 chunk 跑完后，用实际耗时推算总时间
+                    if i == 0:
+                        first_chunk_elapsed = time.time() - chunk_start
+                        if len(chunk) > 0:
+                            seconds_per_char = first_chunk_elapsed / len(chunk)
+                            estimated_seconds = round(seconds_per_char * total_chars, 1)
+                        else:
+                            estimated_seconds = round(first_chunk_elapsed * total, 1)
+                        evt["estimatedSeconds"] = estimated_seconds
                     yield f"event: chunk\ndata: {json.dumps(evt, ensure_ascii=False)}\n\n"
 
                 final_prob = w_sum / w_total if w_total > 0 else 0
@@ -293,7 +304,7 @@ def predict_stream():
         return jsonify({"code": 500, "msg": str(e)}), 500
 
 
-# ==================== 路由: /process (Humanizer) ====================
+# ==================== 路由: /process (Humanizer, 同步) ====================
 @app.route('/process', methods=['POST'])
 def process_task():
     if not _semaphore.acquire(blocking=False):
@@ -324,6 +335,71 @@ def process_task():
         return jsonify({"code": 500, "msg": f"Process Failed: {str(e)}"}), 500
     finally:
         _semaphore.release()
+
+
+# ==================== 路由: /process_stream (Humanizer, SSE 流式) ====================
+@app.route('/process_stream', methods=['POST'])
+def process_stream():
+    if not _semaphore.acquire(blocking=False):
+        return jsonify({"code": 429, "msg": "Server busy"}), 429
+    try:
+        data = request.get_json()
+        if not data:
+            _semaphore.release()
+            return jsonify({"code": 400, "msg": "No JSON data"}), 400
+        input_text = data.get('text')
+        file_url = data.get('file_url')
+        if input_text:
+            original_text = input_text
+        elif file_url:
+            dl = http_session.get(file_url, timeout=60)
+            if dl.status_code != 200:
+                _semaphore.release()
+                raise Exception(f"Download failed: {dl.status_code}")
+            original_text = dl.content.decode('utf-8')
+        else:
+            _semaphore.release()
+            return jsonify({"code": 400, "msg": "Missing 'text' or 'file_url'"}), 400
+
+        text_len = len(original_text)
+        logger.info(f"Humanize SSE: {text_len} chars", extra=log_extra())
+
+        def generate():
+            start_time = time.time()
+            try:
+                # 按 1500 字符分块，每块经历 EN->JA->ZH->EN 四步翻译
+                # 预估：每 1500 字符约 30~60 秒，取中间值 45 秒
+                chunk_count = max(1, (text_len + 1499) // 1500)
+                avg_seconds_per_chunk = 45
+                estimated_seconds = round(chunk_count * avg_seconds_per_chunk, 1)
+
+                # 第一个事件：预估时间
+                estimate_evt = {"estimatedSeconds": estimated_seconds, "textLength": text_len, "chunks": chunk_count}
+                yield f"event: estimate\ndata: {json.dumps(estimate_evt, ensure_ascii=False)}\n\n"
+
+                # 执行改写
+                zh_text = step1_trans(original_text)
+                final_text = step2_trans(zh_text)
+                elapsed = round(time.time() - start_time, 2)
+
+                # 第二个事件：改写结果
+                result_evt = {"code": 200, "result": final_text, "elapsedSeconds": elapsed}
+                yield f"event: result\ndata: {json.dumps(result_evt, ensure_ascii=False)}\n\n"
+
+                logger.info(f"Humanize SSE done in {elapsed}s", extra=log_extra())
+            except Exception as e:
+                logger.exception("Humanize SSE error", extra=log_extra())
+                yield f"event: error\ndata: {json.dumps({'msg': str(e)}, ensure_ascii=False)}\n\n"
+            finally:
+                _semaphore.release()
+
+        return Response(generate(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache', 'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no', 'Access-Control-Allow-Origin': '*',
+        })
+    except Exception as e:
+        _semaphore.release()
+        return jsonify({"code": 500, "msg": str(e)}), 500
 
 
 # ==================== CORS ====================

@@ -69,4 +69,17 @@ public class HumanizerController {
         HumanizerProcessResponse response = humanizerApplicationService.humanize(request.getText());
         return Result.success(response);
     }
+
+    /**
+     * 文本人性化改写 SSE 流式接口
+     * 先返回预估时间，再返回改写结果
+     */
+    @PostMapping("/process-stream")
+    public SseEmitter processStream(
+            @RequestBody @Valid HumanizerRequest request,
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("Humanizer 改写 SSE 请求: userId={}, textLength={}", clerkUserId, request.getText().length());
+        humanizerApplicationService.checkProcessLimit();
+        return humanizerApplicationService.humanizeStream(request.getText());
+    }
 }

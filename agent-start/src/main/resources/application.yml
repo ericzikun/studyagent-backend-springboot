@@ -90,10 +90,10 @@ stripe:
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxx}
   price:
     # Assignment 四种套餐（与前端 pricing 页面一致）
-    assignment_1: ${STRIPE_PRICE_ASSIGNMENT_1:price_xxx}
-    assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:price_xxx}
-    assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:price_xxx}
-    assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:price_xxx}
+    assignment_1: ${STRIPE_PRICE_ASSIGNMENT_1:prod_U3rGRSNmcFA9P4}
+    assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:prod_U4GrwnQnodqVr8}
+    assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:prod_U4Gune0Gj7Vphr}
+    assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:prod_U4Gv3zPgqYZask}
     # 旧套餐（向后兼容）
     starter: ${STRIPE_PRICE_STARTER:price_xxx}
     pro: ${STRIPE_PRICE_PRO:price_xxx}

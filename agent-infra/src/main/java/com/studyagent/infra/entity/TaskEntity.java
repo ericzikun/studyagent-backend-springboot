@@ -42,6 +42,8 @@ public class TaskEntity extends BaseEntity {
     private String requirementJson;
     private String finalResult;
     private String errorMessage;
+    /** 全链路追踪ID，与 HTTP 请求 TraceId 一致，供 Python 执行贯穿使用 */
+    private String traceId;
     /** 逻辑删除: 0-未删除, 1-已删除 */
     @TableField("is_deleted")
     private Integer isDeleted;

@@ -41,6 +41,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.InsufficientQuotaData;
 import com.studyagent.common.exception.InsufficientQuotaException;
+import com.studyagent.common.log.util.TraceIdUtil;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.common.exception.QuotaExceededData;
 import com.studyagent.common.exception.QuotaExceededException;
@@ -157,6 +158,7 @@ public class TaskApplicationService {
                 .specialInstructions(request.getSpecialInstructions())
                 .requirementJson(mergedRequirementJson)
                 .status(TaskStatus.DRAFT)
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId() : TraceIdUtil.getTraceId())
                 .build();
 
         // 4. 验证任务（事务外执行，纯业务逻辑）
@@ -405,7 +407,8 @@ public class TaskApplicationService {
                 .pageLength(firstNonNull(request.getPageLength(), existing != null ? existing.getPageLength() : null))
                 .specialInstructions(firstNonNull(request.getSpecialInstructions(), existing != null ? existing.getSpecialInstructions() : null))
                 .requirementJson(mergedRequirementJson)
-                .status(TaskStatus.DRAFT);
+                .status(TaskStatus.DRAFT)
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId() : TraceIdUtil.getTraceId());
 
         Task savedTask = taskRepository.save(builder.build());
         Long draftId = savedTask.getId().getValue();
@@ -592,6 +595,7 @@ public class TaskApplicationService {
                 .requirementJson(task.getRequirementJson())
                 .finalResult(task.getFinalResult())
                 .errorMessage("Task cancelled")
+                .traceId(task.getTraceId())
                 .build();
 
         taskRepository.save(cancelled);

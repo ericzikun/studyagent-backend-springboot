@@ -35,6 +35,8 @@ public class Task {
     String requirementJson;
     String finalResult;
     String errorMessage;
+    /** 全链路追踪ID，由请求入口（TraceIdFilter）注入，贯穿任务全生命周期供 Python 执行使用 */
+    String traceId;
     
     /**
      * 领域行为：提交任务
@@ -59,6 +61,7 @@ public class Task {
             .requirementJson(this.requirementJson)
             .status(TaskStatus.PENDING)
             .startTime(LocalDateTime.now())
+            .traceId(this.traceId)
             .build();
     }
     
@@ -86,6 +89,7 @@ public class Task {
             .status(TaskStatus.COMPLETED)
             .startTime(this.startTime)
             .finishTime(LocalDateTime.now())
+            .traceId(this.traceId)
             .build();
     }
 }

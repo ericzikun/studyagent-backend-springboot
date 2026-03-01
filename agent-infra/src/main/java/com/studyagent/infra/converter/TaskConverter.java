@@ -60,6 +60,7 @@ public class TaskConverter {
             .requirementJson(entity.getRequirementJson())
             .finalResult(entity.getFinalResult())
             .errorMessage(entity.getErrorMessage())
+            .traceId(entity.getTraceId())
             .build();
     }
     
@@ -92,6 +93,7 @@ public class TaskConverter {
         entity.setRequirementJson(domain.getRequirementJson());
         entity.setFinalResult(domain.getFinalResult());
         entity.setErrorMessage(domain.getErrorMessage());
+        entity.setTraceId(domain.getTraceId());
         
         return entity;
     }

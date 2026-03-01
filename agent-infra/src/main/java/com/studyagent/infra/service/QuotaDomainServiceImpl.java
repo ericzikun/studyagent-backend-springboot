@@ -377,18 +377,17 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     private QuotaLedgerItem toLedgerItem(QuotaLedgerEntity entity) {
-        String featureName = entity.getFeatureCode();
-        String quotaUnit = "次";
+        String featureDisplayName = resolveFeatureDisplayName(entity.getFeatureCode());
+        String quotaUnit = "time";
         AiFeatureDefsEntity featureDef = aiFeatureDefsMapper.selectOne(
                 new LambdaQueryWrapper<AiFeatureDefsEntity>()
                         .eq(AiFeatureDefsEntity::getFeatureCode, entity.getFeatureCode())
                         .last("LIMIT 1"));
         if (featureDef != null) {
-            featureName = featureDef.getFeatureName();
-            quotaUnit = "count".equals(featureDef.getQuotaUnit()) ? "次" : "字";
+            quotaUnit = "count".equals(featureDef.getQuotaUnit()) ? "time" : "word";
         }
 
-        String displayText = buildDisplayText(entity, featureName, quotaUnit);
+        String displayText = buildDisplayText(entity, featureDisplayName, quotaUnit);
         return new QuotaLedgerItem(
                 entity.getId(),
                 entity.getLedgerNo(),
@@ -403,34 +402,46 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         );
     }
 
-    private String buildDisplayText(QuotaLedgerEntity entity, String featureName, String quotaUnit) {
+    private String buildDisplayText(QuotaLedgerEntity entity, String featureDisplayName, String quotaUnit) {
         long absAmount = Math.abs(entity.getAmount());
+        String unitStr = absAmount == 1 ? quotaUnit : quotaUnit + "s";
         JsonObject biz = parseBizContext(entity.getBizContext());
 
         return switch (entity.getLedgerType()) {
             case LEDGER_TYPE_CONSUME -> switch (entity.getSourceType()) {
-                case "task" -> featureName + " 消耗 " + absAmount + " " + quotaUnit;
-                default -> "消费 " + absAmount + " " + quotaUnit;
+                case "task" -> featureDisplayName + " consumed " + absAmount + " " + unitStr;
+                default -> "Consumed " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_REFUND -> switch (entity.getSourceType()) {
-                case "task" -> "任务失败，退回 " + absAmount + " " + quotaUnit;
-                default -> "退回 " + absAmount + " " + quotaUnit;
+                case "task" -> "Task failed, refunded " + absAmount + " " + unitStr;
+                default -> "Refunded " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_RECHARGE -> {
                 String packageCode = biz != null && biz.has("package_code") ? biz.get("package_code").getAsString() : null;
                 String packageName = resolvePackageName(entity.getFeatureCode(), packageCode);
                 long quotaAmount = biz != null && biz.has("quota_amount") ? biz.get("quota_amount").getAsLong() : absAmount;
                 int priceCents = biz != null && biz.has("price_cents") ? biz.get("price_cents").getAsInt() : 0;
-                String priceStr = priceCents > 0 ? String.format("$%.2f", priceCents / 100.0) : "";
-                yield "充值 " + packageName + "，到账 " + quotaAmount + " " + quotaUnit + (priceStr.isEmpty() ? "" : "（" + priceStr + "）");
+                String priceStr = priceCents > 0 ? String.format(" ($%.2f)", priceCents / 100.0) : "";
+                String qUnit = quotaAmount == 1 ? quotaUnit : quotaUnit + "s";
+                yield "Recharged " + packageName + ", +" + quotaAmount + " " + qUnit + priceStr;
             }
-            default -> entity.getLedgerType() + " " + absAmount + " " + quotaUnit;
+            default -> entity.getLedgerType() + " " + absAmount + " " + unitStr;
+        };
+    }
+
+    private String resolveFeatureDisplayName(String featureCode) {
+        if (featureCode == null) return "Quota";
+        return switch (featureCode) {
+            case "task_create" -> "Assignment";
+            case "ai_detection" -> "AI Detection";
+            case "humanizer" -> "Humanizer";
+            default -> featureCode;
         };
     }
 
     private String resolvePackageName(String featureCode, String packageCode) {
         if (packageCode == null || packageCode.isEmpty()) {
-            return "套餐";
+            return "Package";
         }
         AiFeaturePackageEntity pkg = aiFeaturePackageMapper.selectOne(
                 new LambdaQueryWrapper<AiFeaturePackageEntity>()

@@ -7,7 +7,9 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 任务提交配置
  * <p>
- * 用于控制普通用户每日任务提交额度，管理员不受限制
+ * 支持两套额度体系：
+ * 1. AI 额度（user_ai_quotas）：免费+付费，quota-enabled=true 时使用
+ * 2. 每日次数限制：dailyLimitPerUser，quota-enabled=false 时使用
  */
 @Data
 @Configuration
@@ -15,17 +17,23 @@ import org.springframework.context.annotation.Configuration;
 public class TaskSubmitConfig {
 
     /**
-     * 普通用户每日任务提交上限
-     * <p>
+     * 是否启用 AI 额度体系（user_ai_quotas，免费+付费）
+     * true: 使用 QuotaDomainService 扣减额度
+     * false: 使用下方的每日次数限制
+     */
+    private boolean quotaEnabled = true;
+
+    /**
+     * 普通用户每日任务提交上限（仅当 quotaEnabled=false 时生效）
      * - 大于 0：启用限额，如 3 表示每天最多提交 3 个任务
      * - 0 或负数：不限制
      */
     private int dailyLimitPerUser = 3;
 
     /**
-     * 是否启用限额
+     * 是否启用限额（每日次数模式）
      */
     public boolean isLimitEnabled() {
-        return dailyLimitPerUser > 0;
+        return !quotaEnabled && dailyLimitPerUser > 0;
     }
 }

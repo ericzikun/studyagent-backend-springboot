@@ -1,9 +1,13 @@
 package com.studyagent.api.controller;
 
+import com.studyagent.common.quota.FeatureCode;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
+import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
+import com.studyagent.infra.service.QuotaRechargeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,12 +19,15 @@ import java.util.Map;
 
 /**
  * Webhook控制器
+ * 处理 Stripe 支付回调，完成用户充值到账
  */
 @Slf4j
 @RestController
 @RequestMapping("/v1/webhook")
 @RequiredArgsConstructor
 public class WebhookController {
+
+    private final QuotaRechargeService quotaRechargeService;
     
     @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
@@ -45,10 +52,11 @@ public class WebhookController {
             
             // 处理事件
             if ("checkout.session.completed".equals(event.getType())) {
-                Session session = (Session) event.getDataObjectDeserializer()
-                    .getObject().orElse(null);
+                Session session = resolveSession(event);
                 if (session != null) {
                     handleCheckoutSessionCompleted(session);
+                } else {
+                    log.error("无法解析 checkout.session，event_id={}", event.getId());
                 }
             }
             
@@ -65,18 +73,82 @@ public class WebhookController {
         }
     }
     
+    /**
+     * 解析 Session 对象。当 getObject() 为空时（API 版本不匹配），使用 deserializeUnsafe 强制反序列化。
+     */
+    private Session resolveSession(Event event) {
+        EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
+        if (deserializer.getObject().isPresent()) {
+            StripeObject obj = deserializer.getObject().get();
+            return obj instanceof Session ? (Session) obj : null;
+        }
+        try {
+            StripeObject obj = deserializer.deserializeUnsafe();
+            return obj instanceof Session ? (Session) obj : null;
+        } catch (Exception e) {
+            log.warn("deserializeUnsafe 失败，尝试用 getRawJson 手动解析: {}", e.getMessage());
+            String raw = deserializer.getRawJson();
+            if (raw != null && !raw.isEmpty()) {
+                return com.stripe.net.ApiResource.GSON.fromJson(raw, Session.class);
+            }
+            return null;
+        }
+    }
+
     private void handleCheckoutSessionCompleted(Session session) {
-        log.info("支付完成！Session ID: {}, 客户邮箱: {}, 支付金额: ${}, 套餐类型: {}, 获得积分: {}, 用户ID: {}",
+        Map<String, String> metadata = session.getMetadata();
+        String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
+        String packageType = metadata != null ? metadata.get("package_type") : null;
+        String creditsStr = metadata != null ? metadata.get("credits") : null;
+        String featureCode = metadata != null ? metadata.get("feature_code") : null;
+        if (featureCode == null || featureCode.isEmpty()) {
+            featureCode = FeatureCode.TASK_CREATE.getCode();
+        }
+
+        log.info("支付完成！Session ID: {}, 客户邮箱: {}, 支付金额: ${}, 套餐类型: {}, 功能: {}, 获得积分: {}, 用户ID: {}",
             session.getId(),
             session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null,
             session.getAmountTotal() != null ? session.getAmountTotal() / 100.0 : 0,
-            session.getMetadata() != null ? session.getMetadata().get("package_type") : null,
-            session.getMetadata() != null ? session.getMetadata().get("credits") : null,
-            session.getMetadata() != null ? session.getMetadata().get("clerk_user_id") : null
+            packageType,
+            featureCode,
+            creditsStr,
+            clerkUserId
         );
-        
-        // TODO: 保存订单到数据库
-        // TODO: 发放积分到用户账户
+
+        // 解析额度：优先用 metadata.credits，否则从套餐表获取
+        long quotaAmount;
+        try {
+            quotaAmount = creditsStr != null && !creditsStr.isEmpty()
+                ? Long.parseLong(creditsStr)
+                : 0L;
+        } catch (NumberFormatException e) {
+            quotaAmount = 0L;
+        }
+        if (quotaAmount <= 0 && packageType != null) {
+            Long fromPackage = quotaRechargeService.getQuotaAmountFromPackage(featureCode, packageType);
+            if (fromPackage != null) {
+                quotaAmount = fromPackage;
+            }
+        }
+
+        int priceCents = session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0;
+        String currency = session.getCurrency() != null ? session.getCurrency() : "usd";
+        String paymentIntentId = session.getPaymentIntent();
+
+        if (quotaAmount > 0 && clerkUserId != null && !clerkUserId.isEmpty()) {
+            quotaRechargeService.processRecharge(
+                clerkUserId,
+                featureCode,
+                packageType != null ? packageType : "unknown",
+                quotaAmount,
+                priceCents,
+                currency,
+                session.getId(),
+                paymentIntentId
+            );
+        } else {
+            log.warn("支付回调跳过充值: clerk_user_id 为空或 quota_amount 无效");
+        }
     }
 }
 

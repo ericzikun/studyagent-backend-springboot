@@ -2,9 +2,11 @@ package com.studyagent.api.exception;
 
 import com.studyagent.api.common.Meta;
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.response.InsufficientQuotaResponse;
 import com.studyagent.api.dto.response.SubmitQuotaExceededResponse;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.exception.QuotaExceededException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
@@ -57,6 +59,32 @@ public class GlobalExceptionHandler {
     /**
      * 任务提交额度超限异常
      * 返回带额度信息的响应体，供前端展示「今日已用 X/Y 次，将于 Z 时重置」
+     */
+    /**
+     * AI 额度不足异常
+     */
+    @ExceptionHandler(InsufficientQuotaException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<InsufficientQuotaResponse> handleInsufficientQuotaException(InsufficientQuotaException ex) {
+        log.warn("AI 额度不足: {}", ex.getMessage());
+        var data = ex.getData();
+        InsufficientQuotaResponse response = data != null ? InsufficientQuotaResponse.builder()
+                .featureCode(data.getFeatureCode())
+                .featureName(data.getFeatureName())
+                .quotaUnit(data.getQuotaUnit())
+                .freeBalance(data.getFreeBalance())
+                .freePeriodTotal(data.getFreePeriodTotal())
+                .paidBalance(data.getPaidBalance())
+                .totalAvailable(data.getTotalAvailable())
+                .build() : null;
+        Result<InsufficientQuotaResponse> result = new Result<>();
+        result.setMeta(Meta.error(InsufficientQuotaException.CODE, ex.getMessage()));
+        result.setData(response);
+        return result;
+    }
+
+    /**
+     * 任务提交额度超限异常（每日次数模式）
      */
     @ExceptionHandler(QuotaExceededException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

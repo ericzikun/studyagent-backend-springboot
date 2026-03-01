@@ -4,6 +4,7 @@ import com.studyagent.common.event.AgentEventRequest;
 import com.studyagent.common.event.AgentEventType;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.repository.event.*;
+import com.studyagent.service.domain.quota.QuotaDomainService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ public class AgentEventApplicationService {
     private final TaskAgentEntityRepository taskAgentRepository;
     private final TaskActivityEntityRepository taskActivityRepository;
     private final TaskOutputEntityRepository taskOutputRepository;
+    private final QuotaDomainService quotaDomainService;
     
     // 🆕 Markdown 转 TipTap JSON 服务 URL
     @Value("${frontend.markdown-service-url:http://localhost:3000/api/markdown-to-tiptap}")
@@ -261,7 +263,14 @@ public class AgentEventApplicationService {
         
         // 批量更新未完成的 Agent 状态为失败
         taskAgentRepository.failPendingByTaskId(taskId);
-        
+
+        // 任务失败额度退款
+        try {
+            quotaDomainService.refundByTaskId(taskId, "任务执行失败");
+        } catch (Exception ex) {
+            log.warn("任务失败退款异常: taskId={}, error={}", taskId, ex.getMessage());
+        }
+
         log.info("任务失败: taskId={}, error={}", taskId, getStringValue(payload, "errorMessage"));
     }
 

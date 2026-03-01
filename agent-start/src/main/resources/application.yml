@@ -89,6 +89,12 @@ stripe:
   publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_xxx}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxx}
   price:
+    # Assignment 四种套餐（与前端 pricing 页面一致）
+    assignment_1: ${STRIPE_PRICE_ASSIGNMENT_1:price_xxx}
+    assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:price_xxx}
+    assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:price_xxx}
+    assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:price_xxx}
+    # 旧套餐（向后兼容）
     starter: ${STRIPE_PRICE_STARTER:price_xxx}
     pro: ${STRIPE_PRICE_PRO:price_xxx}
     academic: ${STRIPE_PRICE_ACADEMIC:price_xxx}
@@ -119,9 +125,11 @@ aliyun:
     path-prefix: ${OSS_PATH_PREFIX:studyagent/uploads}
 
 # 任务提交配置
-# 普通用户每日任务提交上限，0 或负数表示不限制；管理员不受限制
+# quota-enabled: true 使用 AI 额度体系（user_ai_quotas 免费+付费）；false 使用每日次数限制
+# daily-limit-per-user: 每日次数上限（仅 quota-enabled=false 时生效），0 或负数表示不限制
 task:
   submit:
+    quota-enabled: ${TASK_QUOTA_ENABLED:true}
     daily-limit-per-user: ${TASK_DAILY_LIMIT_PER_USER:3}
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）

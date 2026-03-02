@@ -85,4 +85,25 @@ public class HumanizerTaskRepositoryImpl {
     public int recoverTimeoutTasks(int timeoutMinutes, int maxRetry) {
         return mapper.recoverTimeoutTasks(timeoutMinutes, maxRetry);
     }
+
+    /**
+     * 统计某类型在某任务之前排队的任务数（PENDING + PROCESSING，按创建时间排在前面的）
+     */
+    public int countQueueAhead(String taskType, Long taskId) {
+        LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(HumanizerTaskEntity::getTaskType, taskType);
+        wrapper.in(HumanizerTaskEntity::getStatus, "PENDING", "PROCESSING");
+        wrapper.lt(HumanizerTaskEntity::getId, taskId);
+        return Math.toIntExact(mapper.selectCount(wrapper));
+    }
+
+    /**
+     * 统计某类型正在处理的任务数
+     */
+    public int countProcessing(String taskType) {
+        LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(HumanizerTaskEntity::getTaskType, taskType);
+        wrapper.eq(HumanizerTaskEntity::getStatus, "PROCESSING");
+        return Math.toIntExact(mapper.selectCount(wrapper));
+    }
 }

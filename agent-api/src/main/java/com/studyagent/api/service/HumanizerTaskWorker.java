@@ -177,6 +177,7 @@ public class HumanizerTaskWorker {
                         update.setSentencesJson(objectMapper.writeValueAsString(sentences));
                         update.setCompletedSentences(sentences.size());
                         update.setFinishedAt(LocalDateTime.now());
+                        update.setErrorMessage(null); // 清掉重试残留的错误信息
                         repository.updateById(update);
 
                         log.info("DETECT 任务完成: id={}, label={}, prob={}, 耗时={}s",
@@ -235,6 +236,7 @@ public class HumanizerTaskWorker {
             update.setCompletedSentences(sentences.size());
             update.setTotalSentences(sentences.size());
             update.setFinishedAt(LocalDateTime.now());
+            update.setErrorMessage(null); // 清掉之前可能残留的错误信息
             repository.updateById(update);
 
             log.info("DETECT 任务完成(从句子汇总): id={}, prob={}", task.getId(), finalProb);
@@ -261,6 +263,7 @@ public class HumanizerTaskWorker {
                 update.setResultText(result.getResult());
                 update.setElapsedSeconds(result.getElapsedSeconds());
                 update.setFinishedAt(LocalDateTime.now());
+                update.setErrorMessage(null); // 清掉重试残留的错误信息
                 log.info("HUMANIZE 任务完成: id={}, 耗时={}s", task.getId(), result.getElapsedSeconds());
             } else {
                 throw new RuntimeException(result.getMsg() != null ? result.getMsg() : "Humanize failed with code " + result.getCode());

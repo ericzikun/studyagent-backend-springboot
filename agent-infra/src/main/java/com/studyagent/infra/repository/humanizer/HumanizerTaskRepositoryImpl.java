@@ -78,4 +78,11 @@ public class HumanizerTaskRepositoryImpl {
     public boolean claimTask(Long id) {
         return mapper.claimTask(id) > 0;
     }
+
+    /**
+     * 回收超时的 PROCESSING 任务
+     */
+    public int recoverTimeoutTasks(int timeoutMinutes, int maxRetry) {
+        return mapper.recoverTimeoutTasks(timeoutMinutes, maxRetry);
+    }
 }

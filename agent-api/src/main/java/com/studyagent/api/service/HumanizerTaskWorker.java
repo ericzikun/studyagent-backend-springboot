@@ -19,7 +19,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 后台 Worker：轮询 humanizer_tasks 表，处理 PENDING 任务
@@ -38,10 +40,34 @@ public class HumanizerTaskWorker {
     private final ObjectMapper objectMapper;
 
     private static final int MAX_RETRY = 3;
+    /** PROCESSING 超过这个时间（分钟）自动回收 */
+    private static final int PROCESSING_TIMEOUT_MINUTES = 20;
+    /** HUMANIZE 最大并发数（调外部 API，不占本地 CPU） */
+    private static final int HUMANIZE_CONCURRENCY = 3;
 
     // 防止并发执行
     private final AtomicBoolean detectRunning = new AtomicBoolean(false);
-    private final AtomicBoolean humanizeRunning = new AtomicBoolean(false);
+    /** 当前正在跑的 HUMANIZE 任务数 */
+    private final AtomicInteger humanizeRunningCount = new AtomicInteger(0);
+    /** HUMANIZE 并发线程池 */
+    private final ExecutorService humanizeExecutor = Executors.newFixedThreadPool(HUMANIZE_CONCURRENCY,
+            r -> { Thread t = new Thread(r, "humanize-worker"); t.setDaemon(true); return t; });
+
+    /**
+     * 每 60 秒检查一次：回收卡在 PROCESSING 超过 10 分钟的任务
+     * 防止 Java 重启或 Python 挂掉导致任务永远卡死
+     */
+    @Scheduled(fixedDelay = 60000)
+    public void recoverTimeoutTasks() {
+        try {
+            int recovered = repository.recoverTimeoutTasks(PROCESSING_TIMEOUT_MINUTES, MAX_RETRY);
+            if (recovered > 0) {
+                log.warn("回收超时任务 {} 个（超过 {} 分钟未完成）", recovered, PROCESSING_TIMEOUT_MINUTES);
+            }
+        } catch (Exception e) {
+            log.error("回收超时任务异常", e);
+        }
+    }
 
     /**
      * 每 3 秒轮询一次 DETECT 任务
@@ -68,24 +94,33 @@ public class HumanizerTaskWorker {
 
     /**
      * 每 5 秒轮询一次 HUMANIZE 任务
+     * 最多同时跑 HUMANIZE_CONCURRENCY 个（调外部 API，不占本地 CPU）
      */
     @Scheduled(fixedDelay = 5000)
     public void pollHumanizeTasks() {
-        if (!humanizeRunning.compareAndSet(false, true)) {
-            return;
-        }
         try {
-            List<HumanizerTaskEntity> tasks = repository.findPendingTasks("HUMANIZE", 1);
+            int running = humanizeRunningCount.get();
+            int available = HUMANIZE_CONCURRENCY - running;
+            if (available <= 0) {
+                return; // 已满载
+            }
+
+            List<HumanizerTaskEntity> tasks = repository.findPendingTasks("HUMANIZE", available);
             for (HumanizerTaskEntity task : tasks) {
                 if (!repository.claimTask(task.getId())) {
                     continue;
                 }
-                processHumanizeTask(task);
+                humanizeRunningCount.incrementAndGet();
+                humanizeExecutor.submit(() -> {
+                    try {
+                        processHumanizeTask(task);
+                    } finally {
+                        humanizeRunningCount.decrementAndGet();
+                    }
+                });
             }
         } catch (Exception e) {
             log.error("轮询 HUMANIZE 任务异常", e);
-        } finally {
-            humanizeRunning.set(false);
         }
     }
 

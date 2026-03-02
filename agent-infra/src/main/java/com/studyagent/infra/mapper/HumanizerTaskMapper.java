@@ -19,4 +19,15 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
     @Update("UPDATE humanizer_tasks SET status = 'PROCESSING', started_at = NOW(), updated_at = NOW() " +
             "WHERE id = #{id} AND status = 'PENDING'")
     int claimTask(@Param("id") Long id);
+
+    /**
+     * 超时回收：PROCESSING 超过 timeoutMinutes 分钟的任务改回 PENDING（重试）或 FAILED（超限）
+     * 返回受影响行数
+     */
+    @Update("UPDATE humanizer_tasks SET status = CASE WHEN retry_count < #{maxRetry} THEN 'PENDING' ELSE 'FAILED' END, " +
+            "retry_count = retry_count + 1, " +
+            "error_message = 'Processing timeout, auto recovered', " +
+            "updated_at = NOW() " +
+            "WHERE status = 'PROCESSING' AND started_at < DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE)")
+    int recoverTimeoutTasks(@Param("timeoutMinutes") int timeoutMinutes, @Param("maxRetry") int maxRetry);
 }

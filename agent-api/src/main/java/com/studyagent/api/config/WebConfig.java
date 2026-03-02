@@ -24,7 +24,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/swagger-ui/**", 
                 "/v3/api-docs/**",
                 "/actuator/**",
-                "/api/v1/agent-events/**"  // Python Agent 事件接口，使用 Token 验证
+                "/api/v1/agent-events/**",  // Python Agent 事件接口，使用 Token 验证
+                "/v1/humanizer/**"  // TODO: 测试完成后删除此行，恢复认证
             );
     }
 }

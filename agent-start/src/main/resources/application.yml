@@ -156,6 +156,15 @@ payment:
   success-url: ${PAYMENT_SUCCESS_URL:http://localhost:3000/success}
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/cancel}
 
+# PostHog 分析配置
+posthog:
+  # 是否启用埋点
+  enabled: ${POSTHOG_ENABLED:false}
+  # PostHog API Key（从项目设置中获取）
+  api-key: ${POSTHOG_API_KEY:}
+  # PostHog 服务器地址（默认是官方云，也可以自托管）
+  host: ${POSTHOG_HOST:https://app.posthog.com}
+
 # 日志配置
 logging:
   level:

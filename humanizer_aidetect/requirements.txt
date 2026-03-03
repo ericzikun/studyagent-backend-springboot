@@ -5,3 +5,4 @@ transformers
 protobuf
 sentencepiece
 requests==2.32.*
+nltk>=3.8

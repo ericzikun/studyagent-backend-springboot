@@ -104,14 +104,106 @@ load_model()
 
 
 # ==================== AI Detection 工具函数 ====================
+
+# --- 分句：nltk Punkt（主力） + 改进正则（fallback） + 短句合并 ---
+MIN_CHUNK_CHARS = 80   # 短于此字符数的片段合并到相邻块
+MIN_CHUNK_WORDS = 10   # 短于此单词数的片段也合并
+
+# 尝试加载 nltk punkt
+_nltk_available = False
+try:
+    import nltk
+    try:
+        nltk.data.find('tokenizers/punkt_tab')
+    except LookupError:
+        nltk.download('punkt_tab', quiet=True)
+    from nltk.tokenize import sent_tokenize
+    _nltk_available = True
+    logger.info("nltk punkt loaded — using sent_tokenize for sentence splitting")
+except Exception as e:
+    logger.warning(f"nltk not available, falling back to improved regex: {e}")
+
+
+def _regex_split_sentences(text):
+    """改进的正则分句，处理小数点、金额、常见缩写"""
+    # 先把不应该切割的 '.' 临时替换掉
+    protected = text
+    # 1) 金额/小数: $7.5  3.14  9.7
+    protected = re.sub(r'(\d)\.(\d)', r'\1<DOT>\2', protected)
+    # 2) 常见缩写
+    abbrevs = [
+        r'(?i)\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc|inc|ltd|co|corp)\.',
+        r'(?i)\b(e\.g|i\.e|cf|al|fig|vol|no|dept|approx|est)\.',
+        r'(?i)\b([A-Z])\.',  # 单字母缩写 U.S.A, U.K.
+    ]
+    for pat in abbrevs:
+        protected = re.sub(pat, lambda m: m.group(0).replace('.', '<DOT>'), protected)
+    # 3) 省略号
+    protected = protected.replace('...', '<ELLIPSIS>')
+
+    # 按句末标点分割
+    parts = re.split(r'(?<=[.!?。！？])\s+', protected)
+
+    # 还原占位符
+    sentences = []
+    for p in parts:
+        p = p.replace('<DOT>', '.').replace('<ELLIPSIS>', '...')
+        p = p.strip()
+        if p:
+            sentences.append(p)
+    return sentences
+
+
+def _is_too_short(text):
+    """判断片段是否太短，不适合单独检测"""
+    return len(text) < MIN_CHUNK_CHARS or len(text.split()) < MIN_CHUNK_WORDS
+
+
+def _merge_short_chunks(chunks):
+    """把过短的片段合并到相邻块，优先合并到前一个"""
+    if not chunks:
+        return chunks
+    merged = [chunks[0]]
+    for chunk in chunks[1:]:
+        if _is_too_short(chunk):
+            # 合并到前一个
+            merged[-1] = merged[-1] + ' ' + chunk
+        elif _is_too_short(merged[-1]):
+            # 前一个太短，把当前块并入前一个
+            merged[-1] = merged[-1] + ' ' + chunk
+        else:
+            merged.append(chunk)
+    # 最后一个如果还是太短，合并到倒数第二个
+    if len(merged) > 1 and _is_too_short(merged[-1]):
+        merged[-2] = merged[-2] + ' ' + merged[-1]
+        merged.pop()
+    return merged
+
+
 def split_text_into_sentences(text):
-    """按句子分割文本，每个句子单独作为一个检测单元"""
-    # 按句号、问号、感叹号分割，保留分隔符
-    parts = re.split(r'(?<=[.!?。！？])\s*', text)
-    sentences = [s.strip() for s in parts if s.strip()]
-    # 如果没有标点分割（比如只有一句话），直接返回整段
-    if not sentences:
-        return [text.strip()] if text.strip() else []
+    """
+    智能分句：
+    1. 优先用 nltk Punkt（处理缩写、数字等边界情况）
+    2. fallback 到改进正则（处理金额、缩写占位）
+    3. 最后做短句合并，确保每个 chunk 有足够上下文
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    # 分句
+    if _nltk_available:
+        sentences = sent_tokenize(text)
+    else:
+        sentences = _regex_split_sentences(text)
+
+    # 如果只分出一句或没分出来，直接返回
+    if len(sentences) <= 1:
+        return [text] if text else []
+
+    # 合并过短片段
+    sentences = _merge_short_chunks(sentences)
+
     return sentences
 
 def predict_chunk(text):

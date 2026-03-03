@@ -32,10 +32,9 @@ public class HumanizerController {
     @PostMapping("/detect")
     public Result<HumanizerTaskResponse> submitDetect(
             @RequestBody @Valid HumanizerRequest request,
-            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        String userId = clerkUserId != null ? clerkUserId : "test-user";
-        log.info("提交 DETECT 任务: userId={}, textLength={}", userId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(userId, "DETECT", request.getText());
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("提交 DETECT 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
+        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
         return Result.success(response);
     }
 
@@ -45,10 +44,9 @@ public class HumanizerController {
     @PostMapping("/process")
     public Result<HumanizerTaskResponse> submitHumanize(
             @RequestBody @Valid HumanizerRequest request,
-            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        String userId = clerkUserId != null ? clerkUserId : "test-user";
-        log.info("提交 HUMANIZE 任务: userId={}, textLength={}", userId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(userId, "HUMANIZE", request.getText());
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("提交 HUMANIZE 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
+        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
         return Result.success(response);
     }
 
@@ -58,9 +56,8 @@ public class HumanizerController {
     @GetMapping("/tasks/{id}")
     public Result<HumanizerTaskResponse> getTask(
             @PathVariable Long id,
-            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        String userId = clerkUserId != null ? clerkUserId : "test-user";
-        HumanizerTaskResponse response = humanizerApplicationService.getTask(id, userId);
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        HumanizerTaskResponse response = humanizerApplicationService.getTask(id, clerkUserId);
         return Result.success(response);
     }
 
@@ -76,9 +73,8 @@ public class HumanizerController {
             @RequestParam(required = false) String taskType,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        String userId = clerkUserId != null ? clerkUserId : "test-user";
-        HumanizerTaskListResponse response = humanizerApplicationService.listTasks(userId, taskType, page, size);
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        HumanizerTaskListResponse response = humanizerApplicationService.listTasks(clerkUserId, taskType, page, size);
         return Result.success(response);
     }
 }

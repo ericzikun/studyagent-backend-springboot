@@ -6,7 +6,7 @@ ENV_FILE="/app/backend_aidetect_humanizer/.env"
 LOCAL_DIR="/app/backend_aidetect_humanizer"
 
 # 自动获取当前运行容器的镜像作为基础，找不到就用 latest
-CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $CONTAINER_NAME 2>/dev/null || echo "aidetect:latest")
+CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $CONTAINER_NAME 2>/dev/null || echo "crpi-r4tdtw0d8j47g8a4.cn-hongkong.personal.cr.aliyuncs.com/my-fc-demo-jyx/aidetect:v2")
 echo "当前镜像: $CURRENT_IMAGE"
 
 echo "=== 1. 停止并删除旧容器 ==="
@@ -22,6 +22,8 @@ docker cp ${LOCAL_DIR}/requirements.txt $CONTAINER_NAME:/app/requirements.txt
 
 echo "=== 4. 安装/更新依赖 ==="
 docker exec $CONTAINER_NAME pip install --no-cache-dir -r /app/requirements.txt
+echo "=== 4.1 下载 nltk punkt 数据 ==="
+docker exec $CONTAINER_NAME python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 
 echo "=== 5. 提交为新镜像 (latest) ==="
 docker commit $CONTAINER_NAME aidetect:latest

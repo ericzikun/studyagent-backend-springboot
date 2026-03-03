@@ -30,7 +30,7 @@ public class HumanizerServiceClientImpl implements HumanizerServiceClient {
 
     private final WebClient humanizerWebClient;
 
-    @Value("${humanizer-service.url:http://47.88.58.79:9000}")
+    @Value("${humanizer-service.url:http://localhost:9000}")
     private String humanizerServiceUrl;
 
     public HumanizerServiceClientImpl(@Qualifier("humanizerWebClient") WebClient humanizerWebClient) {

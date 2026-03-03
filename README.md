@@ -36,6 +36,19 @@ cd agent-start
 mvn spring-boot:run
 ```
 
+### 2.1 运行 Mock 应用（前端联调）
+
+```bash
+cd agent-start
+mvn spring-boot:run -Dspring-boot.run.main-class=com.studyagent.start.MockStudyAgentApplication
+```
+
+Mock 模式特性：
+- 不依赖数据库、Clerk、Python 后端
+- 内存态数据，重启后重置
+- 提供 `task/file/auth/health/quota/payment` mock 接口（保持 Spring 现有响应结构）
+- 可与前端 Clerk 正常登录并存：前端仍使用 Clerk 登录，Mock API 只做业务接口联调
+
 ### 3. 访问 API 文档
 
 http://localhost:8080/swagger-ui.html
@@ -50,4 +63,3 @@ http://localhost:8080/swagger-ui.html
 ## 环境配置
 
 参考 `agent-start/src/main/resources/application.yml`
-

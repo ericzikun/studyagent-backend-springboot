@@ -131,7 +131,7 @@
 
             <!-- PostHog Java SDK -->
             <dependency>
-                <groupId>com.posthog</groupId>
+                <groupId>com.posthog.java</groupId>
                 <artifactId>posthog</artifactId>
                 <version>${posthog.version}</version>
             </dependency>

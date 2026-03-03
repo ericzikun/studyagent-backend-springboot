@@ -55,8 +55,6 @@ public class AuthApplicationService {
         loginProps.put("display_name", user.getDisplayName());
         loginProps.put("locale", user.getLocale());
         loginProps.put("is_admin", user.getIsAdmin());
-        loginProps.put("is_new_user", user.getCreatedAt() != null &&
-            user.getCreatedAt().isAfter(java.time.LocalDateTime.now().minusMinutes(1)));
         analyticsService.capture(user.getClerkUserId(), AnalyticsEvents.USER_LOGIN_SUCCESS, loginProps);
 
         // 5. 设置用户属性

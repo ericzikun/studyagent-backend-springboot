@@ -51,6 +51,9 @@
         <!-- Commons -->
         <commons-lang3.version>3.13.0</commons-lang3.version>
         <gson.version>2.10.1</gson.version>
+
+        <!-- PostHog -->
+        <posthog.version>1.1.0</posthog.version>
     </properties>
 
     <dependencyManagement>
@@ -125,7 +128,14 @@
                 <artifactId>gson</artifactId>
                 <version>${gson.version}</version>
             </dependency>
-            
+
+            <!-- PostHog Java SDK -->
+            <dependency>
+                <groupId>com.posthog</groupId>
+                <artifactId>posthog</artifactId>
+                <version>${posthog.version}</version>
+            </dependency>
+
             <!-- Agent Common (内部模块) -->
             <dependency>
                 <groupId>com.studyagent</groupId>

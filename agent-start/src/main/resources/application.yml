@@ -132,6 +132,13 @@ task:
     quota-enabled: ${TASK_QUOTA_ENABLED:true}
     daily-limit-per-user: ${TASK_DAILY_LIMIT_PER_USER:3}
 
+# Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
+humanizer-service:
+  url: ${HUMANIZER_SERVICE_URL:http://localhost:9000}
+  rate-limit:
+    detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
+    process: 5          # Humanizer 改写：每分钟最大请求数
+
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}

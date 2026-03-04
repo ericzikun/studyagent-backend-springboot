@@ -154,6 +154,29 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         } catch (StripeException e) {
             throw new PaymentDomainException("STRIPE_ERROR", "Query session failed: " + e.getMessage(), e);
         }
+        Map<String, String> metadata = session.getMetadata();
+        Integer credits = null;
+        String featureCode = metadata != null ? metadata.get("feature_code") : null;
+        String purchasedUnit = null;
+        Integer purchasedQuantity = null;
+        if (metadata != null) {
+            String creditsRaw = metadata.get("credits");
+            if (creditsRaw != null && !creditsRaw.isBlank()) {
+                try {
+                    credits = Integer.parseInt(creditsRaw);
+                } catch (NumberFormatException ignored) {
+                    credits = null;
+                }
+            }
+        }
+        if (credits != null) {
+            purchasedQuantity = credits;
+            if ("task_create".equals(featureCode)) {
+                purchasedUnit = "times";
+            } else if ("ai_detection".equals(featureCode) || "humanizer".equals(featureCode)) {
+                purchasedUnit = "words";
+            }
+        }
         return SessionStatusResult.builder()
                 .sessionId(session.getId())
                 .status(session.getStatus())
@@ -162,7 +185,12 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 .currency(session.getCurrency())
                 .customerEmail(session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null)
                 .createdAt(session.getCreated())
-                .clerkUserId(session.getMetadata() != null ? session.getMetadata().get("clerk_user_id") : null)
+                .clerkUserId(metadata != null ? metadata.get("clerk_user_id") : null)
+                .packageType(metadata != null ? metadata.get("package_type") : null)
+                .featureCode(featureCode)
+                .credits(credits)
+                .purchasedQuantity(purchasedQuantity)
+                .purchasedUnit(purchasedUnit)
                 .build();
     }
 

@@ -68,6 +68,10 @@ public class MockPaymentController {
             ? request.getClerkUserId()
             : user.uid();
         record.packageType = request.getPackageType();
+        record.featureCode = featureCodeOf(request.getPackageType());
+        record.credits = creditsOf(request.getPackageType());
+        record.purchasedQuantity = record.credits;
+        record.purchasedUnit = "task_create".equals(record.featureCode) ? "times" : "words";
 
         sessions.put(sessionId, record);
 
@@ -104,6 +108,11 @@ public class MockPaymentController {
             record.customerEmail = user.email();
             record.createdAt = Instant.now().getEpochSecond();
             record.clerkUserId = user.uid();
+            record.packageType = "assignment_10";
+            record.featureCode = "task_create";
+            record.credits = 10;
+            record.purchasedQuantity = 10;
+            record.purchasedUnit = "times";
         }
 
         Map<String, Object> data = new HashMap<>();
@@ -115,6 +124,11 @@ public class MockPaymentController {
         data.put("customerEmail", record.customerEmail);
         data.put("createdAt", record.createdAt);
         data.put("clerkUserId", record.clerkUserId);
+        data.put("packageType", record.packageType);
+        data.put("featureCode", record.featureCode);
+        data.put("credits", record.credits);
+        data.put("purchasedQuantity", record.purchasedQuantity);
+        data.put("purchasedUnit", record.purchasedUnit);
         return Result.success(data);
     }
 
@@ -191,6 +205,35 @@ public class MockPaymentController {
 
     private record PackageInfo(long amountTotal) {}
 
+    private String featureCodeOf(String packageType) {
+        if (packageType == null) {
+            return null;
+        }
+        if (packageType.startsWith("ai_detection_")) {
+            return "ai_detection";
+        }
+        if (packageType.startsWith("humanizer_")) {
+            return "humanizer";
+        }
+        return "task_create";
+    }
+
+    private Integer creditsOf(String packageType) {
+        if (packageType == null) {
+            return null;
+        }
+        return switch (packageType) {
+            case "assignment_1", "starter" -> 1;
+            case "assignment_5" -> 5;
+            case "assignment_10", "pro" -> 10;
+            case "assignment_50", "academic" -> 50;
+            case "ai_detection_10k", "humanizer_10k" -> 10000;
+            case "ai_detection_50k", "humanizer_50k" -> 50000;
+            case "ai_detection_200k", "humanizer_200k" -> 200000;
+            default -> null;
+        };
+    }
+
     private static class SessionRecord {
         String sessionId;
         String status;
@@ -201,6 +244,10 @@ public class MockPaymentController {
         Long createdAt;
         String clerkUserId;
         String packageType;
+        String featureCode;
+        Integer credits;
+        Integer purchasedQuantity;
+        String purchasedUnit;
     }
 
     @Data

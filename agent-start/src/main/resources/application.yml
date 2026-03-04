@@ -94,6 +94,14 @@ stripe:
     assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:price_xxx}
     assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:price_xxx}
     assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:price_xxx}
+    # AI Detection 套餐
+    detection_10k: ${STRIPE_PRICE_DETECTION_10K:}
+    detection_50k: ${STRIPE_PRICE_DETECTION_50K:}
+    detection_200k: ${STRIPE_PRICE_DETECTION_200K:}
+    # Humanizer 套餐
+    humanizer_10k: ${STRIPE_PRICE_HUMANIZER_10K:}
+    humanizer_50k: ${STRIPE_PRICE_HUMANIZER_50K:}
+    humanizer_200k: ${STRIPE_PRICE_HUMANIZER_200K:}
     # 旧套餐（向后兼容）
     starter: ${STRIPE_PRICE_STARTER:price_xxx}
     pro: ${STRIPE_PRICE_PRO:price_xxx}
@@ -138,6 +146,10 @@ humanizer-service:
   rate-limit:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数
+
+# Humanizer/AI Detection 内测白名单（逗号分隔的 Clerk User ID，不限额度）
+humanizer:
+  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
 
 # Python 后端配置
 python-backend:

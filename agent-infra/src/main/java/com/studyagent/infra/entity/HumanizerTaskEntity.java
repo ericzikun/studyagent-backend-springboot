@@ -59,6 +59,10 @@ public class HumanizerTaskEntity extends BaseEntity {
     @TableField("retry_count")
     private Integer retryCount;
 
+    /** Quota ledger ID for refund on failure */
+    @TableField("quota_ledger_id")
+    private Long quotaLedgerId;
+
     @TableField("started_at")
     private LocalDateTime startedAt;
 

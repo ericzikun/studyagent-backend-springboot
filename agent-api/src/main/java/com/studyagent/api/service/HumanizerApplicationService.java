@@ -4,14 +4,22 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.studyagent.api.dto.response.HumanizerTaskItemResponse;
 import com.studyagent.api.dto.response.HumanizerTaskListResponse;
 import com.studyagent.api.dto.response.HumanizerTaskResponse;
+import com.studyagent.common.exception.InsufficientQuotaData;
+import com.studyagent.common.exception.InsufficientQuotaException;
+import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.infra.entity.HumanizerTaskEntity;
 import com.studyagent.infra.repository.humanizer.HumanizerTaskRepositoryImpl;
+import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -23,6 +31,12 @@ import java.util.stream.Collectors;
 public class HumanizerApplicationService {
 
     private final HumanizerTaskRepositoryImpl repository;
+    private final QuotaDomainService quotaDomainService;
+    private final UserRepository userRepository;
+
+    /** 内测白名单用户（不限额度），通过配置 humanizer.whitelist-user-ids 设置 */
+    @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
+    private List<String> whitelistUserIds;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int PREVIEW_LENGTH = 50;
@@ -42,8 +56,52 @@ public class HumanizerApplicationService {
 
     /**
      * 提交任务（入库排队）
+     * 额度校验：admin 不限，普通用户按 word count 扣减对应 feature 额度
      */
     public HumanizerTaskResponse submitTask(String clerkUserId, String taskType, String text) {
+        // 1. 计算 word count（按空格分词）
+        int wordCount = countWords(text);
+
+        // 2. 确定 feature_code
+        String featureCode = "DETECT".equals(taskType)
+                ? FeatureCode.AI_DETECTION.getCode()
+                : FeatureCode.HUMANIZER.getCode();
+
+        // 3. 额度校验（admin 和白名单用户跳过）
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
+
+        Long quotaLedgerId = null;
+        if (!isAdmin && !isWhitelisted) {
+            // 检查额度是否足够
+            if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
+                var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
+                throw new InsufficientQuotaException(
+                        "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: " + wordCount,
+                        InsufficientQuotaData.builder()
+                                .featureCode(balance.featureCode())
+                                .featureName(balance.featureName())
+                                .quotaUnit(balance.quotaUnit())
+                                .freeBalance(balance.freeBalance())
+                                .freePeriodTotal(balance.freePeriodTotal())
+                                .paidBalance(balance.paidBalance())
+                                .totalAvailable(balance.totalAvailable())
+                                .build());
+            }
+
+            // 扣减额度
+            ConsumeResult consumeResult = quotaDomainService.consume(
+                    clerkUserId, featureCode, wordCount,
+                    "humanizer_task", null,
+                    Map.of("task_type", taskType, "word_count", wordCount));
+            quotaLedgerId = consumeResult.ledgerId();
+            log.info("额度扣减成功: userId={}, feature={}, words={}, ledgerId={}",
+                    clerkUserId, featureCode, wordCount, quotaLedgerId);
+        }
+
+        // 4. 入库
         HumanizerTaskEntity entity = new HumanizerTaskEntity();
         entity.setClerkUserId(clerkUserId);
         entity.setTaskType(taskType);
@@ -51,6 +109,7 @@ public class HumanizerApplicationService {
         entity.setStatus("PENDING");
         entity.setRetryCount(0);
         entity.setCompletedSentences(0);
+        entity.setQuotaLedgerId(quotaLedgerId);
 
         repository.insert(entity);
 
@@ -58,8 +117,8 @@ public class HumanizerApplicationService {
         int queueAhead = repository.countQueueAhead(taskType, entity.getId());
         int estimatedSeconds = estimateTime(taskType, text.length(), queueAhead);
 
-        log.info("任务已入库: id={}, type={}, userId={}, queueAhead={}, estimatedSeconds={}",
-                entity.getId(), taskType, clerkUserId, queueAhead, estimatedSeconds);
+        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, estimatedSeconds={}",
+                entity.getId(), taskType, clerkUserId, wordCount, queueAhead, estimatedSeconds);
 
         return HumanizerTaskResponse.builder()
                 .id(entity.getId())
@@ -68,6 +127,15 @@ public class HumanizerApplicationService {
                 .estimatedSeconds(estimatedSeconds)
                 .queuePosition(queueAhead)
                 .build();
+    }
+
+    /**
+     * 统计英文单词数（按空格分词）
+     */
+    private int countWords(String text) {
+        if (text == null || text.isBlank()) return 0;
+        String[] words = text.trim().split("\\s+");
+        return words.length;
     }
 
     /**

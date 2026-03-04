@@ -9,6 +9,7 @@ import com.studyagent.infra.repository.humanizer.HumanizerTaskRepositoryImpl;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
+import com.studyagent.service.domain.quota.QuotaDomainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +39,7 @@ public class HumanizerTaskWorker {
     private final HumanizerServiceClient humanizerServiceClient;
     private final HumanizerServiceClientImpl humanizerServiceClientImpl;
     private final ObjectMapper objectMapper;
+    private final QuotaDomainService quotaDomainService;
 
     private static final int MAX_RETRY = 3;
     /** PROCESSING 超过这个时间（分钟）自动回收 */
@@ -295,6 +297,8 @@ public class HumanizerTaskWorker {
             update.setErrorMessage(errorMsg);
             update.setFinishedAt(LocalDateTime.now());
             log.error("任务最终失败: id={}, error={}", task.getId(), errorMsg);
+            // 退还额度
+            refundQuota(task);
         }
 
         repository.updateById(update);
@@ -307,5 +311,22 @@ public class HumanizerTaskWorker {
         update.setErrorMessage(errorMsg);
         update.setFinishedAt(LocalDateTime.now());
         repository.updateById(update);
+        // 退还额度
+        refundQuota(task);
+    }
+
+    /**
+     * 任务失败时退还额度
+     */
+    private void refundQuota(HumanizerTaskEntity task) {
+        Long ledgerId = task.getQuotaLedgerId();
+        if (ledgerId != null) {
+            try {
+                quotaDomainService.refund(ledgerId, "humanizer_task_failed");
+                log.info("额度已退还: taskId={}, ledgerId={}", task.getId(), ledgerId);
+            } catch (Exception e) {
+                log.error("额度退还失败: taskId={}, ledgerId={}", task.getId(), ledgerId, e);
+            }
+        }
     }
 }

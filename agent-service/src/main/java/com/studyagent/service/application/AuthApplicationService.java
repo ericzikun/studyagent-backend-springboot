@@ -33,7 +33,8 @@ public class AuthApplicationService {
         // 1. 验证 token
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(token);
 
-        // 2. 获取或创建用户
+        // 2. 获取或创建用户（先判断是否为新用户，用于埋点）
+        boolean isNewUser = userRepository.findByClerkUserId(userInfo.clerkUserId).isEmpty();
         User user = clerkClient.getOrCreateUser(userInfo.clerkUserId);
 
         // 3. 更新用户信息（如果需要）
@@ -55,6 +56,7 @@ public class AuthApplicationService {
         loginProps.put("display_name", user.getDisplayName());
         loginProps.put("locale", user.getLocale());
         loginProps.put("is_admin", user.getIsAdmin());
+        loginProps.put("is_new_user", isNewUser);
         analyticsService.capture(user.getClerkUserId(), AnalyticsEvents.USER_LOGIN_SUCCESS, loginProps);
 
         // 5. 设置用户属性

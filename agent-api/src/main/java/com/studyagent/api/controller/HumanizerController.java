@@ -2,24 +2,21 @@ package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.HumanizerRequest;
-import com.studyagent.api.dto.response.HumanizerDetectResponse;
-import com.studyagent.api.dto.response.HumanizerProcessResponse;
+import com.studyagent.api.dto.response.HumanizerTaskListResponse;
+import com.studyagent.api.dto.response.HumanizerTaskResponse;
 import com.studyagent.api.service.HumanizerApplicationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Humanizer / AI 检测 控制器
+ * Humanizer / AI 检测 控制器（异步队列版）
  * <p>
- * 提供三个端点：
- * 1. POST /v1/humanizer/detect        — AI 检测（普通 POST）
- * 2. POST /v1/humanizer/detect-stream  — AI 检测 SSE 流式接口
- * 3. POST /v1/humanizer/process        — 文本人性化改写接口
- * <p>
- * 所有请求都经过 AuthInterceptor 认证（Clerk Token）和全局限流。
+ * POST /v1/humanizer/detect         — 提交 AI 检测任务，返回 taskId
+ * POST /v1/humanizer/process        — 提交改写任务，返回 taskId
+ * GET  /v1/humanizer/tasks/{id}     — 查询任务详情（前端轮询）
+ * GET  /v1/humanizer/tasks          — 查询用户任务列表（分页）
  */
 @Slf4j
 @RestController
@@ -30,56 +27,54 @@ public class HumanizerController {
     private final HumanizerApplicationService humanizerApplicationService;
 
     /**
-     * AI 检测（普通 POST，非 SSE）
-     * 调用 Python /predict，返回整体检测结果
+     * 提交 AI 检测任务
      */
     @PostMapping("/detect")
-    public Result<HumanizerDetectResponse> detect(
+    public Result<HumanizerTaskResponse> submitDetect(
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
-        log.info("AI 检测 POST 请求: userId={}, textLength={}", clerkUserId, request.getText().length());
-        humanizerApplicationService.checkDetectStreamLimit();
-        HumanizerDetectResponse response = humanizerApplicationService.detectAI(request.getText());
+        log.info("提交 DETECT 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
+        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
         return Result.success(response);
     }
 
     /**
-     * AI 检测 SSE 流式接口
-     * 透传 Python /predict_stream 的 SSE 事件流给前端
-     */
-    @PostMapping("/detect-stream")
-    public SseEmitter detectStream(
-            @RequestBody @Valid HumanizerRequest request,
-            @RequestAttribute("clerkUserId") String clerkUserId) {
-        log.info("AI 检测 SSE 请求: userId={}, textLength={}", clerkUserId, request.getText().length());
-        humanizerApplicationService.checkDetectStreamLimit();
-        return humanizerApplicationService.detectAIStream(request.getText());
-    }
-
-    /**
-     * 文本人性化改写接口
-     * 同步调用 Python /process，耗时可能数分钟
+     * 提交 Humanize 改写任务
      */
     @PostMapping("/process")
-    public Result<HumanizerProcessResponse> process(
+    public Result<HumanizerTaskResponse> submitHumanize(
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
-        log.info("Humanizer 改写请求: userId={}, textLength={}", clerkUserId, request.getText().length());
-        humanizerApplicationService.checkProcessLimit();
-        HumanizerProcessResponse response = humanizerApplicationService.humanize(request.getText());
+        log.info("提交 HUMANIZE 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
+        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
         return Result.success(response);
     }
 
     /**
-     * 文本人性化改写 SSE 流式接口
-     * 先返回预估时间，再返回改写结果
+     * 查询任务详情（前端轮询用，返回完整数据含 sentencesJson / resultText）
      */
-    @PostMapping("/process-stream")
-    public SseEmitter processStream(
-            @RequestBody @Valid HumanizerRequest request,
+    @GetMapping("/tasks/{id}")
+    public Result<HumanizerTaskResponse> getTask(
+            @PathVariable Long id,
             @RequestAttribute("clerkUserId") String clerkUserId) {
-        log.info("Humanizer 改写 SSE 请求: userId={}, textLength={}", clerkUserId, request.getText().length());
-        humanizerApplicationService.checkProcessLimit();
-        return humanizerApplicationService.humanizeStream(request.getText());
+        HumanizerTaskResponse response = humanizerApplicationService.getTask(id, clerkUserId);
+        return Result.success(response);
+    }
+
+    /**
+     * 查询用户任务列表（分页，精简字段）
+     *
+     * @param taskType 可选: DETECT / HUMANIZE，不传查全部
+     * @param page     页码，从 1 开始，默认 1
+     * @param size     每页条数，默认 10
+     */
+    @GetMapping("/tasks")
+    public Result<HumanizerTaskListResponse> listTasks(
+            @RequestParam(required = false) String taskType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        HumanizerTaskListResponse response = humanizerApplicationService.listTasks(clerkUserId, taskType, page, size);
+        return Result.success(response);
     }
 }

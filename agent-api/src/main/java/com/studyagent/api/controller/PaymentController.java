@@ -1,6 +1,8 @@
 package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.service.domain.payment.*;
 import lombok.Data;
@@ -22,6 +24,7 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentDomainService paymentDomainService;
+    private final AnalyticsService analyticsService;
 
     @PostMapping("/create-checkout-session")
     public Result<Map<String, Object>> createCheckoutSession(
@@ -37,12 +40,26 @@ public class PaymentController {
 
             CheckoutSessionResult result = paymentDomainService.createCheckoutSession(command);
 
+            // 埋点：支付会话创建成功
+            Map<String, Object> paymentProps = new HashMap<>();
+            paymentProps.put("package_type", request.getPackageType());
+            paymentProps.put("customer_email", request.getCustomerEmail());
+            paymentProps.put("session_id", result.getSessionId());
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
+
             Map<String, Object> data = new HashMap<>();
             data.put("sessionId", result.getSessionId());
             data.put("checkoutUrl", result.getCheckoutUrl());
             data.put("expiresAt", result.getExpiresAt());
             return Result.success(data);
         } catch (PaymentDomainException e) {
+            // 埋点：支付会话创建失败
+            Map<String, Object> errorProps = new HashMap<>();
+            errorProps.put("package_type", request.getPackageType());
+            errorProps.put("error_code", e.getCode());
+            errorProps.put("error_message", e.getMessage());
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+
             if ("STRIPE_ERROR".equals(e.getCode()) && e.getCause() instanceof com.stripe.exception.StripeException) {
                 log.error("Stripe API 错误: {}", e.getMessage(), e);
                 return Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
@@ -50,6 +67,14 @@ public class PaymentController {
             return mapDomainException(e);
         } catch (Exception e) {
             log.error("创建支付会话失败: {}", e.getMessage(), e);
+
+            // 埋点：支付会话创建失败（未知错误）
+            Map<String, Object> errorProps = new HashMap<>();
+            errorProps.put("package_type", request.getPackageType());
+            errorProps.put("error_code", "UNKNOWN");
+            errorProps.put("error_message", e.getMessage());
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+
             return Result.error(ApiCode.PAYMENT_SESSION_CREATE_FAILED);
         }
     }

@@ -1,5 +1,7 @@
 package com.studyagent.api.controller;
 
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.quota.FeatureCode;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
@@ -28,10 +30,11 @@ import java.util.Map;
 public class WebhookController {
 
     private final QuotaRechargeService quotaRechargeService;
-    
+    private final AnalyticsService analyticsService;
+
     @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
-    
+
     @PostMapping("/stripe")
     public ResponseEntity<Map<String, String>> stripeWebhook(
             @RequestBody String payload,
@@ -47,9 +50,9 @@ public class WebhookController {
                 com.google.gson.Gson gson = new com.google.gson.Gson();
                 event = gson.fromJson(payload, Event.class);
             }
-            
+
             log.info("收到 Stripe Webhook: event_type={}, event_id={}", event.getType(), event.getId());
-            
+
             // 处理事件
             if ("checkout.session.completed".equals(event.getType())) {
                 Session session = resolveSession(event);
@@ -59,11 +62,11 @@ public class WebhookController {
                     log.error("无法解析 checkout.session，event_id={}", event.getId());
                 }
             }
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("status", "success");
             return ResponseEntity.ok(response);
-            
+
         } catch (SignatureVerificationException e) {
             log.error("Webhook签名验证失败", e);
             return ResponseEntity.status(401).build();
@@ -72,7 +75,7 @@ public class WebhookController {
             return ResponseEntity.status(500).build();
         }
     }
-    
+
     /**
      * 解析 Session 对象。当 getObject() 为空时（API 版本不匹配），使用 deserializeUnsafe 强制反序列化。
      */
@@ -134,9 +137,10 @@ public class WebhookController {
         int priceCents = session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0;
         String currency = session.getCurrency() != null ? session.getCurrency() : "usd";
         String paymentIntentId = session.getPaymentIntent();
+        String customerEmail = session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null;
 
         if (quotaAmount > 0 && clerkUserId != null && !clerkUserId.isEmpty()) {
-            quotaRechargeService.processRecharge(
+            boolean success = quotaRechargeService.processRecharge(
                 clerkUserId,
                 featureCode,
                 packageType != null ? packageType : "unknown",
@@ -146,6 +150,28 @@ public class WebhookController {
                 session.getId(),
                 paymentIntentId
             );
+
+            // 埋点：支付完成（无论是否幂等跳过，都记录支付完成事件）
+            if (success) {
+                Map<String, Object> paymentProps = new HashMap<>();
+                paymentProps.put("session_id", session.getId());
+                paymentProps.put("package_type", packageType);
+                paymentProps.put("feature_code", featureCode);
+                paymentProps.put("quota_amount", quotaAmount);
+                paymentProps.put("price_cents", priceCents);
+                paymentProps.put("currency", currency);
+                paymentProps.put("customer_email", customerEmail);
+                analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
+
+                // 埋点：充值成功（积分到账）
+                Map<String, Object> rechargeProps = new HashMap<>();
+                rechargeProps.put("order_no", session.getId());
+                rechargeProps.put("package_code", packageType);
+                rechargeProps.put("quota_amount", quotaAmount);
+                rechargeProps.put("price_cents", priceCents);
+                rechargeProps.put("currency", currency);
+                analyticsService.capture(clerkUserId, AnalyticsEvents.RECHARGE_SUCCESS, rechargeProps);
+            }
         } else {
             log.warn("支付回调跳过充值: clerk_user_id 为空或 quota_amount 无效");
         }

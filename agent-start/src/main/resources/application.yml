@@ -94,6 +94,14 @@ stripe:
     assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:prod_U4GrwnQnodqVr8}
     assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:prod_U4Gune0Gj7Vphr}
     assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:prod_U4Gv3zPgqYZask}
+    # AI Detection 套餐
+    detection_10k: ${STRIPE_PRICE_DETECTION_10K:}
+    detection_50k: ${STRIPE_PRICE_DETECTION_50K:}
+    detection_200k: ${STRIPE_PRICE_DETECTION_200K:}
+    # Humanizer 套餐
+    humanizer_10k: ${STRIPE_PRICE_HUMANIZER_10K:}
+    humanizer_50k: ${STRIPE_PRICE_HUMANIZER_50K:}
+    humanizer_200k: ${STRIPE_PRICE_HUMANIZER_200K:}
     # 旧套餐（向后兼容）
     starter: ${STRIPE_PRICE_STARTER:price_xxx}
     pro: ${STRIPE_PRICE_PRO:price_xxx}
@@ -134,10 +142,14 @@ task:
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
-  url: ${HUMANIZER_SERVICE_URL:http://47.88.58.79:9000}
+  url: ${HUMANIZER_SERVICE_URL:http://localhost:9000}
   rate-limit:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数
+
+# Humanizer/AI Detection 内测白名单（逗号分隔的 Clerk User ID，不限额度）
+humanizer:
+  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
 
 # Python 后端配置
 python-backend:
@@ -155,6 +167,15 @@ frontend:
 payment:
   success-url: ${PAYMENT_SUCCESS_URL:http://localhost:3000/success}
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/cancel}
+
+# PostHog 分析配置
+posthog:
+  # 是否启用埋点
+  enabled: ${POSTHOG_ENABLED:false}
+  # PostHog API Key（从项目设置中获取）
+  api-key: ${POSTHOG_API_KEY:}
+  # PostHog 服务器地址（默认是官方云，也可以自托管）
+  host: ${POSTHOG_HOST:https://app.posthog.com}
 
 # 日志配置
 logging:

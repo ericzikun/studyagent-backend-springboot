@@ -1,236 +1,311 @@
 package com.studyagent.api.service;
 
-import com.studyagent.api.dto.response.HumanizerDetectResponse;
-import com.studyagent.api.dto.response.HumanizerProcessResponse;
-import com.studyagent.common.exception.RateLimitExceededException;
-import com.studyagent.infra.client.humanizer.HumanizerServiceClientImpl;
-import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
-import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
-import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.studyagent.api.dto.response.HumanizerTaskItemResponse;
+import com.studyagent.api.dto.response.HumanizerTaskListResponse;
+import com.studyagent.api.dto.response.HumanizerTaskResponse;
+import com.studyagent.common.exception.InsufficientQuotaData;
+import com.studyagent.common.exception.InsufficientQuotaException;
+import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.infra.entity.HumanizerTaskEntity;
+import com.studyagent.infra.repository.humanizer.HumanizerTaskRepositoryImpl;
+import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
 
-import java.io.IOException;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Humanizer 应用服务
- * <p>
- * 负责：
- * 1. SSE 流式 AI 检测：消费 Python SSE 流，通过 SseEmitter 透传给前端
- * 2. 文本人性化改写：调用领域接口，转换为响应 DTO
- * 3. 全局限流：基于滑动窗口算法保护 Python 服务
+ * Humanizer 应用服务（异步队列版）
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class HumanizerApplicationService {
 
-    private final HumanizerServiceClient humanizerServiceClient;
-    private final HumanizerServiceClientImpl humanizerServiceClientImpl;
+    private final HumanizerTaskRepositoryImpl repository;
+    private final QuotaDomainService quotaDomainService;
+    private final UserRepository userRepository;
 
-    // ========== 限流相关 ==========
-    private static final long WINDOW_MS = 60_000L;
-    private final ConcurrentLinkedDeque<Long> detectTimestamps = new ConcurrentLinkedDeque<>();
-    private final ConcurrentLinkedDeque<Long> processTimestamps = new ConcurrentLinkedDeque<>();
+    /** 内测白名单用户（不限额度），通过配置 humanizer.whitelist-user-ids 设置 */
+    @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
+    private List<String> whitelistUserIds;
 
-    @Value("${humanizer-service.rate-limit.detect-stream:10}")
-    private int detectStreamLimit;
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int PREVIEW_LENGTH = 50;
 
-    @Value("${humanizer-service.rate-limit.process:5}")
-    private int processLimit;
+    // ===== 预估时间参数（基于实测数据） =====
+    /** DETECT: 平均每句 3.5 秒（CPU 推理） */
+    private static final double DETECT_SECONDS_PER_SENTENCE = 3.5;
+    /** DETECT: 平均每句字符数 */
+    private static final int DETECT_AVG_CHARS_PER_SENTENCE = 150;
+    /** HUMANIZE: 每 1500 字符一个 chunk，每 chunk 约 26 秒 */
+    private static final int HUMANIZE_CHUNK_SIZE = 1500;
+    private static final double HUMANIZE_SECONDS_PER_CHUNK = 26.0;
+    /** HUMANIZE: 最小处理时间 */
+    private static final double HUMANIZE_MIN_SECONDS = 5.0;
+    /** HUMANIZE: 并发数 */
+    private static final int HUMANIZE_CONCURRENCY = 3;
 
-    public HumanizerApplicationService(HumanizerServiceClient humanizerServiceClient,
-                                       HumanizerServiceClientImpl humanizerServiceClientImpl) {
-        this.humanizerServiceClient = humanizerServiceClient;
-        this.humanizerServiceClientImpl = humanizerServiceClientImpl;
-    }
+    /**
+     * 提交任务（入库排队）
+     * 额度校验：admin 不限，普通用户按 word count 扣减对应 feature 额度
+     */
+    public HumanizerTaskResponse submitTask(String clerkUserId, String taskType, String text) {
+        // 1. 计算 word count（按空格分词）
+        int wordCount = countWords(text);
 
-    /** 检查 AI 检测 SSE 限流 */
-    public void checkDetectStreamLimit() {
-        checkLimit(detectTimestamps, detectStreamLimit, "AI Detect Stream");
-    }
+        // 2. 确定 feature_code
+        String featureCode = "DETECT".equals(taskType)
+                ? FeatureCode.AI_DETECTION.getCode()
+                : FeatureCode.HUMANIZER.getCode();
 
-    /** 检查 Humanizer 改写限流 */
-    public void checkProcessLimit() {
-        checkLimit(processTimestamps, processLimit, "Humanizer Process");
-    }
+        // 3. 额度校验（admin 和白名单用户跳过）
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
 
-    private void checkLimit(ConcurrentLinkedDeque<Long> timestamps, int maxRequests, String endpoint) {
-        long now = System.currentTimeMillis();
-        long windowStart = now - WINDOW_MS;
-        while (!timestamps.isEmpty() && timestamps.peekFirst() != null && timestamps.peekFirst() < windowStart) {
-            timestamps.pollFirst();
+        Long quotaLedgerId = null;
+        if (!isAdmin && !isWhitelisted) {
+            // 检查额度是否足够
+            if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
+                var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
+                throw new InsufficientQuotaException(
+                        "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: " + wordCount,
+                        InsufficientQuotaData.builder()
+                                .featureCode(balance.featureCode())
+                                .featureName(balance.featureName())
+                                .quotaUnit(balance.quotaUnit())
+                                .freeBalance(balance.freeBalance())
+                                .freePeriodTotal(balance.freePeriodTotal())
+                                .paidBalance(balance.paidBalance())
+                                .totalAvailable(balance.totalAvailable())
+                                .build());
+            }
+
+            // 扣减额度
+            ConsumeResult consumeResult = quotaDomainService.consume(
+                    clerkUserId, featureCode, wordCount,
+                    "humanizer_task", null,
+                    Map.of("task_type", taskType, "word_count", wordCount));
+            quotaLedgerId = consumeResult.ledgerId();
+            log.info("额度扣减成功: userId={}, feature={}, words={}, ledgerId={}",
+                    clerkUserId, featureCode, wordCount, quotaLedgerId);
         }
-        if (timestamps.size() >= maxRequests) {
-            log.warn("限流触发: endpoint={}, 当前窗口请求数={}, 上限={}", endpoint, timestamps.size(), maxRequests);
-            throw new RateLimitExceededException(endpoint);
-        }
-        timestamps.addLast(now);
+
+        // 4. 入库
+        HumanizerTaskEntity entity = new HumanizerTaskEntity();
+        entity.setClerkUserId(clerkUserId);
+        entity.setTaskType(taskType);
+        entity.setInputText(text);
+        entity.setStatus("PENDING");
+        entity.setRetryCount(0);
+        entity.setCompletedSentences(0);
+        entity.setQuotaLedgerId(quotaLedgerId);
+
+        repository.insert(entity);
+
+        // 计算预估时间
+        int queueAhead = repository.countQueueAhead(taskType, entity.getId());
+        int estimatedSeconds = estimateTime(taskType, text.length(), queueAhead);
+
+        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, estimatedSeconds={}",
+                entity.getId(), taskType, clerkUserId, wordCount, queueAhead, estimatedSeconds);
+
+        return HumanizerTaskResponse.builder()
+                .id(entity.getId())
+                .taskType(taskType)
+                .status("PENDING")
+                .estimatedSeconds(estimatedSeconds)
+                .queuePosition(queueAhead)
+                .build();
     }
 
     /**
-     * AI 检测（普通 POST，非 SSE）
-     *
-     * @param text 待检测文本
-     * @return 检测响应
+     * 统计英文单词数（按空格分词）
      */
-    public HumanizerDetectResponse detectAI(String text) {
-        DetectResult result = humanizerServiceClient.detectAI(text);
+    private int countWords(String text) {
+        if (text == null || text.isBlank()) return 0;
+        String[] words = text.trim().split("\\s+");
+        return words.length;
+    }
 
-        if (result.getCode() != 200) {
-            throw new RuntimeException(result.getMsg() != null ? result.getMsg() : "AI detect service error");
+    /**
+     * 查询单个任务详情（完整数据，含大字段）
+     */
+    public HumanizerTaskResponse getTask(Long id, String clerkUserId) {
+        HumanizerTaskEntity entity = repository.findById(id);
+        if (entity == null) {
+            throw new IllegalArgumentException("Task not found: " + id);
+        }
+        if (!entity.getClerkUserId().equals(clerkUserId)) {
+            throw new IllegalArgumentException("Task not found: " + id);
+        }
+        return toDetailResponse(entity);
+    }
+
+    /**
+     * 分页查询用户任务列表（精简字段）
+     */
+    public HumanizerTaskListResponse listTasks(String clerkUserId, String taskType, int page, int size) {
+        Page<HumanizerTaskEntity> result = repository.findByUserPaged(clerkUserId, taskType, page, size);
+
+        List<HumanizerTaskItemResponse> items = result.getRecords().stream()
+                .map(this::toItemResponse)
+                .collect(Collectors.toList());
+
+        return HumanizerTaskListResponse.builder()
+                .items(items)
+                .page(page)
+                .size(size)
+                .total(result.getTotal())
+                .totalPages((int) result.getPages())
+                .build();
+    }
+
+    /**
+     * 详情响应（完整数据）
+     * PENDING/PROCESSING 状态时带上预估剩余时间
+     */
+    private HumanizerTaskResponse toDetailResponse(HumanizerTaskEntity entity) {
+        HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
+                .id(entity.getId())
+                .taskType(entity.getTaskType())
+                .status(entity.getStatus())
+                .probability(entity.getProbability())
+                .label(entity.getLabel())
+                .sentencesJson(entity.getSentencesJson())
+                .totalSentences(entity.getTotalSentences())
+                .completedSentences(entity.getCompletedSentences())
+                .resultText(entity.getResultText())
+                .elapsedSeconds(entity.getElapsedSeconds())
+                .errorMessage(entity.getErrorMessage())
+                .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null);
+
+        // 未完成的任务带上预估时间
+        String status = entity.getStatus();
+        if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+            int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
+            int queueAhead = repository.countQueueAhead(entity.getTaskType(), entity.getId());
+
+            if ("PROCESSING".equals(status)) {
+                // 正在处理，只算自身剩余时间
+                int remaining = estimateRemaining(entity);
+                builder.estimatedSeconds(remaining);
+                builder.queuePosition(0);
+            } else {
+                // 排队中，算排队 + 自身处理时间
+                int estimated = estimateTime(entity.getTaskType(), textLen, queueAhead);
+                builder.estimatedSeconds(estimated);
+                builder.queuePosition(queueAhead);
+            }
         }
 
-        return HumanizerDetectResponse.builder()
-            .probability(result.getProbability())
-            .label(result.getLabel())
-            .elapsedSeconds(result.getElapsedSeconds())
-            .build();
+        return builder.build();
     }
 
     /**
-     * AI 检测 SSE 流式接口
-     * <p>
-     * 消费 Python /predict_stream 的 SSE 流，解析事件名和数据，
-     * 通过 SseEmitter 重新发射给前端。
-     *
-     * @param text 待检测文本
-     * @return SseEmitter 用于 SSE 响应
+     * 列表单条响应（精简，大字段只取前50字符）
      */
-    public SseEmitter detectAIStream(String text) {
-        // 5 分钟超时，足够处理长文本
-        SseEmitter emitter = new SseEmitter(300_000L);
+    private HumanizerTaskItemResponse toItemResponse(HumanizerTaskEntity entity) {
+        return HumanizerTaskItemResponse.builder()
+                .id(entity.getId())
+                .taskType(entity.getTaskType())
+                .status(entity.getStatus())
+                .inputTextPreview(preview(entity.getInputText()))
+                .probability(entity.getProbability())
+                .label(entity.getLabel())
+                .totalSentences(entity.getTotalSentences())
+                .completedSentences(entity.getCompletedSentences())
+                .resultTextPreview(preview(entity.getResultText()))
+                .elapsedSeconds(entity.getElapsedSeconds())
+                .errorMessage(entity.getErrorMessage())
+                .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null)
+                .build();
+    }
 
-        // 订阅 Python SSE 流
-        Disposable subscription = humanizerServiceClientImpl.detectAIStream(text)
-            .subscribe(
-                rawLine -> {
-                    try {
-                        // WebClient bodyToFlux(String.class) 对 SSE 流会返回 data 行的内容
-                        // 直接作为 data 发送，前端通过 EventSource 接收
-                        emitter.send(SseEmitter.event().data(rawLine));
-                    } catch (IOException e) {
-                        log.warn("SSE 发送失败（前端可能已断开）: {}", e.getMessage());
-                        emitter.completeWithError(e);
-                    }
-                },
-                error -> {
-                    log.error("SSE 流错误", error);
-                    try {
-                        // 发送错误事件给前端
-                        emitter.send(SseEmitter.event()
-                            .name("error")
-                            .data("{\"msg\":\"" + error.getMessage().replace("\"", "'") + "\"}"));
-                    } catch (IOException ignored) {
-                        // 前端已断开，忽略
-                    }
-                    emitter.completeWithError(error);
-                },
-                () -> {
-                    log.info("SSE 流完成");
-                    emitter.complete();
-                }
-            );
+    private String preview(String text) {
+        if (text == null) return null;
+        return text.length() <= PREVIEW_LENGTH ? text : text.substring(0, PREVIEW_LENGTH) + "...";
+    }
 
-        // 前端断开时取消上游订阅，释放资源
-        emitter.onCompletion(() -> {
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
-            }
-        });
-        emitter.onTimeout(() -> {
-            log.warn("SSE 连接超时");
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
-            }
-        });
-        emitter.onError(e -> {
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
-            }
-        });
+    // ===== 预估时间计算 =====
 
-        return emitter;
+    /**
+     * 预估总时间 = 排队等待 + 自身处理
+     */
+    private int estimateTime(String taskType, int textLength, int queueAhead) {
+        double selfTime = estimateProcessTime(taskType, textLength);
+        double waitTime = estimateWaitTime(taskType, queueAhead);
+        return (int) Math.ceil(selfTime + waitTime);
     }
 
     /**
-     * 文本人性化改写
-     *
-     * @param text 待改写文本
-     * @return 改写响应
+     * 预估自身处理时间
      */
-    public HumanizerProcessResponse humanize(String text) {
-        HumanizerResult result = humanizerServiceClient.humanize(text);
-
-        if (result.getCode() != 200) {
-            throw new RuntimeException(result.getMsg() != null ? result.getMsg() : "Humanizer service error");
+    private double estimateProcessTime(String taskType, int textLength) {
+        if ("DETECT".equals(taskType)) {
+            // 句子数 × 3.5s/句
+            int sentences = Math.max(1, textLength / DETECT_AVG_CHARS_PER_SENTENCE);
+            return sentences * DETECT_SECONDS_PER_SENTENCE;
+        } else {
+            // HUMANIZE: chunks × 26s/chunk，最少 5s
+            int chunks = Math.max(1, (textLength + HUMANIZE_CHUNK_SIZE - 1) / HUMANIZE_CHUNK_SIZE);
+            return Math.max(HUMANIZE_MIN_SECONDS, chunks * HUMANIZE_SECONDS_PER_CHUNK);
         }
-
-        return HumanizerProcessResponse.builder()
-            .result(result.getResult())
-            .elapsedSeconds(result.getElapsedSeconds())
-            .build();
     }
 
     /**
-     * 文本人性化改写 SSE 流式接口
-     * <p>
-     * 消费 Python /process_stream 的 SSE 流（estimate → result），
-     * 通过 SseEmitter 透传给前端。
-     *
-     * @param text 待改写文本
-     * @return SseEmitter 用于 SSE 响应
+     * 预估排队等待时间
+     * DETECT 串行，HUMANIZE 3 并发
      */
-    public SseEmitter humanizeStream(String text) {
-        // 10 分钟超时，humanizer 改写耗时较长
-        SseEmitter emitter = new SseEmitter(600_000L);
+    private double estimateWaitTime(String taskType, int queueAhead) {
+        if (queueAhead <= 0) return 0;
+        // 假设排队中的任务平均文本长度 2000 字符
+        double avgTaskTime = estimateProcessTime(taskType, 2000);
+        if ("HUMANIZE".equals(taskType)) {
+            // 3 并发，排队轮次 = ceil(queueAhead / 3)
+            int rounds = (queueAhead + HUMANIZE_CONCURRENCY - 1) / HUMANIZE_CONCURRENCY;
+            return rounds * avgTaskTime;
+        } else {
+            // DETECT 串行
+            return queueAhead * avgTaskTime;
+        }
+    }
 
-        Disposable subscription = humanizerServiceClientImpl.humanizeStream(text)
-            .subscribe(
-                rawLine -> {
-                    try {
-                        emitter.send(SseEmitter.event().data(rawLine));
-                    } catch (IOException e) {
-                        log.warn("Humanizer SSE 发送失败: {}", e.getMessage());
-                        emitter.completeWithError(e);
-                    }
-                },
-                error -> {
-                    log.error("Humanizer SSE 流错误", error);
-                    try {
-                        emitter.send(SseEmitter.event()
-                            .name("error")
-                            .data("{\"msg\":\"" + error.getMessage().replace("\"", "'") + "\"}"));
-                    } catch (IOException ignored) {
-                    }
-                    emitter.completeWithError(error);
-                },
-                () -> {
-                    log.info("Humanizer SSE 流完成");
-                    emitter.complete();
-                }
-            );
-
-        emitter.onCompletion(() -> {
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
+    /**
+     * PROCESSING 状态下预估剩余时间
+     * DETECT: 根据 completedSentences / totalSentences 推算
+     * HUMANIZE: 根据已开始时间和预估总时间推算
+     */
+    private int estimateRemaining(HumanizerTaskEntity entity) {
+        if ("DETECT".equals(entity.getTaskType())) {
+            Integer total = entity.getTotalSentences();
+            Integer completed = entity.getCompletedSentences();
+            if (total != null && total > 0 && completed != null) {
+                int remaining = total - completed;
+                return (int) Math.ceil(remaining * DETECT_SECONDS_PER_SENTENCE);
             }
-        });
-        emitter.onTimeout(() -> {
-            log.warn("Humanizer SSE 连接超时");
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
+            // 还不知道总句数，用文本长度估
+            int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
+            return (int) Math.ceil(estimateProcessTime("DETECT", textLen));
+        } else {
+            // HUMANIZE 没有进度信息，用文本长度估总时间，减去已过时间
+            int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
+            double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
+            if (entity.getStartedAt() != null) {
+                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), java.time.LocalDateTime.now()).getSeconds();
+                return (int) Math.max(0, Math.ceil(totalEstimate - elapsedSec));
             }
-        });
-        emitter.onError(e -> {
-            if (!subscription.isDisposed()) {
-                subscription.dispose();
-            }
-        });
-
-        return emitter;
+            return (int) Math.ceil(totalEstimate);
+        }
     }
 }

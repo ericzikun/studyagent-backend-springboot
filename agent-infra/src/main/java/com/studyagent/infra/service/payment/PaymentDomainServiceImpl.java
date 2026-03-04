@@ -44,6 +44,26 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
     @Value("${stripe.price.assignment_50:}")
     private String priceAssignment50;
 
+    // AI Detection 套餐
+    @Value("${stripe.price.detection_10k:}")
+    private String priceDetection10k;
+
+    @Value("${stripe.price.detection_50k:}")
+    private String priceDetection50k;
+
+    @Value("${stripe.price.detection_200k:}")
+    private String priceDetection200k;
+
+    // Humanizer 套餐
+    @Value("${stripe.price.humanizer_10k:}")
+    private String priceHumanizer10k;
+
+    @Value("${stripe.price.humanizer_50k:}")
+    private String priceHumanizer50k;
+
+    @Value("${stripe.price.humanizer_200k:}")
+    private String priceHumanizer200k;
+
     @Value("${stripe.price.starter:}")
     private String priceStarter;
 
@@ -169,6 +189,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
     @Override
     public PaymentConfigResult getPaymentConfig() {
         List<Map<String, Object>> packages = new ArrayList<>();
+        // Assignment 套餐
         packages.add(buildPackage("assignment_1", "1 Assignment", 1, priceAssignment1));
         packages.add(buildPackage("assignment_5", "5 Assignments", 5, priceAssignment5));
         packages.add(buildPackage("assignment_10", "10 Assignments", 10, priceAssignment10));
@@ -176,6 +197,14 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         packages.add(buildPackage("starter", "Starter Pack", 1, priceStarter));
         packages.add(buildPackage("pro", "Pro Pack", 10, pricePro));
         packages.add(buildPackage("academic", "Academic Pack", 50, priceAcademic));
+        // AI Detection 套餐
+        packages.add(buildPackage("detection_10k", "10,000 Words", 10000, priceDetection10k));
+        packages.add(buildPackage("detection_50k", "50,000 Words", 50000, priceDetection50k));
+        packages.add(buildPackage("detection_200k", "200,000 Words", 200000, priceDetection200k));
+        // Humanizer 套餐
+        packages.add(buildPackage("humanizer_10k", "10,000 Words", 10000, priceHumanizer10k));
+        packages.add(buildPackage("humanizer_50k", "50,000 Words", 50000, priceHumanizer50k));
+        packages.add(buildPackage("humanizer_200k", "200,000 Words", 200000, priceHumanizer200k));
 
         return PaymentConfigResult.builder()
                 .stripePublishableKey(stripePublishableKey)
@@ -201,6 +230,12 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             case "starter" -> priceStarter;
             case "pro" -> pricePro;
             case "academic" -> priceAcademic;
+            case "detection_10k" -> priceDetection10k;
+            case "detection_50k" -> priceDetection50k;
+            case "detection_200k" -> priceDetection200k;
+            case "humanizer_10k" -> priceHumanizer10k;
+            case "humanizer_50k" -> priceHumanizer50k;
+            case "humanizer_200k" -> priceHumanizer200k;
             default -> null;
         };
     }
@@ -214,14 +249,19 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             case "starter" -> 1;
             case "pro" -> 10;
             case "academic" -> 50;
+            case "detection_10k", "humanizer_10k" -> 10000;
+            case "detection_50k", "humanizer_50k" -> 50000;
+            case "detection_200k", "humanizer_200k" -> 200000;
             default -> 0;
         };
     }
 
     private String getFeatureCode(String packageType) {
-        if (packageType != null && (packageType.startsWith("assignment_") || packageType.equals("starter")
-                || packageType.equals("pro") || packageType.equals("academic"))) {
-            return "task_create";
+        if (packageType != null && packageType.startsWith("detection_")) {
+            return "ai_detection";
+        }
+        if (packageType != null && packageType.startsWith("humanizer_")) {
+            return "humanizer";
         }
         return "task_create";
     }
@@ -235,6 +275,12 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             case "starter" -> "Starter";
             case "pro" -> "Pro";
             case "academic" -> "Academic";
+            case "detection_10k" -> "AI Detection 10K Words";
+            case "detection_50k" -> "AI Detection 50K Words";
+            case "detection_200k" -> "AI Detection 200K Words";
+            case "humanizer_10k" -> "Humanizer 10K Words";
+            case "humanizer_50k" -> "Humanizer 50K Words";
+            case "humanizer_200k" -> "Humanizer 200K Words";
             default -> packageType;
         };
     }

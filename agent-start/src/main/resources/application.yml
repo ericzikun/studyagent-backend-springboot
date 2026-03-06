@@ -129,6 +129,22 @@ python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}
   timeout: 30000
 
+# RabbitMQ 配置
+spring.rabbitmq:
+  host: ${RABBITMQ_HOST:localhost}
+  port: ${RABBITMQ_PORT:5672}
+  username: ${RABBITMQ_USERNAME:studyagent}
+  password: ${RABBITMQ_PASSWORD:studyagent2024}
+  virtual-host: ${RABBITMQ_VHOST:/}
+  publisher-confirm-type: correlated
+  publisher-returns: true
+
+# MQ Outbox 调度配置
+mq:
+  outbox:
+    scan-interval: ${MQ_OUTBOX_SCAN_INTERVAL:5000}
+    max-retries: ${MQ_OUTBOX_MAX_RETRIES:5}
+
 # 前端服务配置
 frontend:
   # Markdown 转 TipTap JSON 服务 URL

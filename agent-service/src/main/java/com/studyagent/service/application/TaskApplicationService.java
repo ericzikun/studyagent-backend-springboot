@@ -11,6 +11,7 @@ import com.studyagent.service.domain.task.TaskId;
 import com.studyagent.service.domain.task.TaskRepository;
 import com.studyagent.service.domain.task.TaskStatus;
 import com.studyagent.service.domain.task.TaskDomainService;
+import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.task.PythonBackendClient;
 import com.studyagent.service.domain.task.TaskFileRepository;
 import com.studyagent.service.domain.task.TaskDetailReader;
@@ -39,6 +40,10 @@ import java.util.Optional;
 
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.InsufficientQuotaData;
+import com.studyagent.common.exception.InsufficientQuotaException;
+import com.studyagent.common.log.util.TraceIdUtil;
+import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.common.exception.QuotaExceededData;
 import com.studyagent.common.exception.QuotaExceededException;
 import com.studyagent.service.application.dto.TaskDetailDTO;
@@ -65,6 +70,7 @@ public class TaskApplicationService {
     private final TaskDetailReader taskDetailReader;
     private final UserRepository userRepository;
     private final TaskSubmitConfig taskSubmitConfig;
+    private final QuotaDomainService quotaDomainService;
     private final Gson gson = new Gson();
 
     /** 提交任务结果 */
@@ -90,8 +96,38 @@ public class TaskApplicationService {
         // 1. 验证用户身份（事务外执行）
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
 
-        // 2. 额度校验：普通用户且启用限额时，检查当日提交次数
-        SubmitTaskResult.QuotaInfo quotaInfo = checkAndBuildQuota(userInfo.clerkUserId);
+        // 2. 额度校验
+        SubmitTaskResult.QuotaInfo quotaInfo;
+        boolean shouldConsumeQuota = false; // 是否扣减额度（admin 不扣减）
+        if (taskSubmitConfig.isQuotaEnabled()) {
+            // AI 额度体系：admin 无限使用，普通用户检查额度
+            boolean isAdmin = userRepository.findByClerkUserId(userInfo.clerkUserId)
+                    .map(User::getIsAdmin)
+                    .orElse(false);
+            if (isAdmin) {
+                shouldConsumeQuota = false; // admin 不扣减
+            } else {
+                if (!quotaDomainService.canConsume(userInfo.clerkUserId, FeatureCode.TASK_CREATE.getCode(), 1)) {
+                    var balance = quotaDomainService.getUserQuota(userInfo.clerkUserId,
+                            FeatureCode.TASK_CREATE.getCode());
+                    throw new InsufficientQuotaException(
+                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
+                            InsufficientQuotaData.builder()
+                                    .featureCode(balance.featureCode())
+                                    .featureName(balance.featureName())
+                                    .quotaUnit(balance.quotaUnit())
+                                    .freeBalance(balance.freeBalance())
+                                    .freePeriodTotal(balance.freePeriodTotal())
+                                    .paidBalance(balance.paidBalance())
+                                    .totalAvailable(balance.totalAvailable())
+                                    .build());
+                }
+                shouldConsumeQuota = true;
+            }
+            quotaInfo = null; // AI 额度模式下不返回旧的 QuotaInfo
+        } else {
+            quotaInfo = checkAndBuildQuota(userInfo.clerkUserId);
+        }
 
         // 3. 查询现有草稿（只读操作，使用 readOnly 事务）
         Task existing = null;
@@ -125,6 +161,8 @@ public class TaskApplicationService {
                 .specialInstructions(request.getSpecialInstructions())
                 .requirementJson(mergedRequirementJson)
                 .status(TaskStatus.DRAFT)
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId()
+                        : TraceIdUtil.getTraceId())
                 .build();
 
         // 4. 验证任务（事务外执行，纯业务逻辑）
@@ -133,10 +171,10 @@ public class TaskApplicationService {
         // 5. 提交任务（修改状态，纯内存操作）
         task = task.submit();
 
-        // 6. 在短事务内保存任务和关联文件，并写入本地消息表注册即时投递
+        // 6. 在短事务内保存任务和关联文件
         Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds());
 
-        // 8. 更新额度信息：提交成功后 usedToday+1，remainingQuota-1
+        // 8. 更新额度信息（仅每日次数模式）
         SubmitTaskResult.QuotaInfo finalQuota = quotaInfo != null
                 ? new SubmitTaskResult.QuotaInfo(quotaInfo.dailyLimit(), quotaInfo.usedToday() + 1,
                         quotaInfo.remainingQuota() - 1, quotaInfo.quotaResetAt())
@@ -186,19 +224,46 @@ public class TaskApplicationService {
     }
 
     /**
-     * 追问前额度校验：追问属于任务创建流程，若当日已达上限则抛出 QuotaExceededException
+     * 追问前额度校验：追问属于任务创建流程
+     * - quotaEnabled: admin 豁免，普通用户检查 AI 额度
+     * - 每日次数模式: admin 豁免，检查当日是否达上限
      */
     public void checkQuotaBeforeClarify(String clerkUserId) {
-        checkAndBuildQuota(clerkUserId);
+        if (taskSubmitConfig.isQuotaEnabled()) {
+            boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                    .map(User::getIsAdmin)
+                    .orElse(false);
+            if (!isAdmin && !quotaDomainService.canConsume(clerkUserId, FeatureCode.TASK_CREATE.getCode(), 1)) {
+                var balance = quotaDomainService.getUserQuota(clerkUserId, FeatureCode.TASK_CREATE.getCode());
+                throw new InsufficientQuotaException(
+                        "Insufficient quota for clarify. Free: " + balance.freeBalance() + ", Paid: "
+                                + balance.paidBalance(),
+                        InsufficientQuotaData.builder()
+                                .featureCode(balance.featureCode())
+                                .featureName(balance.featureName())
+                                .quotaUnit(balance.quotaUnit())
+                                .freeBalance(balance.freeBalance())
+                                .freePeriodTotal(balance.freePeriodTotal())
+                                .paidBalance(balance.paidBalance())
+                                .totalAvailable(balance.totalAvailable())
+                                .build());
+            }
+        } else {
+            checkAndBuildQuota(clerkUserId);
+        }
     }
 
     /**
      * 获取当前用户的任务提交额度（用于提交前展示）
-     * 管理员或不限额时返回 null
+     * - quotaEnabled 时：返回 null，请使用 QuotaController.getBalance
+     * - 每日次数模式：管理员或不限额时返回 null
      */
     public SubmitTaskResult.QuotaInfo getSubmitQuota(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return null;
+        }
+        if (taskSubmitConfig.isQuotaEnabled()) {
+            return null; // AI 额度模式，使用 GET /v1/quota/balance
         }
         if (!taskSubmitConfig.isLimitEnabled()) {
             return null;
@@ -236,14 +301,27 @@ public class TaskApplicationService {
     }
 
     /**
-     * 在短事务内保存任务和关联文件
+     * 在短事务内保存任务、扣减额度（如启用）、关联文件
      * 事务超时设置为 10 秒，避免长时间持有锁
+     *
+     * @param clerkUserIdForQuota 启用 AI 额度时传入，用于扣减；否则为 null
      */
     @Transactional(timeout = 10)
-    protected Long saveTaskAndFilesInTransaction(Task task, List<String> objectIds) {
+    protected Long saveTaskAndFilesInTransaction(Task task, List<String> objectIds, String clerkUserIdForQuota) {
         // 保存任务
         Task savedTask = taskRepository.save(task);
         Long taskId = savedTask.getId().getValue();
+
+        // 扣减 AI 额度（与任务保存同事务，失败则整体回滚）
+        if (clerkUserIdForQuota != null) {
+            quotaDomainService.consume(
+                    clerkUserIdForQuota,
+                    FeatureCode.TASK_CREATE.getCode(),
+                    1,
+                    "task",
+                    String.valueOf(taskId),
+                    Map.of("task_id", taskId));
+        }
 
         // 关联文件到任务（如果提供了文件objectIds）
         if (objectIds != null && !objectIds.isEmpty()) {
@@ -324,7 +402,9 @@ public class TaskApplicationService {
                 .specialInstructions(firstNonNull(request.getSpecialInstructions(),
                         existing != null ? existing.getSpecialInstructions() : null))
                 .requirementJson(mergedRequirementJson)
-                .status(TaskStatus.DRAFT);
+                .status(TaskStatus.DRAFT)
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId()
+                        : TraceIdUtil.getTraceId());
 
         Task savedTask = taskRepository.save(builder.build());
         Long draftId = savedTask.getId().getValue();
@@ -505,6 +585,7 @@ public class TaskApplicationService {
                 .requirementJson(task.getRequirementJson())
                 .finalResult(task.getFinalResult())
                 .errorMessage("Task cancelled")
+                .traceId(task.getTraceId())
                 .build();
 
         taskRepository.save(cancelled);

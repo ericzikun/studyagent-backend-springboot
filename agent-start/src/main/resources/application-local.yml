@@ -24,6 +24,12 @@ python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}
   timeout: 30000
 
+# PostHog 配置（本地环境，默认禁用）
+posthog:
+  enabled: ${POSTHOG_ENABLED:false}
+  api-key: ${POSTHOG_API_KEY:}
+  host: ${POSTHOG_HOST:https://app.posthog.com}
+
 # 文件存储配置（本地环境使用相对于项目根目录的路径）
 # 注意：由于启动目录是 agent-start，使用 ../storage 指向项目根目录 studyagent-backend
 file:

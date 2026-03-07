@@ -23,6 +23,8 @@ public enum ApiCode {
     // 1010 - 任务提交额度
     /** 额度超限，支持格式参数: limit */
     QUOTA_EXCEEDED(1010, "Daily task submission limit reached (%d times). Please try again tomorrow.", "今日任务提交次数已达上限（%d 次），请明天再试"),
+    /** AI 额度不足，提示去充值 */
+    INSUFFICIENT_QUOTA(1011, "Insufficient quota. Please recharge to continue.", "额度不足，请充值后继续"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

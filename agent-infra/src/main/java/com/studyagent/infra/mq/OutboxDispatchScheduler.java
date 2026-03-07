@@ -94,23 +94,30 @@ public class OutboxDispatchScheduler {
                 log.info("Broker 成功接收消息: eventId={}, action={}", message.getEventId(), message.getAction());
             } else {
                 // Broker 明确拒收
-                handleSendFailure(message.getId(), message.getRetryCount(), "Broker NACK: " + confirm.getReason());
+                handleSendFailure(message, "Broker NACK: " + confirm.getReason());
             }
 
         } catch (Exception e) {
             log.error("发送 MQ 消息发生异常: eventId={}", message.getEventId(), e);
-            handleSendFailure(message.getId(), message.getRetryCount(), e.getMessage());
+            handleSendFailure(message, e.getMessage());
         }
     }
 
-    private void handleSendFailure(Long messageId, int currentRetryCount, String errorMsg) {
-        log.warn("消息发送失败, ID={}, Retry={}, Error={}", messageId, currentRetryCount, errorMsg);
+    private void handleSendFailure(MqOutbox message, String errorMsg) {
+        int currentRetryCount = message.getRetryCount();
+        log.warn("消息发送失败, ID={}, Retry={}, Error={}", message.getId(), currentRetryCount, errorMsg);
 
-        // 计算指数退避时间: 第1次重试等10秒，第2次等30秒，第三次等90秒...
-        // 简单计算：10 * (3 ^ retryCount) 秒
-        int delaySeconds = 10 * (int) Math.pow(3, currentRetryCount);
-        LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(delaySeconds);
+        if (currentRetryCount + 1 >= message.getMaxRetries()) {
+            log.error("消息重试次数已达上限, 标记为最终失败: ID={}, Action={}", message.getId(), message.getAction());
+            mqOutboxRepository.markAsFailed(message.getId(), errorMsg);
+            // TODO: 此处可接入告警系统 (如邮件/企业微信/钉钉等)
+        } else {
+            // 计算指数退避时间: 第1次重试等10秒，第2次等30秒，第三次等90秒...
+            // 简单计算：10 * (3 ^ retryCount) 秒
+            int delaySeconds = 10 * (int) Math.pow(3, currentRetryCount);
+            LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(delaySeconds);
 
-        mqOutboxRepository.markAsFailed(messageId, errorMsg, nextRetryAt);
+            mqOutboxRepository.markForRetry(message.getId(), errorMsg, nextRetryAt);
+        }
     }
 }

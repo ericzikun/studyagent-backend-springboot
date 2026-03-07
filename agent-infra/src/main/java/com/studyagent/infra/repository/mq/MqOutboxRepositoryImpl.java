@@ -61,7 +61,7 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
     }
 
     @Override
-    public void markAsFailed(Long id, String errorMessage, LocalDateTime nextRetryAt) {
+    public void markForRetry(Long id, String errorMessage, LocalDateTime nextRetryAt) {
         // 使用数据库原生的重试次数递增，避免并发更新时的覆盖问题
         this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
                 .eq(MqOutboxEntity::getId, id)
@@ -70,6 +70,17 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
                         errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
                                 : errorMessage)
                 .set(MqOutboxEntity::getNextRetryAt, nextRetryAt));
+    }
+
+    @Override
+    public void markAsFailed(Long id, String errorMessage) {
+        this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .setSql("retry_count = retry_count + 1")
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_FAILED)
+                .set(MqOutboxEntity::getErrorMessage,
+                        errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
+                                : errorMessage));
     }
 
     // --- Converter Methods ---

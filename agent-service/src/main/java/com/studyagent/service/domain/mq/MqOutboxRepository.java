@@ -40,11 +40,19 @@ public interface MqOutboxRepository {
     void markAsSent(Long id);
 
     /**
-     * 标记消息发送失败并更新重试策略
+     * 更新重试状态并设置下次重试时间
      * 
      * @param id           消息ID
      * @param errorMessage 错误信息
      * @param nextRetryAt  下次重试时间
      */
-    void markAsFailed(Long id, String errorMessage, LocalDateTime nextRetryAt);
+    void markForRetry(Long id, String errorMessage, LocalDateTime nextRetryAt);
+
+    /**
+     * 标记消息彻底发送失败（重试次数耗尽）
+     * 
+     * @param id           消息ID
+     * @param errorMessage 错误信息
+     */
+    void markAsFailed(Long id, String errorMessage);
 }

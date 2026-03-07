@@ -49,7 +49,7 @@
             <artifactId>commons-lang3</artifactId>
         </dependency>
 
-        <!-- PostHog Java SDK -->
+        <!-- PostHog Java SDK (legacy 坐标，与阿里云镜像兼容) -->
         <dependency>
             <groupId>com.posthog.java</groupId>
             <artifactId>posthog</artifactId>

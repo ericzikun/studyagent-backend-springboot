@@ -3,6 +3,8 @@ package com.studyagent.service.domain.user;
 import lombok.Builder;
 import lombok.Value;
 
+import java.time.LocalDateTime;
+
 /**
  * 用户领域模型
  */
@@ -15,5 +17,6 @@ public class User {
     String locale;
     Boolean isAdmin;
     Boolean isActive;
+    LocalDateTime createdAt;
 }
 

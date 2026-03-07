@@ -45,6 +45,7 @@ public class AuthApplicationService {
                 .locale(user.getLocale())
                 .isAdmin(user.getIsAdmin())
                 .isActive(user.getIsActive())
+                .createdAt(user.getCreatedAt())
                 .build();
             user = userRepository.save(updatedUser);
         }

@@ -440,6 +440,7 @@ public class ClerkClientImpl implements ClerkClient {
             .isAdmin(false)
             .isActive(true)
             .locale("en")
+            .createdAt(java.time.LocalDateTime.now())
             .build();
         
         return userRepository.save(newUser);

@@ -57,7 +57,9 @@ public class HumanizerApplicationService {
 
     /**
      * 提交任务（入库排队）
-     * 额度校验：admin 不限，普通用户按 word count 扣减对应 feature 额度
+     * <p>
+     * DETECT: 只做前置校验（余额 >= 1），不预扣费，由 Worker 逐块扣费
+     * HUMANIZE: 提交时一次性按总 words 扣费（PM 要求按整体粒度判断）
      *
      * @return 任务响应及是否发生了额度扣减
      */
@@ -77,31 +79,52 @@ public class HumanizerApplicationService {
         boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
 
         Long quotaLedgerId = null;
-        if (!isAdmin && !isWhitelisted) {
-            // 检查额度是否足够
-            if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
-                var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
-                throw new InsufficientQuotaException(
-                        "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: " + wordCount,
-                        InsufficientQuotaData.builder()
-                                .featureCode(balance.featureCode())
-                                .featureName(balance.featureName())
-                                .quotaUnit(balance.quotaUnit())
-                                .freeBalance(balance.freeBalance())
-                                .freePeriodTotal(balance.freePeriodTotal())
-                                .paidBalance(balance.paidBalance())
-                                .totalAvailable(balance.totalAvailable())
-                                .build());
-            }
+        boolean quotaConsumed = false;
 
-            // 扣减额度
-            ConsumeResult consumeResult = quotaDomainService.consume(
-                    clerkUserId, featureCode, wordCount,
-                    "humanizer_task", null,
-                    Map.of("task_type", taskType, "word_count", wordCount));
-            quotaLedgerId = consumeResult.ledgerId();
-            log.info("额度扣减成功: userId={}, feature={}, words={}, ledgerId={}",
-                    clerkUserId, featureCode, wordCount, quotaLedgerId);
+        if (!isAdmin && !isWhitelisted) {
+            if ("DETECT".equals(taskType)) {
+                // DETECT: 只校验余额 >= 1，不预扣（Worker 逐块扣）
+                var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
+                if (balance.totalAvailable() < 1) {
+                    throw new InsufficientQuotaException(
+                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: at least 1 word",
+                            InsufficientQuotaData.builder()
+                                    .featureCode(balance.featureCode())
+                                    .featureName(balance.featureName())
+                                    .quotaUnit(balance.quotaUnit())
+                                    .freeBalance(balance.freeBalance())
+                                    .freePeriodTotal(balance.freePeriodTotal())
+                                    .paidBalance(balance.paidBalance())
+                                    .totalAvailable(balance.totalAvailable())
+                                    .build());
+                }
+                // DETECT 不预扣费，quotaConsumed = false
+            } else {
+                // HUMANIZE: 一次性按总 words 扣费
+                if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
+                    var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
+                    throw new InsufficientQuotaException(
+                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: " + wordCount,
+                            InsufficientQuotaData.builder()
+                                    .featureCode(balance.featureCode())
+                                    .featureName(balance.featureName())
+                                    .quotaUnit(balance.quotaUnit())
+                                    .freeBalance(balance.freeBalance())
+                                    .freePeriodTotal(balance.freePeriodTotal())
+                                    .paidBalance(balance.paidBalance())
+                                    .totalAvailable(balance.totalAvailable())
+                                    .build());
+                }
+
+                ConsumeResult consumeResult = quotaDomainService.consume(
+                        clerkUserId, featureCode, wordCount,
+                        "humanizer_task", null,
+                        Map.of("task_type", taskType, "word_count", wordCount));
+                quotaLedgerId = consumeResult.ledgerId();
+                quotaConsumed = true;
+                log.info("HUMANIZE 额度扣减成功: userId={}, feature={}, words={}, ledgerId={}",
+                        clerkUserId, featureCode, wordCount, quotaLedgerId);
+            }
         }
 
         // 4. 入库
@@ -113,6 +136,8 @@ public class HumanizerApplicationService {
         entity.setRetryCount(0);
         entity.setCompletedSentences(0);
         entity.setQuotaLedgerId(quotaLedgerId);
+        entity.setTotalWords(wordCount);
+        entity.setConsumedWords(0);
 
         repository.insert(entity);
 
@@ -129,11 +154,64 @@ public class HumanizerApplicationService {
                 .status("PENDING")
                 .estimatedSeconds(estimatedSeconds)
                 .queuePosition(queueAhead)
+                .totalWords(wordCount)
+                .consumedWords(0)
                 .build();
 
-        // 非 admin 且非白名单时发生了额度扣减
-        boolean quotaConsumed = !isAdmin && !isWhitelisted;
         return new HumanizerSubmitResult(response, quotaConsumed);
+    }
+
+    /**
+     * 续跑 QUOTA_EXHAUSTED 的 DETECT 任务
+     * 用户充值后调用，校验余额 >= 1 后将状态改回 PENDING，Worker 会从断点继续
+     */
+    public HumanizerTaskResponse resumeTask(Long taskId, String clerkUserId) {
+        HumanizerTaskEntity entity = repository.findById(taskId);
+        if (entity == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+        if (!entity.getClerkUserId().equals(clerkUserId)) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+        if (!"QUOTA_EXHAUSTED".equals(entity.getStatus())) {
+            throw new IllegalStateException("Task is not in QUOTA_EXHAUSTED status, current: " + entity.getStatus());
+        }
+
+        // 校验余额 >= 1
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(User::getIsAdmin)
+                .orElse(false);
+        boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
+
+        if (!isAdmin && !isWhitelisted) {
+            String featureCode = FeatureCode.AI_DETECTION.getCode();
+            var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
+            if (balance.totalAvailable() < 1) {
+                throw new InsufficientQuotaException(
+                        "Insufficient quota to resume. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
+                        InsufficientQuotaData.builder()
+                                .featureCode(balance.featureCode())
+                                .featureName(balance.featureName())
+                                .quotaUnit(balance.quotaUnit())
+                                .freeBalance(balance.freeBalance())
+                                .freePeriodTotal(balance.freePeriodTotal())
+                                .paidBalance(balance.paidBalance())
+                                .totalAvailable(balance.totalAvailable())
+                                .build());
+            }
+        }
+
+        // 改回 PENDING，Worker 下一轮会捡起来从 completedSentences 继续
+        HumanizerTaskEntity update = new HumanizerTaskEntity();
+        update.setId(taskId);
+        update.setStatus("PENDING");
+        update.setErrorMessage(null);
+        repository.updateById(update);
+
+        log.info("DETECT 任务续跑: taskId={}, userId={}, completedSentences={}",
+                taskId, clerkUserId, entity.getCompletedSentences());
+
+        return toDetailResponse(repository.findById(taskId));
     }
 
     /**
@@ -195,6 +273,8 @@ public class HumanizerApplicationService {
                 .resultText(entity.getResultText())
                 .elapsedSeconds(entity.getElapsedSeconds())
                 .errorMessage(entity.getErrorMessage())
+                .totalWords(entity.getTotalWords())
+                .consumedWords(entity.getConsumedWords())
                 .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null);
 
         // 未完成的任务带上预估时间

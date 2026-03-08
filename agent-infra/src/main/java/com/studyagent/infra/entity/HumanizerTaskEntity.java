@@ -63,6 +63,14 @@ public class HumanizerTaskEntity extends BaseEntity {
     @TableField("quota_ledger_id")
     private Long quotaLedgerId;
 
+    /** Total word count of input text */
+    @TableField("total_words")
+    private Integer totalWords;
+
+    /** Words consumed (quota deducted) so far — for streaming per-chunk billing */
+    @TableField("consumed_words")
+    private Integer consumedWords;
+
     @TableField("started_at")
     private LocalDateTime startedAt;
 

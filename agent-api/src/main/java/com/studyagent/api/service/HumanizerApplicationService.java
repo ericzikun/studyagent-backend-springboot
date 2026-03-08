@@ -1,6 +1,7 @@
 package com.studyagent.api.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.studyagent.api.dto.response.HumanizerSubmitResult;
 import com.studyagent.api.dto.response.HumanizerTaskItemResponse;
 import com.studyagent.api.dto.response.HumanizerTaskListResponse;
 import com.studyagent.api.dto.response.HumanizerTaskResponse;
@@ -57,8 +58,10 @@ public class HumanizerApplicationService {
     /**
      * 提交任务（入库排队）
      * 额度校验：admin 不限，普通用户按 word count 扣减对应 feature 额度
+     *
+     * @return 任务响应及是否发生了额度扣减
      */
-    public HumanizerTaskResponse submitTask(String clerkUserId, String taskType, String text) {
+    public HumanizerSubmitResult submitTask(String clerkUserId, String taskType, String text) {
         // 1. 计算 word count（按空格分词）
         int wordCount = countWords(text);
 
@@ -120,13 +123,17 @@ public class HumanizerApplicationService {
         log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, estimatedSeconds={}",
                 entity.getId(), taskType, clerkUserId, wordCount, queueAhead, estimatedSeconds);
 
-        return HumanizerTaskResponse.builder()
+        HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(taskType)
                 .status("PENDING")
                 .estimatedSeconds(estimatedSeconds)
                 .queuePosition(queueAhead)
                 .build();
+
+        // 非 admin 且非白名单时发生了额度扣减
+        boolean quotaConsumed = !isAdmin && !isWhitelisted;
+        return new HumanizerSubmitResult(response, quotaConsumed);
     }
 
     /**

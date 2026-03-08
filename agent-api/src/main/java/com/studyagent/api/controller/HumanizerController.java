@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.HumanizerRequest;
+import com.studyagent.api.dto.response.HumanizerSubmitResult;
 import com.studyagent.api.dto.response.HumanizerTaskListResponse;
 import com.studyagent.api.dto.response.HumanizerTaskResponse;
 import com.studyagent.api.service.HumanizerApplicationService;
@@ -34,8 +35,8 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 DETECT 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
-        return Result.success(response);
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
+        return Result.success(result.response(), result.quotaConsumed());
     }
 
     /**
@@ -46,8 +47,8 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 HUMANIZE 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
-        return Result.success(response);
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
+        return Result.success(result.response(), result.quotaConsumed());
     }
 
     /**

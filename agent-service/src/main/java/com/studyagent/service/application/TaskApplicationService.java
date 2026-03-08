@@ -72,7 +72,7 @@ public class TaskApplicationService {
     private final Gson gson = new Gson();
 
     /** 提交任务结果 */
-    public record SubmitTaskResult(long taskId, QuotaInfo quota) {
+    public record SubmitTaskResult(long taskId, QuotaInfo quota, boolean quotaConsumed) {
         public record QuotaInfo(int dailyLimit, int usedToday, int remainingQuota, String quotaResetAt) {}
     }
 
@@ -191,7 +191,10 @@ public class TaskApplicationService {
                         quotaInfo.remainingQuota() - 1, quotaInfo.quotaResetAt())
                 : null;
 
-        return new SubmitTaskResult(taskId, finalQuota);
+        // 是否发生了额度扣减：AI 额度模式时 shouldConsumeQuota，每日次数模式时使用了当日配额
+        boolean quotaConsumed = shouldConsumeQuota || (finalQuota != null);
+
+        return new SubmitTaskResult(taskId, finalQuota, quotaConsumed);
     }
 
     /**

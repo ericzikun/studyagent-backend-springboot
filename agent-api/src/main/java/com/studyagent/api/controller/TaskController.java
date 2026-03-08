@@ -131,7 +131,7 @@ public class TaskController {
                 .quota(quota)
                 .build();
 
-        return Result.success(response);
+        return Result.success(response, result.quotaConsumed());
     }
 
     @PostMapping("/save-draft")

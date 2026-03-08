@@ -25,7 +25,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/v3/api-docs/**",
                 "/actuator/**",
                 "/api/v1/agent-events/**",  // Python Agent 事件接口，使用 Token 验证
-                "/v1/webhook/**"            // Stripe Webhook，使用签名验证
+                "/v1/webhook/**",           // Stripe Webhook，使用签名验证
+                "/v1/payment/config"        // Pricing 页面支付配置，允许未登录访问
             );
     }
 }

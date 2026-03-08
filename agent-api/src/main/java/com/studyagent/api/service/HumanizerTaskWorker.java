@@ -3,6 +3,7 @@ package com.studyagent.api.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.infra.client.humanizer.HumanizerServiceClientImpl;
 import com.studyagent.infra.entity.HumanizerTaskEntity;
 import com.studyagent.infra.repository.humanizer.HumanizerTaskRepositoryImpl;
@@ -10,6 +11,7 @@ import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +42,11 @@ public class HumanizerTaskWorker {
     private final HumanizerServiceClientImpl humanizerServiceClientImpl;
     private final ObjectMapper objectMapper;
     private final QuotaDomainService quotaDomainService;
+    private final UserRepository userRepository;
+
+    /** 内测白名单用户（不限额度） */
+    @Value("${humanizer.whitelist-user-ids:}")
+    private List<String> whitelistUserIds;
 
     private static final int MAX_RETRY = 3;
     /** PROCESSING 超过这个时间（分钟）自动回收 */
@@ -128,23 +135,107 @@ public class HumanizerTaskWorker {
 
     /**
      * 处理 DETECT 任务：调 Python /predict_stream，逐句更新
+     * <p>
+     * 逐块扣费逻辑（按 PM 要求）：
+     * - 每收到一个 sentence chunk，计算该句 word 数并扣费
+     * - 如果扣费失败（余额不足），标记 QUOTA_EXHAUSTED 并中断
+     * - admin/白名单用户跳过扣费
+     * - 续跑时从 completedSentences 位置继续
      */
     private void processDetectTask(HumanizerTaskEntity task) {
         long startTime = System.currentTimeMillis();
-        log.info("开始处理 DETECT 任务: id={}, textLength={}", task.getId(), task.getInputText().length());
+        log.info("开始处理 DETECT 任务: id={}, textLength={}, completedSentences={}",
+                task.getId(), task.getInputText().length(), task.getCompletedSentences());
+
+        // 判断是否需要扣费
+        boolean skipQuota = false;
+        try {
+            var userOpt = userRepository.findByClerkUserId(task.getClerkUserId());
+            boolean isAdmin = userOpt.map(u -> u.getIsAdmin()).orElse(false);
+            boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(task.getClerkUserId());
+            skipQuota = isAdmin || isWhitelisted;
+        } catch (Exception e) {
+            log.warn("查询用户信息失败，按普通用户处理: userId={}", task.getClerkUserId(), e);
+        }
+
+        // 续跑时已有的句子数据
+        int alreadyCompleted = task.getCompletedSentences() != null ? task.getCompletedSentences() : 0;
+        int consumedWords = task.getConsumedWords() != null ? task.getConsumedWords() : 0;
 
         try {
             List<Map<String, Object>> sentences = new ArrayList<>();
 
+            // 如果是续跑，先恢复已有的句子数据
+            if (alreadyCompleted > 0 && task.getSentencesJson() != null) {
+                try {
+                    sentences = objectMapper.readValue(task.getSentencesJson(), new TypeReference<>() {});
+                    log.info("续跑 DETECT 任务: id={}, 已有 {} 句，从第 {} 句继续",
+                            task.getId(), sentences.size(), alreadyCompleted);
+                } catch (Exception e) {
+                    log.warn("解析已有 sentencesJson 失败，从头开始: id={}", task.getId(), e);
+                    sentences = new ArrayList<>();
+                    alreadyCompleted = 0;
+                    consumedWords = 0;
+                }
+            }
+
             // 用 blockingIterable 消费 SSE 流，每收到一条就更新数据库
             Iterable<String> stream = humanizerServiceClientImpl.detectAIStream(task.getInputText())
                     .toIterable();
+
+            int chunkIndex = 0;
+            boolean quotaExhausted = false;
 
             for (String rawLine : stream) {
                 try {
                     Map<String, Object> data = objectMapper.readValue(rawLine, new TypeReference<>() {});
 
                     if (data.containsKey("index")) {
+                        chunkIndex++;
+
+                        // 续跑时跳过已完成的句子
+                        if (chunkIndex <= alreadyCompleted) {
+                            continue;
+                        }
+
+                        // 逐块扣费：计算这句的 word 数
+                        if (!skipQuota) {
+                            String sentenceText = data.get("sentence") != null
+                                    ? data.get("sentence").toString() : "";
+                            int sentenceWords = countWords(sentenceText);
+                            if (sentenceWords < 1) sentenceWords = 1; // 至少扣 1 word
+
+                            try {
+                                String featureCode = FeatureCode.AI_DETECTION.getCode();
+                                quotaDomainService.consume(
+                                        task.getClerkUserId(), featureCode, sentenceWords,
+                                        "humanizer_task", String.valueOf(task.getId()),
+                                        Map.of("task_type", "DETECT",
+                                                "task_id", task.getId(),
+                                                "sentence_index", chunkIndex,
+                                                "sentence_words", sentenceWords));
+                                consumedWords += sentenceWords;
+                            } catch (Exception e) {
+                                // 余额不足，标记 QUOTA_EXHAUSTED
+                                log.warn("DETECT 逐块扣费失败（余额不足）: taskId={}, sentence={}, error={}",
+                                        task.getId(), chunkIndex, e.getMessage());
+
+                                HumanizerTaskEntity update = new HumanizerTaskEntity();
+                                update.setId(task.getId());
+                                update.setStatus("QUOTA_EXHAUSTED");
+                                update.setSentencesJson(objectMapper.writeValueAsString(sentences));
+                                update.setCompletedSentences(sentences.size());
+                                update.setConsumedWords(consumedWords);
+                                update.setErrorMessage("Quota exhausted at sentence " + chunkIndex);
+                                repository.updateById(update);
+
+                                log.info("DETECT 任务因余额不足暂停: id={}, completedSentences={}, consumedWords={}",
+                                        task.getId(), sentences.size(), consumedWords);
+                                quotaExhausted = true;
+                                break;
+                            }
+                        }
+
                         // chunk 数据：一句的检测结果
                         sentences.add(data);
 
@@ -156,6 +247,7 @@ public class HumanizerTaskWorker {
                         update.setId(task.getId());
                         update.setSentencesJson(objectMapper.writeValueAsString(sentences));
                         update.setCompletedSentences(sentences.size());
+                        update.setConsumedWords(consumedWords);
                         if (total != null) {
                             update.setTotalSentences(total);
                         }
@@ -178,12 +270,13 @@ public class HumanizerTaskWorker {
                         update.setElapsedSeconds(elapsed);
                         update.setSentencesJson(objectMapper.writeValueAsString(sentences));
                         update.setCompletedSentences(sentences.size());
+                        update.setConsumedWords(consumedWords);
                         update.setFinishedAt(LocalDateTime.now());
-                        update.setErrorMessage(null); // 清掉重试残留的错误信息
+                        update.setErrorMessage(null);
                         repository.updateById(update);
 
-                        log.info("DETECT 任务完成: id={}, label={}, prob={}, 耗时={}s",
-                                task.getId(), label, probability, elapsed);
+                        log.info("DETECT 任务完成: id={}, label={}, prob={}, consumedWords={}, 耗时={}s",
+                                task.getId(), label, probability, consumedWords, elapsed);
                         return;
 
                     } else if (data.containsKey("msg")) {
@@ -195,9 +288,13 @@ public class HumanizerTaskWorker {
                 }
             }
 
+            if (quotaExhausted) {
+                return; // 已在上面处理过了
+            }
+
             // 流结束但没收到 done 事件，用已有数据计算结果
             if (!sentences.isEmpty()) {
-                finishDetectFromSentences(task, sentences, startTime);
+                finishDetectFromSentences(task, sentences, startTime, consumedWords);
             } else {
                 markFailed(task, "No data received from Python service");
             }
@@ -213,7 +310,8 @@ public class HumanizerTaskWorker {
      */
     private void finishDetectFromSentences(HumanizerTaskEntity task,
                                             List<Map<String, Object>> sentences,
-                                            long startTime) {
+                                            long startTime,
+                                            int consumedWords) {
         try {
             double weightedSum = 0;
             int totalWeight = 0;
@@ -237,11 +335,12 @@ public class HumanizerTaskWorker {
             update.setSentencesJson(objectMapper.writeValueAsString(sentences));
             update.setCompletedSentences(sentences.size());
             update.setTotalSentences(sentences.size());
+            update.setConsumedWords(consumedWords);
             update.setFinishedAt(LocalDateTime.now());
-            update.setErrorMessage(null); // 清掉之前可能残留的错误信息
+            update.setErrorMessage(null);
             repository.updateById(update);
 
-            log.info("DETECT 任务完成(从句子汇总): id={}, prob={}", task.getId(), finalProb);
+            log.info("DETECT 任务完成(从句子汇总): id={}, prob={}, consumedWords={}", task.getId(), finalProb, consumedWords);
         } catch (Exception e) {
             log.error("汇总 DETECT 结果失败: id={}", task.getId(), e);
             markFailed(task, "Failed to aggregate results: " + e.getMessage());
@@ -313,6 +412,15 @@ public class HumanizerTaskWorker {
         repository.updateById(update);
         // 退还额度
         refundQuota(task);
+    }
+
+    /**
+     * 统计英文单词数（按空格分词）
+     */
+    private int countWords(String text) {
+        if (text == null || text.isBlank()) return 0;
+        String[] words = text.trim().split("\\s+");
+        return words.length;
     }
 
     /**

@@ -63,6 +63,19 @@ public class HumanizerController {
     }
 
     /**
+     * 续跑 QUOTA_EXHAUSTED 的 DETECT 任务
+     * 用户充值后调用，校验余额后将任务改回 PENDING 继续检测
+     */
+    @PostMapping("/tasks/{id}/resume")
+    public Result<HumanizerTaskResponse> resumeTask(
+            @PathVariable Long id,
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("续跑 DETECT 任务: taskId={}, userId={}", id, clerkUserId);
+        HumanizerTaskResponse response = humanizerApplicationService.resumeTask(id, clerkUserId);
+        return Result.success(response);
+    }
+
+    /**
      * 查询用户任务列表（分页，精简字段）
      *
      * @param taskType 可选: DETECT / HUMANIZE，不传查全部

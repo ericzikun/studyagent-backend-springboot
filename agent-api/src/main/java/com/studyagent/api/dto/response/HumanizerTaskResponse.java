@@ -20,6 +20,11 @@ public class HumanizerTaskResponse {
     /** 任务ID */
     private Long id;
 
+    /** 任务ID（兼容前端 taskId 字段） */
+    public Long getTaskId() {
+        return id;
+    }
+
     /** DETECT / HUMANIZE */
     private String taskType;
 
@@ -51,6 +56,11 @@ public class HumanizerTaskResponse {
     private Integer queuePosition;
     /** 错误信息 */
     private String errorMessage;
+
+    /** 任务总 word 数 */
+    private Integer totalWords;
+    /** 已扣费 word 数（逐块扣费进度） */
+    private Integer consumedWords;
 
     private String createdAt;
 }

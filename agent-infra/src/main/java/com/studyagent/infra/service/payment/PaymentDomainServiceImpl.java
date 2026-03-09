@@ -1,11 +1,14 @@
 package com.studyagent.infra.service.payment;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Price;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.PriceListParams;
 import com.stripe.param.checkout.SessionCreateParams;
+import com.studyagent.infra.entity.AiFeaturePackageEntity;
+import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.service.domain.payment.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -20,58 +23,20 @@ import java.util.Map;
 
 /**
  * 支付领域服务实现
+ * 套餐配置从 ai_feature_packages 表读取，维护时直接修改数据库即可
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentDomainServiceImpl implements PaymentDomainService {
 
+    private final AiFeaturePackageMapper aiFeaturePackageMapper;
+
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
 
     @Value("${stripe.publishable-key:}")
     private String stripePublishableKey;
-
-    @Value("${stripe.price.assignment_1:}")
-    private String priceAssignment1;
-
-    @Value("${stripe.price.assignment_5:}")
-    private String priceAssignment5;
-
-    @Value("${stripe.price.assignment_10:}")
-    private String priceAssignment10;
-
-    @Value("${stripe.price.assignment_50:}")
-    private String priceAssignment50;
-
-    // AI Detection 套餐
-    @Value("${stripe.price.detection_10k:}")
-    private String priceDetection10k;
-
-    @Value("${stripe.price.detection_50k:}")
-    private String priceDetection50k;
-
-    @Value("${stripe.price.detection_200k:}")
-    private String priceDetection200k;
-
-    // Humanizer 套餐
-    @Value("${stripe.price.humanizer_10k:}")
-    private String priceHumanizer10k;
-
-    @Value("${stripe.price.humanizer_50k:}")
-    private String priceHumanizer50k;
-
-    @Value("${stripe.price.humanizer_200k:}")
-    private String priceHumanizer200k;
-
-    @Value("${stripe.price.starter:}")
-    private String priceStarter;
-
-    @Value("${stripe.price.pro:}")
-    private String pricePro;
-
-    @Value("${stripe.price.academic:}")
-    private String priceAcademic;
 
     @Value("${payment.success-url:http://localhost:3000/success}")
     private String successUrl;
@@ -92,14 +57,20 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             throw new PaymentDomainException("STRIPE_NOT_CONFIGURED", "Stripe Secret Key 未配置");
         }
 
-        String configuredPriceId = getPriceId(command.getPackageType());
-        if (configuredPriceId == null || configuredPriceId.isEmpty()) {
+        AiFeaturePackageEntity pkg = findPackageByCode(command.getPackageType());
+        if (pkg == null) {
             throw new PaymentDomainException("INVALID_PACKAGE_TYPE", "Invalid package type", command.getPackageType());
+        }
+
+        String configuredPriceId = pkg.getStripePriceId();
+        if (configuredPriceId == null || configuredPriceId.isEmpty()) {
+            throw new PaymentDomainException("PRICE_CONFIG_ERROR", "Package has no Stripe price configured",
+                    pkg.getPackageName(), command.getPackageType());
         }
 
         if (!configuredPriceId.startsWith("price_") && !configuredPriceId.startsWith("prod_")) {
             throw new PaymentDomainException("PRICE_CONFIG_ERROR", "Price ID config error",
-                    getPackageName(command.getPackageType()), command.getPackageType().toUpperCase());
+                    pkg.getPackageName(), command.getPackageType());
         }
 
         String targetPriceId = configuredPriceId;
@@ -144,9 +115,9 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 )
                 .setCustomerEmail(command.getCustomerEmail())
                 .putMetadata("package_type", command.getPackageType())
-                .putMetadata("feature_code", getFeatureCode(command.getPackageType()))
+                .putMetadata("feature_code", pkg.getFeatureCode())
                 .putMetadata("clerk_user_id", command.getClerkUserId() != null ? command.getClerkUserId() : "")
-                .putMetadata("credits", String.valueOf(getCredits(command.getPackageType())))
+                .putMetadata("credits", String.valueOf(pkg.getQuotaAmount() != null ? pkg.getQuotaAmount() : 0))
                 .build();
 
         Session session;
@@ -188,23 +159,23 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     @Override
     public PaymentConfigResult getPaymentConfig() {
+        List<AiFeaturePackageEntity> entities = aiFeaturePackageMapper.selectList(
+                new LambdaQueryWrapper<AiFeaturePackageEntity>()
+                        .eq(AiFeaturePackageEntity::getIsActive, true)
+                        .orderByAsc(AiFeaturePackageEntity::getDisplayOrder));
+
         List<Map<String, Object>> packages = new ArrayList<>();
-        // Assignment 套餐
-        packages.add(buildPackage("assignment_1", "1 Assignment", 1, priceAssignment1));
-        packages.add(buildPackage("assignment_5", "5 Assignments", 5, priceAssignment5));
-        packages.add(buildPackage("assignment_10", "10 Assignments", 10, priceAssignment10));
-        packages.add(buildPackage("assignment_50", "50 Assignments", 50, priceAssignment50));
-        packages.add(buildPackage("starter", "Starter Pack", 1, priceStarter));
-        packages.add(buildPackage("pro", "Pro Pack", 10, pricePro));
-        packages.add(buildPackage("academic", "Academic Pack", 50, priceAcademic));
-        // AI Detection 套餐
-        packages.add(buildPackage("detection_10k", "10,000 Words", 10000, priceDetection10k));
-        packages.add(buildPackage("detection_50k", "50,000 Words", 50000, priceDetection50k));
-        packages.add(buildPackage("detection_200k", "200,000 Words", 200000, priceDetection200k));
-        // Humanizer 套餐
-        packages.add(buildPackage("humanizer_10k", "10,000 Words", 10000, priceHumanizer10k));
-        packages.add(buildPackage("humanizer_50k", "50,000 Words", 50000, priceHumanizer50k));
-        packages.add(buildPackage("humanizer_200k", "200,000 Words", 200000, priceHumanizer200k));
+        for (AiFeaturePackageEntity e : entities) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("type", e.getPackageCode());
+            m.put("name", e.getPackageName());
+            m.put("credits", e.getQuotaAmount() != null ? e.getQuotaAmount().intValue() : 0);
+            m.put("priceId", e.getStripePriceId() != null ? e.getStripePriceId() : "");
+            m.put("featureCode", e.getFeatureCode());
+            m.put("priceCents", e.getPriceCents());
+            m.put("currency", e.getCurrency() != null ? e.getCurrency() : "usd");
+            packages.add(m);
+        }
 
         return PaymentConfigResult.builder()
                 .stripePublishableKey(stripePublishableKey)
@@ -212,76 +183,16 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 .build();
     }
 
-    private Map<String, Object> buildPackage(String type, String name, int credits, String priceId) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("type", type);
-        m.put("name", name);
-        m.put("credits", credits);
-        m.put("priceId", priceId != null ? priceId : "");
-        return m;
-    }
-
-    private String getPriceId(String packageType) {
-        return switch (packageType) {
-            case "assignment_1" -> priceAssignment1;
-            case "assignment_5" -> priceAssignment5;
-            case "assignment_10" -> priceAssignment10;
-            case "assignment_50" -> priceAssignment50;
-            case "starter" -> priceStarter;
-            case "pro" -> pricePro;
-            case "academic" -> priceAcademic;
-            case "detection_10k" -> priceDetection10k;
-            case "detection_50k" -> priceDetection50k;
-            case "detection_200k" -> priceDetection200k;
-            case "humanizer_10k" -> priceHumanizer10k;
-            case "humanizer_50k" -> priceHumanizer50k;
-            case "humanizer_200k" -> priceHumanizer200k;
-            default -> null;
-        };
-    }
-
-    private int getCredits(String packageType) {
-        return switch (packageType) {
-            case "assignment_1" -> 1;
-            case "assignment_5" -> 5;
-            case "assignment_10" -> 10;
-            case "assignment_50" -> 50;
-            case "starter" -> 1;
-            case "pro" -> 10;
-            case "academic" -> 50;
-            case "detection_10k", "humanizer_10k" -> 10000;
-            case "detection_50k", "humanizer_50k" -> 50000;
-            case "detection_200k", "humanizer_200k" -> 200000;
-            default -> 0;
-        };
-    }
-
-    private String getFeatureCode(String packageType) {
-        if (packageType != null && packageType.startsWith("detection_")) {
-            return "ai_detection";
+    /**
+     * 根据 package_code 查询套餐（前端传的 packageType 即为 package_code）
+     */
+    private AiFeaturePackageEntity findPackageByCode(String packageCode) {
+        if (packageCode == null || packageCode.isBlank()) {
+            return null;
         }
-        if (packageType != null && packageType.startsWith("humanizer_")) {
-            return "humanizer";
-        }
-        return "task_create";
-    }
-
-    private String getPackageName(String packageType) {
-        return switch (packageType) {
-            case "assignment_1" -> "Assignment 1次";
-            case "assignment_5" -> "Assignment 5次";
-            case "assignment_10" -> "Assignment 10次";
-            case "assignment_50" -> "Assignment 50次";
-            case "starter" -> "Starter";
-            case "pro" -> "Pro";
-            case "academic" -> "Academic";
-            case "detection_10k" -> "AI Detection 10K Words";
-            case "detection_50k" -> "AI Detection 50K Words";
-            case "detection_200k" -> "AI Detection 200K Words";
-            case "humanizer_10k" -> "Humanizer 10K Words";
-            case "humanizer_50k" -> "Humanizer 50K Words";
-            case "humanizer_200k" -> "Humanizer 200K Words";
-            default -> packageType;
-        };
+        return aiFeaturePackageMapper.selectOne(
+                new LambdaQueryWrapper<AiFeaturePackageEntity>()
+                        .eq(AiFeaturePackageEntity::getPackageCode, packageCode)
+                        .eq(AiFeaturePackageEntity::getIsActive, true));
     }
 }

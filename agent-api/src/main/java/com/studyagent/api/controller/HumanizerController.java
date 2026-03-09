@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.HumanizerRequest;
+import com.studyagent.api.dto.response.HumanizerSubmitResult;
 import com.studyagent.api.dto.response.HumanizerTaskListResponse;
 import com.studyagent.api.dto.response.HumanizerTaskResponse;
 import com.studyagent.api.service.HumanizerApplicationService;
@@ -34,8 +35,8 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 DETECT 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
-        return Result.success(response);
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
+        return Result.success(result.response(), result.quotaConsumed());
     }
 
     /**
@@ -46,8 +47,8 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 HUMANIZE 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerTaskResponse response = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
-        return Result.success(response);
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
+        return Result.success(result.response(), result.quotaConsumed());
     }
 
     /**
@@ -58,6 +59,19 @@ public class HumanizerController {
             @PathVariable Long id,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         HumanizerTaskResponse response = humanizerApplicationService.getTask(id, clerkUserId);
+        return Result.success(response);
+    }
+
+    /**
+     * 续跑 QUOTA_EXHAUSTED 的 DETECT 任务
+     * 用户充值后调用，校验余额后将任务改回 PENDING 继续检测
+     */
+    @PostMapping("/tasks/{id}/resume")
+    public Result<HumanizerTaskResponse> resumeTask(
+            @PathVariable Long id,
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("续跑 DETECT 任务: taskId={}, userId={}", id, clerkUserId);
+        HumanizerTaskResponse response = humanizerApplicationService.resumeTask(id, clerkUserId);
         return Result.success(response);
     }
 

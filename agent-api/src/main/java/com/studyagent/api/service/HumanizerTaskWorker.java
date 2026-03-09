@@ -198,10 +198,11 @@ public class HumanizerTaskWorker {
                             continue;
                         }
 
-                        // 逐块扣费：计算这句的 word 数
+                        // 逐块扣费：计算这句的 word 数（用 fullSentence 完整句子，不是截断的 sentence 摘要）
                         if (!skipQuota) {
-                            String sentenceText = data.get("sentence") != null
-                                    ? data.get("sentence").toString() : "";
+                            String sentenceText = data.get("fullSentence") != null
+                                    ? data.get("fullSentence").toString()
+                                    : (data.get("sentence") != null ? data.get("sentence").toString() : "");
                             int sentenceWords = countWords(sentenceText);
                             if (sentenceWords < 1) sentenceWords = 1; // 至少扣 1 word
 
@@ -415,12 +416,22 @@ public class HumanizerTaskWorker {
     }
 
     /**
-     * 统计英文单词数（按空格分词）
+     * 统计 word 数，与前端逻辑对齐：
+     * - CJK 字符（中日韩）每个字算 1 word
+     * - 非 CJK 部分按空格分词，每个词算 1 word
+     * - 混合文本两者相加
      */
     private int countWords(String text) {
         if (text == null || text.isBlank()) return 0;
-        String[] words = text.trim().split("\\s+");
-        return words.length;
+        String cjkPattern = "[\\u4e00-\\u9fff\\u3400-\\u4dbf\\u3040-\\u309f\\u30a0-\\u30ff\\uac00-\\ud7af]";
+        java.util.regex.Matcher cjkMatcher = java.util.regex.Pattern.compile(cjkPattern).matcher(text);
+        int cjkCount = 0;
+        while (cjkMatcher.find()) cjkCount++;
+        String nonCjk = text.replaceAll(cjkPattern, " ").trim();
+        int engCount = nonCjk.isEmpty() ? 0
+                : (int) java.util.Arrays.stream(nonCjk.split("\\s+"))
+                        .filter(w -> !w.isEmpty()).count();
+        return cjkCount + engCount;
     }
 
     /**

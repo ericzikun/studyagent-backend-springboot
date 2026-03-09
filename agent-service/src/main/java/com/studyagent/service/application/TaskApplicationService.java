@@ -172,7 +172,8 @@ public class TaskApplicationService {
         task = task.submit();
 
         // 6. 在短事务内保存任务和关联文件
-        Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds());
+        Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds(),
+                shouldConsumeQuota ? userInfo.clerkUserId : null);
 
         // 8. 更新额度信息（仅每日次数模式）
         SubmitTaskResult.QuotaInfo finalQuota = quotaInfo != null

@@ -44,6 +44,7 @@ public class MqOutboxService {
                 .retryCount(0)
                 .maxRetries(5)
                 .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         MqOutbox saved = mqOutboxRepository.save(message);

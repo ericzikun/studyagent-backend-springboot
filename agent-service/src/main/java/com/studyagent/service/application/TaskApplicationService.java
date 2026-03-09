@@ -20,6 +20,7 @@ import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import com.studyagent.service.domain.file.FileRepository;
 import com.studyagent.service.domain.file.FileId;
+import com.studyagent.service.domain.mq.MqOutbox;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -62,6 +63,7 @@ public class TaskApplicationService {
     private final TaskRepository taskRepository;
     private final TaskDomainService taskDomainService;
     private final PythonBackendClient pythonBackendClient;
+    private final MqOutboxService mqOutboxService;
     private final ClerkClient clerkClient;
     private final FileRepository fileRepository;
     private final TaskFileRepository taskFileRepository;
@@ -73,7 +75,8 @@ public class TaskApplicationService {
 
     /** 提交任务结果 */
     public record SubmitTaskResult(long taskId, QuotaInfo quota, boolean quotaConsumed) {
-        public record QuotaInfo(int dailyLimit, int usedToday, int remainingQuota, String quotaResetAt) {}
+        public record QuotaInfo(int dailyLimit, int usedToday, int remainingQuota, String quotaResetAt) {
+        }
     }
 
     /**
@@ -82,12 +85,12 @@ public class TaskApplicationService {
      * @param request 提交任务请求
      * @return 提交结果（含 taskId 和额度信息）
      * @throws QuotaExceededException 普通用户当日提交次数达上限时抛出
-     * <p>
-     * 优化说明：移除方法级 @Transactional，只在必要的数据库操作时开启事务
-     * 这样可以：
-     * 1. 减少事务持有时间，避免阻塞其他查询
-     * 2. 验证和构建对象在事务外执行
-     * 3. Python 后端调用在事务外异步执行
+     *                                <p>
+     *                                优化说明：移除方法级 @Transactional，只在必要的数据库操作时开启事务
+     *                                这样可以：
+     *                                1. 减少事务持有时间，避免阻塞其他查询
+     *                                2. 验证和构建对象在事务外执行
+     *                                3. Python 后端调用在事务外异步执行
      */
     public SubmitTaskResult submitTask(SubmitTaskRequest request) {
         // 1. 验证用户身份（事务外执行）
@@ -95,17 +98,18 @@ public class TaskApplicationService {
 
         // 2. 额度校验
         SubmitTaskResult.QuotaInfo quotaInfo;
-        boolean shouldConsumeQuota = false;  // 是否扣减额度（admin 不扣减）
+        boolean shouldConsumeQuota = false; // 是否扣减额度（admin 不扣减）
         if (taskSubmitConfig.isQuotaEnabled()) {
             // AI 额度体系：admin 无限使用，普通用户检查额度
             boolean isAdmin = userRepository.findByClerkUserId(userInfo.clerkUserId)
                     .map(User::getIsAdmin)
                     .orElse(false);
             if (isAdmin) {
-                shouldConsumeQuota = false;  // admin 不扣减
+                shouldConsumeQuota = false; // admin 不扣减
             } else {
                 if (!quotaDomainService.canConsume(userInfo.clerkUserId, FeatureCode.TASK_CREATE.getCode(), 1)) {
-                    var balance = quotaDomainService.getUserQuota(userInfo.clerkUserId, FeatureCode.TASK_CREATE.getCode());
+                    var balance = quotaDomainService.getUserQuota(userInfo.clerkUserId,
+                            FeatureCode.TASK_CREATE.getCode());
                     throw new InsufficientQuotaException(
                             "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                             InsufficientQuotaData.builder()
@@ -120,7 +124,7 @@ public class TaskApplicationService {
                 }
                 shouldConsumeQuota = true;
             }
-            quotaInfo = null;  // AI 额度模式下不返回旧的 QuotaInfo
+            quotaInfo = null; // AI 额度模式下不返回旧的 QuotaInfo
         } else {
             quotaInfo = checkAndBuildQuota(userInfo.clerkUserId);
         }
@@ -140,8 +144,7 @@ public class TaskApplicationService {
         String mergedRequirementJson = mergeRequirementJson(
                 existing != null ? existing.getRequirementJson() : null,
                 request.getRequirementsJson(),
-                request.getClarifyingQuestions()
-        );
+                request.getClarifyingQuestions());
 
         Task task = Task.builder()
                 .id(existing != null ? existing.getId() : null)
@@ -158,7 +161,8 @@ public class TaskApplicationService {
                 .specialInstructions(request.getSpecialInstructions())
                 .requirementJson(mergedRequirementJson)
                 .status(TaskStatus.DRAFT)
-                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId() : TraceIdUtil.getTraceId())
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId()
+                        : TraceIdUtil.getTraceId())
                 .build();
 
         // 4. 验证任务（事务外执行，纯业务逻辑）
@@ -167,23 +171,9 @@ public class TaskApplicationService {
         // 5. 提交任务（修改状态，纯内存操作）
         task = task.submit();
 
-        // 6. 在短事务内保存任务、扣减额度（非 admin 时）、关联文件
+        // 6. 在短事务内保存任务和关联文件
         Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds(),
                 shouldConsumeQuota ? userInfo.clerkUserId : null);
-
-        // 7. 事务外异步调用 Python 后端执行任务
-        // 使用 CompletableFuture 异步执行，不阻塞当前请求
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            try {
-                log.info("开始异步调用 Python 后端执行任务: taskId={}", taskId);
-                pythonBackendClient.executeTask(TaskId.of(taskId));
-                log.info("成功调用 Python 后端执行任务: taskId={}", taskId);
-            } catch (Exception e) {
-                log.error("调用 Python 后端执行任务失败: taskId={}", taskId, e);
-                // 任务已保存，Python 后端调用失败不影响任务创建
-                // TODO: 可以考虑添加重试机制或将任务状态更新为失败
-            }
-        });
 
         // 8. 更新额度信息（仅每日次数模式）
         SubmitTaskResult.QuotaInfo finalQuota = quotaInfo != null
@@ -250,7 +240,8 @@ public class TaskApplicationService {
             if (!isAdmin && !quotaDomainService.canConsume(clerkUserId, FeatureCode.TASK_CREATE.getCode(), 1)) {
                 var balance = quotaDomainService.getUserQuota(clerkUserId, FeatureCode.TASK_CREATE.getCode());
                 throw new InsufficientQuotaException(
-                        "Insufficient quota for clarify. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
+                        "Insufficient quota for clarify. Free: " + balance.freeBalance() + ", Paid: "
+                                + balance.paidBalance(),
                         InsufficientQuotaData.builder()
                                 .featureCode(balance.featureCode())
                                 .featureName(balance.featureName())
@@ -276,7 +267,7 @@ public class TaskApplicationService {
             return null;
         }
         if (taskSubmitConfig.isQuotaEnabled()) {
-            return null;  // AI 额度模式，使用 GET /v1/quota/balance
+            return null; // AI 额度模式，使用 GET /v1/quota/balance
         }
         if (!taskSubmitConfig.isLimitEnabled()) {
             return null;
@@ -333,8 +324,7 @@ public class TaskApplicationService {
                     1,
                     "task",
                     String.valueOf(taskId),
-                    Map.of("task_id", taskId)
-            );
+                    Map.of("task_id", taskId));
         }
 
         // 关联文件到任务（如果提供了文件objectIds）
@@ -356,6 +346,9 @@ public class TaskApplicationService {
             }
         }
 
+        // 写入本地消息表
+        mqOutboxService.createMessage("EXECUTE_TASK", taskId, "{}");
+
         return taskId;
     }
 
@@ -364,8 +357,8 @@ public class TaskApplicationService {
      *
      * @param request 保存草稿请求
      * @return draftId
-     * <p>
-     * 优化：添加事务超时，避免长时间持有锁
+     *         <p>
+     *         优化：添加事务超时，避免长时间持有锁
      */
     @Transactional(timeout = 10)
     public Long saveDraft(SaveDraftRequest request) {
@@ -393,8 +386,7 @@ public class TaskApplicationService {
         String mergedRequirementJson = mergeRequirementJson(
                 existing != null ? existing.getRequirementJson() : null,
                 request.getRequirementsJson(),
-                request.getClarifyingQuestions()
-        );
+                request.getClarifyingQuestions());
 
         Task.TaskBuilder builder = Task.builder()
                 .id(existing != null ? existing.getId() : null)
@@ -402,16 +394,21 @@ public class TaskApplicationService {
                 .taskTitle(firstNonNull(request.getTaskTitle(), existing != null ? existing.getTaskTitle() : null))
                 .taskDesc(firstNonNull(request.getTaskDesc(), existing != null ? existing.getTaskDesc() : null))
                 .subject(firstNonNull(request.getSubject(), existing != null ? existing.getSubject() : null))
-                .academicLevel(firstNonNull(request.getAcademicLevel(), existing != null ? existing.getAcademicLevel() : null))
-                .priorityLevel(firstNonNull(request.getPriorityLevel(), existing != null ? existing.getPriorityLevel() : null))
+                .academicLevel(
+                        firstNonNull(request.getAcademicLevel(), existing != null ? existing.getAcademicLevel() : null))
+                .priorityLevel(
+                        firstNonNull(request.getPriorityLevel(), existing != null ? existing.getPriorityLevel() : null))
                 .dueDate(dueDate)
                 .format(firstNonNull(request.getFormat(), existing != null ? existing.getFormat() : List.of()))
-                .citationStyle(firstNonNull(request.getCitationStyle(), existing != null ? existing.getCitationStyle() : null))
+                .citationStyle(
+                        firstNonNull(request.getCitationStyle(), existing != null ? existing.getCitationStyle() : null))
                 .pageLength(firstNonNull(request.getPageLength(), existing != null ? existing.getPageLength() : null))
-                .specialInstructions(firstNonNull(request.getSpecialInstructions(), existing != null ? existing.getSpecialInstructions() : null))
+                .specialInstructions(firstNonNull(request.getSpecialInstructions(),
+                        existing != null ? existing.getSpecialInstructions() : null))
                 .requirementJson(mergedRequirementJson)
                 .status(TaskStatus.DRAFT)
-                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId() : TraceIdUtil.getTraceId());
+                .traceId(existing != null && existing.getTraceId() != null ? existing.getTraceId()
+                        : TraceIdUtil.getTraceId());
 
         Task savedTask = taskRepository.save(builder.build());
         Long draftId = savedTask.getId().getValue();
@@ -477,7 +474,7 @@ public class TaskApplicationService {
      * 批量逻辑删除任务（将 is_deleted 置为 1，不物理删除数据）
      * 逐个校验归属，成功删除的计入 deletedCount，失败（不存在/无权限）的计入 failedTaskIds
      *
-     * @param taskIds 任务ID列表
+     * @param taskIds     任务ID列表
      * @param clerkUserId 当前用户ID
      * @return [deletedCount, failedTaskIds]
      */
@@ -507,15 +504,16 @@ public class TaskApplicationService {
     }
 
     /** 批量删除结果 */
-    public record DeleteTasksResult(int deletedCount, List<Long> failedTaskIds) {}
+    public record DeleteTasksResult(int deletedCount, List<Long> failedTaskIds) {
+    }
 
     /**
      * 停止任务
      *
      * @param request 停止任务请求
      * @return taskId
-     * <p>
-     * 优化：缩小事务范围，Python 后端调用改为异步
+     *         <p>
+     *         优化：缩小事务范围，Python 后端调用改为异步
      */
     public Long stopTask(com.studyagent.service.application.request.StopTaskRequest request) {
         // 1. 验证用户身份（事务外）
@@ -539,15 +537,8 @@ public class TaskApplicationService {
         // 5. 逻辑删除任务（停止后从用户任务列表移除）
         taskRepository.logicalDelete(TaskId.of(taskId));
 
-        // 6. 异步调用 Python 后端停止任务
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            try {
-                pythonBackendClient.stopTask(TaskId.of(taskId));
-                log.info("成功调用 Python 后端停止任务: taskId={}", taskId);
-            } catch (Exception e) {
-                log.error("调用 Python 后端停止任务失败: taskId={}", taskId, e);
-            }
-        });
+        // 6. 将 STOP_TASK 消息发送到 MQ 控制队列
+        mqOutboxService.createMessageInNewTransaction("STOP_TASK", taskId, "{}");
 
         return taskId;
     }
@@ -632,9 +623,12 @@ public class TaskApplicationService {
 
         Integer pageNo = request.getPageNo();
         Integer pageSize = request.getPageSize();
-        if (pageNo == null || pageNo < 1) pageNo = 1;
-        if (pageSize == null || pageSize < 1) pageSize = 10;
-        if (pageSize > 100) pageSize = 100;
+        if (pageNo == null || pageNo < 1)
+            pageNo = 1;
+        if (pageSize == null || pageSize < 1)
+            pageSize = 10;
+        if (pageSize > 100)
+            pageSize = 100;
 
         String filterByUserId = (Boolean.TRUE.equals(request.getIsAdmin())) ? null : request.getClerkUserId();
         TaskRepository.PageResult<Task> pageResult = taskRepository.findWithPagination(
@@ -659,7 +653,8 @@ public class TaskApplicationService {
                     .filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS)
                     .map(Task::getId)
                     .toList();
-            if (taskIds.isEmpty()) return Map.of();
+            if (taskIds.isEmpty())
+                return Map.of();
             return pythonBackendClient.getTaskQueueBatchInfo(taskIds);
         } catch (Exception e) {
             log.warn("批量获取任务队列信息失败: error={}", e.getMessage());
@@ -689,7 +684,8 @@ public class TaskApplicationService {
                 .startTime(task.getStartTime() != null ? task.getStartTime().format(ISO_FORMATTER) : null)
                 .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(ISO_FORMATTER) : null)
                 .costTime(task.getCostTime())
-                .completePercent(task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
+                .completePercent(
+                        task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
                 .taskCompletedSize(task.getTaskCompletedSize())
                 .activeAgentSize(task.getActiveAgentSize())
                 .estRemainingTime(computeEstRemainingTime(task))
@@ -766,6 +762,7 @@ public class TaskApplicationService {
 
     /**
      * 获取任务统计数据（当前用户）
+     * 
      * @param clerkUserId 用户ID
      * @return 任务统计数据（包含已完成数量、进行中数量、平均质量分）
      */
@@ -838,4 +835,3 @@ public class TaskApplicationService {
                 request.getTaskId(), request.getScore(), request.getContent());
     }
 }
-

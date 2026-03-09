@@ -14,6 +14,14 @@ spring:
       max-lifetime: 1800000      # 连接最大存活时间30分钟
       leak-detection-threshold: 60000  # 连接泄漏检测阈值60秒
 
+# ========================================
+# RabbitMQ 配置
+# ========================================
+# 使用 Docker Compose 中的服务名 'rabbitmq'
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+
 
 # Python 后端配置（Docker 环境使用服务名）
 python-backend:

@@ -95,6 +95,12 @@
             <artifactId>gson</artifactId>
         </dependency>
         
+        <!-- RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        
         <!-- 阿里云 OSS SDK -->
         <dependency>
             <groupId>com.aliyun.oss</groupId>

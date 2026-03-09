@@ -215,12 +215,24 @@ public class HumanizerApplicationService {
     }
 
     /**
-     * 统计英文单词数（按空格分词）
+     * 统计 word 数，与前端逻辑对齐：
+     * - CJK 字符（中日韩）每个字算 1 word
+     * - 非 CJK 部分按空格分词，每个词算 1 word
+     * - 混合文本两者相加
      */
     private int countWords(String text) {
         if (text == null || text.isBlank()) return 0;
-        String[] words = text.trim().split("\\s+");
-        return words.length;
+        // CJK Unicode ranges: 中文、CJK扩展A、平假名、片假名、韩文
+        String cjkPattern = "[\\u4e00-\\u9fff\\u3400-\\u4dbf\\u3040-\\u309f\\u30a0-\\u30ff\\uac00-\\ud7af]";
+        java.util.regex.Matcher cjkMatcher = java.util.regex.Pattern.compile(cjkPattern).matcher(text);
+        int cjkCount = 0;
+        while (cjkMatcher.find()) cjkCount++;
+        // 把 CJK 字符替换成空格，剩余部分按空格分词
+        String nonCjk = text.replaceAll(cjkPattern, " ").trim();
+        int engCount = nonCjk.isEmpty() ? 0
+                : (int) java.util.Arrays.stream(nonCjk.split("\\s+"))
+                        .filter(w -> !w.isEmpty()).count();
+        return cjkCount + engCount;
     }
 
     /**

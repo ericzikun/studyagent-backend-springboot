@@ -26,6 +26,8 @@ public class MockStateStore {
     public static final String STATUS_COMPLETED = "COMPLETED";
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_CANCELLED = "CANCELLED";
+    public static final String FEEDBACK_PROMPT_STATUS_SHOWN = "SHOWN";
+    public static final String FEEDBACK_PROMPT_STATUS_SUBMITTED = "SUBMITTED";
 
     public static class MockFileRecord {
         public String objectId;
@@ -64,11 +66,38 @@ public class MockStateStore {
         public String ratingContent;
     }
 
+    public static class MockFeedbackPromptRecord {
+        public String promptSessionId;
+        public String clerkUserId;
+        public String triggerCode;
+        public String subjectType;
+        public String subjectId;
+        public String sourcePage;
+        public String status;
+        public String shownAt;
+        public String submittedAt;
+    }
+
+    public static class MockFeedbackSubmissionRecord {
+        public String promptSessionId;
+        public String clerkUserId;
+        public Integer score;
+        public String vote;
+        public List<String> selectedTagCodes = new ArrayList<>();
+        public String comment;
+        public String contact;
+        public String submittedAt;
+    }
+
     private final AtomicLong fileCounter = new AtomicLong(1000);
     private final AtomicLong taskCounter = new AtomicLong(1000);
+    private final AtomicLong feedbackPromptCounter = new AtomicLong(1000);
 
     private final Map<String, MockFileRecord> files = new ConcurrentHashMap<>();
     private final Map<Long, MockTaskRecord> tasks = new ConcurrentHashMap<>();
+    private final Map<String, String> feedbackPromptIdsByDedupKey = new ConcurrentHashMap<>();
+    private final Map<String, MockFeedbackPromptRecord> feedbackPrompts = new ConcurrentHashMap<>();
+    private final Map<String, MockFeedbackSubmissionRecord> feedbackSubmissions = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -219,9 +248,101 @@ public class MockStateStore {
         return new Summary(completed, inProgress, avg);
     }
 
+    public synchronized FeedbackConsumeResult consumeFeedbackTrigger(
+        String clerkUserId,
+        String triggerCode,
+        String subjectType,
+        String subjectId,
+        String sourcePage
+    ) {
+        String normalizedUserId = requireNonBlank(clerkUserId, "clerkUserId is required");
+        String normalizedTriggerCode = requireNonBlank(triggerCode, "triggerCode is required");
+        String normalizedSubjectType = requireNonBlank(subjectType, "subjectType is required");
+        String normalizedSubjectId = requireNonBlank(subjectId, "subjectId is required");
+
+        validateFeedbackTrigger(normalizedTriggerCode, normalizedSubjectType);
+        String dedupKey = buildFeedbackDedupKey(
+            normalizedUserId,
+            normalizedSubjectType,
+            normalizedSubjectId,
+            normalizedTriggerCode
+        );
+
+        String existingPromptId = feedbackPromptIdsByDedupKey.get(dedupKey);
+        if (existingPromptId != null) {
+            return new FeedbackConsumeResult(false, feedbackPrompts.get(existingPromptId));
+        }
+
+        MockFeedbackPromptRecord prompt = new MockFeedbackPromptRecord();
+        prompt.promptSessionId = nextFeedbackPromptSessionId();
+        prompt.clerkUserId = normalizedUserId;
+        prompt.triggerCode = normalizedTriggerCode;
+        prompt.subjectType = normalizedSubjectType;
+        prompt.subjectId = normalizedSubjectId;
+        prompt.sourcePage = normalizeOptional(sourcePage);
+        prompt.status = FEEDBACK_PROMPT_STATUS_SHOWN;
+        prompt.shownAt = LocalDateTime.now().toString();
+
+        feedbackPromptIdsByDedupKey.put(dedupKey, prompt.promptSessionId);
+        feedbackPrompts.put(prompt.promptSessionId, prompt);
+        return new FeedbackConsumeResult(true, prompt);
+    }
+
+    public synchronized FeedbackSubmitResult submitFeedback(
+        String clerkUserId,
+        String promptSessionId,
+        Integer score,
+        String vote,
+        List<String> selectedTagCodes,
+        String comment,
+        String contact
+    ) {
+        String normalizedUserId = requireNonBlank(clerkUserId, "clerkUserId is required");
+        String normalizedPromptSessionId = requireNonBlank(promptSessionId, "promptSessionId is required");
+
+        MockFeedbackPromptRecord prompt = feedbackPrompts.get(normalizedPromptSessionId);
+        if (prompt == null) {
+            return new FeedbackSubmitResult(FeedbackSubmitStatus.PROMPT_NOT_FOUND, "Feedback prompt session not found");
+        }
+        if (!Objects.equals(prompt.clerkUserId, normalizedUserId)) {
+            return new FeedbackSubmitResult(FeedbackSubmitStatus.NO_PERMISSION, "No permission");
+        }
+        if (feedbackSubmissions.containsKey(normalizedPromptSessionId)) {
+            return new FeedbackSubmitResult(FeedbackSubmitStatus.ALREADY_SUBMITTED, "Feedback already submitted");
+        }
+
+        validateFeedbackSubmission(score, vote);
+
+        MockFeedbackSubmissionRecord submission = new MockFeedbackSubmissionRecord();
+        submission.promptSessionId = normalizedPromptSessionId;
+        submission.clerkUserId = normalizedUserId;
+        submission.score = score;
+        submission.vote = normalizeOptional(vote);
+        submission.selectedTagCodes = sanitizeTagCodes(selectedTagCodes);
+        submission.comment = comment == null ? "" : comment;
+        submission.contact = contact == null ? "" : contact;
+        submission.submittedAt = LocalDateTime.now().toString();
+
+        feedbackSubmissions.put(normalizedPromptSessionId, submission);
+        prompt.status = FEEDBACK_PROMPT_STATUS_SUBMITTED;
+        prompt.submittedAt = submission.submittedAt;
+        return new FeedbackSubmitResult(FeedbackSubmitStatus.SUCCESS, null);
+    }
+
     public record DeleteResult(int deletedCount, List<Long> failedTaskIds) {}
 
     public record Summary(int completedCount, int inProgressCount, double avgQuality) {}
+
+    public record FeedbackConsumeResult(boolean shouldPrompt, MockFeedbackPromptRecord prompt) {}
+
+    public record FeedbackSubmitResult(FeedbackSubmitStatus status, String message) {}
+
+    public enum FeedbackSubmitStatus {
+        SUCCESS,
+        PROMPT_NOT_FOUND,
+        NO_PERMISSION,
+        ALREADY_SUBMITTED
+    }
 
     private void seedFiles() {
         saveFile("requirements.pdf", "U3R1ZHlBZ2VudCBtb2NrIGZpbGU=");
@@ -313,5 +434,79 @@ public class MockStateStore {
 
     private String defaultIfBlank(String value, String defaultValue) {
         return (value == null || value.isBlank()) ? defaultValue : value;
+    }
+
+    private String buildFeedbackDedupKey(String clerkUserId, String subjectType, String subjectId, String triggerCode) {
+        return clerkUserId + ":" + subjectType + ":" + subjectId + ":" + triggerCode;
+    }
+
+    private String nextFeedbackPromptSessionId() {
+        return "fps_mock_" + feedbackPromptCounter.incrementAndGet();
+    }
+
+    private void validateFeedbackTrigger(String triggerCode, String subjectType) {
+        if (!"task".equals(subjectType) && !"humanizer_task".equals(subjectType)) {
+            throw new IllegalArgumentException("Unsupported subjectType: " + subjectType);
+        }
+
+        switch (triggerCode) {
+            case "task_download_first", "editor_back_first", "editor_copy_first" -> {
+                if (!"task".equals(subjectType)) {
+                    throw new IllegalArgumentException("Trigger " + triggerCode + " requires subjectType=task");
+                }
+            }
+            case "detection_complete_first" -> {
+                if (!"humanizer_task".equals(subjectType)) {
+                    throw new IllegalArgumentException("Trigger detection_complete_first requires subjectType=humanizer_task");
+                }
+            }
+            case "humanizer_complete_first" -> {
+                if (!"humanizer_task".equals(subjectType)) {
+                    throw new IllegalArgumentException("Trigger humanizer_complete_first requires subjectType=humanizer_task");
+                }
+            }
+            default -> throw new IllegalArgumentException("Unsupported triggerCode: " + triggerCode);
+        }
+    }
+
+    private void validateFeedbackSubmission(Integer score, String vote) {
+        String normalizedVote = normalizeOptional(vote);
+        boolean hasValidScore = score != null && score >= 1 && score <= 5;
+        boolean hasValidVote = "up".equals(normalizedVote) || "down".equals(normalizedVote);
+
+        if (!hasValidScore && !hasValidVote) {
+            throw new IllegalArgumentException("either a valid score or vote is required");
+        }
+    }
+
+    private List<String> sanitizeTagCodes(List<String> selectedTagCodes) {
+        if (selectedTagCodes == null || selectedTagCodes.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> sanitized = new ArrayList<>();
+        for (String tagCode : selectedTagCodes) {
+            String normalized = normalizeOptional(tagCode);
+            if (normalized != null) {
+                sanitized.add(normalized);
+            }
+        }
+        return sanitized;
+    }
+
+    private String requireNonBlank(String value, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

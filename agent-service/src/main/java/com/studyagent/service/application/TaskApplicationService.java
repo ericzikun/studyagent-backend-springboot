@@ -612,6 +612,8 @@ public class TaskApplicationService {
     }
 
     private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
+    private static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
+    private static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     /**
@@ -668,6 +670,7 @@ public class TaskApplicationService {
         if (task.getStatus() == TaskStatus.IN_PROGRESS && queueInfo != null) {
             queueAheadCount = queueInfo.getAheadCount();
         }
+        double effectivePercent = resolveCompletePercent(task);
         return TaskListItemDTO.builder()
                 .id(TaskListItemDTO.IdValue.builder().value(task.getId().getValue()).build())
                 .clerkUserId(task.getClerkUserId())
@@ -685,10 +688,10 @@ public class TaskApplicationService {
                 .startTime(task.getStartTime() != null ? task.getStartTime().format(ISO_FORMATTER) : null)
                 .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(ISO_FORMATTER) : null)
                 .costTime(task.getCostTime())
-                .completePercent(task.getCompletePercent() != null ? task.getCompletePercent() : java.math.BigDecimal.ZERO)
+                .completePercent(java.math.BigDecimal.valueOf(effectivePercent))
                 .taskCompletedSize(task.getTaskCompletedSize())
                 .activeAgentSize(task.getActiveAgentSize())
-                .estRemainingTime(computeEstRemainingTime(task))
+                .estRemainingTime(computeEstRemainingTime(task.getStatus(), effectivePercent))
                 .requirementJson(task.getRequirementJson())
                 .finalResult(task.getFinalResult())
                 .errorMessage(task.getErrorMessage())
@@ -697,15 +700,49 @@ public class TaskApplicationService {
     }
 
     private int computeEstRemainingTime(Task task) {
-        Integer code = task.getStatus() != null ? task.getStatus().getCode() : TaskStatus.DRAFT.getCode();
-        java.math.BigDecimal percent = task.getCompletePercent();
+        return computeEstRemainingTime(
+                task.getStatus(),
+                task.getCompletePercent() != null ? task.getCompletePercent().doubleValue() : 0.0);
+    }
+
+    private int computeEstRemainingTime(TaskStatus status, double effectivePercent) {
+        Integer code = status != null ? status.getCode() : TaskStatus.DRAFT.getCode();
         if (code.equals(TaskStatus.COMPLETED.getCode()) || code.equals(TaskStatus.FAILED.getCode())
                 || code.equals(TaskStatus.CANCELLED.getCode())) {
             return 0;
         }
-        double p = percent != null ? percent.doubleValue() : 0.0;
-        p = Math.max(0.0, Math.min(100.0, p));
+        double p = Math.max(0.0, Math.min(100.0, effectivePercent));
         return Math.max(0, (int) Math.round(TOTAL_ESTIMATED_SECONDS * (1.0 - p / 100.0)));
+    }
+
+    /**
+     * 解析任务完成百分比：在任务开始后 2 分钟内，若 Python 尚未推送真实进度，
+     * 则按时间线性展示 0~10% 的模拟进度；一旦 Python 有真实进度则直接采用。
+     * 与 detail 接口的 TaskDetailReaderImpl.resolveCompletePercent 逻辑一致。
+     */
+    private double resolveCompletePercent(Task task) {
+        double realPercent = task.getCompletePercent() != null
+                ? task.getCompletePercent().doubleValue() : 0.0;
+
+        if (task.getStatus() == null || task.getStatus() != TaskStatus.IN_PROGRESS) {
+            return realPercent;
+        }
+        if (task.getStartTime() == null) {
+            return realPercent;
+        }
+
+        long nowEpoch = System.currentTimeMillis() / 1000;
+        long startEpoch = task.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond();
+        long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
+
+        if (elapsedSeconds >= SIMULATED_PROGRESS_WINDOW_SECONDS) {
+            return realPercent;
+        }
+
+        double simulatedPercent = (elapsedSeconds * SIMULATED_PROGRESS_MAX_PERCENT) / SIMULATED_PROGRESS_WINDOW_SECONDS;
+        simulatedPercent = Math.min(simulatedPercent, SIMULATED_PROGRESS_MAX_PERCENT);
+
+        return Math.max(realPercent, simulatedPercent);
     }
 
     /**

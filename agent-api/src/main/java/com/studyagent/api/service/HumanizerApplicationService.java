@@ -42,17 +42,24 @@ public class HumanizerApplicationService {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int PREVIEW_LENGTH = 50;
 
-    // ===== 预估时间参数（基于实测数据） =====
-    /** DETECT: 平均每句 3.5 秒（CPU 推理） */
-    private static final double DETECT_SECONDS_PER_SENTENCE = 3.5;
-    /** DETECT: 平均每句字符数 */
-    private static final int DETECT_AVG_CHARS_PER_SENTENCE = 150;
-    /** HUMANIZE: 每 1500 字符一个 chunk，每 chunk 约 26 秒 */
-    private static final int HUMANIZE_CHUNK_SIZE = 1500;
-    private static final double HUMANIZE_SECONDS_PER_CHUNK = 26.0;
+    // ===== 预估时间参数（基于实测数据 2026-03-12） =====
+    // --- DETECT ---
+    /** DETECT: 固定开销（秒） */
+    private static final double DETECT_BASE_SECONDS = 3.0;
+    /** DETECT: 每句平均耗时（秒），实测 4-5.5s 取中值 */
+    private static final double DETECT_SECONDS_PER_SENTENCE = 4.8;
+    /** DETECT: 平均每句字符数（实测 80-228，中位数约 180） */
+    private static final int DETECT_AVG_CHARS_PER_SENTENCE = 180;
+    // --- HUMANIZE ---
+    /** HUMANIZE: 每字符耗时（秒），实测 ≤10000 chars 约 0.012s/char */
+    private static final double HUMANIZE_SECONDS_PER_CHAR = 0.012;
+    /** HUMANIZE: 大文本阈值，超过此值并发效果显著 */
+    private static final int HUMANIZE_LARGE_TEXT_THRESHOLD = 10000;
+    /** HUMANIZE: 大文本并发折扣系数（超出部分按此比例计算） */
+    private static final double HUMANIZE_LARGE_TEXT_DISCOUNT = 0.5;
     /** HUMANIZE: 最小处理时间 */
     private static final double HUMANIZE_MIN_SECONDS = 5.0;
-    /** HUMANIZE: 并发数 */
+    /** HUMANIZE: 并发数（用于排队等待时间计算） */
     private static final int HUMANIZE_CONCURRENCY = 3;
 
     /**
@@ -349,17 +356,34 @@ public class HumanizerApplicationService {
     }
 
     /**
-     * 预估自身处理时间
+     * 预估自身处理时间（不含排队等待）
+     *
+     * DETECT 公式（基于 130+ 条 COMPLETED 样本拟合）：
+     *   sentences = max(1, textLength / 180)
+     *   time = 3 + sentences × 4.8
+     *   - 固定开销 3s（模型加载/网络）
+     *   - 每句 4.8s（实测 4.0-5.5s 取中值）
+     *   - 180 chars/sentence（实测 80-228 中位数）
+     *
+     * HUMANIZE 公式（基于 43 条 COMPLETED 样本拟合）：
+     *   ≤10000 chars: time = textLength × 0.012
+     *   >10000 chars: time = 10000×0.012 + (超出部分)×0.012×0.5
+     *   - 0.012s/char（实测 0.010-0.013 取均值）
+     *   - 大文本（>10000）并发 3 路效果显著，超出部分打 5 折
      */
     private double estimateProcessTime(String taskType, int textLength) {
         if ("DETECT".equals(taskType)) {
-            // 句子数 × 3.5s/句
             int sentences = Math.max(1, textLength / DETECT_AVG_CHARS_PER_SENTENCE);
-            return sentences * DETECT_SECONDS_PER_SENTENCE;
+            return Math.max(HUMANIZE_MIN_SECONDS, DETECT_BASE_SECONDS + sentences * DETECT_SECONDS_PER_SENTENCE);
         } else {
-            // HUMANIZE: chunks × 26s/chunk，最少 5s
-            int chunks = Math.max(1, (textLength + HUMANIZE_CHUNK_SIZE - 1) / HUMANIZE_CHUNK_SIZE);
-            return Math.max(HUMANIZE_MIN_SECONDS, chunks * HUMANIZE_SECONDS_PER_CHUNK);
+            double estimated;
+            if (textLength <= HUMANIZE_LARGE_TEXT_THRESHOLD) {
+                estimated = textLength * HUMANIZE_SECONDS_PER_CHAR;
+            } else {
+                estimated = HUMANIZE_LARGE_TEXT_THRESHOLD * HUMANIZE_SECONDS_PER_CHAR
+                        + (textLength - HUMANIZE_LARGE_TEXT_THRESHOLD) * HUMANIZE_SECONDS_PER_CHAR * HUMANIZE_LARGE_TEXT_DISCOUNT;
+            }
+            return Math.max(HUMANIZE_MIN_SECONDS, estimated);
         }
     }
 

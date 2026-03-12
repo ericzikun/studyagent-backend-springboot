@@ -55,6 +55,8 @@ public class HumanizerTaskResponse {
     private Double elapsedSeconds;
     /** 预计剩余时间（秒） */
     private Integer estimatedSeconds;
+    /** 预计排队等待时间（秒），仅 PENDING 状态有值 */
+    private Integer estimatedQueueSeconds;
     /** 排队位置（前面还有几个任务） */
     private Integer queuePosition;
     /** 错误信息 */

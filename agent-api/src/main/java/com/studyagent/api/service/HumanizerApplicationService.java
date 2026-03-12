@@ -148,18 +148,21 @@ public class HumanizerApplicationService {
 
         repository.insert(entity);
 
-        // 计算预估时间
+        // 计算预估时间（分开：排队 + 处理）
         int queueAhead = repository.countQueueAhead(taskType, entity.getId());
-        int estimatedSeconds = estimateTime(taskType, text.length(), queueAhead);
+        double processTime = estimateProcessTime(taskType, text.length());
+        double waitTime = estimateWaitTime(taskType, queueAhead);
 
-        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, estimatedSeconds={}",
-                entity.getId(), taskType, clerkUserId, wordCount, queueAhead, estimatedSeconds);
+        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, processTime={}s, waitTime={}s",
+                entity.getId(), taskType, clerkUserId, wordCount, queueAhead,
+                Math.round(processTime), Math.round(waitTime));
 
         HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(taskType)
                 .status("PENDING")
-                .estimatedSeconds(estimatedSeconds)
+                .estimatedSeconds((int) Math.ceil(processTime))
+                .estimatedQueueSeconds((int) Math.ceil(waitTime))
                 .queuePosition(queueAhead)
                 .totalWords(wordCount)
                 .consumedWords(0)
@@ -302,16 +305,19 @@ public class HumanizerApplicationService {
         if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
             int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
             int queueAhead = repository.countQueueAhead(entity.getTaskType(), entity.getId());
+            double processTime = estimateProcessTime(entity.getTaskType(), textLen);
 
             if ("PROCESSING".equals(status)) {
-                // 正在处理，只算自身剩余时间
+                // 正在处理，只返回处理剩余时间，排队时间为 0
                 int remaining = estimateRemaining(entity);
                 builder.estimatedSeconds(remaining);
+                builder.estimatedQueueSeconds(0);
                 builder.queuePosition(0);
             } else {
-                // 排队中，算排队 + 自身处理时间
-                int estimated = estimateTime(entity.getTaskType(), textLen, queueAhead);
-                builder.estimatedSeconds(estimated);
+                // 排队中，分开返回排队时间和处理时间
+                double waitTime = estimateWaitTime(entity.getTaskType(), queueAhead);
+                builder.estimatedSeconds((int) Math.ceil(processTime));
+                builder.estimatedQueueSeconds((int) Math.ceil(waitTime));
                 builder.queuePosition(queueAhead);
             }
         }

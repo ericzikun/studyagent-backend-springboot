@@ -28,6 +28,9 @@ public class HumanizerTaskResponse {
     /** DETECT / HUMANIZE */
     private String taskType;
 
+    /** 用户输入的原始文本 */
+    private String inputText;
+
     /** PENDING / PROCESSING / COMPLETED / FAILED */
     private String status;
 

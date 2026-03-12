@@ -276,6 +276,7 @@ public class HumanizerApplicationService {
         HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
+                .inputText(entity.getInputText())
                 .status(entity.getStatus())
                 .probability(entity.getProbability())
                 .label(entity.getLabel())

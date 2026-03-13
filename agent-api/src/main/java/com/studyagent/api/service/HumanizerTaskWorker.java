@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -53,13 +52,18 @@ public class HumanizerTaskWorker {
     private static final int MAX_RETRY = 3;
     /** PROCESSING 超过这个时间（分钟）自动回收 */
     private static final int PROCESSING_TIMEOUT_MINUTES = 20;
+    /** DETECT 最大并发数 */
+    private static final int DETECT_CONCURRENCY = 2;
     /** HUMANIZE 最大并发数（调外部 API，不占本地 CPU） */
     private static final int HUMANIZE_CONCURRENCY = 3;
 
-    // 防止并发执行
-    private final AtomicBoolean detectRunning = new AtomicBoolean(false);
+    /** 当前正在跑的 DETECT 任务数 */
+    private final AtomicInteger detectRunningCount = new AtomicInteger(0);
     /** 当前正在跑的 HUMANIZE 任务数 */
     private final AtomicInteger humanizeRunningCount = new AtomicInteger(0);
+    /** DETECT 并发线程池 */
+    private final ExecutorService detectExecutor = Executors.newFixedThreadPool(DETECT_CONCURRENCY,
+            r -> { Thread t = new Thread(r, "detect-worker"); t.setDaemon(true); return t; });
     /** HUMANIZE 并发线程池 */
     private final ExecutorService humanizeExecutor = Executors.newFixedThreadPool(HUMANIZE_CONCURRENCY,
             r -> { Thread t = new Thread(r, "humanize-worker"); t.setDaemon(true); return t; });
@@ -82,24 +86,33 @@ public class HumanizerTaskWorker {
 
     /**
      * 每 3 秒轮询一次 DETECT 任务
+     * 最多同时跑 DETECT_CONCURRENCY 个
      */
     @Scheduled(fixedDelay = 3000)
     public void pollDetectTasks() {
-        if (!detectRunning.compareAndSet(false, true)) {
-            return; // 上一轮还没跑完，跳过
-        }
         try {
-            List<HumanizerTaskEntity> tasks = repository.findPendingTasks("DETECT", 1);
+            int running = detectRunningCount.get();
+            int available = DETECT_CONCURRENCY - running;
+            if (available <= 0) {
+                return; // 已满载
+            }
+
+            List<HumanizerTaskEntity> tasks = repository.findPendingTasks("DETECT", available);
             for (HumanizerTaskEntity task : tasks) {
                 if (!repository.claimTask(task.getId())) {
                     continue; // 被别的实例抢了
                 }
-                processDetectTask(task);
+                detectRunningCount.incrementAndGet();
+                detectExecutor.submit(() -> {
+                    try {
+                        processDetectTask(task);
+                    } finally {
+                        detectRunningCount.decrementAndGet();
+                    }
+                });
             }
         } catch (Exception e) {
             log.error("轮询 DETECT 任务异常", e);
-        } finally {
-            detectRunning.set(false);
         }
     }
 

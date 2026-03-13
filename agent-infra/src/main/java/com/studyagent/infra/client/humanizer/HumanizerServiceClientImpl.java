@@ -156,20 +156,24 @@ public class HumanizerServiceClientImpl implements HumanizerServiceClient {
     /**
      * AI 检测 SSE 流式调用
      * 消费 Python /predict_stream 的 SSE 流，返回原始 SSE 事件行
-     * <p>
-     * 注意：此方法不在领域接口中定义（避免领域层依赖 reactor），
-     * 由 HumanizerApplicationService 直接调用。
      *
      * @param text 待检测文本
+     * @param relaxed 是否使用宽松阈值（用户自己 humanize 过的内容）
      * @return Flux 响应式流，每个元素为一个原始 SSE 数据行
      */
-    public Flux<String> detectAIStream(String text) {
-        log.info("调用 Humanizer /predict_stream SSE，文本长度: {} 字符", text.length());
+    public Flux<String> detectAIStream(String text, boolean relaxed) {
+        log.info("调用 Humanizer /predict_stream SSE，文本长度: {} 字符, relaxed: {}", text.length(), relaxed);
+
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("text", text);
+        if (relaxed) {
+            body.put("relaxed", true);
+        }
 
         return humanizerWebClient.post()
             .uri(humanizerServiceUrl + "/predict_stream")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(Map.of("text", text))
+            .bodyValue(body)
             .accept(MediaType.TEXT_EVENT_STREAM)
             .retrieve()
             .bodyToFlux(String.class)

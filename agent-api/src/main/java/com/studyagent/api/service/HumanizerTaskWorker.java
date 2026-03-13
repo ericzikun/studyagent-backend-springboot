@@ -19,6 +19,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -158,6 +160,18 @@ public class HumanizerTaskWorker {
             log.warn("查询用户信息失败，按普通用户处理: userId={}", task.getClerkUserId(), e);
         }
 
+        // 判断是否使用宽松阈值：检查用户是否 humanize 过相同内容
+        boolean relaxed = false;
+        try {
+            String inputHash = computeTextHash(task.getInputText());
+            if (inputHash != null && repository.existsHumanizeResultHash(task.getClerkUserId(), inputHash)) {
+                relaxed = true;
+                log.info("DETECT 任务命中 humanize 结果，使用宽松阈值: taskId={}, userId={}", task.getId(), task.getClerkUserId());
+            }
+        } catch (Exception e) {
+            log.warn("检查 humanize 匹配失败，使用默认阈值: taskId={}", task.getId(), e);
+        }
+
         // 续跑时已有的句子数据
         int alreadyCompleted = task.getCompletedSentences() != null ? task.getCompletedSentences() : 0;
         int consumedWords = task.getConsumedWords() != null ? task.getConsumedWords() : 0;
@@ -180,7 +194,7 @@ public class HumanizerTaskWorker {
             }
 
             // 用 blockingIterable 消费 SSE 流，每收到一条就更新数据库
-            Iterable<String> stream = humanizerServiceClientImpl.detectAIStream(task.getInputText())
+            Iterable<String> stream = humanizerServiceClientImpl.detectAIStream(task.getInputText(), relaxed)
                     .toIterable();
 
             int chunkIndex = 0;
@@ -295,7 +309,7 @@ public class HumanizerTaskWorker {
 
             // 流结束但没收到 done 事件，用已有数据计算结果
             if (!sentences.isEmpty()) {
-                finishDetectFromSentences(task, sentences, startTime, consumedWords);
+                finishDetectFromSentences(task, sentences, startTime, consumedWords, relaxed);
             } else {
                 markFailed(task, "No data received from Python service");
             }
@@ -312,7 +326,8 @@ public class HumanizerTaskWorker {
     private void finishDetectFromSentences(HumanizerTaskEntity task,
                                             List<Map<String, Object>> sentences,
                                             long startTime,
-                                            int consumedWords) {
+                                            int consumedWords,
+                                            boolean relaxed) {
         try {
             double weightedSum = 0;
             int totalWeight = 0;
@@ -326,12 +341,14 @@ public class HumanizerTaskWorker {
             }
             double finalProb = totalWeight > 0 ? weightedSum / totalWeight : 0;
             double elapsed = (System.currentTimeMillis() - startTime) / 1000.0;
+            // relaxed 模式下阈值 0.7，否则 0.5（与 Python 端一致）
+            double threshold = relaxed ? 0.7 : 0.5;
 
             HumanizerTaskEntity update = new HumanizerTaskEntity();
             update.setId(task.getId());
             update.setStatus("COMPLETED");
             update.setProbability(Math.round(finalProb * 10000.0) / 10000.0);
-            update.setLabel(finalProb >= 0.5 ? "AI Generated" : "Human Written");
+            update.setLabel(finalProb >= threshold ? "AI Generated" : "Human Written");
             update.setElapsedSeconds(Math.round(elapsed * 100.0) / 100.0);
             update.setSentencesJson(objectMapper.writeValueAsString(sentences));
             update.setCompletedSentences(sentences.size());
@@ -363,6 +380,7 @@ public class HumanizerTaskWorker {
             if (result.getCode() == 200 && result.getResult() != null) {
                 update.setStatus("COMPLETED");
                 update.setResultText(result.getResult());
+                update.setResultHash(computeTextHash(result.getResult()));
                 update.setElapsedSeconds(result.getElapsedSeconds());
                 update.setFinishedAt(LocalDateTime.now());
                 update.setErrorMessage(null); // 清掉重试残留的错误信息
@@ -446,6 +464,27 @@ public class HumanizerTaskWorker {
             } catch (Exception e) {
                 log.error("额度退还失败: taskId={}, ledgerId={}", task.getId(), ledgerId, e);
             }
+        }
+    }
+
+    /**
+     * 计算文本前 200 字符的 SHA-256 hash
+     * 用于 HUMANIZE result_text 存储和 DETECT input_text 匹配
+     */
+    private String computeTextHash(String text) {
+        if (text == null || text.isEmpty()) return null;
+        try {
+            String prefix = text.length() <= 200 ? text : text.substring(0, 200);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(prefix.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("计算文本 hash 失败", e);
+            return null;
         }
     }
 }

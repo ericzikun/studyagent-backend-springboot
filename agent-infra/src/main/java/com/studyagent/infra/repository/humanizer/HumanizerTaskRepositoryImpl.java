@@ -109,4 +109,19 @@ public class HumanizerTaskRepositoryImpl {
         wrapper.eq(HumanizerTaskEntity::getStatus, "PROCESSING");
         return Math.toIntExact(mapper.selectCount(wrapper));
     }
+
+    /**
+     * 查询用户是否有匹配 result_hash 的已完成 HUMANIZE 任务
+     * 用于 DETECT 时判断是否使用宽松阈值
+     */
+    public boolean existsHumanizeResultHash(String clerkUserId, String resultHash) {
+        if (resultHash == null || resultHash.isEmpty()) return false;
+        LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(HumanizerTaskEntity::getClerkUserId, clerkUserId);
+        wrapper.eq(HumanizerTaskEntity::getTaskType, "HUMANIZE");
+        wrapper.eq(HumanizerTaskEntity::getStatus, "COMPLETED");
+        wrapper.eq(HumanizerTaskEntity::getResultHash, resultHash);
+        wrapper.last("LIMIT 1");
+        return mapper.selectCount(wrapper) > 0;
+    }
 }

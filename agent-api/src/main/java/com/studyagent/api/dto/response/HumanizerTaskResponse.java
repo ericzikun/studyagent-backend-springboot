@@ -67,5 +67,8 @@ public class HumanizerTaskResponse {
     /** 已扣费 word 数（逐块扣费进度） */
     private Integer consumedWords;
 
+    /** 进度百分比 0~100，未完成时最低为 1，完成时为 100 */
+    private Integer progress;
+
     private String createdAt;
 }

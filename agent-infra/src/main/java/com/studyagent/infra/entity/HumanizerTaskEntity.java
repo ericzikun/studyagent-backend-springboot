@@ -53,6 +53,10 @@ public class HumanizerTaskEntity extends BaseEntity {
     @TableField("result_text")
     private String resultText;
 
+    /** SHA-256 of first 200 chars of result_text, for relaxed detect matching */
+    @TableField("result_hash")
+    private String resultHash;
+
     @TableField("elapsed_seconds")
     private Double elapsedSeconds;
 

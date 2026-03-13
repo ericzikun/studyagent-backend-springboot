@@ -167,6 +167,7 @@ public class HumanizerApplicationService {
                 .queuePosition(queueAhead)
                 .totalWords(wordCount)
                 .consumedWords(0)
+                .progress(0)
                 .build();
 
         return new HumanizerSubmitResult(response, quotaConsumed);
@@ -281,7 +282,7 @@ public class HumanizerApplicationService {
 
     /**
      * 详情响应（完整数据）
-     * PENDING/PROCESSING 状态时带上预估剩余时间
+     * PENDING/PROCESSING 状态时带上预估剩余时间和进度百分比
      */
     private HumanizerTaskResponse toDetailResponse(HumanizerTaskEntity entity) {
         HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
@@ -301,8 +302,13 @@ public class HumanizerApplicationService {
                 .consumedWords(entity.getConsumedWords())
                 .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null);
 
-        // 未完成的任务带上预估时间
         String status = entity.getStatus();
+
+        // 计算进度百分比
+        int progress = calculateProgress(entity);
+        builder.progress(progress);
+
+        // 未完成的任务带上预估时间
         if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
             int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
             int queueAhead = repository.countQueueAhead(entity.getTaskType(), entity.getId());
@@ -349,6 +355,46 @@ public class HumanizerApplicationService {
     private String preview(String text) {
         if (text == null) return null;
         return text.length() <= PREVIEW_LENGTH ? text : text.substring(0, PREVIEW_LENGTH) + "...";
+    }
+
+    // ===== 进度百分比计算 =====
+
+    /**
+     * 计算进度百分比 (0~100)
+     * - COMPLETED → 100
+     * - PENDING → 0
+     * - PROCESSING → 根据实际进度计算，最低 1
+     * - FAILED / QUOTA_EXHAUSTED → 0
+     */
+    private int calculateProgress(HumanizerTaskEntity entity) {
+        String status = entity.getStatus();
+
+        if ("COMPLETED".equals(status)) return 100;
+        if ("PENDING".equals(status)) return 0;
+
+        if ("DETECT".equals(entity.getTaskType())) {
+            Integer total = entity.getTotalSentences();
+            Integer completed = entity.getCompletedSentences();
+            if (total != null && total > 0 && completed != null && completed > 0) {
+                int pct = (int) Math.round(completed * 100.0 / total);
+                return Math.max(1, Math.min(99, pct));
+            }
+            if ("PROCESSING".equals(status)) return 1;
+            return 0;
+        } else {
+            if ("PROCESSING".equals(status) && entity.getStartedAt() != null) {
+                int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
+                double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
+                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), java.time.LocalDateTime.now()).getSeconds();
+                if (totalEstimate > 0) {
+                    int pct = (int) Math.round(elapsedSec * 100.0 / totalEstimate);
+                    return Math.max(1, Math.min(95, pct));
+                }
+                return 1;
+            }
+            if ("PROCESSING".equals(status)) return 1;
+            return 0;
+        }
     }
 
     // ===== 预估时间计算 =====

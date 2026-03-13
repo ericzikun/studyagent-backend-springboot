@@ -31,12 +31,15 @@ public class HumanizerTaskRepositoryImpl {
      * 分页查询用户任务列表（按创建时间倒序）
      * 只查精简字段，不查大文本
      */
-    public Page<HumanizerTaskEntity> findByUserPaged(String clerkUserId, String taskType, int page, int size) {
+    public Page<HumanizerTaskEntity> findByUserPaged(String clerkUserId, String taskType, String source, int page, int size) {
         Page<HumanizerTaskEntity> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(HumanizerTaskEntity::getClerkUserId, clerkUserId);
         if (taskType != null && !taskType.isEmpty()) {
             wrapper.eq(HumanizerTaskEntity::getTaskType, taskType);
+        }
+        if (source != null && !source.isEmpty()) {
+            wrapper.eq(HumanizerTaskEntity::getSource, source);
         }
         // 不查大字段，列表只需要摘要
         wrapper.select(

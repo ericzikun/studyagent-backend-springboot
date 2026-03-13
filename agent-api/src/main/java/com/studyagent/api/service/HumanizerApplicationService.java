@@ -70,7 +70,7 @@ public class HumanizerApplicationService {
      *
      * @return 任务响应及是否发生了额度扣减
      */
-    public HumanizerSubmitResult submitTask(String clerkUserId, String taskType, String text) {
+    public HumanizerSubmitResult submitTask(String clerkUserId, String taskType, String text, String source) {
         // 1. 计算 word count（按空格分词）
         int wordCount = countWords(text);
 
@@ -137,6 +137,7 @@ public class HumanizerApplicationService {
         // 4. 入库
         HumanizerTaskEntity entity = new HumanizerTaskEntity();
         entity.setClerkUserId(clerkUserId);
+        entity.setSource(source);
         entity.setTaskType(taskType);
         entity.setInputText(text);
         entity.setStatus("PENDING");
@@ -262,8 +263,8 @@ public class HumanizerApplicationService {
     /**
      * 分页查询用户任务列表（精简字段）
      */
-    public HumanizerTaskListResponse listTasks(String clerkUserId, String taskType, int page, int size) {
-        Page<HumanizerTaskEntity> result = repository.findByUserPaged(clerkUserId, taskType, page, size);
+    public HumanizerTaskListResponse listTasks(String clerkUserId, String taskType, String source, int page, int size) {
+        Page<HumanizerTaskEntity> result = repository.findByUserPaged(clerkUserId, taskType, source, page, size);
 
         List<HumanizerTaskItemResponse> items = result.getRecords().stream()
                 .map(this::toItemResponse)

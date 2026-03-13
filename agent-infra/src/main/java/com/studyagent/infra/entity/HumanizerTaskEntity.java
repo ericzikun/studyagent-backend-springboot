@@ -18,6 +18,9 @@ public class HumanizerTaskEntity extends BaseEntity {
     @TableField("clerk_user_id")
     private String clerkUserId;
 
+    /** 任务来源: HUMANIZER_PAGE / EDITOR */
+    private String source;
+
     /** DETECT / HUMANIZE */
     @TableField("task_type")
     private String taskType;

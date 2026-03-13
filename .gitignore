@@ -37,3 +37,12 @@ storage/
 # Docker
 docker-compose.override.yml
 
+# Docs & scripts (local only)
+api.md
+humanizer-frontend-guide.md
+studyagentprd.md
+商业化文档.md
+temp_insert.sql
+test_*.sh
+humanizer_aidetect/
+

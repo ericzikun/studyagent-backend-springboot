@@ -85,10 +85,10 @@ public class HumanizerTaskWorker {
     }
 
     /**
-     * 每 3 秒轮询一次 DETECT 任务
+     * 每 1 秒轮询一次 DETECT 任务
      * 最多同时跑 DETECT_CONCURRENCY 个
      */
-    @Scheduled(fixedDelay = 3000)
+    @Scheduled(fixedDelay = 1000)
     public void pollDetectTasks() {
         try {
             int running = detectRunningCount.get();
@@ -117,10 +117,10 @@ public class HumanizerTaskWorker {
     }
 
     /**
-     * 每 5 秒轮询一次 HUMANIZE 任务
+     * 每 2 秒轮询一次 HUMANIZE 任务
      * 最多同时跑 HUMANIZE_CONCURRENCY 个（调外部 API，不占本地 CPU）
      */
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelay = 2000)
     public void pollHumanizeTasks() {
         try {
             int running = humanizeRunningCount.get();

@@ -35,7 +35,7 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 DETECT 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText());
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "DETECT", request.getText(), request.getSource());
         return Result.success(result.response(), result.quotaConsumed());
     }
 
@@ -47,7 +47,7 @@ public class HumanizerController {
             @RequestBody @Valid HumanizerRequest request,
             @RequestAttribute("clerkUserId") String clerkUserId) {
         log.info("提交 HUMANIZE 任务: userId={}, textLength={}", clerkUserId, request.getText().length());
-        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText());
+        HumanizerSubmitResult result = humanizerApplicationService.submitTask(clerkUserId, "HUMANIZE", request.getText(), request.getSource());
         return Result.success(result.response(), result.quotaConsumed());
     }
 
@@ -85,10 +85,11 @@ public class HumanizerController {
     @GetMapping("/tasks")
     public Result<HumanizerTaskListResponse> listTasks(
             @RequestParam(required = false) String taskType,
+            @RequestParam(required = false) String source,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestAttribute("clerkUserId") String clerkUserId) {
-        HumanizerTaskListResponse response = humanizerApplicationService.listTasks(clerkUserId, taskType, page, size);
+        HumanizerTaskListResponse response = humanizerApplicationService.listTasks(clerkUserId, taskType, source, page, size);
         return Result.success(response);
     }
 }

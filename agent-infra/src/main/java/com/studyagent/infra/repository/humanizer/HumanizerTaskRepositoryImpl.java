@@ -31,12 +31,15 @@ public class HumanizerTaskRepositoryImpl {
      * 分页查询用户任务列表（按创建时间倒序）
      * 只查精简字段，不查大文本
      */
-    public Page<HumanizerTaskEntity> findByUserPaged(String clerkUserId, String taskType, int page, int size) {
+    public Page<HumanizerTaskEntity> findByUserPaged(String clerkUserId, String taskType, String source, int page, int size) {
         Page<HumanizerTaskEntity> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(HumanizerTaskEntity::getClerkUserId, clerkUserId);
         if (taskType != null && !taskType.isEmpty()) {
             wrapper.eq(HumanizerTaskEntity::getTaskType, taskType);
+        }
+        if (source != null && !source.isEmpty()) {
+            wrapper.eq(HumanizerTaskEntity::getSource, source);
         }
         // 不查大字段，列表只需要摘要
         wrapper.select(
@@ -105,5 +108,20 @@ public class HumanizerTaskRepositoryImpl {
         wrapper.eq(HumanizerTaskEntity::getTaskType, taskType);
         wrapper.eq(HumanizerTaskEntity::getStatus, "PROCESSING");
         return Math.toIntExact(mapper.selectCount(wrapper));
+    }
+
+    /**
+     * 查询用户是否有匹配 result_hash 的已完成 HUMANIZE 任务
+     * 用于 DETECT 时判断是否使用宽松阈值
+     */
+    public boolean existsHumanizeResultHash(String clerkUserId, String resultHash) {
+        if (resultHash == null || resultHash.isEmpty()) return false;
+        LambdaQueryWrapper<HumanizerTaskEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(HumanizerTaskEntity::getClerkUserId, clerkUserId);
+        wrapper.eq(HumanizerTaskEntity::getTaskType, "HUMANIZE");
+        wrapper.eq(HumanizerTaskEntity::getStatus, "COMPLETED");
+        wrapper.eq(HumanizerTaskEntity::getResultHash, resultHash);
+        wrapper.last("LIMIT 1");
+        return mapper.selectCount(wrapper) > 0;
     }
 }

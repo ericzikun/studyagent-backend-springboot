@@ -28,6 +28,9 @@ public class HumanizerTaskResponse {
     /** DETECT / HUMANIZE */
     private String taskType;
 
+    /** 用户输入的原始文本 */
+    private String inputText;
+
     /** PENDING / PROCESSING / COMPLETED / FAILED */
     private String status;
 
@@ -52,6 +55,8 @@ public class HumanizerTaskResponse {
     private Double elapsedSeconds;
     /** 预计剩余时间（秒） */
     private Integer estimatedSeconds;
+    /** 预计排队等待时间（秒），仅 PENDING 状态有值 */
+    private Integer estimatedQueueSeconds;
     /** 排队位置（前面还有几个任务） */
     private Integer queuePosition;
     /** 错误信息 */
@@ -61,6 +66,9 @@ public class HumanizerTaskResponse {
     private Integer totalWords;
     /** 已扣费 word 数（逐块扣费进度） */
     private Integer consumedWords;
+
+    /** 进度百分比 0~100，未完成时最低为 1，完成时为 100 */
+    private Integer progress;
 
     private String createdAt;
 }

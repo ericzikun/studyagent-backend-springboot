@@ -42,17 +42,24 @@ public class HumanizerApplicationService {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int PREVIEW_LENGTH = 50;
 
-    // ===== 预估时间参数（基于实测数据） =====
-    /** DETECT: 平均每句 3.5 秒（CPU 推理） */
-    private static final double DETECT_SECONDS_PER_SENTENCE = 3.5;
-    /** DETECT: 平均每句字符数 */
-    private static final int DETECT_AVG_CHARS_PER_SENTENCE = 150;
-    /** HUMANIZE: 每 1500 字符一个 chunk，每 chunk 约 26 秒 */
-    private static final int HUMANIZE_CHUNK_SIZE = 1500;
-    private static final double HUMANIZE_SECONDS_PER_CHUNK = 26.0;
+    // ===== 预估时间参数（基于实测数据 2026-03-12） =====
+    // --- DETECT ---
+    /** DETECT: 固定开销（秒） */
+    private static final double DETECT_BASE_SECONDS = 3.0;
+    /** DETECT: 每句平均耗时（秒），实测 4-5.5s 取中值 */
+    private static final double DETECT_SECONDS_PER_SENTENCE = 4.8;
+    /** DETECT: 平均每句字符数（实测 80-228，中位数约 180） */
+    private static final int DETECT_AVG_CHARS_PER_SENTENCE = 180;
+    // --- HUMANIZE ---
+    /** HUMANIZE: 每字符耗时（秒），实测 ≤10000 chars 约 0.012s/char */
+    private static final double HUMANIZE_SECONDS_PER_CHAR = 0.012;
+    /** HUMANIZE: 大文本阈值，超过此值并发效果显著 */
+    private static final int HUMANIZE_LARGE_TEXT_THRESHOLD = 10000;
+    /** HUMANIZE: 大文本并发折扣系数（超出部分按此比例计算） */
+    private static final double HUMANIZE_LARGE_TEXT_DISCOUNT = 0.5;
     /** HUMANIZE: 最小处理时间 */
     private static final double HUMANIZE_MIN_SECONDS = 5.0;
-    /** HUMANIZE: 并发数 */
+    /** HUMANIZE: 并发数（用于排队等待时间计算） */
     private static final int HUMANIZE_CONCURRENCY = 3;
 
     /**
@@ -63,7 +70,7 @@ public class HumanizerApplicationService {
      *
      * @return 任务响应及是否发生了额度扣减
      */
-    public HumanizerSubmitResult submitTask(String clerkUserId, String taskType, String text) {
+    public HumanizerSubmitResult submitTask(String clerkUserId, String taskType, String text, String source) {
         // 1. 计算 word count（按空格分词）
         int wordCount = countWords(text);
 
@@ -130,6 +137,7 @@ public class HumanizerApplicationService {
         // 4. 入库
         HumanizerTaskEntity entity = new HumanizerTaskEntity();
         entity.setClerkUserId(clerkUserId);
+        entity.setSource(source);
         entity.setTaskType(taskType);
         entity.setInputText(text);
         entity.setStatus("PENDING");
@@ -141,21 +149,25 @@ public class HumanizerApplicationService {
 
         repository.insert(entity);
 
-        // 计算预估时间
+        // 计算预估时间（分开：排队 + 处理）
         int queueAhead = repository.countQueueAhead(taskType, entity.getId());
-        int estimatedSeconds = estimateTime(taskType, text.length(), queueAhead);
+        double processTime = estimateProcessTime(taskType, text.length());
+        double waitTime = estimateWaitTime(taskType, queueAhead);
 
-        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, estimatedSeconds={}",
-                entity.getId(), taskType, clerkUserId, wordCount, queueAhead, estimatedSeconds);
+        log.info("任务已入库: id={}, type={}, userId={}, words={}, queueAhead={}, processTime={}s, waitTime={}s",
+                entity.getId(), taskType, clerkUserId, wordCount, queueAhead,
+                Math.round(processTime), Math.round(waitTime));
 
         HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(taskType)
                 .status("PENDING")
-                .estimatedSeconds(estimatedSeconds)
+                .estimatedSeconds((int) Math.ceil(processTime))
+                .estimatedQueueSeconds((int) Math.ceil(waitTime))
                 .queuePosition(queueAhead)
                 .totalWords(wordCount)
                 .consumedWords(0)
+                .progress(0)
                 .build();
 
         return new HumanizerSubmitResult(response, quotaConsumed);
@@ -252,8 +264,8 @@ public class HumanizerApplicationService {
     /**
      * 分页查询用户任务列表（精简字段）
      */
-    public HumanizerTaskListResponse listTasks(String clerkUserId, String taskType, int page, int size) {
-        Page<HumanizerTaskEntity> result = repository.findByUserPaged(clerkUserId, taskType, page, size);
+    public HumanizerTaskListResponse listTasks(String clerkUserId, String taskType, String source, int page, int size) {
+        Page<HumanizerTaskEntity> result = repository.findByUserPaged(clerkUserId, taskType, source, page, size);
 
         List<HumanizerTaskItemResponse> items = result.getRecords().stream()
                 .map(this::toItemResponse)
@@ -270,12 +282,13 @@ public class HumanizerApplicationService {
 
     /**
      * 详情响应（完整数据）
-     * PENDING/PROCESSING 状态时带上预估剩余时间
+     * PENDING/PROCESSING 状态时带上预估剩余时间和进度百分比
      */
     private HumanizerTaskResponse toDetailResponse(HumanizerTaskEntity entity) {
         HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
+                .inputText(entity.getInputText())
                 .status(entity.getStatus())
                 .probability(entity.getProbability())
                 .label(entity.getLabel())
@@ -289,21 +302,29 @@ public class HumanizerApplicationService {
                 .consumedWords(entity.getConsumedWords())
                 .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null);
 
-        // 未完成的任务带上预估时间
         String status = entity.getStatus();
+
+        // 计算进度百分比
+        int progress = calculateProgress(entity);
+        builder.progress(progress);
+
+        // 未完成的任务带上预估时间
         if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
             int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
             int queueAhead = repository.countQueueAhead(entity.getTaskType(), entity.getId());
+            double processTime = estimateProcessTime(entity.getTaskType(), textLen);
 
             if ("PROCESSING".equals(status)) {
-                // 正在处理，只算自身剩余时间
+                // 正在处理，只返回处理剩余时间，排队时间为 0
                 int remaining = estimateRemaining(entity);
                 builder.estimatedSeconds(remaining);
+                builder.estimatedQueueSeconds(0);
                 builder.queuePosition(0);
             } else {
-                // 排队中，算排队 + 自身处理时间
-                int estimated = estimateTime(entity.getTaskType(), textLen, queueAhead);
-                builder.estimatedSeconds(estimated);
+                // 排队中，分开返回排队时间和处理时间
+                double waitTime = estimateWaitTime(entity.getTaskType(), queueAhead);
+                builder.estimatedSeconds((int) Math.ceil(processTime));
+                builder.estimatedQueueSeconds((int) Math.ceil(waitTime));
                 builder.queuePosition(queueAhead);
             }
         }
@@ -336,6 +357,46 @@ public class HumanizerApplicationService {
         return text.length() <= PREVIEW_LENGTH ? text : text.substring(0, PREVIEW_LENGTH) + "...";
     }
 
+    // ===== 进度百分比计算 =====
+
+    /**
+     * 计算进度百分比 (0~100)
+     * - COMPLETED → 100
+     * - PENDING → 0
+     * - PROCESSING → 根据实际进度计算，最低 1
+     * - FAILED / QUOTA_EXHAUSTED → 0
+     */
+    private int calculateProgress(HumanizerTaskEntity entity) {
+        String status = entity.getStatus();
+
+        if ("COMPLETED".equals(status)) return 100;
+        if ("PENDING".equals(status)) return 0;
+
+        if ("DETECT".equals(entity.getTaskType())) {
+            Integer total = entity.getTotalSentences();
+            Integer completed = entity.getCompletedSentences();
+            if (total != null && total > 0 && completed != null && completed > 0) {
+                int pct = (int) Math.round(completed * 100.0 / total);
+                return Math.max(1, Math.min(99, pct));
+            }
+            if ("PROCESSING".equals(status)) return 1;
+            return 0;
+        } else {
+            if ("PROCESSING".equals(status) && entity.getStartedAt() != null) {
+                int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
+                double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
+                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), java.time.LocalDateTime.now()).getSeconds();
+                if (totalEstimate > 0) {
+                    int pct = (int) Math.round(elapsedSec * 100.0 / totalEstimate);
+                    return Math.max(1, Math.min(95, pct));
+                }
+                return 1;
+            }
+            if ("PROCESSING".equals(status)) return 1;
+            return 0;
+        }
+    }
+
     // ===== 预估时间计算 =====
 
     /**
@@ -348,17 +409,34 @@ public class HumanizerApplicationService {
     }
 
     /**
-     * 预估自身处理时间
+     * 预估自身处理时间（不含排队等待）
+     *
+     * DETECT 公式（基于 130+ 条 COMPLETED 样本拟合）：
+     *   sentences = max(1, textLength / 180)
+     *   time = 3 + sentences × 4.8
+     *   - 固定开销 3s（模型加载/网络）
+     *   - 每句 4.8s（实测 4.0-5.5s 取中值）
+     *   - 180 chars/sentence（实测 80-228 中位数）
+     *
+     * HUMANIZE 公式（基于 43 条 COMPLETED 样本拟合）：
+     *   ≤10000 chars: time = textLength × 0.012
+     *   >10000 chars: time = 10000×0.012 + (超出部分)×0.012×0.5
+     *   - 0.012s/char（实测 0.010-0.013 取均值）
+     *   - 大文本（>10000）并发 3 路效果显著，超出部分打 5 折
      */
     private double estimateProcessTime(String taskType, int textLength) {
         if ("DETECT".equals(taskType)) {
-            // 句子数 × 3.5s/句
             int sentences = Math.max(1, textLength / DETECT_AVG_CHARS_PER_SENTENCE);
-            return sentences * DETECT_SECONDS_PER_SENTENCE;
+            return Math.max(HUMANIZE_MIN_SECONDS, DETECT_BASE_SECONDS + sentences * DETECT_SECONDS_PER_SENTENCE);
         } else {
-            // HUMANIZE: chunks × 26s/chunk，最少 5s
-            int chunks = Math.max(1, (textLength + HUMANIZE_CHUNK_SIZE - 1) / HUMANIZE_CHUNK_SIZE);
-            return Math.max(HUMANIZE_MIN_SECONDS, chunks * HUMANIZE_SECONDS_PER_CHUNK);
+            double estimated;
+            if (textLength <= HUMANIZE_LARGE_TEXT_THRESHOLD) {
+                estimated = textLength * HUMANIZE_SECONDS_PER_CHAR;
+            } else {
+                estimated = HUMANIZE_LARGE_TEXT_THRESHOLD * HUMANIZE_SECONDS_PER_CHAR
+                        + (textLength - HUMANIZE_LARGE_TEXT_THRESHOLD) * HUMANIZE_SECONDS_PER_CHAR * HUMANIZE_LARGE_TEXT_DISCOUNT;
+            }
+            return Math.max(HUMANIZE_MIN_SECONDS, estimated);
         }
     }
 

@@ -40,7 +40,7 @@ public class HumanizerApplicationService {
     private List<String> whitelistUserIds;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final int PREVIEW_LENGTH = 50;
+    private static final int PREVIEW_LENGTH = 512;
 
     // ===== 预估时间参数（基于实测数据 2026-03-12） =====
     // --- DETECT ---

@@ -15,7 +15,8 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class GetEditorContentResponse {
-    private Long taskId;
+    /** 对外暴露的 taskId（Sqids 编码） */
+    private String taskId;
     private Boolean exists;
     private Long id;
     private String title;

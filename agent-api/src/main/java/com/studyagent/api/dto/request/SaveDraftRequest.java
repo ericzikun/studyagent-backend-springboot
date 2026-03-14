@@ -10,7 +10,8 @@ import java.util.List;
  */
 @Data
 public class SaveDraftRequest {
-    private Long draftId;
+    /** 草稿 ID（Sqids 编码，可选，有则更新无则创建） */
+    private String draftId;
     private String taskTitle;
     private String taskDesc;
     private Integer subject;

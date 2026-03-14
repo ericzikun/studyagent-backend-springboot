@@ -3,7 +3,7 @@ package com.studyagent.service.domain.quota;
 import java.time.LocalDateTime;
 
 /**
- * 额度流水条目（含展示文案）
+ * 额度流水条目（含展示文案、功能编码、额度单位）
  */
 public record QuotaLedgerItem(
         Long id,
@@ -15,5 +15,7 @@ public record QuotaLedgerItem(
         String displayText,
         Long freeBalanceAfter,
         Long paidBalanceAfter,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String featureCode,
+        String quotaUnit
 ) {}

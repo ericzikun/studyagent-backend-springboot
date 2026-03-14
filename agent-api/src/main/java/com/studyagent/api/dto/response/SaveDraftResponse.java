@@ -9,7 +9,8 @@ import lombok.Data;
 @Data
 @Builder
 public class SaveDraftResponse {
-    private Long draftId;
+    /** 对外暴露的 draftId（Sqids 编码） */
+    private String draftId;
     private String savedAt;
 }
 

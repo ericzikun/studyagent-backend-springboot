@@ -31,6 +31,10 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
     private static final int SUBTASK_STATUS_COMPLETED = 2;
     private static final String PHASE_COMPOSE = "COMPOSE";
 
+    /** 模拟进度窗口：任务开始后前 N 秒内若 Python 未推送真实进度，则按时间线性展示 0~10% */
+    private static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
+    private static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
+
     private final com.studyagent.infra.mapper.TaskMapper taskMapper;
     private final TaskAgentMapper taskAgentMapper;
     private final SubTaskMapper subTaskMapper;
@@ -108,7 +112,8 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
 
     private TaskDetailDTO.TaskBaseInfo buildTaskBaseInfo(TaskEntity taskEntity) {
         List<Integer> formatList = parseFormatList(taskEntity.getFormat());
-        int estRemainingTime = computeEstRemainingTime(taskEntity.getStatus(), taskEntity.getCompletePercent());
+        double effectivePercent = resolveCompletePercent(taskEntity);
+        int estRemainingTime = computeEstRemainingTime(taskEntity.getStatus(), java.math.BigDecimal.valueOf(effectivePercent));
 
         return TaskDetailDTO.TaskBaseInfo.builder()
                 .taskTitle(taskEntity.getTaskTitle())
@@ -125,13 +130,42 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                 .pageLength(taskEntity.getPageLength() != null ? taskEntity.getPageLength() : 0)
                 .formatList(formatList)
                 .specialInstructions(taskEntity.getSpecialInstructions() != null ? taskEntity.getSpecialInstructions() : "")
-                .completePercent(taskEntity.getCompletePercent() != null ? taskEntity.getCompletePercent().doubleValue() : 0.0)
+                .completePercent(effectivePercent)
                 .taskCompletedSize(taskEntity.getTaskCompletedSize() != null ? taskEntity.getTaskCompletedSize() : 0)
                 .activeAgentSize(resolveActiveAgentSize(taskEntity))
                 .estRemainingTime(estRemainingTime)
                 .queueAheadCount(0)
                 .requirementJson(taskEntity.getRequirementJson())
                 .build();
+    }
+
+    /**
+     * 解析任务完成百分比：在任务开始后 2 分钟内，若 Python 尚未推送真实进度，
+     * 则按时间线性展示 0~10% 的模拟进度；一旦 Python 有真实进度则直接采用。
+     */
+    private double resolveCompletePercent(TaskEntity taskEntity) {
+        double realPercent = taskEntity.getCompletePercent() != null
+                ? taskEntity.getCompletePercent().doubleValue() : 0.0;
+
+        if (taskEntity.getStatus() == null || !taskEntity.getStatus().equals(TaskStatus.IN_PROGRESS.getCode())) {
+            return realPercent;
+        }
+        if (taskEntity.getStartTime() == null) {
+            return realPercent;
+        }
+
+        long nowEpoch = System.currentTimeMillis() / 1000;
+        long startEpoch = taskEntity.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond();
+        long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
+
+        if (elapsedSeconds >= SIMULATED_PROGRESS_WINDOW_SECONDS) {
+            return realPercent;
+        }
+
+        double simulatedPercent = (elapsedSeconds * SIMULATED_PROGRESS_MAX_PERCENT) / SIMULATED_PROGRESS_WINDOW_SECONDS;
+        simulatedPercent = Math.min(simulatedPercent, SIMULATED_PROGRESS_MAX_PERCENT);
+
+        return Math.max(realPercent, simulatedPercent);
     }
 
     /**

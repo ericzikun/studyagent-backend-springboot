@@ -9,7 +9,8 @@ import lombok.Data;
 @Data
 @Builder
 public class StopTaskResponse {
-    private Long taskId;
+    /** 对外暴露的 taskId（Sqids 编码） */
+    private String taskId;
     private String message;
 }
 

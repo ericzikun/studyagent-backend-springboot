@@ -2,6 +2,7 @@ package com.studyagent.api.converter;
 
 import com.studyagent.api.dto.response.TaskListItemResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
+import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.service.application.dto.TaskListItemDTO;
 import com.studyagent.service.application.dto.TaskListResult;
 
@@ -31,8 +32,9 @@ public final class TaskListConverter {
 
     private static TaskListItemResponse toItemResponse(TaskListItemDTO dto) {
         if (dto == null) return null;
-        TaskListItemResponse.IdValue idValue = dto.getId() != null
-                ? TaskListItemResponse.IdValue.builder().value(dto.getId().getValue()).build()
+        String encodedId = dto.getId() != null ? TaskIdEncoder.encode(dto.getId().getValue()) : null;
+        TaskListItemResponse.IdValue idValue = encodedId != null
+                ? TaskListItemResponse.IdValue.builder().value(encodedId).build()
                 : null;
         return TaskListItemResponse.builder()
                 .id(idValue)

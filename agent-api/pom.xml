@@ -78,6 +78,13 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
         </dependency>
+
+        <!-- Sqids: 将数字 ID 编码为短字符串，避免对外暴露自增 ID -->
+        <dependency>
+            <groupId>org.sqids</groupId>
+            <artifactId>sqids</artifactId>
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 </project>
 

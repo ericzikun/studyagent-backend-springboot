@@ -384,7 +384,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         .eq(AiFeatureDefsEntity::getFeatureCode, entity.getFeatureCode())
                         .last("LIMIT 1"));
         if (featureDef != null) {
-            quotaUnit = "count".equals(featureDef.getQuotaUnit()) ? "time" : "word";
+            quotaUnit = normalizeQuotaUnit(featureDef.getQuotaUnit());
         }
 
         String displayText = buildDisplayText(entity, featureDisplayName, quotaUnit);
@@ -398,13 +398,25 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 displayText,
                 entity.getFreeBalanceAfter(),
                 entity.getPaidBalanceAfter(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getFeatureCode(),
+                quotaUnit
         );
+    }
+
+    /**
+     * 将 ai_feature_defs 的 quota_unit 规范化为前端 CreditUnit：time | words
+     */
+    private String normalizeQuotaUnit(String rawUnit) {
+        if (rawUnit == null || rawUnit.isEmpty()) {
+            return "time";
+        }
+        return "count".equalsIgnoreCase(rawUnit) ? "time" : "words";
     }
 
     private String buildDisplayText(QuotaLedgerEntity entity, String featureDisplayName, String quotaUnit) {
         long absAmount = Math.abs(entity.getAmount());
-        String unitStr = absAmount == 1 ? quotaUnit : quotaUnit + "s";
+        String unitStr = "words".equals(quotaUnit) ? "words" : (absAmount == 1 ? "time" : "times");
         JsonObject biz = parseBizContext(entity.getBizContext());
 
         return switch (entity.getLedgerType()) {
@@ -422,7 +434,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 long quotaAmount = biz != null && biz.has("quota_amount") ? biz.get("quota_amount").getAsLong() : absAmount;
                 int priceCents = biz != null && biz.has("price_cents") ? biz.get("price_cents").getAsInt() : 0;
                 String priceStr = priceCents > 0 ? String.format(" ($%.2f)", priceCents / 100.0) : "";
-                String qUnit = quotaAmount == 1 ? quotaUnit : quotaUnit + "s";
+                String qUnit = "words".equals(quotaUnit) ? "words" : (quotaAmount == 1 ? "time" : "times");
                 yield "Recharged " + packageName + ", +" + quotaAmount + " " + qUnit + priceStr;
             }
             default -> entity.getLedgerType() + " " + absAmount + " " + unitStr;

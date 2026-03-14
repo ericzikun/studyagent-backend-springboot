@@ -14,6 +14,7 @@ import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
+import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class HumanizerApplicationService {
     private final HumanizerTaskRepositoryImpl repository;
     private final QuotaDomainService quotaDomainService;
     private final UserRepository userRepository;
+    private final HumanizerServiceClient humanizerServiceClient;
 
     /** 内测白名单用户（不限额度），通过配置 humanizer.whitelist-user-ids 设置 */
     @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
@@ -90,11 +92,24 @@ public class HumanizerApplicationService {
 
         if (!isAdmin && !isWhitelisted) {
             if ("DETECT".equals(taskType)) {
-                // DETECT: 只校验余额 >= 1，不预扣（Worker 逐块扣）
+                // DETECT: 先调 Python 分句，获取第一个 chunk 的 wordCount
+                // 然后校验余额 >= 第一个 chunk 的 wordCount
+                var splitResult = humanizerServiceClient.splitSentences(text);
+                int firstChunkWords = 1;
+                int splitTotalChunks = 0;
+                int splitTotalWords = 0;
+                if (splitResult != null && splitResult.getCode() == 200
+                        && splitResult.getChunks() != null && !splitResult.getChunks().isEmpty()) {
+                    firstChunkWords = Math.max(1, splitResult.getChunks().get(0).getWordCount());
+                    splitTotalChunks = splitResult.getTotalChunks();
+                    splitTotalWords = splitResult.getTotalWords();
+                }
+
                 var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
-                if (balance.totalAvailable() < 1) {
+                if (balance.totalAvailable() < firstChunkWords) {
                     throw new InsufficientQuotaException(
-                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: at least 1 word",
+                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance()
+                                    + ", Required: at least " + firstChunkWords + " words (first chunk)",
                             InsufficientQuotaData.builder()
                                     .featureCode(balance.featureCode())
                                     .featureName(balance.featureName())
@@ -103,6 +118,9 @@ public class HumanizerApplicationService {
                                     .freePeriodTotal(balance.freePeriodTotal())
                                     .paidBalance(balance.paidBalance())
                                     .totalAvailable(balance.totalAvailable())
+                                    .firstChunkWords(firstChunkWords)
+                                    .totalChunks(splitTotalChunks)
+                                    .totalWords(splitTotalWords)
                                     .build());
                 }
                 // DETECT 不预扣费，quotaConsumed = false

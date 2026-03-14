@@ -76,6 +76,9 @@ public class GlobalExceptionHandler {
                 .freePeriodTotal(data.getFreePeriodTotal())
                 .paidBalance(data.getPaidBalance())
                 .totalAvailable(data.getTotalAvailable())
+                .firstChunkWords(data.getFirstChunkWords())
+                .totalChunks(data.getTotalChunks())
+                .totalWords(data.getTotalWords())
                 .build() : null;
         Result<InsufficientQuotaResponse> result = new Result<>();
         result.setMeta(Meta.error(InsufficientQuotaException.CODE, ex.getMessage()));

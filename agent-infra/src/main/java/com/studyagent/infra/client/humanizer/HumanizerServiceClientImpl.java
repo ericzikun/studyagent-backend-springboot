@@ -1,8 +1,10 @@
 package com.studyagent.infra.client.humanizer;
 
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
+import com.studyagent.service.domain.humanizer.HumanizerServiceClient.ChunkInfo;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResult;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
+import com.studyagent.service.domain.humanizer.HumanizerServiceClient.SplitSentencesResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -150,6 +152,64 @@ public class HumanizerServiceClientImpl implements HumanizerServiceClient {
         } catch (Exception e) {
             log.error("调用 AI 检测 /predict 失败", e);
             return DetectResult.builder().code(500).msg("Failed to call AI detect service: " + e.getMessage()).build();
+        }
+    }
+
+    /**
+     * 文本分句（不做 AI 检测）
+     * 调用 Python /split_sentences 端点
+     */
+    @Override
+    public SplitSentencesResult splitSentences(String text) {
+        try {
+            log.info("调用 /split_sentences，文本长度: {} 字符", text.length());
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = humanizerWebClient.post()
+                .uri(humanizerServiceUrl + "/split_sentences")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("text", text))
+                .retrieve()
+                .bodyToMono(Map.class)
+                .block();
+
+            if (response == null) {
+                return SplitSentencesResult.builder().code(500).msg("split_sentences returned empty response").build();
+            }
+
+            int code = response.get("code") instanceof Number ? ((Number) response.get("code")).intValue() : 500;
+            if (code != 200) {
+                String msg = response.get("msg") != null ? response.get("msg").toString() : "Unknown error";
+                return SplitSentencesResult.builder().code(code).msg(msg).build();
+            }
+
+            int totalChunks = response.get("totalChunks") instanceof Number ? ((Number) response.get("totalChunks")).intValue() : 0;
+            int totalWords = response.get("totalWords") instanceof Number ? ((Number) response.get("totalWords")).intValue() : 0;
+
+            java.util.List<ChunkInfo> chunks = new java.util.ArrayList<>();
+            if (response.get("chunks") instanceof java.util.List<?> rawList) {
+                for (Object item : rawList) {
+                    if (item instanceof Map<?, ?> m) {
+                        chunks.add(ChunkInfo.builder()
+                            .index(m.get("index") instanceof Number n ? n.intValue() : 0)
+                            .sentence(m.get("sentence") != null ? m.get("sentence").toString() : "")
+                            .wordCount(m.get("wordCount") instanceof Number n ? n.intValue() : 0)
+                            .build());
+                    }
+                }
+            }
+
+            log.info("/split_sentences 完成: totalChunks={}, totalWords={}", totalChunks, totalWords);
+            return SplitSentencesResult.builder()
+                .code(200).chunks(chunks).totalChunks(totalChunks).totalWords(totalWords)
+                .build();
+
+        } catch (WebClientRequestException e) {
+            log.error("split_sentences 服务不可达: {}", e.getMessage());
+            return SplitSentencesResult.builder().code(503).msg("Service unavailable").build();
+        } catch (Exception e) {
+            log.error("调用 /split_sentences 失败", e);
+            return SplitSentencesResult.builder().code(500).msg("Failed: " + e.getMessage()).build();
         }
     }
 

@@ -192,6 +192,55 @@ public class HumanizerApplicationService {
     }
 
     /**
+     * 取消任务
+     * PENDING/PROCESSING → CANCELLED，释放资源，退还未消耗的额度
+     * COMPLETED/FAILED/CANCELLED/QUOTA_EXHAUSTED → 直接返回当前状态，不做操作
+     */
+    public HumanizerTaskResponse cancelTask(Long taskId, String clerkUserId) {
+        HumanizerTaskEntity entity = repository.findById(taskId);
+        if (entity == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+        if (!entity.getClerkUserId().equals(clerkUserId)) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        String status = entity.getStatus();
+
+        // 只有 PENDING/PROCESSING 才需要取消
+        if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+            boolean cancelled = repository.cancelTask(taskId);
+            if (cancelled) {
+                log.info("任务已取消: taskId={}, previousStatus={}", taskId, status);
+                // HUMANIZE + PENDING：提交时已扣费但还没开始处理，退还额度
+                if ("HUMANIZE".equals(entity.getTaskType()) && "PENDING".equals(status)) {
+                    refundOnCancel(entity);
+                }
+            } else {
+                log.info("任务取消竞争失败（可能已完成）: taskId={}", taskId);
+            }
+        } else {
+            log.info("任务无需取消，当前状态: taskId={}, status={}", taskId, status);
+        }
+
+        // 返回最新状态
+        return toDetailResponse(repository.findById(taskId));
+    }
+
+    /**
+     * HUMANIZE PENDING 取消时退还额度
+     */
+    private void refundOnCancel(HumanizerTaskEntity entity) {
+        if (entity.getQuotaLedgerId() == null) return;
+        try {
+            quotaDomainService.refund(entity.getQuotaLedgerId(), "humanizer_task_cancelled");
+            log.info("HUMANIZE PENDING 额度已退还: taskId={}, ledgerId={}", entity.getId(), entity.getQuotaLedgerId());
+        } catch (Exception e) {
+            log.error("取消任务退还额度失败: taskId={}, ledgerId={}", entity.getId(), entity.getQuotaLedgerId(), e);
+        }
+    }
+
+    /**
      * 续跑 QUOTA_EXHAUSTED 的 DETECT 任务
      * 用户充值后调用，校验余额 >= 1 后将状态改回 PENDING，Worker 会从断点继续
      */

@@ -90,6 +90,13 @@ public class HumanizerTaskRepositoryImpl {
     }
 
     /**
+     * 原子取消任务：只有 PENDING/PROCESSING 才能取消
+     */
+    public boolean cancelTask(Long id) {
+        return mapper.cancelTask(id) > 0;
+    }
+
+    /**
      * 统计某类型在某任务之前排队的任务数（PENDING + PROCESSING，按创建时间排在前面的）
      */
     public int countQueueAhead(String taskType, Long taskId) {

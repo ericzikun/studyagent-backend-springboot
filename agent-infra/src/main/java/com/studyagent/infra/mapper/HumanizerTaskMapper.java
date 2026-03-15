@@ -21,6 +21,15 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
     int claimTask(@Param("id") Long id);
 
     /**
+     * 原子取消：只有 PENDING/PROCESSING 状态才能取消
+     * 返回受影响行数，>0 表示取消成功
+     */
+    @Update("UPDATE humanizer_tasks SET status = 'CANCELLED', finished_at = NOW(), updated_at = NOW(), " +
+            "error_message = 'Cancelled by user' " +
+            "WHERE id = #{id} AND status IN ('PENDING', 'PROCESSING')")
+    int cancelTask(@Param("id") Long id);
+
+    /**
      * 超时回收：PROCESSING 超过 timeoutMinutes 分钟的任务改回 PENDING（重试）或 FAILED（超限）
      * 返回受影响行数
      */

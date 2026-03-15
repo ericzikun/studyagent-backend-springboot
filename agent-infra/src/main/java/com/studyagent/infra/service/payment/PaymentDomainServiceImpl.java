@@ -103,6 +103,13 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             finalSuccessUrl = finalSuccessUrl + (finalSuccessUrl.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
         }
 
+        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
+                .putMetadata("package_type", command.getPackageType())
+                .putMetadata("feature_code", pkg.getFeatureCode())
+                .putMetadata("clerk_user_id", command.getClerkUserId() != null ? command.getClerkUserId() : "")
+                .putMetadata("credits", String.valueOf(pkg.getQuotaAmount() != null ? pkg.getQuotaAmount() : 0))
+                .build();
+
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(finalSuccessUrl)
@@ -118,6 +125,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 .putMetadata("feature_code", pkg.getFeatureCode())
                 .putMetadata("clerk_user_id", command.getClerkUserId() != null ? command.getClerkUserId() : "")
                 .putMetadata("credits", String.valueOf(pkg.getQuotaAmount() != null ? pkg.getQuotaAmount() : 0))
+                .setPaymentIntentData(paymentIntentData)
                 .build();
 
         Session session;

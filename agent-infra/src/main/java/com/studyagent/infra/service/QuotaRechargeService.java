@@ -37,6 +37,7 @@ public class QuotaRechargeService {
     private static final String PERIOD_DAILY = "daily";
     private static final String SOURCE_TYPE_ORDER = "order";
     private static final String ORDER_STATUS_COMPLETED = "completed";
+    private static final String ORDER_STATUS_FAILED = "failed";
 
     /**
      * 处理支付成功，执行充值到账逻辑
@@ -168,6 +169,85 @@ public class QuotaRechargeService {
         log.info("充值成功: clerk_user_id={}, order_no={}, package={}, quota_amount={}, paid_balance_after={}",
                 clerkUserId, orderNo, packageCode, quotaAmount, newPaidBalance);
         return true;
+    }
+
+    /**
+     * 记录支付失败（Stripe payment_intent.payment_failed 回调）
+     * 幂等：同一 stripe_payment_intent_id 重复调用不会重复插入
+     *
+     * @param clerkUserId       Clerk 用户 ID（来自 PaymentIntent metadata）
+     * @param featureCode       功能编码
+     * @param packageCode       套餐编码
+     * @param quotaAmount       预期额度
+     * @param priceCents        金额（分）
+     * @param currency          货币
+     * @param paymentIntentId   Stripe Payment Intent ID
+     * @param failureReason     失败原因（如 card_declined、insufficient_funds 等）
+     * @return 是否成功记录（false 表示已存在，幂等跳过）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean processPaymentFailed(
+            String clerkUserId,
+            String featureCode,
+            String packageCode,
+            long quotaAmount,
+            int priceCents,
+            String currency,
+            String paymentIntentId,
+            String failureReason) {
+
+        if (paymentIntentId == null || paymentIntentId.isEmpty()) {
+            log.warn("支付失败记录跳过: payment_intent_id 为空");
+            return false;
+        }
+
+        // 幂等校验：已存在则跳过
+        RechargeOrderEntity existing = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripePaymentIntentId, paymentIntentId)
+                        .last("LIMIT 1"));
+        if (existing != null) {
+            log.info("支付失败记录幂等跳过: order_no={} 已存在, payment_intent_id={}", existing.getOrderNo(), paymentIntentId);
+            return false;
+        }
+
+        if (featureCode == null || featureCode.isEmpty()) {
+            featureCode = FeatureCode.TASK_CREATE.getCode();
+        }
+        if (clerkUserId == null) {
+            clerkUserId = "";
+        }
+        if (packageCode == null) {
+            packageCode = "unknown";
+        }
+
+        String orderNo = generateOrderNo();
+
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderNo(orderNo);
+        order.setClerkUserId(clerkUserId);
+        order.setFeatureCode(featureCode);
+        order.setPackageCode(packageCode);
+        order.setQuotaAmount(quotaAmount);
+        order.setPriceCents(priceCents);
+        order.setCurrency(currency != null ? currency : "usd");
+        order.setStripeSessionId(null);
+        order.setStripePaymentIntentId(paymentIntentId);
+        order.setStatus(ORDER_STATUS_FAILED);
+        order.setFailureReason(failureReason != null ? truncate(failureReason, 512) : null);
+        order.setPaidAt(null);
+        order.setCreatedAt(LocalDateTime.now());
+        order.setUpdatedAt(LocalDateTime.now());
+        rechargeOrderMapper.insert(order);
+
+        log.info("支付失败已记录: order_no={}, payment_intent_id={}, clerk_user_id={}, package={}, reason={}",
+                orderNo, paymentIntentId, clerkUserId, packageCode, failureReason);
+        return true;
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        return s.length() <= maxLen ? s : s.substring(0, maxLen);
     }
 
     /**

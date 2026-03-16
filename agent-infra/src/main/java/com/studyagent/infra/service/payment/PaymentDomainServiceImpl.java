@@ -182,6 +182,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             m.put("featureCode", e.getFeatureCode());
             m.put("priceCents", e.getPriceCents());
             m.put("currency", e.getCurrency() != null ? e.getCurrency() : "usd");
+            m.put("label", e.getLabel() != null ? e.getLabel() : "normal");
             packages.add(m);
         }
 

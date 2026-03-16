@@ -450,7 +450,7 @@ public class MockStateStore {
         }
 
         switch (triggerCode) {
-            case "task_download_first", "editor_back_first", "editor_copy_first" -> {
+            case "task_download_first", "editor_back_first", "editor_copy_first", "editor_stay_1min_first" -> {
                 if (!"task".equals(subjectType)) {
                     throw new IllegalArgumentException("Trigger " + triggerCode + " requires subjectType=task");
                 }

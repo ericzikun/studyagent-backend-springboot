@@ -33,4 +33,6 @@ public class AiFeaturePackageEntity extends BaseEntity {
     private Boolean isActive;
     @TableField("display_order")
     private Integer displayOrder;
+    @TableField("label")
+    private String label;
 }

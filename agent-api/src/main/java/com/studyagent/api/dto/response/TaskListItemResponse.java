@@ -21,13 +21,14 @@ public class TaskListItemResponse {
     
     /**
      * ID 值对象，序列化为 { value: ... }
+     * value 为 Sqids 编码后的对外 ID
      */
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class IdValue {
-        private Long value;
+        private String value;
     }
     
     private IdValue id;

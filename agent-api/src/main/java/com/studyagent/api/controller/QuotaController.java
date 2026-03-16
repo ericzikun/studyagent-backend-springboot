@@ -124,6 +124,8 @@ public class QuotaController {
                     m.put("freeBalanceAfter", item.freeBalanceAfter());
                     m.put("paidBalanceAfter", item.paidBalanceAfter());
                     m.put("createdAt", item.createdAt() != null ? item.createdAt().toString() : null);
+                    m.put("feature_code", item.featureCode());
+                    m.put("quota_unit", item.quotaUnit());
                     return m;
                 })
                 .collect(Collectors.toList());

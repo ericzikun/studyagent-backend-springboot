@@ -20,7 +20,7 @@ public class HumanizerTaskItemResponse {
     private String taskType;
     private String status;
 
-    /** 输入文本前50字符预览 */
+    /** 输入文本前512字符预览 */
     private String inputTextPreview;
 
     /** Detect 结果 */

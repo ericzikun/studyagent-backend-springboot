@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * Humanizer 服务客户端接口（领域层定义）
  * <p>
@@ -33,6 +35,15 @@ public interface HumanizerServiceClient {
      * @return 检测结果
      */
     DetectResult detectAI(String text);
+
+    /**
+     * 文本分句（不做 AI 检测）
+     * 调用 Python 服务的 POST /split_sentences 端点
+     *
+     * @param text 待分句文本
+     * @return 分句结果
+     */
+    SplitSentencesResult splitSentences(String text);
 
     /**
      * Humanizer 服务返回结果（领域模型）
@@ -72,5 +83,34 @@ public interface HumanizerServiceClient {
         private String label;
         /** 耗时（秒） */
         private Double elapsedSeconds;
+    }
+
+    /**
+     * 分句中的单个 chunk 信息
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    class ChunkInfo {
+        private int index;
+        private String sentence;
+        private int wordCount;
+    }
+
+    /**
+     * 分句结果（领域模型）
+     * 对应 Python /split_sentences 端点的响应
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    class SplitSentencesResult {
+        private int code;
+        private String msg;
+        private List<ChunkInfo> chunks;
+        private int totalChunks;
+        private int totalWords;
     }
 }

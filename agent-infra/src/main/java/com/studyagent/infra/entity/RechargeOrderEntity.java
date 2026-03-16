@@ -35,6 +35,8 @@ public class RechargeOrderEntity extends BaseEntity {
     private String stripePaymentIntentId;
     @TableField("status")
     private String status;
+    @TableField("failure_reason")
+    private String failureReason;
     @TableField("paid_at")
     private LocalDateTime paidAt;
 }

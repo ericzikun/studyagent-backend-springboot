@@ -76,6 +76,20 @@ public class HumanizerController {
     }
 
     /**
+     * 取消任务
+     * PENDING/PROCESSING → CANCELLED，释放资源，退还未消耗额度
+     * COMPLETED/FAILED/CANCELLED → 直接返回成功，不做操作
+     */
+    @PostMapping("/tasks/{id}/cancel")
+    public Result<HumanizerTaskResponse> cancelTask(
+            @PathVariable Long id,
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        log.info("取消任务: taskId={}, userId={}", id, clerkUserId);
+        HumanizerTaskResponse response = humanizerApplicationService.cancelTask(id, clerkUserId);
+        return Result.success(response);
+    }
+
+    /**
      * 查询用户任务列表（分页，精简字段）
      *
      * @param taskType 可选: DETECT / HUMANIZE，不传查全部

@@ -107,38 +107,64 @@ public class HumanizerApplicationService {
 
                 var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
                 if (balance.totalAvailable() < firstChunkWords) {
-                    throw new InsufficientQuotaException(
-                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance()
-                                    + ", Required: at least " + firstChunkWords + " words (first chunk)",
-                            InsufficientQuotaData.builder()
-                                    .featureCode(balance.featureCode())
-                                    .featureName(balance.featureName())
-                                    .quotaUnit(balance.quotaUnit())
-                                    .freeBalance(balance.freeBalance())
-                                    .freePeriodTotal(balance.freePeriodTotal())
-                                    .paidBalance(balance.paidBalance())
-                                    .totalAvailable(balance.totalAvailable())
-                                    .firstChunkWords(firstChunkWords)
-                                    .totalChunks(splitTotalChunks)
-                                    .totalWords(splitTotalWords)
-                                    .build());
+                    // 额度不足：入库为 QUOTA_EXHAUSTED，返回 taskId 供前端恢复
+                    HumanizerTaskEntity exhaustedEntity = new HumanizerTaskEntity();
+                    exhaustedEntity.setClerkUserId(clerkUserId);
+                    exhaustedEntity.setSource(source);
+                    exhaustedEntity.setTaskType(taskType);
+                    exhaustedEntity.setInputText(text);
+                    exhaustedEntity.setStatus("QUOTA_EXHAUSTED");
+                    exhaustedEntity.setRetryCount(0);
+                    exhaustedEntity.setCompletedSentences(0);
+                    exhaustedEntity.setTotalWords(splitTotalWords > 0 ? splitTotalWords : wordCount);
+                    exhaustedEntity.setConsumedWords(0);
+                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + firstChunkWords + " words (first chunk)");
+                    if (splitTotalChunks > 0) {
+                        exhaustedEntity.setTotalSentences(splitTotalChunks);
+                    }
+                    repository.insert(exhaustedEntity);
+                    log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}, available={}",
+                            exhaustedEntity.getId(), clerkUserId, firstChunkWords, balance.totalAvailable());
+
+                    HumanizerTaskResponse response = HumanizerTaskResponse.builder()
+                            .id(exhaustedEntity.getId())
+                            .taskType(taskType)
+                            .status("QUOTA_EXHAUSTED")
+                            .totalWords(splitTotalWords > 0 ? splitTotalWords : wordCount)
+                            .consumedWords(0)
+                            .progress(0)
+                            .build();
+                    return new HumanizerSubmitResult(response, false);
                 }
                 // DETECT 不预扣费，quotaConsumed = false
             } else {
                 // HUMANIZE: 一次性按总 words 扣费
                 if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
-                    var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
-                    throw new InsufficientQuotaException(
-                            "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance() + ", Required: " + wordCount,
-                            InsufficientQuotaData.builder()
-                                    .featureCode(balance.featureCode())
-                                    .featureName(balance.featureName())
-                                    .quotaUnit(balance.quotaUnit())
-                                    .freeBalance(balance.freeBalance())
-                                    .freePeriodTotal(balance.freePeriodTotal())
-                                    .paidBalance(balance.paidBalance())
-                                    .totalAvailable(balance.totalAvailable())
-                                    .build());
+                    // 额度不足：入库为 QUOTA_EXHAUSTED，返回 taskId 供前端恢复
+                    HumanizerTaskEntity exhaustedEntity = new HumanizerTaskEntity();
+                    exhaustedEntity.setClerkUserId(clerkUserId);
+                    exhaustedEntity.setSource(source);
+                    exhaustedEntity.setTaskType(taskType);
+                    exhaustedEntity.setInputText(text);
+                    exhaustedEntity.setStatus("QUOTA_EXHAUSTED");
+                    exhaustedEntity.setRetryCount(0);
+                    exhaustedEntity.setCompletedSentences(0);
+                    exhaustedEntity.setTotalWords(wordCount);
+                    exhaustedEntity.setConsumedWords(0);
+                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + wordCount + " words");
+                    repository.insert(exhaustedEntity);
+                    log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}",
+                            exhaustedEntity.getId(), clerkUserId, wordCount);
+
+                    HumanizerTaskResponse response = HumanizerTaskResponse.builder()
+                            .id(exhaustedEntity.getId())
+                            .taskType(taskType)
+                            .status("QUOTA_EXHAUSTED")
+                            .totalWords(wordCount)
+                            .consumedWords(0)
+                            .progress(0)
+                            .build();
+                    return new HumanizerSubmitResult(response, false);
                 }
 
                 ConsumeResult consumeResult = quotaDomainService.consume(
@@ -263,9 +289,18 @@ public class HumanizerApplicationService {
         boolean isWhitelisted = whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
 
         if (!isAdmin && !isWhitelisted) {
-            String featureCode = FeatureCode.AI_DETECTION.getCode();
+            // 根据任务类型选择正确的 featureCode
+            String featureCode = "DETECT".equals(entity.getTaskType())
+                    ? FeatureCode.AI_DETECTION.getCode()
+                    : FeatureCode.HUMANIZER.getCode();
             var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
-            if (balance.totalAvailable() < 1) {
+
+            // HUMANIZE 需要校验剩余额度 >= 任务总 words（一次性扣费）
+            int requiredWords = "HUMANIZE".equals(entity.getTaskType())
+                    ? (entity.getTotalWords() != null ? entity.getTotalWords() : 1)
+                    : 1;
+
+            if (balance.totalAvailable() < requiredWords) {
                 throw new InsufficientQuotaException(
                         "Insufficient quota to resume. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                         InsufficientQuotaData.builder()
@@ -278,17 +313,32 @@ public class HumanizerApplicationService {
                                 .totalAvailable(balance.totalAvailable())
                                 .build());
             }
+
+            // HUMANIZE resume 时需要预扣费（原始提交时额度不足未扣费）
+            if ("HUMANIZE".equals(entity.getTaskType())) {
+                ConsumeResult consumeResult = quotaDomainService.consume(
+                        clerkUserId, featureCode, requiredWords,
+                        "humanizer_task", null,
+                        Map.of("task_type", entity.getTaskType(), "word_count", requiredWords));
+                // 更新 quotaLedgerId 以便后续退款
+                HumanizerTaskEntity ledgerUpdate = new HumanizerTaskEntity();
+                ledgerUpdate.setId(taskId);
+                ledgerUpdate.setQuotaLedgerId(consumeResult.ledgerId());
+                repository.updateById(ledgerUpdate);
+                log.info("HUMANIZE resume 额度扣减成功: userId={}, words={}, ledgerId={}",
+                        clerkUserId, requiredWords, consumeResult.ledgerId());
+            }
         }
 
-        // 改回 PENDING，Worker 下一轮会捡起来从 completedSentences 继续
+        // 改回 PENDING，Worker 下一轮会捡起来继续
         HumanizerTaskEntity update = new HumanizerTaskEntity();
         update.setId(taskId);
         update.setStatus("PENDING");
         update.setErrorMessage(null);
         repository.updateById(update);
 
-        log.info("DETECT 任务续跑: taskId={}, userId={}, completedSentences={}",
-                taskId, clerkUserId, entity.getCompletedSentences());
+        log.info("任务续跑: taskId={}, taskType={}, userId={}, completedSentences={}",
+                taskId, entity.getTaskType(), clerkUserId, entity.getCompletedSentences());
 
         return toDetailResponse(repository.findById(taskId));
     }

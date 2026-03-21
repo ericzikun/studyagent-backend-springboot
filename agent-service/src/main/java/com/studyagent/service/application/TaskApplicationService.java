@@ -668,9 +668,8 @@ public class TaskApplicationService {
     }
 
     /**
-     * 解析任务完成百分比：在任务开始后 2 分钟内，若 Python 尚未推送真实进度，
-     * 则按时间线性展示 0~10% 的模拟进度；一旦 Python 有真实进度则直接采用。
-     * 与 detail 接口的 TaskDetailReaderImpl.resolveCompletePercent 逻辑一致。
+     * 与 TaskDetailReaderImpl.resolveCompletePercent 一致：前 2 分钟线性模拟至 10%，之后模拟底保持 10%，
+     * 与真实进度取较大值，避免满 2 分钟或 Python 上报 0% 时进度条跌回 0。
      */
     private double resolveCompletePercent(Task task) {
         double realPercent = task.getCompletePercent() != null
@@ -687,11 +686,8 @@ public class TaskApplicationService {
         long startEpoch = task.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond();
         long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
 
-        if (elapsedSeconds >= SIMULATED_PROGRESS_WINDOW_SECONDS) {
-            return realPercent;
-        }
-
-        double simulatedPercent = (elapsedSeconds * SIMULATED_PROGRESS_MAX_PERCENT) / SIMULATED_PROGRESS_WINDOW_SECONDS;
+        long effectiveElapsed = Math.min(elapsedSeconds, SIMULATED_PROGRESS_WINDOW_SECONDS);
+        double simulatedPercent = (effectiveElapsed * SIMULATED_PROGRESS_MAX_PERCENT) / SIMULATED_PROGRESS_WINDOW_SECONDS;
         simulatedPercent = Math.min(simulatedPercent, SIMULATED_PROGRESS_MAX_PERCENT);
 
         return Math.max(realPercent, simulatedPercent);

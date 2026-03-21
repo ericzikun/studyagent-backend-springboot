@@ -184,7 +184,12 @@ public class AgentEventApplicationService {
         }
         
         task.setStatus(2); // InProgress
-        task.setStartTime(startTime);
+        // 不把 start_time 往后推：Java 提交时已写入开始时间时，若此处用更晚的事件时间会重置「前 2 分钟模拟进度」
+        if (task.getStartTime() == null) {
+            task.setStartTime(startTime);
+        } else if (startTime != null && startTime.isBefore(task.getStartTime())) {
+            task.setStartTime(startTime);
+        }
         taskRepository.save(task);
         
         log.info("任务开始: taskId={}", taskId);

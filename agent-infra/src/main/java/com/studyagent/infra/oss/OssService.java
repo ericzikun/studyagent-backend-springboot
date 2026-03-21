@@ -4,6 +4,7 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.ClientException;
+import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.aliyun.oss.model.PutObjectResult;
 import com.studyagent.service.domain.file.FileRepository;
@@ -295,7 +296,30 @@ public class OssService implements OssStorageService {
     public boolean isEnabled() {
         return ossConfig.isEnabled() && ossClient != null;
     }
-    
+
+    @Override
+    public byte[] getObjectBytes(String ossKey) {
+        if (!isEnabled() || ossKey == null || ossKey.isBlank()) {
+            return null;
+        }
+        try {
+            OSSObject object = ossClient.getObject(ossConfig.getBucketName(), ossKey.trim());
+            try (InputStream in = object.getObjectContent()) {
+                return in.readAllBytes();
+            }
+        } catch (OSSException oe) {
+            log.error("OSS 下载失败: ossKey={}, ErrorCode={}, RequestId={}",
+                    ossKey, oe.getErrorCode(), oe.getRequestId());
+            return null;
+        } catch (ClientException ce) {
+            log.error("OSS 客户端错误(下载): ossKey={}, {}", ossKey, ce.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.error("从 OSS 读取对象失败: ossKey={}", ossKey, e);
+            return null;
+        }
+    }
+
     private boolean isBlank(String str) {
         return str == null || str.trim().isEmpty();
     }

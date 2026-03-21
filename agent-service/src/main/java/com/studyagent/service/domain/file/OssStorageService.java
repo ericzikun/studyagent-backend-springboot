@@ -50,4 +50,12 @@ public interface OssStorageService {
      * @return true 如果已启用
      */
     boolean isEnabled();
+
+    /**
+     * 从 OSS 按 Key 下载对象全部字节（用于本地文件已清理后的回源）
+     *
+     * @param ossKey OSS 对象 Key（与上传时写入 files.oss_key 一致）
+     * @return 内容；未启用、不存在或失败时返回 null
+     */
+    byte[] getObjectBytes(String ossKey);
 }

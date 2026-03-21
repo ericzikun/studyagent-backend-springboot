@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -87,6 +88,45 @@ public class FileApplicationService {
         Optional<File> fileOpt = fileRepository.findByObjectId(objectId);
         return fileOpt.orElse(null);
     }
+
+    /**
+     * 读取文件字节：优先本地 storagePath，不存在则按 ossKey 从 OSS 回源
+     */
+    public Optional<byte[]> loadFileContent(String objectId) {
+        return loadFileContent(getFileByObjectId(objectId));
+    }
+
+    public Optional<byte[]> loadFileContent(File file) {
+        if (file == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(readFileBytes(file));
+        } catch (IOException e) {
+            log.warn("读取文件失败 objectId={}: {}", file.getObjectId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private byte[] readFileBytes(File file) throws IOException {
+        String pathStr = file.getStoragePath();
+        if (pathStr != null && !pathStr.isBlank()) {
+            Path p = Paths.get(pathStr);
+            if (Files.isRegularFile(p)) {
+                return Files.readAllBytes(p);
+            }
+        }
+        String ossKey = file.getOssKey();
+        if (ossKey != null && !ossKey.isBlank() && ossStorageService.isEnabled()) {
+            byte[] fromOss = ossStorageService.getObjectBytes(ossKey.trim());
+            if (fromOss != null && fromOss.length > 0) {
+                log.info("已从 OSS 回源文件: objectId={}, ossKey={}", file.getObjectId(), ossKey);
+                return fromOss;
+            }
+            log.warn("OSS 中未找到或内容为空: objectId={}, ossKey={}", file.getObjectId(), ossKey);
+        }
+        throw new IOException("File not found locally or in OSS: objectId=" + file.getObjectId());
+    }
     
     /**
      * 导出文件
@@ -101,13 +141,11 @@ public class FileApplicationService {
 
         File file = fileOpt.get();
 
-        // Read file from storage
         try {
-            Path filePath = Paths.get(file.getStoragePath());
-            byte[] fileContent = Files.readAllBytes(filePath);
+            byte[] fileContent = readFileBytes(file);
             return fileDomainService.encodeBase64(fileContent);
-        } catch (Exception e) {
-            log.error("Failed to read file: {}", file.getStoragePath(), e);
+        } catch (IOException e) {
+            log.error("Failed to read file: objectId={}", file.getObjectId(), e);
             throw new RuntimeException("Failed to read file", e);
         }
     }

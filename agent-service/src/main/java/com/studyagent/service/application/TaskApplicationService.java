@@ -15,6 +15,7 @@ import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.task.PythonBackendClient;
 import com.studyagent.service.domain.task.TaskFileRepository;
 import com.studyagent.service.domain.task.TaskDetailReader;
+import com.studyagent.service.domain.task.TaskExecutionCleanup;
 import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
@@ -46,6 +47,7 @@ import com.studyagent.common.log.util.TraceIdUtil;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.common.exception.QuotaExceededData;
 import com.studyagent.common.exception.QuotaExceededException;
+import com.studyagent.service.application.dto.StopTaskApplicationResult;
 import com.studyagent.service.application.dto.TaskDetailDTO;
 import com.studyagent.service.config.TaskSubmitConfig;
 import com.studyagent.service.application.dto.TaskListItemDTO;
@@ -68,6 +70,7 @@ public class TaskApplicationService {
     private final FileRepository fileRepository;
     private final TaskFileRepository taskFileRepository;
     private final TaskDetailReader taskDetailReader;
+    private final TaskExecutionCleanup taskExecutionCleanup;
     private final UserRepository userRepository;
     private final TaskSubmitConfig taskSubmitConfig;
     private final QuotaDomainService quotaDomainService;
@@ -508,39 +511,26 @@ public class TaskApplicationService {
     }
 
     /**
-     * 停止任务
-     *
-     * @param request 停止任务请求
-     * @return taskId
-     *         <p>
-     *         优化：缩小事务范围，Python 后端调用改为异步
+     * 停止任务：将任务恢复为可编辑草稿（DRAFT），清理执行态数据，不逻辑删除主任务。
+     * 已完成/失败：幂等成功，不改变数据。已是草稿：幂等成功。
      */
-    public Long stopTask(com.studyagent.service.application.request.StopTaskRequest request) {
-        // 1. 验证用户身份（事务外）
+    public StopTaskApplicationResult stopTask(com.studyagent.service.application.request.StopTaskRequest request) {
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
-
-        // 2. 查询任务（只读事务）
         Task task = findTaskWithValidation(request.getTaskId(), userInfo.clerkUserId);
+        long taskId = task.getId().getValue();
 
-        // 3. 如果任务已经是终态，直接返回
         if (task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.FAILED) {
-            return task.getId().getValue();
+            return new StopTaskApplicationResult(taskId, task.getStatus().getCode(), false, false);
         }
 
-        Long taskId = task.getId().getValue();
-
-        // 4. 在短事务内更新任务状态为已取消
-        if (task.getStatus() != TaskStatus.CANCELLED) {
-            cancelTaskInTransaction(task);
+        if (task.getStatus() == TaskStatus.DRAFT) {
+            return new StopTaskApplicationResult(taskId, TaskStatus.DRAFT.getCode(), false, false);
         }
 
-        // 5. 逻辑删除任务（停止后从用户任务列表移除）
-        taskRepository.logicalDelete(TaskId.of(taskId));
-
-        // 6. 将 STOP_TASK 消息发送到 MQ 控制队列
+        taskExecutionCleanup.resetTaskToDraftAndClearExecution(taskId);
         mqOutboxService.createMessageInNewTransaction("STOP_TASK", taskId, "{}");
 
-        return taskId;
+        return new StopTaskApplicationResult(taskId, TaskStatus.DRAFT.getCode(), false, true);
     }
 
     /**
@@ -556,43 +546,6 @@ public class TaskApplicationService {
         }
 
         return task;
-    }
-
-    /**
-     * 在事务内取消任务
-     */
-    @Transactional(timeout = 5)
-    protected void cancelTaskInTransaction(Task task) {
-        Task cancelled = Task.builder()
-                .id(task.getId())
-                .clerkUserId(task.getClerkUserId())
-                .taskTitle(task.getTaskTitle())
-                .taskDesc(task.getTaskDesc())
-                .subject(task.getSubject())
-                .academicLevel(task.getAcademicLevel())
-                .priorityLevel(task.getPriorityLevel())
-                .dueDate(task.getDueDate())
-                .format(task.getFormat())
-                .citationStyle(task.getCitationStyle())
-                .pageLength(task.getPageLength())
-                .specialInstructions(task.getSpecialInstructions())
-                .status(TaskStatus.CANCELLED)
-                .startTime(task.getStartTime())
-                .finishTime(LocalDateTime.now())
-                .costTime(task.getStartTime() != null
-                        ? (int) java.time.Duration.between(task.getStartTime(), LocalDateTime.now()).getSeconds()
-                        : null)
-                .completePercent(task.getCompletePercent())
-                .taskCompletedSize(task.getTaskCompletedSize())
-                .activeAgentSize(task.getActiveAgentSize())
-                .estRemainingTime(task.getEstRemainingTime())
-                .requirementJson(task.getRequirementJson())
-                .finalResult(task.getFinalResult())
-                .errorMessage("Task cancelled")
-                .traceId(task.getTraceId())
-                .build();
-
-        taskRepository.save(cancelled);
     }
 
     private String normalizeToken(String token) {

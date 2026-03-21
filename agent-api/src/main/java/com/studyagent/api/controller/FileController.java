@@ -17,9 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.Optional;
 
 /**
  * 文件管理控制器
@@ -68,19 +66,16 @@ public class FileController {
     @GetMapping("/download/{objectId}")
     public ResponseEntity<Resource> downloadFile(@PathVariable String objectId) {
         try {
-            // 获取文件信息
             com.studyagent.service.domain.file.File file = fileApplicationService.getFileByObjectId(objectId);
             if (file == null) {
                 return ResponseEntity.notFound().build();
             }
-            
-            // 读取文件内容
-            Path filePath = Paths.get(file.getStoragePath());
-            if (!Files.exists(filePath)) {
+
+            Optional<byte[]> contentOpt = fileApplicationService.loadFileContent(file);
+            if (contentOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            
-            byte[] fileContent = Files.readAllBytes(filePath);
+            byte[] fileContent = contentOpt.get();
             Resource resource = new ByteArrayResource(fileContent);
             
             // 获取文件名和 MIME 类型

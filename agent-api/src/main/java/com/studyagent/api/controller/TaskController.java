@@ -32,6 +32,7 @@ import com.studyagent.infra.mapper.TaskOutputMapper;
 import com.studyagent.service.application.TaskApplicationService;
 import com.studyagent.service.application.request.GetTaskDetailRequest;
 import com.studyagent.service.domain.task.PythonBackendClient;
+import com.studyagent.service.domain.task.TaskStatus;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import jakarta.validation.Valid;
@@ -187,11 +188,24 @@ public class TaskController {
                 .token(token)
                 .build();
 
-        Long taskId = taskApplicationService.stopTask(appRequest);
+        var stopResult = taskApplicationService.stopTask(appRequest);
+        String encodedId = TaskIdEncoder.encode(stopResult.internalTaskId());
+        String message;
+        if (stopResult.taskStatusCode() == TaskStatus.COMPLETED.getCode()
+                || stopResult.taskStatusCode() == TaskStatus.FAILED.getCode()) {
+            message = "Task already finished";
+        } else if (!stopResult.draftResetJustApplied()) {
+            message = "Task is already a draft";
+        } else {
+            message = "Task stopped and converted to draft";
+        }
 
         StopTaskResponse response = StopTaskResponse.builder()
-            .taskId(TaskIdEncoder.encode(taskId))
-            .message("任务已停止")
+            .taskId(encodedId)
+            .taskStatus(stopResult.taskStatusCode())
+            .editableTaskId(encodedId)
+            .workflowAvailable(stopResult.workflowAvailable())
+            .message(message)
             .build();
 
         return Result.success(response);

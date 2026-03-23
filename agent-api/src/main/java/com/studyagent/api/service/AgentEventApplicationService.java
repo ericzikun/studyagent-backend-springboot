@@ -299,7 +299,9 @@ public class AgentEventApplicationService {
         task.setErrorMessage(getStringValue(payload, "reason"));
         
         taskRepository.save(task);
-        
+
+        // 取消不退款：用户中途取消时已产生模型等资源消耗，与任务失败（未成功交付）区分
+
         log.info("任务取消: taskId={}", taskId);
     }
 

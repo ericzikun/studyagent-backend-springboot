@@ -41,6 +41,7 @@ public class AgentEventApplicationService {
     private final TaskActivityEntityRepository taskActivityRepository;
     private final TaskOutputEntityRepository taskOutputRepository;
     private final QuotaDomainService quotaDomainService;
+    private final EmailNotificationService emailNotificationService;
     
     // 🆕 Markdown 转 TipTap JSON 服务 URL
     @Value("${frontend.markdown-service-url:http://localhost:3000/api/markdown-to-tiptap}")
@@ -235,6 +236,13 @@ public class AgentEventApplicationService {
         taskAgentRepository.completeAllByTaskId(taskId, finishTime);
         
         log.info("任务完成: taskId={}, costTime={}s", taskId, task.getCostTime());
+        
+        // 异步发送任务完成邮件通知（best-effort，不影响主流程）
+        try {
+            emailNotificationService.sendTaskCompletedEmail(task);
+        } catch (Exception e) {
+            log.warn("触发邮件通知异常: taskId={}, error={}", taskId, e.getMessage());
+        }
     }
 
     /**

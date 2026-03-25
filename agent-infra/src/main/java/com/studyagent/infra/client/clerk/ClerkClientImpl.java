@@ -426,6 +426,25 @@ public class ClerkClientImpl implements ClerkClient {
     }
     
     @Override
+    public String getUserEmail(String clerkUserId) {
+        try {
+            Map<String, Object> userData = getClerkUser(clerkUserId);
+            if (userData != null) {
+                UserInfo info = extractUserInfo(userData);
+                if (info.email != null && !info.email.isEmpty()) {
+                    log.debug("成功获取用户邮箱: clerkUserId={}", clerkUserId);
+                    return info.email;
+                }
+            }
+            log.warn("无法获取用户邮箱: clerkUserId={}", clerkUserId);
+            return null;
+        } catch (Exception e) {
+            log.warn("获取用户邮箱异常: clerkUserId={}, error={}", clerkUserId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
     @ExternalLog(service = "Clerk", api = "获取或创建用户")
     public User getOrCreateUser(String clerkUserId) {
         Optional<User> existing = userRepository.findByClerkUserId(clerkUserId);

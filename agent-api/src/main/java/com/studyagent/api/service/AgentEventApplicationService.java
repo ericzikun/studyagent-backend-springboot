@@ -252,6 +252,12 @@ public class AgentEventApplicationService {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
+
+        // 用户停止后 Java 已将主任务置为草稿；Python 侧 stop 常走异常路径仍会发 TASK_FAILED，不得覆盖为失败
+        if (TaskStatus.DRAFT.getCode().equals(task.getStatus())) {
+            log.info("TASK_FAILED 忽略: taskId={} 已为草稿（停止后的异步失败事件）", taskId);
+            return;
+        }
         
         // 更新任务
         task.setStatus(4); // Failed
@@ -282,8 +288,8 @@ public class AgentEventApplicationService {
 
     /**
      * 处理任务取消事件（Python 侧用户停止 / STOP_TASK 后的收敛）。
-     * 与 Java {@code TaskApplicationService#stopTask} 语义一致：主任务回到可编辑草稿，
-     * 不得覆盖为终态 {@link TaskStatus#CANCELLED}，否则会在 /stop 已置 DRAFT 后被本事件改回「已取消」。
+     * 与 Java {@code TaskApplicationService#stopTask} 语义一致：主任务回到可编辑草稿。
+     * 若此前误收到 {@code TASK_FAILED}（停止时 Python 异常路径仍可能发失败事件），此处仍可将 {@link TaskStatus#FAILED} 收敛为草稿。
      */
     @Transactional
     protected void handleTaskCancelled(AgentEventRequest request) {
@@ -297,8 +303,8 @@ public class AgentEventApplicationService {
         }
 
         Integer st = task.getStatus();
-        if (TaskStatus.COMPLETED.getCode().equals(st) || TaskStatus.FAILED.getCode().equals(st)) {
-            log.info("TASK_CANCELLED 忽略: taskId={} 已为终态 status={}", taskId, st);
+        if (TaskStatus.COMPLETED.getCode().equals(st)) {
+            log.info("TASK_CANCELLED 忽略: taskId={} 已完成", taskId);
             return;
         }
 

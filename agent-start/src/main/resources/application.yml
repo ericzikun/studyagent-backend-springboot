@@ -141,6 +141,8 @@ task:
   submit:
     quota-enabled: ${TASK_QUOTA_ENABLED:true}
     daily-limit-per-user: ${TASK_DAILY_LIMIT_PER_USER:3}
+    # 无 draftId 的新建保存：同用户、同内容指纹在窗口内只落库一次（秒）；0 关闭
+    save-draft-idempotency-ttl-seconds: ${TASK_SAVE_DRAFT_IDEM_TTL:60}
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:

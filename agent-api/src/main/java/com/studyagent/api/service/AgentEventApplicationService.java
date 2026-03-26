@@ -5,6 +5,7 @@ import com.studyagent.common.event.AgentEventType;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.repository.event.*;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.task.TaskStatus;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -280,29 +281,36 @@ public class AgentEventApplicationService {
     }
 
     /**
-     * 处理任务取消事件
+     * 处理任务取消事件（Python 侧用户停止 / STOP_TASK 后的收敛）。
+     * 与 Java {@code TaskApplicationService#stopTask} 语义一致：主任务回到可编辑草稿，
+     * 不得覆盖为终态 {@link TaskStatus#CANCELLED}，否则会在 /stop 已置 DRAFT 后被本事件改回「已取消」。
      */
     @Transactional
     protected void handleTaskCancelled(AgentEventRequest request) {
         Long taskId = request.getTaskId();
         Map<String, Object> payload = request.getPayload();
-        LocalDateTime finishTime = toLocalDateTime(request.getTimestamp());
         
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
-        
-        task.setStatus(5); // Cancelled
-        task.setFinishTime(finishTime);
-        task.setErrorMessage(getStringValue(payload, "reason"));
+
+        Integer st = task.getStatus();
+        if (TaskStatus.COMPLETED.getCode().equals(st) || TaskStatus.FAILED.getCode().equals(st)) {
+            log.info("TASK_CANCELLED 忽略: taskId={} 已为终态 status={}", taskId, st);
+            return;
+        }
+
+        task.setStatus(TaskStatus.DRAFT.getCode());
+        task.setFinishTime(null);
+        task.setErrorMessage(null);
         
         taskRepository.save(task);
 
-        // 取消不退款：用户中途取消时已产生模型等资源消耗，与任务失败（未成功交付）区分
+        // 停止不退款：用户中途停止时已产生模型等资源消耗，与任务失败（未成功交付）区分
 
-        log.info("任务取消: taskId={}", taskId);
+        log.info("任务停止事件已收敛为草稿: taskId={}, reason={}", taskId, getStringValue(payload, "reason"));
     }
 
     /**

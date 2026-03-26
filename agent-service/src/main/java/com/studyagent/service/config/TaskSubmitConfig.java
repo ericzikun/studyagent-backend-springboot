@@ -36,4 +36,9 @@ public class TaskSubmitConfig {
     public boolean isLimitEnabled() {
         return !quotaEnabled && dailyLimitPerUser > 0;
     }
+
+    /**
+     * 新建草稿（请求未带 draftId）时，相同用户在窗口内、相同内容指纹只落库一次；0 表示关闭幂等。
+     */
+    private int saveDraftIdempotencyTtlSeconds = 60;
 }

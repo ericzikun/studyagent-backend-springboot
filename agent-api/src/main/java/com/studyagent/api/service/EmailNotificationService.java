@@ -29,6 +29,12 @@ public class EmailNotificationService {
     private static final DateTimeFormatter COMPLETED_AT_FORMAT =
             DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH);
 
+    /**
+     * 邮件专用 logo（indigo 与字标/按钮统一），内嵌 data URI，不依赖前端 notification-icon.svg（前端仍为深蓝版）。
+     */
+    private static final String EMAIL_LOGO_DATA_URI =
+            "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwX3ZlcmxhKSI+PHBhdGggZD0iTTEwMCAxODBMMjAgNDBINTBMMTAwIDEzMEwxNTAgNDBIMTgwTDEwMCAxODBaIiBmaWxsPSIjNjM2NmYxIi8+PGNpcmNsZSBjeD0iMjAiIGN5PSI0MCIgcj0iMTIiIGZpbGw9IiM2MzY2ZjEiLz48Y2lyY2xlIGN4PSIxODAiIGN5PSI0MCIgcj0iMTIiIGZpbGw9IiM2MzY2ZjEiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxODAiIHI9IjEyIiBmaWxsPSIjNjM2NmYxIi8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iOTAiIHI9IjgiIGZpbGw9IiM4MThjZjgiLz48Y2lyY2xlIGN4PSI3MCIgY3k9IjYwIiByPSI2IiBmaWxsPSIjODE4Y2Y4Ii8+PGNpcmNsZSBjeD0iMTMwIiBjeT0iNjAiIHI9IjYiIGZpbGw9IiM4MThjZjgiLz48cGF0aCBkPSJNMTAwIDkwTDcwIDYwTTEwMCA5MEwxMzAgNjBNNzAgNjBMMjAgNDBNMTMwIDYwTDE4MCA0MCIgc3Ryb2tlPSIjODE4Y2Y4IiBzdHJva2Utd2lkdGg9IjQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJjbGlwMF92ZXJsYSI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IndoaXRlIi8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+";
+
     private final ClerkClient clerkClient;
     private final WebClient webClient;
 
@@ -147,7 +153,7 @@ public class EmailNotificationService {
                               <table role="presentation" cellpadding="0" cellspacing="0">
                                 <tr>
                                   <td style="vertical-align:middle;padding-right:10px;">
-                                    <img src="%s/notification-icon.svg" alt="" width="32" height="32" style="display:block;border:0;">
+                                    <img src="%s" alt="" width="32" height="32" style="display:block;border:0;">
                                   </td>
                                   <td style="vertical-align:middle;">
                                     <span style="font-size:32px;font-weight:700;line-height:32px;color:#6366f1;letter-spacing:-0.02em;">Verla</span>
@@ -199,7 +205,7 @@ public class EmailNotificationService {
                   </table>
                 </body>
                 </html>
-                """.formatted(frontendUrl, escapeHtml(taskTitle), escapeHtml(completedAt), viewUrl);
+                """.formatted(EMAIL_LOGO_DATA_URI, escapeHtml(taskTitle), escapeHtml(completedAt), viewUrl);
     }
 
     private static String formatCompletedAt(LocalDateTime finishTime) {

@@ -16,7 +16,7 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
      * 原子抢占：将 PENDING 任务改为 PROCESSING
      * 返回受影响行数，>0 表示抢占成功
      */
-    @Update("UPDATE humanizer_tasks SET status = 'PROCESSING', started_at = NOW(), updated_at = NOW() " +
+    @Update("UPDATE humanizer_tasks SET status = 'PROCESSING', started_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() " +
             "WHERE id = #{id} AND status = 'PENDING'")
     int claimTask(@Param("id") Long id);
 
@@ -24,7 +24,7 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
      * 原子取消：只有 PENDING/PROCESSING 状态才能取消
      * 返回受影响行数，>0 表示取消成功
      */
-    @Update("UPDATE humanizer_tasks SET status = 'CANCELLED', finished_at = NOW(), updated_at = NOW(), " +
+    @Update("UPDATE humanizer_tasks SET status = 'CANCELLED', finished_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP(), " +
             "error_message = 'Cancelled by user' " +
             "WHERE id = #{id} AND status IN ('PENDING', 'PROCESSING')")
     int cancelTask(@Param("id") Long id);
@@ -36,7 +36,7 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
     @Update("UPDATE humanizer_tasks SET status = CASE WHEN retry_count < #{maxRetry} THEN 'PENDING' ELSE 'FAILED' END, " +
             "retry_count = retry_count + 1, " +
             "error_message = 'Processing timeout, auto recovered', " +
-            "updated_at = NOW() " +
-            "WHERE status = 'PROCESSING' AND started_at < DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE)")
+            "updated_at = UTC_TIMESTAMP() " +
+            "WHERE status = 'PROCESSING' AND started_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL #{timeoutMinutes} MINUTE)")
     int recoverTimeoutTasks(@Param("timeoutMinutes") int timeoutMinutes, @Param("maxRetry") int maxRetry);
 }

@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -122,6 +123,8 @@ public class HumanizerApplicationService {
                     if (splitTotalChunks > 0) {
                         exhaustedEntity.setTotalSentences(splitTotalChunks);
                     }
+                    exhaustedEntity.setCreatedAt(utcNow());
+                    exhaustedEntity.setUpdatedAt(utcNow());
                     repository.insert(exhaustedEntity);
                     log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}, available={}",
                             exhaustedEntity.getId(), clerkUserId, firstChunkWords, balance.totalAvailable());
@@ -152,6 +155,8 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setTotalWords(wordCount);
                     exhaustedEntity.setConsumedWords(0);
                     exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + wordCount + " words");
+                    exhaustedEntity.setCreatedAt(utcNow());
+                    exhaustedEntity.setUpdatedAt(utcNow());
                     repository.insert(exhaustedEntity);
                     log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}",
                             exhaustedEntity.getId(), clerkUserId, wordCount);
@@ -190,6 +195,8 @@ public class HumanizerApplicationService {
         entity.setQuotaLedgerId(quotaLedgerId);
         entity.setTotalWords(wordCount);
         entity.setConsumedWords(0);
+        entity.setCreatedAt(utcNow());
+        entity.setUpdatedAt(utcNow());
 
         repository.insert(entity);
 
@@ -472,6 +479,11 @@ public class HumanizerApplicationService {
     private String preview(String text) {
         if (text == null) return null;
         return text.length() <= PREVIEW_LENGTH ? text : text.substring(0, PREVIEW_LENGTH) + "...";
+    }
+
+    /** UTC 时间，与 Java 容器时区一致，避免和 MySQL NOW() 的 UTC+8 混淆 */
+    private static LocalDateTime utcNow() {
+        return LocalDateTime.now(java.time.ZoneOffset.UTC);
     }
 
     // ===== 进度百分比计算 =====

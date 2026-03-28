@@ -9,8 +9,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -22,6 +25,9 @@ import java.util.Map;
 @Service
 @Slf4j
 public class EmailNotificationService {
+
+    private static final DateTimeFormatter COMPLETED_AT_FORMAT =
+            DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH);
 
     private final ClerkClient clerkClient;
     private final WebClient webClient;
@@ -69,10 +75,11 @@ public class EmailNotificationService {
             }
 
             String taskTitle = task.getTaskTitle() != null ? task.getTaskTitle() : "Your Research";
-            String subject = "Your research is ready — " + taskTitle;
+            String subject = "Task complete — " + taskTitle;
+            String completedAt = formatCompletedAt(task.getFinishTime());
             String viewUrl = frontendUrl + "/workflow?taskId=" + task.getId();
-            String html = buildEmailHtml(taskTitle, viewUrl);
-            String text = buildPlainText(taskTitle, viewUrl);
+            String html = buildEmailHtml(taskTitle, completedAt, viewUrl);
+            String text = buildPlainText(taskTitle, completedAt, viewUrl);
 
             sendViaResend(userEmail, subject, html, text, task.getId());
 
@@ -105,66 +112,84 @@ public class EmailNotificationService {
                 );
     }
 
-    private String buildPlainText(String taskTitle, String viewUrl) {
+    private String buildPlainText(String taskTitle, String completedAt, String viewUrl) {
         return """
-                Hi there,
+                Task complete
 
-                Your research task "%s" has been completed and is ready for review.
+                Your report is ready to review.
 
-                View your results: %s
+                Task: %s
+                Completed at: %s
 
-                Best,
-                The Verla Team
+                View results: %s
 
-                ---
-                This is an automated notification from Verla (https://verla.io).
-                You received this email because a task you submitted has been completed.
-                """.formatted(taskTitle, viewUrl);
+                —
+                Verla · https://verla.io
+                """.formatted(taskTitle, completedAt, viewUrl);
     }
 
-    private String buildEmailHtml(String taskTitle, String viewUrl) {
+    private String buildEmailHtml(String taskTitle, String completedAt, String viewUrl) {
         return """
                 <!DOCTYPE html>
                 <html lang="en">
                 <head>
                   <meta charset="utf-8">
                   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <title>Task Completed</title>
+                  <title>Task complete</title>
                 </head>
-                <body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-                  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 20px;">
+                <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;">
+                  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 16px;">
                     <tr>
                       <td align="center">
-                        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
+                        <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:540px;background-color:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;">
                           <tr>
-                            <td style="padding:32px 40px;text-align:center;">
-                              <img src="%s/notification-icon.svg" alt="Verla" width="40" height="40" style="display:inline-block;vertical-align:middle;margin-right:10px;">
-                              <span style="display:inline-block;vertical-align:middle;color:#18181b;font-size:20px;font-weight:600;letter-spacing:-0.02em;">Verla</span>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td style="padding:0 40px 40px;">
-                              <p style="margin:0 0 8px;font-size:14px;color:#71717a;">Task Completed</p>
-                              <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;font-weight:600;line-height:1.4;">%s</h2>
-                              <p style="margin:0 0 28px;font-size:15px;color:#3f3f46;line-height:1.6;">
-                                Your research paper has been completed and is ready for review. Click the button below to view the results.
-                              </p>
-                              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                            <td style="padding:20px 24px 16px;text-align:left;border-bottom:1px solid #e2e8f0;">
+                              <table role="presentation" cellpadding="0" cellspacing="0">
                                 <tr>
-                                  <td style="background-color:#18181b;border-radius:8px;">
-                                    <a href="%s" target="_blank" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:500;text-decoration:none;">
-                                      View Results
-                                    </a>
+                                  <td style="vertical-align:middle;padding-right:10px;">
+                                    <img src="%s/notification-icon.svg" alt="" width="32" height="32" style="display:block;border:0;">
+                                  </td>
+                                  <td style="vertical-align:middle;">
+                                    <span style="font-size:32px;font-weight:700;line-height:32px;color:#6366f1;letter-spacing:-0.02em;">Verla</span>
                                   </td>
                                 </tr>
                               </table>
                             </td>
                           </tr>
                           <tr>
-                            <td style="padding:20px 40px;border-top:1px solid #e4e4e7;">
-                              <p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;text-align:center;">
-                                This is an automated notification from <a href="https://verla.io" style="color:#a1a1aa;">Verla</a>.
-                                You received this email because a task you submitted has been completed.
+                            <td style="padding:22px 24px 26px;text-align:left;">
+                              <h1 style="margin:0 0 8px;font-size:19px;font-weight:700;color:#1e293b;line-height:1.3;">Task complete</h1>
+                              <p style="margin:0 0 18px;font-size:15px;color:#64748b;line-height:1.5;">
+                                Your report is ready to review.
+                              </p>
+                              <p style="margin:0 0 6px;font-size:14px;color:#334155;line-height:1.45;">
+                                <span style="font-weight:600;color:#6366f1;">Task:</span> %s
+                              </p>
+                              <p style="margin:0 0 22px;font-size:14px;color:#334155;line-height:1.45;">
+                                <span style="font-weight:600;color:#6366f1;">Completed at:</span> %s
+                              </p>
+                              <table role="presentation" width="100%%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                  <td align="center" style="padding:0;">
+                                    <table role="presentation" cellpadding="0" cellspacing="0">
+                                      <tr>
+                                        <td style="background-color:#6366f1;border-radius:8px;">
+                                          <a href="%s" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:11px 22px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
+                                            View results
+                                          </a>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="padding:14px 24px 18px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:left;">
+                              <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.55;">
+                                Automated message from <a href="https://verla.io" style="color:#6366f1;text-decoration:none;">Verla</a>.
+                                You received this because a task you submitted finished.
                               </p>
                             </td>
                           </tr>
@@ -174,7 +199,12 @@ public class EmailNotificationService {
                   </table>
                 </body>
                 </html>
-                """.formatted(frontendUrl, escapeHtml(taskTitle), viewUrl);
+                """.formatted(frontendUrl, escapeHtml(taskTitle), escapeHtml(completedAt), viewUrl);
+    }
+
+    private static String formatCompletedAt(LocalDateTime finishTime) {
+        LocalDateTime t = finishTime != null ? finishTime : LocalDateTime.now();
+        return t.format(COMPLETED_AT_FORMAT);
     }
 
     private static String escapeHtml(String text) {

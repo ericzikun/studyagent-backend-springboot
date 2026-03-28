@@ -23,6 +23,7 @@ public class UserConverter {
             .locale(entity.getLocale())
             .isAdmin(entity.getIsAdmin())
             .isActive(entity.getIsActive())
+            .createdAt(entity.getCreatedAt())
             .build();
     }
     
@@ -38,6 +39,7 @@ public class UserConverter {
         entity.setLocale(domain.getLocale());
         entity.setIsAdmin(domain.getIsAdmin());
         entity.setIsActive(domain.getIsActive());
+        entity.setCreatedAt(domain.getCreatedAt());
         
         return entity;
     }

@@ -52,7 +52,7 @@
         <commons-lang3.version>3.13.0</commons-lang3.version>
         <gson.version>2.10.1</gson.version>
 
-        <!-- PostHog -->
+        <!-- PostHog (使用 legacy SDK，包名 com.posthog.java，与阿里云兼容) -->
         <posthog.version>1.1.0</posthog.version>
     </properties>
 
@@ -129,7 +129,7 @@
                 <version>${gson.version}</version>
             </dependency>
 
-            <!-- PostHog Java SDK -->
+            <!-- PostHog Java SDK (legacy 坐标，阿里云镜像可解析) -->
             <dependency>
                 <groupId>com.posthog.java</groupId>
                 <artifactId>posthog</artifactId>
@@ -144,6 +144,17 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <!-- 显式声明 Maven Central，避免仅用阿里云镜像时 posthog 等依赖解析失败 -->
+    <repositories>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
 
     <build>
         <pluginManagement>

@@ -24,3 +24,9 @@ posthog:
   api-key: ${POSTHOG_API_KEY:}
   host: ${POSTHOG_HOST:https://app.posthog.com}
 
+# PostHog 配置（开发环境）
+posthog:
+  enabled: ${POSTHOG_ENABLED:false}
+  api-key: ${POSTHOG_API_KEY:}
+  host: ${POSTHOG_HOST:https://app.posthog.com}
+

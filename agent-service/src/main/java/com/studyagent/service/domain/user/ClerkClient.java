@@ -15,6 +15,12 @@ public interface ClerkClient {
     User getOrCreateUser(String clerkUserId);
     
     /**
+     * 根据 Clerk 用户 ID 获取用户邮箱
+     * 调用 Clerk Backend API，带超时容错，失败返回 null
+     */
+    String getUserEmail(String clerkUserId);
+    
+    /**
      * Clerk用户信息
      */
     class UserInfo {

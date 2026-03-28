@@ -42,6 +42,9 @@ services:
       # Python 后端配置（使用 Docker Compose 中的服务名）
       PYTHON_BACKEND_URL: ${PYTHON_BACKEND_URL:-http://backend:8000}
       
+      # Humanizer/AI检测 Python 服务（aidetect 容器跑在宿主机，通过 docker0 网桥访问）
+      HUMANIZER_SERVICE_URL: ${HUMANIZER_SERVICE_URL:-http://host.docker.internal:9000}
+      
       # 文件存储配置
       FILE_STORAGE_PATH: /app/storage
       FILE_UPLOAD_PATH: /app/storage/uploads
@@ -59,6 +62,8 @@ services:
     # 如果 MySQL 未启动，请先启动: cd docker && docker-compose up -d mysql
     networks:
       - studyagent-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s

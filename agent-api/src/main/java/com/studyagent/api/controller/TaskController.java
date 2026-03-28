@@ -19,6 +19,7 @@ import com.studyagent.api.dto.response.SubmitTaskResponse;
 import com.studyagent.api.dto.response.DeleteTasksResponse;
 import com.studyagent.api.converter.TaskDetailConverter;
 import com.studyagent.api.converter.TaskListConverter;
+import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
 import com.studyagent.api.dto.response.TaskSummaryResponse;
@@ -31,6 +32,7 @@ import com.studyagent.infra.mapper.TaskOutputMapper;
 import com.studyagent.service.application.TaskApplicationService;
 import com.studyagent.service.application.request.GetTaskDetailRequest;
 import com.studyagent.service.domain.task.PythonBackendClient;
+import com.studyagent.service.domain.task.TaskStatus;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import jakarta.validation.Valid;
@@ -94,10 +96,12 @@ public class TaskController {
     public Result<SubmitTaskResponse> submitTask(
             @Valid @RequestBody SubmitTaskRequest request,
             @RequestHeader("Authorization") String token) {
+        Long internalDraftId = (request.getDraftId() != null && !request.getDraftId().isBlank())
+                ? TaskIdEncoder.decode(request.getDraftId()) : null;
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.SubmitTaskRequest appRequest = 
             com.studyagent.service.application.request.SubmitTaskRequest.builder()
-                .draftId(request.getDraftId())
+                .draftId(internalDraftId)
                 .taskTitle(request.getTaskTitle())
                 .taskDesc(request.getTaskDesc())
                 .subject(request.getSubject())
@@ -127,21 +131,23 @@ public class TaskController {
         }
 
         SubmitTaskResponse response = SubmitTaskResponse.builder()
-                .taskId(result.taskId())
+                .taskId(TaskIdEncoder.encode(result.taskId()))
                 .quota(quota)
                 .build();
 
-        return Result.success(response);
+        return Result.success(response, result.quotaConsumed());
     }
 
     @PostMapping("/save-draft")
     public Result<SaveDraftResponse> saveDraft(
             @RequestBody SaveDraftRequest request,
             @RequestHeader("Authorization") String token) {
+        Long internalDraftId = (request.getDraftId() != null && !request.getDraftId().isBlank())
+                ? TaskIdEncoder.decode(request.getDraftId()) : null;
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.SaveDraftRequest appRequest =
             com.studyagent.service.application.request.SaveDraftRequest.builder()
-                .draftId(request.getDraftId())
+                .draftId(internalDraftId)
                 .taskTitle(request.getTaskTitle())
                 .taskDesc(request.getTaskDesc())
                 .subject(request.getSubject())
@@ -161,7 +167,7 @@ public class TaskController {
         Long draftId = taskApplicationService.saveDraft(appRequest);
 
         SaveDraftResponse response = SaveDraftResponse.builder()
-            .draftId(draftId)
+            .draftId(TaskIdEncoder.encode(draftId))
             .savedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
             .build();
 
@@ -172,17 +178,34 @@ public class TaskController {
     public Result<StopTaskResponse> stopTask(
             @Valid @RequestBody StopTaskRequest request,
             @RequestHeader("Authorization") String token) {
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
         com.studyagent.service.application.request.StopTaskRequest appRequest =
             com.studyagent.service.application.request.StopTaskRequest.builder()
-                .taskId(request.getTaskId())
+                .taskId(internalTaskId)
                 .token(token)
                 .build();
 
-        Long taskId = taskApplicationService.stopTask(appRequest);
+        var stopResult = taskApplicationService.stopTask(appRequest);
+        String encodedId = TaskIdEncoder.encode(stopResult.internalTaskId());
+        String message;
+        if (stopResult.taskStatusCode() == TaskStatus.COMPLETED.getCode()
+                || stopResult.taskStatusCode() == TaskStatus.FAILED.getCode()) {
+            message = "Task already finished";
+        } else if (!stopResult.draftResetJustApplied()) {
+            message = "Task is already a draft";
+        } else {
+            message = "Task stopped and converted to draft";
+        }
 
         StopTaskResponse response = StopTaskResponse.builder()
-            .taskId(taskId)
-            .message("任务已停止")
+            .taskId(encodedId)
+            .taskStatus(stopResult.taskStatusCode())
+            .editableTaskId(encodedId)
+            .workflowAvailable(stopResult.workflowAvailable())
+            .message(message)
             .build();
 
         return Result.success(response);
@@ -284,11 +307,18 @@ public class TaskController {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        List<Long> internalTaskIds = request.getTaskIds().stream()
+                .map(TaskIdEncoder::decode)
+                .filter(id -> id != null)
+                .toList();
         TaskApplicationService.DeleteTasksResult result = taskApplicationService.deleteTasks(
-                request.getTaskIds(), clerkUserId);
+                internalTaskIds, clerkUserId);
+        List<String> encodedFailedIds = result.failedTaskIds().stream()
+                .map(TaskIdEncoder::encode)
+                .toList();
         DeleteTasksResponse response = DeleteTasksResponse.builder()
                 .deletedCount(result.deletedCount())
-                .failedTaskIds(result.failedTaskIds())
+                .failedTaskIds(encodedFailedIds)
                 .build();
         return Result.success(response);
     }
@@ -302,8 +332,12 @@ public class TaskController {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
         GetTaskDetailRequest appRequest = GetTaskDetailRequest.builder()
-                .taskId(request.getTaskId())
+                .taskId(internalTaskId)
                 .clerkUserId(clerkUserId)
                 .build();
         var dto = taskApplicationService.getTaskDetail(appRequest);
@@ -318,9 +352,13 @@ public class TaskController {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
         
         // 验证任务是否属于当前用户（排除已逻辑删除的任务）
-        TaskEntity taskEntity = taskMapper.selectById(request.getTaskId());
+        TaskEntity taskEntity = taskMapper.selectById(internalTaskId);
         if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
             return Result.error(ApiCode.TASK_NOT_FOUND);
         }
@@ -331,7 +369,7 @@ public class TaskController {
         // 将 API 层的 Request DTO 转换为应用层的 Request Model
         com.studyagent.service.application.request.RateTaskRequest appRequest = 
             com.studyagent.service.application.request.RateTaskRequest.builder()
-                .taskId(request.getTaskId())
+                .taskId(internalTaskId)
                 .score(request.getScore())
                 .content(request.getContent())
                 .build();
@@ -348,8 +386,6 @@ public class TaskController {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
-        // 追问属于任务创建流程，需校验当日额度
-        taskApplicationService.checkQuotaBeforeClarify(clerkUserId);
 
         try {
             log.info("收到追问请求: taskTitle={}, taskDesc={}", request.getTaskTitle(), request.getTaskDesc());
@@ -511,7 +547,7 @@ public class TaskController {
      */
     @GetMapping("/{taskId}/activities")
     public Result<TaskActivitiesPageResponse> getTaskActivities(
-            @PathVariable Long taskId,
+            @PathVariable String taskId,
             @RequestParam(value = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
@@ -520,9 +556,13 @@ public class TaskController {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        Long internalTaskId = TaskIdEncoder.decode(taskId);
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
         
         // 验证任务是否存在且属于当前用户（排除已逻辑删除的任务）
-        TaskEntity taskEntity = taskMapper.selectById(taskId);
+        TaskEntity taskEntity = taskMapper.selectById(internalTaskId);
         if (taskEntity == null || (taskEntity.getIsDeleted() != null && taskEntity.getIsDeleted() == 1)) {
             return Result.error(ApiCode.TASK_NOT_FOUND);
         }
@@ -544,13 +584,13 @@ public class TaskController {
         // 查询总数
         Long total = taskActivityMapper.selectCount(
             new LambdaQueryWrapper<TaskActivityEntity>()
-                .eq(TaskActivityEntity::getTaskId, taskId)
+                .eq(TaskActivityEntity::getTaskId, internalTaskId)
         );
         
         // 分页查询活动日志
         List<TaskActivityEntity> activityEntities = taskActivityMapper.selectList(
             new LambdaQueryWrapper<TaskActivityEntity>()
-                .eq(TaskActivityEntity::getTaskId, taskId)
+                .eq(TaskActivityEntity::getTaskId, internalTaskId)
                 .orderByDesc(TaskActivityEntity::getActivityTime)
                 .last("LIMIT " + pageSize + " OFFSET " + offset)
         );

@@ -6,15 +6,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 文本人性化改写响应
+ * 提交反馈响应
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class HumanizerProcessResponse {
-    /** 改写后的文本 */
-    private String result;
-    /** 耗时（秒） */
-    private Double elapsedSeconds;
+public class SubmitFeedbackResponse {
+
+    private boolean success;
+    private String submissionId;
 }

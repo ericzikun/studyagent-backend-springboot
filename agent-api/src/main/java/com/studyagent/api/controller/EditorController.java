@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyagent.api.common.Result;
+import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.api.dto.request.SaveEditorContentRequest;
 import com.studyagent.api.dto.response.GetEditorContentResponse;
@@ -35,16 +36,20 @@ public class EditorController {
     
     @GetMapping("/content/{taskId}")
     public Result<GetEditorContentResponse> getEditorContent(
-            @PathVariable Long taskId,
+            @PathVariable String taskId,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        Result<?> permissionError = checkEditorPermission(taskId, clerkUserId);
+        Long internalTaskId = TaskIdEncoder.decode(taskId);
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        Result<?> permissionError = checkEditorPermission(internalTaskId, clerkUserId);
         if (permissionError != null) {
             return (Result<GetEditorContentResponse>) permissionError;
         }
         // 查找该任务的终稿输出（output_type=1）
         TaskOutputEntity taskOutput = taskOutputMapper.selectOne(
             new LambdaQueryWrapper<TaskOutputEntity>()
-                .eq(TaskOutputEntity::getTaskId, taskId)
+                .eq(TaskOutputEntity::getTaskId, internalTaskId)
                 .eq(TaskOutputEntity::getOutputType, 1) // 1-终稿
                 .orderByDesc(TaskOutputEntity::getUpdatedAt)
                 .last("LIMIT 1")
@@ -82,17 +87,21 @@ public class EditorController {
     
     @PutMapping("/content/{taskId}")
     public Result<Map<String, Object>> saveEditorContent(
-            @PathVariable Long taskId,
+            @PathVariable String taskId,
             @RequestBody SaveEditorContentRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        Result<?> permissionError = checkEditorPermission(taskId, clerkUserId);
+        Long internalTaskId = TaskIdEncoder.decode(taskId);
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        Result<?> permissionError = checkEditorPermission(internalTaskId, clerkUserId);
         if (permissionError != null) {
             return (Result<Map<String, Object>>) permissionError;
         }
         // 查找或创建终稿输出记录
         TaskOutputEntity taskOutput = taskOutputMapper.selectOne(
             new LambdaQueryWrapper<TaskOutputEntity>()
-                .eq(TaskOutputEntity::getTaskId, taskId)
+                .eq(TaskOutputEntity::getTaskId, internalTaskId)
                 .eq(TaskOutputEntity::getOutputType, 1)
                 .orderByDesc(TaskOutputEntity::getUpdatedAt)
                 .last("LIMIT 1")
@@ -102,10 +111,10 @@ public class EditorController {
         if (taskOutput == null) {
             // 创建新记录
             taskOutput = new TaskOutputEntity();
-            taskOutput.setTaskId(taskId);
+            taskOutput.setTaskId(internalTaskId);
             taskOutput.setOutputType(1); // 终稿
             taskOutput.setFormat(4); // Markdown/JSON
-            taskOutput.setFilePath("/outputs/task_" + taskId + "/editor_content.json");
+            taskOutput.setFilePath("/outputs/task_" + internalTaskId + "/editor_content.json");
             created = true;
         }
         
@@ -125,7 +134,7 @@ public class EditorController {
         }
         
         Map<String, Object> response = new HashMap<>();
-        response.put("task_id", taskId);
+        response.put("task_id", taskId);  // 返回原始编码 ID 供前端使用
         response.put("id", taskOutput.getId());
         response.put("title", taskOutput.getTitle());
         response.put("saved", true);

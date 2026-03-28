@@ -41,6 +41,7 @@ public class AgentEventApplicationService {
     private final TaskActivityEntityRepository taskActivityRepository;
     private final TaskOutputEntityRepository taskOutputRepository;
     private final QuotaDomainService quotaDomainService;
+    private final EmailNotificationService emailNotificationService;
     
     // 🆕 Markdown 转 TipTap JSON 服务 URL
     @Value("${frontend.markdown-service-url:http://localhost:3000/api/markdown-to-tiptap}")
@@ -184,7 +185,12 @@ public class AgentEventApplicationService {
         }
         
         task.setStatus(2); // InProgress
-        task.setStartTime(startTime);
+        // 不把 start_time 往后推：Java 提交时已写入开始时间时，若此处用更晚的事件时间会重置「前 2 分钟模拟进度」
+        if (task.getStartTime() == null) {
+            task.setStartTime(startTime);
+        } else if (startTime != null && startTime.isBefore(task.getStartTime())) {
+            task.setStartTime(startTime);
+        }
         taskRepository.save(task);
         
         log.info("任务开始: taskId={}", taskId);
@@ -230,6 +236,13 @@ public class AgentEventApplicationService {
         taskAgentRepository.completeAllByTaskId(taskId, finishTime);
         
         log.info("任务完成: taskId={}, costTime={}s", taskId, task.getCostTime());
+        
+        // 异步发送任务完成邮件通知（best-effort，不影响主流程）
+        try {
+            emailNotificationService.sendTaskCompletedEmail(task);
+        } catch (Exception e) {
+            log.warn("触发邮件通知异常: taskId={}, error={}", taskId, e.getMessage());
+        }
     }
 
     /**
@@ -294,7 +307,9 @@ public class AgentEventApplicationService {
         task.setErrorMessage(getStringValue(payload, "reason"));
         
         taskRepository.save(task);
-        
+
+        // 取消不退款：用户中途取消时已产生模型等资源消耗，与任务失败（未成功交付）区分
+
         log.info("任务取消: taskId={}", taskId);
     }
 

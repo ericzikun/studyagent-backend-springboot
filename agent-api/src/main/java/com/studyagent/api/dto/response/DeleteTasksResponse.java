@@ -13,6 +13,6 @@ import java.util.List;
 public class DeleteTasksResponse {
     /** 成功删除的数量 */
     private int deletedCount;
-    /** 删除失败的任务ID列表（不存在或无权限） */
-    private List<Long> failedTaskIds;
+    /** 删除失败的任务ID列表（Sqids 编码的对外 ID） */
+    private List<String> failedTaskIds;
 }

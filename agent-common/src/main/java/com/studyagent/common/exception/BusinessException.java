@@ -1,5 +1,6 @@
 package com.studyagent.common.exception;
 
+import com.studyagent.common.api.ApiCode;
 import lombok.Getter;
 
 /**
@@ -16,6 +17,14 @@ public class BusinessException extends RuntimeException {
         super(message);
         this.code = code;
         this.message = message;
+    }
+
+    public BusinessException(ApiCode apiCode) {
+        this(apiCode.getCode(), apiCode.getMessage());
+    }
+
+    public BusinessException(ApiCode apiCode, Object... formatArgs) {
+        this(apiCode.getCode(), apiCode.formatEn(formatArgs));
     }
 
     public BusinessException(String message) {

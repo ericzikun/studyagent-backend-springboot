@@ -88,16 +88,22 @@ stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_xxx}
   publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_xxx}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxx}
+  # 【已废弃】以下 price 配置已不再使用，套餐及 Stripe Price ID 现从 ai_feature_packages 表读取
+  # 维护套餐请直接修改数据库，参考 migrations/022、023、025
   price:
-    # Assignment 四种套餐（与前端 pricing 页面一致）
-    assignment_1: ${STRIPE_PRICE_ASSIGNMENT_1:prod_U3rGRSNmcFA9P4}
-    assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:prod_U4GrwnQnodqVr8}
-    assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:prod_U4Gune0Gj7Vphr}
-    assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:prod_U4Gv3zPgqYZask}
-    # 旧套餐（向后兼容）
-    starter: ${STRIPE_PRICE_STARTER:price_xxx}
-    pro: ${STRIPE_PRICE_PRO:price_xxx}
-    academic: ${STRIPE_PRICE_ACADEMIC:price_xxx}
+    assignment_1: ${STRIPE_PRICE_ASSIGNMENT_1:}
+    assignment_5: ${STRIPE_PRICE_ASSIGNMENT_5:}
+    assignment_10: ${STRIPE_PRICE_ASSIGNMENT_10:}
+    assignment_50: ${STRIPE_PRICE_ASSIGNMENT_50:}
+    detection_10k: ${STRIPE_PRICE_DETECTION_10K:}
+    detection_50k: ${STRIPE_PRICE_DETECTION_50K:}
+    detection_200k: ${STRIPE_PRICE_DETECTION_200K:}
+    humanizer_10k: ${STRIPE_PRICE_HUMANIZER_10K:}
+    humanizer_50k: ${STRIPE_PRICE_HUMANIZER_50K:}
+    humanizer_200k: ${STRIPE_PRICE_HUMANIZER_200K:}
+    starter: ${STRIPE_PRICE_STARTER:}
+    pro: ${STRIPE_PRICE_PRO:}
+    academic: ${STRIPE_PRICE_ACADEMIC:}
 
 # 文件存储配置（默认使用相对于项目根目录的路径）
 # 注意：由于启动目录是 agent-start，使用 ../storage 指向项目根目录
@@ -106,6 +112,10 @@ file:
     base-path: ${FILE_STORAGE_PATH:../storage}
     upload-path: ${FILE_UPLOAD_PATH:../storage/uploads}
     output-path: ${FILE_OUTPUT_PATH:../storage/outputs}
+    # 仅当 OSS 已启用且文件已有 oss_key 时，删除超过保留期的本地副本（默认关闭）
+    purge-enabled: ${FILE_LOCAL_PURGE_ENABLED:false}
+    local-retention-days: ${FILE_LOCAL_RETENTION_DAYS:7}
+    purge-cron: ${FILE_LOCAL_PURGE_CRON:0 0 3 * * ?}
 
 # 阿里云 OSS 配置
 aliyun:
@@ -134,15 +144,43 @@ task:
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
-  url: ${HUMANIZER_SERVICE_URL:http://47.88.58.79:9000}
+  url: ${HUMANIZER_SERVICE_URL:http://localhost:9000}
   rate-limit:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数
+
+# Humanizer/AI Detection 内测白名单（逗号分隔的 Clerk User ID，不限额度）
+humanizer:
+  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
 
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}
   timeout: 30000
+
+# RabbitMQ 配置
+spring.rabbitmq:
+  host: ${RABBITMQ_HOST:localhost}
+  port: ${RABBITMQ_PORT:5672}
+  username: ${RABBITMQ_USERNAME:studyagent}
+  password: ${RABBITMQ_PASSWORD:studyagent2024}
+  virtual-host: ${RABBITMQ_VHOST:/}
+  publisher-confirm-type: correlated
+  publisher-returns: true
+
+# MQ Outbox 调度配置
+mq:
+  outbox:
+    scan-interval: ${MQ_OUTBOX_SCAN_INTERVAL:5000}
+    max-retries: ${MQ_OUTBOX_MAX_RETRIES:5}
+
+# 邮件通知配置（Resend）
+notification:
+  email:
+    enabled: ${EMAIL_NOTIFICATION_ENABLED:false}
+    resend-api-key: ${RESEND_API_KEY:}
+    from-email: ${EMAIL_FROM:Verla <notifications@send.verla.io>}
+    frontend-url: ${FRONTEND_URL:https://verla.io}
 
 # 前端服务配置
 frontend:

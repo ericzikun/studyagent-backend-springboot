@@ -18,6 +18,20 @@ public class Result<T> {
         return result;
     }
 
+    /**
+     * 成功响应，并标识是否发生了额度扣减。
+     * 当 quotaConsumed 为 true 时，前端应刷新用户额度、账单等信息展示。
+     * 未扣减时返回 quotaConsumed: false。
+     *
+     * @param quotaConsumed 本请求是否发生了额度扣减
+     */
+    public static <T> Result<T> success(T data, boolean quotaConsumed) {
+        Result<T> result = new Result<>();
+        result.setMeta(Meta.successWithQuotaFlag(quotaConsumed));
+        result.setData(data);
+        return result;
+    }
+
     public static <T> Result<T> error(String message) {
         Result<T> result = new Result<>();
         result.setMeta(Meta.error(ApiCode.UNKNOWN_ERROR.getCode(), message));

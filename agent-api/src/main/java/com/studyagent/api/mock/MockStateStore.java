@@ -1,5 +1,8 @@
 package com.studyagent.api.mock;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -19,6 +22,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Component
 public class MockStateStore {
+
+    private static final Logger log = LoggerFactory.getLogger(MockStateStore.class);
 
     public static final String STATUS_DRAFT = "DRAFT";
     public static final String STATUS_PENDING = "PENDING";
@@ -64,6 +69,9 @@ public class MockStateStore {
 
         public Double quality;
         public String ratingContent;
+
+        public boolean shouldFail;
+        public long createdAtEpoch;
     }
 
     public static class MockFeedbackPromptRecord {
@@ -105,6 +113,60 @@ public class MockStateStore {
         seedTasks();
     }
 
+    /**
+     * 每 3 秒扫描一次，自动推进任务状态：
+     * PENDING → IN_PROGRESS（创建 3 秒后）→ COMPLETED/FAILED（进度到 100%）
+     *
+     * 正常任务：每次进度 +15~25%，约 20 秒完成
+     * shouldFail 任务：进度到 ~50% 时标记为 FAILED
+     */
+    @Scheduled(fixedDelay = 3000)
+    public synchronized void progressTasks() {
+        long now = System.currentTimeMillis() / 1000;
+
+        for (MockTaskRecord task : tasks.values()) {
+            if (task.createdAtEpoch <= 0) {
+                continue;
+            }
+            long elapsed = now - task.createdAtEpoch;
+
+            if (STATUS_PENDING.equals(task.status) && elapsed >= 3) {
+                task.status = STATUS_IN_PROGRESS;
+                task.completePercent = BigDecimal.valueOf(10);
+                task.queueAheadCount = 0;
+                log.info("[MockProgress] Task {} → IN_PROGRESS (10%)", task.taskId);
+                continue;
+            }
+
+            if (STATUS_IN_PROGRESS.equals(task.status)) {
+                double current = task.completePercent == null ? 0 : task.completePercent.doubleValue();
+
+                if (task.shouldFail && current >= 45) {
+                    task.status = STATUS_FAILED;
+                    task.finishTime = LocalDateTime.now().toString();
+                    task.costTime = (int) elapsed;
+                    log.info("[MockProgress] Task {} → FAILED at {}%", task.taskId, current);
+                    continue;
+                }
+
+                if (current >= 100) {
+                    task.status = STATUS_COMPLETED;
+                    task.completePercent = BigDecimal.valueOf(100);
+                    task.finishTime = LocalDateTime.now().toString();
+                    task.costTime = (int) elapsed;
+                    task.quality = 4.0 + Math.random();
+                    log.info("[MockProgress] Task {} → COMPLETED", task.taskId);
+                    continue;
+                }
+
+                double increment = 15 + Math.random() * 10;
+                double next = Math.min(current + increment, 100);
+                task.completePercent = BigDecimal.valueOf(next).setScale(1, java.math.RoundingMode.HALF_UP);
+                log.debug("[MockProgress] Task {} progress: {}%", task.taskId, task.completePercent);
+            }
+        }
+    }
+
     public synchronized MockFileRecord saveFile(String filename, String rawBody) {
         String objectId = "mock_file_" + fileCounter.incrementAndGet();
         MockFileRecord file = new MockFileRecord();
@@ -127,6 +189,7 @@ public class MockStateStore {
         draft.taskId = id;
         draft.status = defaultIfBlank(draft.status, STATUS_PENDING);
         draft.startTime = LocalDateTime.now().toString();
+        draft.createdAtEpoch = System.currentTimeMillis() / 1000;
         draft.completePercent = draft.completePercent == null ? BigDecimal.ZERO : draft.completePercent;
         draft.queueAheadCount = draft.queueAheadCount == null ? 0 : draft.queueAheadCount;
         draft.quality = draft.quality == null ? 0.0 : draft.quality;

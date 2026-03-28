@@ -20,6 +20,7 @@ import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.api.dto.response.TaskListItemResponse;
 import com.studyagent.api.dto.response.TaskListResponse;
 import com.studyagent.api.dto.response.TaskSummaryResponse;
+import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.common.api.ApiCode;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
@@ -49,6 +50,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @RestController
@@ -121,10 +123,11 @@ public class MockTaskController {
         record.completePercent = BigDecimal.ZERO;
         record.queueAheadCount = 0;
         record.costTime = 0;
+        record.shouldFail = containsFailTrigger(request);
         store.createTask(record);
 
         SubmitTaskResponse response = SubmitTaskResponse.builder()
-            .taskId(record.taskId)
+            .taskId(TaskIdEncoder.encode(record.taskId))
             .quota(SubmitQuotaInfo.builder()
                 .dailyLimit(3)
                 .usedToday(2)
@@ -147,7 +150,8 @@ public class MockTaskController {
         }
 
         MockStateStore.MockTaskRecord record = new MockStateStore.MockTaskRecord();
-        record.taskId = request.getDraftId() == null ? 0L : request.getDraftId();
+        Long decodedDraftId = request.getDraftId() == null ? null : TaskIdEncoder.decode(request.getDraftId());
+        record.taskId = decodedDraftId == null ? 0L : decodedDraftId;
         record.clerkUserId = user.uid();
         record.taskTitle = defaultString(request.getTaskTitle(), "未命名草稿");
         record.taskDesc = defaultString(request.getTaskDesc(), "");
@@ -169,7 +173,7 @@ public class MockTaskController {
         store.saveDraft(record);
 
         SaveDraftResponse response = SaveDraftResponse.builder()
-            .draftId(record.taskId)
+            .draftId(TaskIdEncoder.encode(record.taskId))
             .savedAt(LocalDateTime.now().toString())
             .build();
         return Result.success(response);
@@ -185,7 +189,11 @@ public class MockTaskController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
 
-        boolean ok = store.stopTask(request.getTaskId(), user.uid());
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        boolean ok = store.stopTask(internalTaskId, user.uid());
         if (!ok) {
             return Result.error(ApiCode.TASK_NOT_FOUND);
         }
@@ -285,7 +293,11 @@ public class MockTaskController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
 
-        MockStateStore.MockTaskRecord task = store.findTask(request.getTaskId())
+        Long detailTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (detailTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        MockStateStore.MockTaskRecord task = store.findTask(detailTaskId)
             .filter(t -> user.uid().equals(t.clerkUserId))
             .orElse(null);
         if (task == null) {
@@ -402,7 +414,11 @@ public class MockTaskController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
 
-        boolean ok = store.rateTask(request.getTaskId(), user.uid(), request.getScore(), request.getContent());
+        Long rateTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (rateTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        boolean ok = store.rateTask(rateTaskId, user.uid(), request.getScore(), request.getContent());
         if (!ok) {
             return Result.error(ApiCode.TASK_NOT_FOUND);
         }
@@ -465,10 +481,14 @@ public class MockTaskController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
 
-        MockStateStore.DeleteResult result = store.deleteTasks(request.getTaskIds(), user.uid());
+        List<Long> internalIds = request.getTaskIds().stream()
+            .map(TaskIdEncoder::decode)
+            .filter(Objects::nonNull)
+            .toList();
+        MockStateStore.DeleteResult result = store.deleteTasks(internalIds, user.uid());
         DeleteTasksResponse response = DeleteTasksResponse.builder()
             .deletedCount(result.deletedCount())
-            .failedTaskIds(result.failedTaskIds())
+            .failedTaskIds(result.failedTaskIds().stream().map(TaskIdEncoder::encode).toList())
             .build();
         return Result.success(response);
     }
@@ -542,7 +562,7 @@ public class MockTaskController {
 
     private TaskListItemResponse toTaskListItem(MockStateStore.MockTaskRecord task) {
         return TaskListItemResponse.builder()
-            .id(TaskListItemResponse.IdValue.builder().value(task.taskId).build())
+            .id(TaskListItemResponse.IdValue.builder().value(TaskIdEncoder.encode(task.taskId)).build())
             .clerkUserId(task.clerkUserId)
             .taskTitle(task.taskTitle)
             .taskDesc(task.taskDesc)
@@ -624,6 +644,14 @@ public class MockTaskController {
 
     private String defaultString(String value, String fallback) {
         return (value == null || value.isBlank()) ? fallback : value;
+    }
+
+    private boolean containsFailTrigger(SubmitTaskRequest request) {
+        return containsIgnoreCase(request.getTaskTitle(), "fail")
+            || containsIgnoreCase(request.getTaskDesc(), "fail")
+            || containsIgnoreCase(request.getSpecialInstructions(), "fail")
+            || containsIgnoreCase(request.getRequirementsJson(), "fail")
+            || containsIgnoreCase(request.getClarifyingQuestions(), "fail");
     }
 
     private boolean containsCostTrigger(SubmitTaskRequest request) {

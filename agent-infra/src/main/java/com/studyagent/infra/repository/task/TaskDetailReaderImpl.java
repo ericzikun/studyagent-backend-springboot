@@ -2,6 +2,10 @@ package com.studyagent.infra.repository.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
@@ -73,7 +77,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         List<TaskDetailDTO.AgentInfo> agentInfoList = buildAgentInfoList(agentEntities, subTaskEntities);
         List<TaskDetailDTO.OutputInfo> outputDetailInfoList = loadAndBuildOutputs(taskId);
         TaskDetailDTO.OutputInfo outputSummaryInfo = extractMainOutput(taskId);
-        List<TaskDetailDTO.UploadedFileInfo> uploadedFileInfoList = loadUploadedFiles(taskId);
+        List<TaskDetailDTO.UploadedFileInfo> uploadedFileInfoList = loadUploadedFiles(taskId, taskEntity.getRequirementJson());
 
         TaskDetailDTO dto = TaskDetailDTO.builder()
                 .taskBaseInfo(taskBaseInfo)
@@ -453,7 +457,72 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                 .build();
     }
 
-    private List<TaskDetailDTO.UploadedFileInfo> loadUploadedFiles(Long taskId) {
+    private Map<String, String> clarifyAttachmentObjectIdToQuestionId(String requirementJson) {
+        Map<String, String> map = new HashMap<>();
+        if (requirementJson == null || requirementJson.isBlank()) {
+            return map;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(requirementJson).getAsJsonObject();
+            if (!root.has("clarifyingQuestions")) {
+                return map;
+            }
+            JsonElement cqEl = root.get("clarifyingQuestions");
+            JsonArray arr;
+            if (cqEl.isJsonArray()) {
+                arr = cqEl.getAsJsonArray();
+            } else if (cqEl.isJsonPrimitive() && cqEl.getAsJsonPrimitive().isString()) {
+                String s = cqEl.getAsString();
+                if (s == null || s.isBlank()) {
+                    return map;
+                }
+                arr = JsonParser.parseString(s).getAsJsonArray();
+            } else {
+                return map;
+            }
+            for (JsonElement el : arr) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject o = el.getAsJsonObject();
+                String qid = "";
+                if (o.has("id") && !o.get("id").isJsonNull()) {
+                    qid = o.get("id").getAsString();
+                }
+                if (o.has("attachments") && o.get("attachments").isJsonArray()) {
+                    for (JsonElement attEl : o.get("attachments").getAsJsonArray()) {
+                        if (!attEl.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject att = attEl.getAsJsonObject();
+                        String oid = null;
+                        if (att.has("objectId") && !att.get("objectId").isJsonNull()) {
+                            oid = att.get("objectId").getAsString();
+                        } else if (att.has("object_id") && !att.get("object_id").isJsonNull()) {
+                            oid = att.get("object_id").getAsString();
+                        }
+                        putClarifyOid(map, oid, qid);
+                    }
+                }
+                if (o.has("attachmentObjectId") && !o.get("attachmentObjectId").isJsonNull()) {
+                    putClarifyOid(map, o.get("attachmentObjectId").getAsString(), qid);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("解析 requirementJson 追问附件元数据失败: {}", e.getMessage());
+        }
+        return map;
+    }
+
+    private static void putClarifyOid(Map<String, String> map, String oid, String questionId) {
+        if (oid == null || oid.isBlank()) {
+            return;
+        }
+        map.put(oid.trim(), questionId != null ? questionId : "");
+    }
+
+    private List<TaskDetailDTO.UploadedFileInfo> loadUploadedFiles(Long taskId, String requirementJson) {
+        Map<String, String> clarifyOidToQid = clarifyAttachmentObjectIdToQuestionId(requirementJson);
         List<TaskFileEntity> taskFiles = taskFileMapper.selectList(
                 new LambdaQueryWrapper<TaskFileEntity>()
                         .eq(TaskFileEntity::getTaskId, taskId)
@@ -480,13 +549,18 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
             if (fileType != null && fileType.startsWith(".")) {
                 fileType = fileType.substring(1);
             }
+            String oid = fe.getObjectId();
+            boolean isClarifyAttachment = clarifyOidToQid.containsKey(oid);
+            String clarifyQid = isClarifyAttachment ? clarifyOidToQid.get(oid) : null;
             result.add(TaskDetailDTO.UploadedFileInfo.builder()
-                    .objectId(fe.getObjectId())
+                    .objectId(oid)
                     .fileName(fe.getOriginalFilename())
                     .fileType(fileType)
                     .fileSize(fe.getFileSize())
                     .uploadTime(toEpochSecondOrNull(fe.getCreatedAt()))
-                    .downloadUrl("/v1/file/download/" + fe.getObjectId())
+                    .downloadUrl("/v1/file/download/" + oid)
+                    .attachmentSource(isClarifyAttachment ? "CLARIFY" : "TASK")
+                    .clarifyQuestionId(clarifyQid != null && !clarifyQid.isBlank() ? clarifyQid : null)
                     .build());
         }
         return result;

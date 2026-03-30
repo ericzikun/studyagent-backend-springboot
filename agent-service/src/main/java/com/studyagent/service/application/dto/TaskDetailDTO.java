@@ -123,5 +123,9 @@ public class TaskDetailDTO {
         private Long fileSize;
         private Long uploadTime;
         private String downloadUrl;
+        /** TASK：主任务上传；CLARIFY：追问附件 */
+        private String attachmentSource;
+        /** 追问条目 id（与 clarifyingQuestions JSON 中 id 对齐） */
+        private String clarifyQuestionId;
     }
 }

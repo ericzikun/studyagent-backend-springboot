@@ -1,6 +1,10 @@
 package com.studyagent.service.application;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import com.studyagent.service.application.request.SubmitTaskRequest;
 import com.studyagent.service.application.request.SaveDraftRequest;
@@ -39,6 +43,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,8 +202,9 @@ public class TaskApplicationService {
         // 5. 提交任务（修改状态，纯内存操作）
         task = task.submit();
 
-        // 6. 在短事务内保存任务和关联文件
-        Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds(),
+        // 6. 在短事务内保存任务和关联文件（主附件 + 追问 PDF objectId 合并去重）
+        Long taskId = saveTaskAndFilesInTransaction(task,
+                mergeObjectIdsForTaskFiles(request.getObjectIds(), request.getClarifyingQuestions()),
                 shouldConsumeQuota ? userInfo.clerkUserId : null);
 
         // 8. 更新额度信息（仅每日次数模式）
@@ -505,10 +511,12 @@ public class TaskApplicationService {
         Task savedTask = taskRepository.save(builder.build());
         Long draftId = savedTask.getId().getValue();
 
+        // 与历史行为一致：仅当客户端显式传入 objectIds（含空列表）时同步 task_file；null 表示不改动已有关联
         if (request.getObjectIds() != null) {
+            List<String> draftObjectIds = mergeObjectIdsForTaskFiles(request.getObjectIds(), request.getClarifyingQuestions());
             taskFileRepository.removeByTaskId(draftId);
             int order = 0;
-            for (String objectId : request.getObjectIds()) {
+            for (String objectId : draftObjectIds) {
                 Optional<com.studyagent.service.domain.file.File> fileOpt = fileRepository.findByObjectId(objectId);
                 if (fileOpt.isPresent()) {
                     com.studyagent.service.domain.file.File file = fileOpt.get();
@@ -520,6 +528,69 @@ public class TaskApplicationService {
         }
 
         return draftId;
+    }
+
+    /**
+     * 主任务 objectIds 在前，追问附件 objectId 在后；去重保留首次出现顺序。
+     */
+    private List<String> mergeObjectIdsForTaskFiles(List<String> mainObjectIds, String clarifyingQuestionsJson) {
+        List<String> result = new ArrayList<>();
+        if (mainObjectIds != null) {
+            for (String id : mainObjectIds) {
+                if (id != null && !id.isBlank() && !result.contains(id.trim())) {
+                    result.add(id.trim());
+                }
+            }
+        }
+        if (clarifyingQuestionsJson == null || clarifyingQuestionsJson.isBlank()) {
+            return result;
+        }
+        try {
+            JsonArray arr = JsonParser.parseString(clarifyingQuestionsJson).getAsJsonArray();
+            for (JsonElement el : arr) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                appendClarifyAttachmentObjectIds(el.getAsJsonObject(), result);
+            }
+        } catch (Exception e) {
+            log.warn("解析 clarifyingQuestions 以合并追问附件失败: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 从一题追问 JSON 中收集附件 objectId：优先 {@code attachments} 数组，其次兼容旧字段 {@code attachmentObjectId}。
+     */
+    private void appendClarifyAttachmentObjectIds(JsonObject question, List<String> result) {
+        if (question.has("attachments") && question.get("attachments").isJsonArray()) {
+            for (JsonElement attEl : question.get("attachments").getAsJsonArray()) {
+                if (!attEl.isJsonObject()) {
+                    continue;
+                }
+                JsonObject att = attEl.getAsJsonObject();
+                String oid = null;
+                if (att.has("objectId") && !att.get("objectId").isJsonNull()) {
+                    oid = att.get("objectId").getAsString();
+                } else if (att.has("object_id") && !att.get("object_id").isJsonNull()) {
+                    oid = att.get("object_id").getAsString();
+                }
+                addDistinctObjectId(result, oid);
+            }
+        }
+        if (question.has("attachmentObjectId") && !question.get("attachmentObjectId").isJsonNull()) {
+            addDistinctObjectId(result, question.get("attachmentObjectId").getAsString());
+        }
+    }
+
+    private static void addDistinctObjectId(List<String> result, String oid) {
+        if (oid == null || oid.isBlank()) {
+            return;
+        }
+        oid = oid.trim();
+        if (!result.contains(oid)) {
+            result.add(oid);
+        }
     }
 
     private void evictExpiredSaveDraftIdemEntries() {

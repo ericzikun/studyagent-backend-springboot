@@ -262,8 +262,9 @@ public class AgentEventApplicationService {
         }
 
         // 用户停止后 Java 已将主任务置为草稿；Python 侧 stop 常走异常路径仍会发 TASK_FAILED，不得覆盖为失败
-        if (TaskStatus.DRAFT.getCode().equals(task.getStatus())) {
-            log.info("TASK_FAILED 忽略: taskId={} 已为草稿（停止后的异步失败事件）", taskId);
+        if (TaskStatus.DRAFT.getCode().equals(task.getStatus())
+                || TaskStatus.CANCELLED.getCode().equals(task.getStatus())) {
+            log.info("TASK_FAILED 忽略: taskId={} 状态为{}（停止后的异步失败事件）", taskId, task.getStatus());
             return;
         }
         

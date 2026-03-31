@@ -1,6 +1,10 @@
 package com.studyagent.service.application;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import com.studyagent.service.application.request.SubmitTaskRequest;
 import com.studyagent.service.application.request.SaveDraftRequest;
@@ -26,7 +30,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -34,10 +43,14 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -47,6 +60,7 @@ import com.studyagent.common.log.util.TraceIdUtil;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.common.exception.QuotaExceededData;
 import com.studyagent.common.exception.QuotaExceededException;
+import com.studyagent.service.application.dto.SaveDraftResult;
 import com.studyagent.service.application.dto.StopTaskApplicationResult;
 import com.studyagent.service.application.dto.TaskDetailDTO;
 import com.studyagent.service.config.TaskSubmitConfig;
@@ -75,6 +89,20 @@ public class TaskApplicationService {
     private final TaskSubmitConfig taskSubmitConfig;
     private final QuotaDomainService quotaDomainService;
     private final Gson gson = new Gson();
+
+    /**
+     * 新建草稿短时间幂等：key = clerkUserId + '#' + sha256(内容指纹)，value 为已提交成功的草稿 id 与过期时间。
+     * 仅 JVM 内有效；多实例部署可日后换 Redis。
+     */
+    private final ConcurrentHashMap<String, SaveDraftIdemEntry> saveDraftIdemCache = new ConcurrentHashMap<>();
+
+    private final ConcurrentHashMap<String, Object> saveDraftIdemLocks = new ConcurrentHashMap<>();
+
+    /** 新建草稿写入进行中，供并发请求在提交完成前自旋等待，避免重复 INSERT */
+    private final ConcurrentHashMap<String, Boolean> saveDraftIdemInflight = new ConcurrentHashMap<>();
+
+    private record SaveDraftIdemEntry(long draftId, long expireAtMillis) {
+    }
 
     /** 提交任务结果 */
     public record SubmitTaskResult(long taskId, QuotaInfo quota, boolean quotaConsumed) {
@@ -174,8 +202,9 @@ public class TaskApplicationService {
         // 5. 提交任务（修改状态，纯内存操作）
         task = task.submit();
 
-        // 6. 在短事务内保存任务和关联文件
-        Long taskId = saveTaskAndFilesInTransaction(task, request.getObjectIds(),
+        // 6. 在短事务内保存任务和关联文件（主附件 + 追问 PDF objectId 合并去重）
+        Long taskId = saveTaskAndFilesInTransaction(task,
+                mergeObjectIdsForTaskFiles(request.getObjectIds(), request.getClarifyingQuestions()),
                 shouldConsumeQuota ? userInfo.clerkUserId : null);
 
         // 8. 更新额度信息（仅每日次数模式）
@@ -359,12 +388,12 @@ public class TaskApplicationService {
      * 保存草稿
      *
      * @param request 保存草稿请求
-     * @return draftId
+     * @return draftId 与是否命中短时间内容幂等
      *         <p>
      *         优化：添加事务超时，避免长时间持有锁
      */
     @Transactional(timeout = 10)
-    public Long saveDraft(SaveDraftRequest request) {
+    public SaveDraftResult saveDraft(SaveDraftRequest request) {
         // 1. 验证用户身份
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(normalizeToken(request.getToken()));
 
@@ -391,6 +420,72 @@ public class TaskApplicationService {
                 request.getRequirementsJson(),
                 request.getClarifyingQuestions());
 
+        if (existing == null) {
+            int ttlSec = taskSubmitConfig.getSaveDraftIdempotencyTtlSeconds();
+            if (ttlSec > 0) {
+                String idemKey = buildSaveDraftIdempotencyKey(userInfo.clerkUserId, request, mergedRequirementJson);
+                Object lock = saveDraftIdemLocks.computeIfAbsent(idemKey, k -> new Object());
+                synchronized (lock) {
+                    try {
+                        evictExpiredSaveDraftIdemEntries();
+                        SaveDraftIdemEntry hit = saveDraftIdemCache.get(idemKey);
+                        if (hit != null && hit.expireAtMillis >= System.currentTimeMillis()
+                                && isDraftOwnedByUser(hit.draftId, userInfo.clerkUserId)) {
+                            log.debug("save-draft idempotent hit: keyEnding={}, draftId={}",
+                                    idemKey.substring(Math.max(0, idemKey.length() - 12)), hit.draftId);
+                            return new SaveDraftResult(hit.draftId, true);
+                        }
+                        if (hit != null) {
+                            saveDraftIdemCache.remove(idemKey);
+                        }
+
+                        long spinDeadline = System.currentTimeMillis() + 10_000;
+                        while (saveDraftIdemInflight.containsKey(idemKey) && System.currentTimeMillis() < spinDeadline) {
+                            try {
+                                Thread.sleep(20);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                            evictExpiredSaveDraftIdemEntries();
+                            hit = saveDraftIdemCache.get(idemKey);
+                            if (hit != null && hit.expireAtMillis >= System.currentTimeMillis()
+                                    && isDraftOwnedByUser(hit.draftId, userInfo.clerkUserId)) {
+                                return new SaveDraftResult(hit.draftId, true);
+                            }
+                        }
+
+                        hit = saveDraftIdemCache.get(idemKey);
+                        if (hit != null && hit.expireAtMillis >= System.currentTimeMillis()
+                                && isDraftOwnedByUser(hit.draftId, userInfo.clerkUserId)) {
+                            return new SaveDraftResult(hit.draftId, true);
+                        }
+                        if (hit != null) {
+                            saveDraftIdemCache.remove(idemKey);
+                        }
+
+                        saveDraftIdemInflight.put(idemKey, Boolean.TRUE);
+                        try {
+                            Long draftId = persistDraftRowAndFiles(request, userInfo, null, dueDate, mergedRequirementJson);
+                            registerSaveDraftIdemCallbacks(idemKey, draftId, ttlSec);
+                            return new SaveDraftResult(draftId, false);
+                        } catch (RuntimeException e) {
+                            saveDraftIdemInflight.remove(idemKey);
+                            throw e;
+                        }
+                    } finally {
+                        saveDraftIdemLocks.remove(idemKey, lock);
+                    }
+                }
+            }
+        }
+
+        Long draftId = persistDraftRowAndFiles(request, userInfo, existing, dueDate, mergedRequirementJson);
+        return new SaveDraftResult(draftId, false);
+    }
+
+    private Long persistDraftRowAndFiles(SaveDraftRequest request, ClerkClient.UserInfo userInfo, Task existing,
+            LocalDateTime dueDate, String mergedRequirementJson) {
         Task.TaskBuilder builder = Task.builder()
                 .id(existing != null ? existing.getId() : null)
                 .clerkUserId(userInfo.clerkUserId)
@@ -416,11 +511,12 @@ public class TaskApplicationService {
         Task savedTask = taskRepository.save(builder.build());
         Long draftId = savedTask.getId().getValue();
 
-        // 2. 更新任务文件关联（如果提供 objectIds）
+        // 与历史行为一致：仅当客户端显式传入 objectIds（含空列表）时同步 task_file；null 表示不改动已有关联
         if (request.getObjectIds() != null) {
+            List<String> draftObjectIds = mergeObjectIdsForTaskFiles(request.getObjectIds(), request.getClarifyingQuestions());
             taskFileRepository.removeByTaskId(draftId);
             int order = 0;
-            for (String objectId : request.getObjectIds()) {
+            for (String objectId : draftObjectIds) {
                 Optional<com.studyagent.service.domain.file.File> fileOpt = fileRepository.findByObjectId(objectId);
                 if (fileOpt.isPresent()) {
                     com.studyagent.service.domain.file.File file = fileOpt.get();
@@ -432,6 +528,141 @@ public class TaskApplicationService {
         }
 
         return draftId;
+    }
+
+    /**
+     * 主任务 objectIds 在前，追问附件 objectId 在后；去重保留首次出现顺序。
+     */
+    private List<String> mergeObjectIdsForTaskFiles(List<String> mainObjectIds, String clarifyingQuestionsJson) {
+        List<String> result = new ArrayList<>();
+        if (mainObjectIds != null) {
+            for (String id : mainObjectIds) {
+                if (id != null && !id.isBlank() && !result.contains(id.trim())) {
+                    result.add(id.trim());
+                }
+            }
+        }
+        if (clarifyingQuestionsJson == null || clarifyingQuestionsJson.isBlank()) {
+            return result;
+        }
+        try {
+            JsonArray arr = JsonParser.parseString(clarifyingQuestionsJson).getAsJsonArray();
+            for (JsonElement el : arr) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                appendClarifyAttachmentObjectIds(el.getAsJsonObject(), result);
+            }
+        } catch (Exception e) {
+            log.warn("解析 clarifyingQuestions 以合并追问附件失败: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 从一题追问 JSON 中收集附件 objectId：优先 {@code attachments} 数组，其次兼容旧字段 {@code attachmentObjectId}。
+     */
+    private void appendClarifyAttachmentObjectIds(JsonObject question, List<String> result) {
+        if (question.has("attachments") && question.get("attachments").isJsonArray()) {
+            for (JsonElement attEl : question.get("attachments").getAsJsonArray()) {
+                if (!attEl.isJsonObject()) {
+                    continue;
+                }
+                JsonObject att = attEl.getAsJsonObject();
+                String oid = null;
+                if (att.has("objectId") && !att.get("objectId").isJsonNull()) {
+                    oid = att.get("objectId").getAsString();
+                } else if (att.has("object_id") && !att.get("object_id").isJsonNull()) {
+                    oid = att.get("object_id").getAsString();
+                }
+                addDistinctObjectId(result, oid);
+            }
+        }
+        if (question.has("attachmentObjectId") && !question.get("attachmentObjectId").isJsonNull()) {
+            addDistinctObjectId(result, question.get("attachmentObjectId").getAsString());
+        }
+    }
+
+    private static void addDistinctObjectId(List<String> result, String oid) {
+        if (oid == null || oid.isBlank()) {
+            return;
+        }
+        oid = oid.trim();
+        if (!result.contains(oid)) {
+            result.add(oid);
+        }
+    }
+
+    private void evictExpiredSaveDraftIdemEntries() {
+        long now = System.currentTimeMillis();
+        saveDraftIdemCache.entrySet().removeIf(e -> e.getValue().expireAtMillis < now);
+    }
+
+    /**
+     * 与即将落库的字段一致；请求未带 dueDate 时用固定占位，避免「默认截止日」随当前时间变化导致指纹不一致。
+     */
+    private String buildSaveDraftIdempotencyKey(String clerkUserId, SaveDraftRequest request,
+            String mergedRequirementJson) {
+        Map<String, Object> fp = new TreeMap<>();
+        fp.put("academicLevel", request.getAcademicLevel());
+        fp.put("citationStyle", request.getCitationStyle());
+        fp.put("clarifyingQuestions", request.getClarifyingQuestions());
+        fp.put("dueDate", request.getDueDate() != null ? request.getDueDate().toString() : "");
+        fp.put("formatJson", gson.toJson(request.getFormat() != null ? request.getFormat() : List.of()));
+        fp.put("objectIdsJson", gson.toJson(request.getObjectIds() != null ? request.getObjectIds() : List.of()));
+        fp.put("pageLength", request.getPageLength());
+        fp.put("priorityLevel", request.getPriorityLevel());
+        fp.put("requirementsJson", request.getRequirementsJson());
+        fp.put("specialInstructions", request.getSpecialInstructions());
+        fp.put("subject", request.getSubject());
+        fp.put("taskDesc", request.getTaskDesc());
+        fp.put("taskTitle", request.getTaskTitle());
+        fp.put("mergedRequirementJson", mergedRequirementJson != null ? mergedRequirementJson : "");
+        String payload = gson.toJson(fp);
+        return clerkUserId + "#" + sha256Hex(payload);
+    }
+
+    private static String sha256Hex(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(s.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    private void registerSaveDraftIdemCallbacks(String idemKey, long draftId, int ttlSeconds) {
+        long ttlMs = TimeUnit.SECONDS.toMillis(ttlSeconds);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            saveDraftIdemCache.put(idemKey, new SaveDraftIdemEntry(draftId, System.currentTimeMillis() + ttlMs));
+            saveDraftIdemInflight.remove(idemKey);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                saveDraftIdemCache.put(idemKey, new SaveDraftIdemEntry(draftId, System.currentTimeMillis() + ttlMs));
+                saveDraftIdemInflight.remove(idemKey);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    saveDraftIdemInflight.remove(idemKey);
+                }
+            }
+        });
+    }
+
+    private boolean isDraftOwnedByUser(long draftId, String clerkUserId) {
+        return taskRepository.findById(TaskId.of(draftId))
+                .filter(t -> clerkUserId.equals(t.getClerkUserId()) && t.getStatus() == TaskStatus.DRAFT)
+                .isPresent();
     }
 
     private String mergeRequirementJson(String existingJson, String requirementsJson, String clarifyingQuestions) {

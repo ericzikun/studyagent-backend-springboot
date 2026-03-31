@@ -128,6 +128,8 @@ public final class TaskDetailConverter {
                 .fileSize(info.getFileSize())
                 .uploadTime(info.getUploadTime())
                 .downloadUrl(info.getDownloadUrl())
+                .attachmentSource(info.getAttachmentSource())
+                .clarifyQuestionId(info.getClarifyQuestionId())
                 .build();
     }
 }

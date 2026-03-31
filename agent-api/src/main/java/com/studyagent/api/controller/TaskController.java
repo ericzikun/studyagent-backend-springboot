@@ -164,11 +164,12 @@ public class TaskController {
                 .token(token)
                 .build();
 
-        Long draftId = taskApplicationService.saveDraft(appRequest);
+        var saveResult = taskApplicationService.saveDraft(appRequest);
 
         SaveDraftResponse response = SaveDraftResponse.builder()
-            .draftId(TaskIdEncoder.encode(draftId))
+            .draftId(TaskIdEncoder.encode(saveResult.draftId()))
             .savedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+            .deduplicated(saveResult.deduplicated())
             .build();
 
         return Result.success(response);

@@ -5,6 +5,7 @@ import com.studyagent.common.event.AgentEventType;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.repository.event.*;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.task.TaskStatus;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -259,6 +260,13 @@ public class AgentEventApplicationService {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
+
+        // 用户停止后 Java 已将主任务置为草稿；Python 侧 stop 常走异常路径仍会发 TASK_FAILED，不得覆盖为失败
+        if (TaskStatus.DRAFT.getCode().equals(task.getStatus())
+                || TaskStatus.CANCELLED.getCode().equals(task.getStatus())) {
+            log.info("TASK_FAILED 忽略: taskId={} 状态为{}（停止后的异步失败事件）", taskId, task.getStatus());
+            return;
+        }
         
         // 更新任务
         task.setStatus(4); // Failed
@@ -288,29 +296,36 @@ public class AgentEventApplicationService {
     }
 
     /**
-     * 处理任务取消事件
+     * 处理任务取消事件（Python 侧用户停止 / STOP_TASK 后的收敛）。
+     * 与 Java {@code TaskApplicationService#stopTask} 语义一致：主任务回到可编辑草稿。
+     * 若此前误收到 {@code TASK_FAILED}（停止时 Python 异常路径仍可能发失败事件），此处仍可将 {@link TaskStatus#FAILED} 收敛为草稿。
      */
     @Transactional
     protected void handleTaskCancelled(AgentEventRequest request) {
         Long taskId = request.getTaskId();
         Map<String, Object> payload = request.getPayload();
-        LocalDateTime finishTime = toLocalDateTime(request.getTimestamp());
         
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
-        
-        task.setStatus(5); // Cancelled
-        task.setFinishTime(finishTime);
-        task.setErrorMessage(getStringValue(payload, "reason"));
+
+        Integer st = task.getStatus();
+        if (TaskStatus.COMPLETED.getCode().equals(st)) {
+            log.info("TASK_CANCELLED 忽略: taskId={} 已完成", taskId);
+            return;
+        }
+
+        task.setStatus(TaskStatus.DRAFT.getCode());
+        task.setFinishTime(null);
+        task.setErrorMessage(null);
         
         taskRepository.save(task);
 
-        // 取消不退款：用户中途取消时已产生模型等资源消耗，与任务失败（未成功交付）区分
+        // 停止不退款：用户中途停止时已产生模型等资源消耗，与任务失败（未成功交付）区分
 
-        log.info("任务取消: taskId={}", taskId);
+        log.info("任务停止事件已收敛为草稿: taskId={}, reason={}", taskId, getStringValue(payload, "reason"));
     }
 
     /**

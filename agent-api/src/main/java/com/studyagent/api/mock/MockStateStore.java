@@ -97,6 +97,14 @@ public class MockStateStore {
         public String submittedAt;
     }
 
+    public static class MockAnnouncementRecord {
+        public String publicId;
+        public String title;
+        public String message;
+        public String content;
+        public long createdAtEpochSec;
+    }
+
     private final AtomicLong fileCounter = new AtomicLong(1000);
     private final AtomicLong taskCounter = new AtomicLong(1000);
     private final AtomicLong feedbackPromptCounter = new AtomicLong(1000);
@@ -106,11 +114,14 @@ public class MockStateStore {
     private final Map<String, String> feedbackPromptIdsByDedupKey = new ConcurrentHashMap<>();
     private final Map<String, MockFeedbackPromptRecord> feedbackPrompts = new ConcurrentHashMap<>();
     private final Map<String, MockFeedbackSubmissionRecord> feedbackSubmissions = new ConcurrentHashMap<>();
+    private final Map<String, MockAnnouncementRecord> announcements = new ConcurrentHashMap<>();
+    private final Map<String, java.util.Set<String>> announcementReadsByUser = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
         seedFiles();
         seedTasks();
+        seedAnnouncements();
     }
 
     /**
@@ -392,6 +403,43 @@ public class MockStateStore {
         return new FeedbackSubmitResult(FeedbackSubmitStatus.SUCCESS, null);
     }
 
+    public List<MockAnnouncementRecord> listAnnouncements() {
+        return announcements.values().stream()
+            .sorted(Comparator.comparingLong((MockAnnouncementRecord a) -> a.createdAtEpochSec).reversed())
+            .toList();
+    }
+
+    public java.util.Set<String> readAnnouncementIds(String clerkUserId) {
+        java.util.Set<String> readIds = announcementReadsByUser.get(clerkUserId);
+        if (readIds == null) {
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(readIds);
+    }
+
+    public synchronized List<String> markAnnouncementsRead(String clerkUserId, List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        java.util.Set<String> readIds = announcementReadsByUser.computeIfAbsent(
+            clerkUserId,
+            key -> ConcurrentHashMap.newKeySet()
+        );
+        List<String> updatedIds = new ArrayList<>();
+
+        for (String id : ids) {
+            String normalizedId = normalizeOptional(id);
+            if (normalizedId == null || !announcements.containsKey(normalizedId)) {
+                continue;
+            }
+            readIds.add(normalizedId);
+            updatedIds.add(normalizedId);
+        }
+
+        return updatedIds;
+    }
+
     public record DeleteResult(int deletedCount, List<Long> failedTaskIds) {}
 
     public record Summary(int completedCount, int inProgressCount, double avgQuality) {}
@@ -447,6 +495,30 @@ public class MockStateStore {
         t2.queueAheadCount = 2;
         t2.quality = 0.0;
         saveDraft(t2);
+    }
+
+    private void seedAnnouncements() {
+        announcements.clear();
+
+        MockAnnouncementRecord a1 = new MockAnnouncementRecord();
+        a1.publicId = "ann_mock_welcome";
+        a1.title = "Welcome to Verla";
+        a1.message = "Your workspace is ready. Start with Create, Humanizer, or History.";
+        a1.content = a1.message;
+        a1.createdAtEpochSec = LocalDateTime.now().minusHours(2)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toEpochSecond();
+        announcements.put(a1.publicId, a1);
+
+        MockAnnouncementRecord a2 = new MockAnnouncementRecord();
+        a2.publicId = "ann_mock_feedback";
+        a2.title = "New feedback flow is live";
+        a2.message = "You can now rate task outputs directly after download and editor actions.";
+        a2.content = a2.message;
+        a2.createdAtEpochSec = LocalDateTime.now().minusDays(1).minusHours(3)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toEpochSecond();
+        announcements.put(a2.publicId, a2);
     }
 
     private boolean statusMatches(String status, int taskStatus) {

@@ -144,6 +144,20 @@ task:
     # 无 draftId 的新建保存：同用户、同内容指纹在窗口内只落库一次（秒）；0 关闭
     save-draft-idempotency-ttl-seconds: ${TASK_SAVE_DRAFT_IDEM_TTL:60}
 
+# Notify API（message 通道）
+notify:
+  enabled: ${NOTIFY_ENABLED:false}
+  api-token: ${NOTIFY_API_TOKEN:}
+  default-env: ${NOTIFY_DEFAULT_ENV:online}
+  dingtalk:
+    config-file: ${NOTIFY_DINGTALK_CONFIG_FILE:}
+  idempotency:
+    enabled: ${NOTIFY_IDEMPOTENCY_ENABLED:true}
+    ttl-seconds: ${NOTIFY_IDEMPOTENCY_TTL_SECONDS:600}
+  rate-limit:
+    enabled: ${NOTIFY_RATE_LIMIT_ENABLED:true}
+    per-service-per-minute: ${NOTIFY_RATE_LIMIT_PER_SERVICE_PER_MINUTE:60}
+
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
   url: ${HUMANIZER_SERVICE_URL:http://localhost:9000}
@@ -244,4 +258,3 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
-

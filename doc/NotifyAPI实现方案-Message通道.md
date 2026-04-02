@@ -111,7 +111,7 @@ DingTalk Client
 8. `env`
    - 可选枚举：`local`、`test`、`online`，默认取配置 `notify.default-env`（默认 `online`）。
 9. `timestamp`
-   - 可选；推荐 ISO-8601，未传则服务端填充接收时间。
+   - 可选；推荐 ISO-8601，未传则服务端填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8）。
 10. `metadata`
    - 可选；通用业务扩展字段，值类型限制为 `string/number/boolean`。
 

@@ -68,7 +68,7 @@
 | `level` | 否 | enum string | `info` \| `warn` \| `error` \| `critical`，默认 `info` |
 | `contentType` | 否 | enum string | `text` \| `markdown`，默认 `markdown` |
 | `env` | 否 | enum string | `local` \| `test` \| `online`，默认 `notify.default-env`（默认 `online`） |
-| `timestamp` | 否 | string | 建议 ISO-8601 |
+| `timestamp` | 否 | string | 建议 ISO-8601；未传时服务端自动填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8） |
 | `metadata` | 否 | object | 值类型仅允许 `string/number/boolean` |
 
 ## 4.3 metadata 展示规则（重要）

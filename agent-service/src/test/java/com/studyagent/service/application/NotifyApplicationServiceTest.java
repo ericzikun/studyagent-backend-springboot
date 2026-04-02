@@ -175,6 +175,31 @@ class NotifyApplicationServiceTest {
         assertThat(captured.get().getContent()).endsWith("...(truncated)");
     }
 
+    @Test
+    void shouldFormatGeneratedTimestampAsReadableSeconds() {
+        NotifyConfig config = new NotifyConfig();
+        config.setEnabled(true);
+        config.setApiToken("notify-token");
+
+        AtomicReference<NotifyMessage> captured = new AtomicReference<>();
+        NotifySender sender = message -> {
+            captured.set(message);
+            return NotifySendResult.builder().success(true).deliveryId("dt_test_ts").build();
+        };
+        NotifyApplicationService timestampService = new NotifyApplicationService(config, sender);
+
+        NotifyDispatchRequest request = baseRequest().toBuilder()
+                .timestamp(null)
+                .build();
+
+        NotifyDispatchResult result = timestampService.dispatch(request, "notify-token");
+
+        assertThat(result.getCode()).isEqualTo(0);
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().getTimestamp()).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}");
+        assertThat(captured.get().getTimestamp()).doesNotContain("T");
+    }
+
     private NotifyDispatchRequest baseRequest() {
         return NotifyDispatchRequest.builder()
                 .sourceService("springboot_backend")

@@ -38,6 +38,7 @@ public class NotifyApplicationService {
     private static final int TITLE_MAX_LENGTH = 80;
     private static final int CONTENT_MAX_LENGTH = 2000;
     private static final int SEND_CONTENT_MAX_LENGTH = 1000;
+    private static final DateTimeFormatter TIMESTAMP_DISPLAY_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final NotifyConfig notifyConfig;
     private final NotifySender notifySender;
@@ -290,9 +291,14 @@ public class NotifyApplicationService {
 
     private String resolveTimestamp(String timestamp) {
         if (StringUtils.isNotBlank(timestamp)) {
-            return timestamp.trim();
+            String value = timestamp.trim();
+            try {
+                return OffsetDateTime.parse(value).format(TIMESTAMP_DISPLAY_FORMATTER);
+            } catch (Exception ignore) {
+                return value;
+            }
         }
-        return OffsetDateTime.now(ZoneOffset.ofHours(8)).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        return OffsetDateTime.now(ZoneOffset.ofHours(8)).format(TIMESTAMP_DISPLAY_FORMATTER);
     }
 
     private String truncateForSend(String content) {

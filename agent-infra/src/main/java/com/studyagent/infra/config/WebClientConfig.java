@@ -26,11 +26,11 @@ public class WebClientConfig {
     // 连接超时：5秒
     private static final int CONNECT_TIMEOUT_MS = 5000;
     // 读取超时：60秒（追问接口调用 LLM 需要较长时间）
-    private static final int READ_TIMEOUT_SECONDS = 60;
+    private static final int READ_TIMEOUT_SECONDS = 90;
     // 写入超时：30秒
     private static final int WRITE_TIMEOUT_SECONDS = 30;
     // 响应超时：60秒（追问接口调用 LLM 需要较长时间）
-    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(90);
     
     @Bean
     public WebClient webClient() {

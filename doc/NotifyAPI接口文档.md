@@ -1,13 +1,18 @@
 # Notify API 接口文档
 
-更新时间：2026-04-02  
+更新时间：2026-04-03  
 接口版本：v1（Message 通道）
+
+> metadata 策略说明（当前实现）：
+> 1) `metadata` value 类型已放开，支持复杂 JSON 结构（object/array 等）。  
+> 2) 保留 `sanitizeMetadata` 统一处理流程。  
+> 3) 当前不启用 metadata key 白名单过滤；后续可在 `sanitizeMetadata` 位置按治理需要补充白名单逻辑。
 
 ## 1. 适用范围
 
-本文档面向各服务负责人，用于接入统一通知接口 `Notify API`，在业务事件发生时主动向钉钉发送通知。
+本文档面向用于接入统一通知接口 `Notify API`，在业务事件发生时主动向钉钉发送通知。
 
-当前只支持 `message` 通道（直达钉钉），不包含 Alertmanager 治理能力。
+当前只支持 `message` 通道（触发直达钉钉），不包含 Alertmanager 治理能力。
 
 ## 2. 接口概览
 
@@ -25,17 +30,76 @@
 
 - 由服务端校验请求头 `X-Notify-Token`。
 - token 错误会返回 `4001`。
-- token 必须按环境隔离（`local/test/online` 各自独立）。
+- token 按环境隔离（`local/test/online` 各自独立）。
 
-## 3.2 三环境建议
+## 3.2 三环境token 位置
 
 - `local`：本地 `.env` 注入 `NOTIFY_API_TOKEN`
-- `test/online`：由部署环境（Docker Compose 或平台变量）注入 `NOTIFY_API_TOKEN`
+- `test/online`：由部署环境 docker_compose.yml注入位于同目录下 `.env` 的 `NOTIFY_API_TOKEN`
 - 禁止把真实 token 提交到 GitHub 仓库
 
 ## 4. 请求规范
 
-## 4.1 请求体 JSON
+## 4.1 请求体（通用模板）
+
+```json
+{
+  "eventId": "<string, optional, 1-64，建议唯一，如 evt_20260402_10001>",
+  "sourceService": "<enum, required, springboot_backend|python_backend|frontend|humanizer>",
+  "scene": "<string, optional, 1-64，如 payment.success>",
+  "title": "<string, required, 1-80>",
+  "content": "<string, required, 1-2000>",
+  "level": "<enum, optional, info|warn|error|critical，默认 info>",
+  "contentType": "<enum, optional, text|markdown，默认 markdown>",
+  "env": "<enum, optional, local|test|online，默认取 notify.default-env>",
+  "timestamp": "<string, optional, ISO-8601 格式>",
+  "metadata": {
+    "<key:string>": "<value:any-json>"
+  }
+}
+```
+
+## 4.2 字段取值规范
+
+1. `eventId`
+   - 可选，建议传；用于幂等去重（去重键：`sourceService + eventId`）。
+   - 未传时由服务端生成并在响应中返回。
+2. `sourceService`
+   - 必填枚举：`springboot_backend`、`python_backend`、`frontend`、`humanizer`。
+3. `scene`
+   - 可选；建议使用 `domain.action` 风格（如 `payment.success`、`task.failed`）。
+4. `title`
+   - 必填；用于钉钉消息标题，长度 1-80。
+5. `content`
+   - 必填；正文长度 1-2000。
+   - 发送到钉钉时会截断到 1000 字符，建议调用方控制内容长度。
+6. `level`
+   - 可选枚举：`info`、`warn`、`error`、`critical`；默认 `info`。
+7. `contentType`
+   - 可选枚举：`text`、`markdown`；默认 `markdown`。
+8. `env`
+   - 可选枚举：`local`、`test`、`online`。
+   - 未传时默认取 `notify.default-env`（默认 `online`）。
+9. `timestamp`
+   - 可选；推荐 ISO-8601，未传则服务端填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8）。
+10. `metadata`
+   - 可选；通用业务扩展字段。
+   - 支持复杂 JSON 值类型（`object/array/string/number/boolean/null`）。
+   - 进入发送前统一经过 `sanitizeMetadata` 处理（脱敏、结构标准化）。
+
+## 4.3 调用示例
+
+最小示例（快速接入）：
+
+```json
+{
+  "sourceService": "springboot_backend",
+  "title": "系统通知",
+  "content": "服务启动完成"
+}
+```
+
+完整示例（推荐生产）：
 
 ```json
 {
@@ -56,43 +120,31 @@
 }
 ```
 
-## 4.2 字段定义
+## 4.4 metadata 展示规则
 
-| 字段 | 必填 | 类型 | 说明 |
-|---|---|---|---|
-| `eventId` | 否 | string | 建议传。用于幂等键（`sourceService + eventId`）。超过 64 会被截断。 |
-| `sourceService` | 是 | enum string | 调用方服务标识：`springboot_backend` \| `python_backend` \| `frontend` \| `humanizer` |
-| `scene` | 否 | string | 业务场景，建议 `domain.action`，如 `payment.success` |
-| `title` | 是 | string | 标题，1-80 字符 |
-| `content` | 是 | string | 正文，1-2000 字符；发送到钉钉时会截断到 1000 字符 |
-| `level` | 否 | enum string | `info` \| `warn` \| `error` \| `critical`，默认 `info` |
-| `contentType` | 否 | enum string | `text` \| `markdown`，默认 `markdown` |
-| `env` | 否 | enum string | `local` \| `test` \| `online`，默认 `notify.default-env`（默认 `online`） |
-| `timestamp` | 否 | string | 建议 ISO-8601；未传时服务端自动填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8） |
-| `metadata` | 否 | object | 值类型仅允许 `string/number/boolean` |
-
-## 4.3 metadata 展示规则（重要）
-
-- 请求可带 `metadata`，但钉钉展示只保留白名单键：
-  - `scene`, `env`, `bizType`, `orderId`, `taskId`, `errorCode`, `operator`, `userId`, `paymentId`, `runId`, `service`, `module`
-- 非白名单键不会展示到钉钉消息（会被忽略）。
+- 请求可带任意业务 `metadata` 字段，不按白名单丢弃 key。
+- `metadata` 仍统一经过 `sanitizeMetadata`，用于标准化输出与后续治理扩展。
+- 代码中会保留注释说明：后续可在 `sanitizeMetadata` 位置引入白名单过滤策略。
+- 敏感键（如 `phone/mobile/email/token/secret/password/accesskey`）仍按脱敏规则处理。
 
 ## 5. 响应规范
 
-## 5.1 统一响应结构
+## 5.1 统一响应模板
 
 ```json
 {
   "meta": {
-    "statusCode": 0,
-    "statusMsg": "success",
-    "traceId": "trace_xxx"
+    "statusCode": "<number, 0 表示成功>",
+    "statusMsg": "<string>",
+    "traceId": "<string, 服务端生成，用于排障>"
   },
-  "data": {}
+  "data": {
+    "...": "..."
+  }
 }
 ```
 
-## 5.2 成功示例
+## 5.2 成功响应示例
 
 ```json
 {
@@ -115,7 +167,7 @@
 }
 ```
 
-## 5.3 失败示例（token 错误）
+## 5.3 失败响应示例（token 错误）
 
 ```json
 {
@@ -142,24 +194,21 @@
 }
 ```
 
-## 5.4 状态与错误码
+## 5.4 枚举字段与错误码
 
-### `data.status`
+### 5.4.1 请求体枚举
 
-- `sent`：已发送到钉钉
-- `deduplicated`：命中幂等窗口，未重复发送
-- `rejected`：请求被拒绝（鉴权/校验/限流）
-- `failed`：下游失败（如钉钉调用失败）
+1. `sourceService`：`springboot_backend` | `python_backend` | `frontend` | `humanizer`
+2. `level`：`info` | `warn` | `error` | `critical`
+3. `contentType`：`text` | `markdown`
+4. `env`：`local` | `test` | `online`
 
-### `data.error.type`
+### 5.4.2 响应体枚举
 
-- `VALIDATION_ERROR`
-- `AUTH_ERROR`
-- `RATE_LIMIT`
-- `DUPLICATE_EVENT`
-- `DOWNSTREAM_ERROR`
+1. `data.status`：`sent` | `deduplicated` | `rejected` | `failed`
+2. `data.error.type`：`VALIDATION_ERROR` | `AUTH_ERROR` | `RATE_LIMIT` | `DUPLICATE_EVENT` | `DOWNSTREAM_ERROR`
 
-### `meta.statusCode`
+### 5.4.3 `meta.statusCode`
 
 - `0`：成功
 - `4000`：参数校验失败
@@ -169,7 +218,7 @@
 - `4004`：枚举值非法
 - `5000`：下游失败或内部错误
 
-### HTTP 状态码说明
+### 5.4.4 HTTP 状态码说明
 
 - 调用方应始终解析响应体 `meta.statusCode`，不要只看 HTTP 状态码。
 - 典型判定：
@@ -228,7 +277,7 @@ curl -X POST "http://localhost:8080/api/v1/notify/events" \
   }'
 ```
 
-## 8. 对接检查清单（服务负责人）
+## 8. 对接检查清单
 
 - [ ] 已拿到本环境 `X-Notify-Token`
 - [ ] `sourceService` 使用合法枚举值

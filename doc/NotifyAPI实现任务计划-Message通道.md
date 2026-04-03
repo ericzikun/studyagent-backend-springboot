@@ -13,6 +13,12 @@
 - [x] M3：完成鉴权/幂等/限流（具备基础治理能力）
 - [ ] M4：完成三环境接入（local/test/online）与回归验收
 
+## 0.1 策略变更记录（2026-04-03）
+
+- metadata 能力从“值类型受限 + 展示白名单”调整为“支持复杂值类型 + 暂不启用白名单”
+- 变更目标：满足业务方大字段/复杂结构透传需求，同时保留 `sanitizeMetadata` 作为统一治理入口
+- 本文后续新增的未勾选任务为本次策略调整待实现项
+
 ## 1. 实现前准备
 
 - [x] 1.1 确认最终接口路径：`POST /api/v1/notify/events`
@@ -44,10 +50,12 @@
 - [x] 3.4 实现 `level` 枚举值校验：`info|warn|error|critical`
 - [x] 3.5 实现 `contentType` 枚举值校验：`text|markdown`
 - [x] 3.6 实现 `env` 枚举值校验：`local|test|online`
-- [x] 3.7 为 `metadata` 限定值类型（string/number/boolean）并处理非法结构
+- [x] 3.7（旧策略）为 `metadata` 限定值类型（string/number/boolean）并处理非法结构
 - [x] 3.8 在响应 DTO 中定义 `status` 枚举：`sent|deduplicated|rejected|failed`
 - [x] 3.9 在响应 DTO 中定义 `error.type` 枚举：`VALIDATION_ERROR|AUTH_ERROR|RATE_LIMIT|DUPLICATE_EVENT|DOWNSTREAM_ERROR`
 - [x] 3.10 打通错误码映射：`4000/4001/4002/4003/4004/5000`
+- [x] 3.11（新策略）放开 `metadata` value 类型，支持复杂 JSON（object/array/string/number/boolean/null）
+- [x] 3.12（新策略）更新参数校验逻辑：仅拒绝不可序列化/非法结构，不再按基础类型硬限制
 
 ## 4. Web 层接入
 
@@ -91,10 +99,12 @@
 - [x] 8.4 实现统一消息模板：标题 + 服务 + 时间 + 内容 + metadata 摘要
 - [x] 8.5 对 `critical/error` 在标题前增加显式级别标识
 - [x] 8.6 对 `content` 增加长度截断（如 1000）
-- [x] 8.7 对 `metadata` 实现展示白名单与敏感键脱敏
+- [x] 8.7（旧策略）对 `metadata` 实现展示白名单与敏感键脱敏
 - [x] 8.8 解析钉钉返回值，成功置 `status=sent`
 - [x] 8.9 钉钉失败时返回 `5000`，`status=failed`，`error.type=DOWNSTREAM_ERROR`
 - [x] 8.10 记录 `deliveryId`（可用时间戳+哈希生成）
+- [x] 8.11（新策略）保留 `sanitizeMetadata`，当前阶段不按 key 白名单过滤
+- [x] 8.12（新策略）在 `sanitizeMetadata` 增加注释：后续可按治理需求引入白名单过滤
 
 ## 9. 三环境配置接入（复用监控看板 secret 文件）
 
@@ -134,6 +144,8 @@
 - [x] 11.2.4 限流测试：按 `sourceService` 维度触发阈值
 - [x] 11.2.5 钉钉消息构建测试：text/markdown、level 标识、截断逻辑
 - [x] 11.2.6 配置读取测试：config-file 正常加载与缺失失败
+- [x] 11.2.7（新策略）metadata 复杂类型测试：object/array/nested 结构可通过并稳定展示
+- [x] 11.2.8（新策略）metadata 无白名单过滤测试：自定义 key 不被静默丢弃（仍保留敏感键脱敏）
 
 ### 11.3 集成测试（本地联调）
 

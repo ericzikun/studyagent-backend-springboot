@@ -1,5 +1,10 @@
 # Notify API 实现方案（Message 通道）
 
+> metadata 策略更新（2026-04-03，已实现）：
+> 1) 已放开 `metadata` value 类型限制，支持复杂 JSON 结构（object/array 等）。  
+> 2) 保留 `sanitizeMetadata` 统一处理流程。  
+> 3) 当前不启用 key 白名单过滤，后续可在 `sanitizeMetadata` 位置按治理需要扩展。
+
 ## 1. 背景与目标
 
 当前监控链路 `Prometheus -> Alertmanager -> webhook-dingtalk -> DingTalk` 主要用于时序指标告警（宕机、资源、成功率/失败率阈值）。
@@ -86,7 +91,7 @@ DingTalk Client
   "env": "<enum, optional, local|test|online，默认取 notify.default-env>",
   "timestamp": "<string, optional, ISO-8601 格式>",
   "metadata": {
-    "<key:string>": "<value:string|number|boolean>"
+    "<key:string>": "<value:any-json>"
   }
 }
 ```
@@ -113,7 +118,9 @@ DingTalk Client
 9. `timestamp`
    - 可选；推荐 ISO-8601，未传则服务端填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8）。
 10. `metadata`
-   - 可选；通用业务扩展字段，值类型限制为 `string/number/boolean`。
+   - 可选；通用业务扩展字段。
+   - 支持复杂 JSON 值类型（`object/array/string/number/boolean/null`）。
+   - 请求进入发送前统一经过 `sanitizeMetadata` 处理。
 
 #### 5.3.3 调用示例
 
@@ -271,7 +278,7 @@ DingTalk Client
 
 1. 所有级别都在标题前加显式中文标识，方便群内快速识别。
 2. `content` 建议截断上限（如 1000 字符），避免超长失败。
-3. `metadata` 支持关键字段中文化展示（如 `scene/env/operator`），并只展示白名单字段，避免敏感信息透传。
+3. `metadata` 统一经 `sanitizeMetadata` 输出；当前不启用白名单过滤，后续可在该位置按治理需要引入白名单。
 
 ## 7. 安全与治理（最小版本）
 
@@ -423,6 +430,7 @@ services:
 6. 任一枚举字段非法（`sourceService/level/contentType/env`）触发 `4004`。
 7. 钉钉返回失败时，接口正确返回并记录错误。
 8. 所有响应都包含 `meta.traceId`，失败响应包含 `data.error.retryable`。
+9. `metadata` 支持复杂 JSON 值类型，并在 `sanitizeMetadata` 后可稳定展示（无白名单丢弃）。
 
 ## 12. 分阶段上线建议
 

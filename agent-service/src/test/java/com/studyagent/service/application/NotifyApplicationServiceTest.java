@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -132,20 +133,86 @@ class NotifyApplicationServiceTest {
     }
 
     @Test
-    void shouldRejectWhenMetadataTypeInvalid() {
+    void shouldAllowComplexMetadataAndKeepCustomKeys() {
+        NotifyConfig config = new NotifyConfig();
+        config.setEnabled(true);
+        config.setApiToken("notify-token");
+
+        AtomicReference<NotifyMessage> captured = new AtomicReference<>();
+        NotifySender sender = message -> {
+            captured.set(message);
+            return NotifySendResult.builder().success(true).deliveryId("dt_test_metadata").build();
+        };
+        NotifyApplicationService metadataService = new NotifyApplicationService(config, sender);
+
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("taskId", "task_9527");
-        metadata.put("nested", Map.of("k", "v"));
+        metadata.put("customPayload", Map.of("k", "v", "count", 2));
+        metadata.put("customArray", List.of(Map.of("name", "alpha"), "plain", 7));
 
         NotifyDispatchRequest request = baseRequest().toBuilder()
+                .eventId("evt_metadata_complex")
                 .metadata(metadata)
                 .build();
 
-        NotifyDispatchResult result = service.dispatch(request, "notify-token");
+        NotifyDispatchResult result = metadataService.dispatch(request, "notify-token");
 
-        assertThat(result.getCode()).isEqualTo(4000);
-        assertThat(result.getData().getStatus()).isEqualTo("rejected");
-        assertThat(result.getData().getError().getType()).isEqualTo("VALIDATION_ERROR");
+        assertThat(result.getCode()).isEqualTo(0);
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().getMetadata())
+                .containsEntry("taskId", "task_9527")
+                .containsKey("customPayload")
+                .containsKey("customArray");
+        assertThat(captured.get().getMetadata().get("customPayload")).isInstanceOf(Map.class);
+        assertThat(captured.get().getMetadata().get("customArray")).isInstanceOf(List.class);
+    }
+
+    @Test
+    void shouldMaskSensitiveMetadataKeysWithoutWhitelistFiltering() {
+        NotifyConfig config = new NotifyConfig();
+        config.setEnabled(true);
+        config.setApiToken("notify-token");
+
+        AtomicReference<NotifyMessage> captured = new AtomicReference<>();
+        NotifySender sender = message -> {
+            captured.set(message);
+            return NotifySendResult.builder().success(true).deliveryId("dt_test_mask").build();
+        };
+        NotifyApplicationService metadataService = new NotifyApplicationService(config, sender);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("apiToken", "secret-token-value");
+        metadata.put("customInfo", "keep-me");
+        metadata.put("profile", Map.of("email", "u@example.com", "region", "cn"));
+        metadata.put("items", List.of(Map.of("phone", "13800000000", "ok", true)));
+
+        NotifyDispatchRequest request = baseRequest().toBuilder()
+                .eventId("evt_metadata_mask")
+                .metadata(metadata)
+                .build();
+
+        NotifyDispatchResult result = metadataService.dispatch(request, "notify-token");
+
+        assertThat(result.getCode()).isEqualTo(0);
+        assertThat(captured.get()).isNotNull();
+
+        Map<String, Object> sanitized = captured.get().getMetadata();
+        assertThat(sanitized.get("apiToken")).isEqualTo("***");
+        assertThat(sanitized.get("customInfo")).isEqualTo("keep-me");
+        assertThat(sanitized).containsKey("profile").containsKey("items");
+
+        assertThat(sanitized.get("profile")).isInstanceOf(Map.class);
+        Map<?, ?> profile = (Map<?, ?>) sanitized.get("profile");
+        assertThat(profile.get("email")).isEqualTo("***");
+        assertThat(profile.get("region")).isEqualTo("cn");
+
+        assertThat(sanitized.get("items")).isInstanceOf(List.class);
+        List<?> items = (List<?>) sanitized.get("items");
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0)).isInstanceOf(Map.class);
+        Map<?, ?> item0 = (Map<?, ?>) items.get(0);
+        assertThat(item0.get("phone")).isEqualTo("***");
+        assertThat(item0.get("ok")).isEqualTo(true);
     }
 
     @Test

@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -31,10 +33,6 @@ public class NotifyApplicationService {
     private static final Set<String> LEVEL_SET = Set.of("info", "warn", "error", "critical");
     private static final Set<String> CONTENT_TYPE_SET = Set.of("text", "markdown");
     private static final Set<String> ENV_SET = Set.of("local", "test", "online");
-    private static final Set<String> METADATA_WHITELIST = Set.of(
-            "scene", "env", "bizType", "orderId", "taskId", "errorCode", "operator", "userId", "paymentId", "runId", "service", "module"
-    );
-
     private static final int TITLE_MAX_LENGTH = 80;
     private static final int CONTENT_MAX_LENGTH = 2000;
     private static final int SEND_CONTENT_MAX_LENGTH = 1000;
@@ -195,12 +193,6 @@ public class NotifyApplicationService {
         if (metadata == null || metadata.isEmpty()) {
             return Map.of();
         }
-        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
-            Object value = entry.getValue();
-            if (!(value instanceof String) && !(value instanceof Number) && !(value instanceof Boolean)) {
-                throw new NotifyValidationException(4000, "invalid request", "metadata value type is invalid", "VALIDATION_ERROR");
-            }
-        }
         return metadata;
     }
 
@@ -215,17 +207,54 @@ public class NotifyApplicationService {
 
         for (Map.Entry<String, Object> entry : metadata.entrySet()) {
             String key = safeTrim(entry.getKey());
-            if (StringUtils.isBlank(key) || !METADATA_WHITELIST.contains(key)) {
+            if (StringUtils.isBlank(key)) {
                 continue;
             }
-            Object value = entry.getValue();
-            if (isSensitiveKey(key)) {
-                output.put(key, "***");
-            } else {
-                output.put(key, value);
-            }
+            // Intentionally keep all metadata keys for now.
+            // Future governance can introduce key-level whitelist filtering here if needed.
+            output.put(key, sanitizeMetadataValue(key, entry.getValue()));
         }
         return output;
+    }
+
+    private Object sanitizeMetadataValue(String key, Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        if (isSensitiveKey(key)) {
+            return "***";
+        }
+
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                String childKey = safeTrim(String.valueOf(entry.getKey()));
+                if (StringUtils.isBlank(childKey)) {
+                    continue;
+                }
+                sanitized.put(childKey, sanitizeMetadataValue(childKey, entry.getValue()));
+            }
+            return sanitized;
+        }
+
+        if (value instanceof Iterable<?> iterableValue) {
+            List<Object> sanitized = new ArrayList<>();
+            for (Object item : iterableValue) {
+                sanitized.add(sanitizeMetadataValue("", item));
+            }
+            return sanitized;
+        }
+
+        if (value.getClass().isArray() && value instanceof Object[] arrayValue) {
+            List<Object> sanitized = new ArrayList<>(arrayValue.length);
+            for (Object item : arrayValue) {
+                sanitized.add(sanitizeMetadataValue("", item));
+            }
+            return sanitized;
+        }
+
+        return value;
     }
 
     private boolean isSensitiveKey(String key) {

@@ -13,6 +13,7 @@ import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.studyagent.infra.service.QuotaRechargeService;
+import com.studyagent.api.service.robot.RobotNotifyAsyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ public class WebhookController {
 
     private final QuotaRechargeService quotaRechargeService;
     private final AnalyticsService analyticsService;
+    private final RobotNotifyAsyncService robotNotifyAsyncService;
 
     @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
@@ -58,21 +60,28 @@ public class WebhookController {
             if ("checkout.session.completed".equals(event.getType())) {
                 Session session = resolveSession(event);
                 if (session != null) {
-                    handleCheckoutSessionCompleted(session);
+                    handleCheckoutSessionCompleted(session, event.getId());
                 } else {
                     log.error("无法解析 checkout.session，event_id={}", event.getId());
+                }
+            } else if ("checkout.session.expired".equals(event.getType())) {
+                Session session = resolveSession(event);
+                if (session != null) {
+                    handleCheckoutSessionExpired(session, event.getId());
+                } else {
+                    log.error("无法解析 checkout.session.expired，event_id={}", event.getId());
                 }
             } else if ("charge.failed".equals(event.getType())) {
                 Charge charge = resolveCharge(event);
                 if (charge != null) {
-                    handleChargeFailed(charge);
+                    handleChargeFailed(charge, event.getType());
                 } else {
                     log.error("无法解析 charge，event_id={}", event.getId());
                 }
             } else if ("payment_intent.payment_failed".equals(event.getType())) {
                 PaymentIntent paymentIntent = resolvePaymentIntent(event);
                 if (paymentIntent != null) {
-                    handlePaymentIntentFailed(paymentIntent);
+                    handlePaymentIntentFailed(paymentIntent, event.getType());
                 } else {
                     log.error("无法解析 payment_intent，event_id={}", event.getId());
                 }
@@ -157,7 +166,7 @@ public class WebhookController {
         }
     }
 
-    private void handleCheckoutSessionCompleted(Session session) {
+    private void handleCheckoutSessionCompleted(Session session, String stripeEventId) {
         Map<String, String> metadata = session.getMetadata();
         String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
         String packageType = metadata != null ? metadata.get("package_type") : null;
@@ -230,6 +239,19 @@ public class WebhookController {
                 rechargeProps.put("price_cents", priceCents);
                 rechargeProps.put("currency", currency);
                 analyticsService.capture(clerkUserId, AnalyticsEvents.RECHARGE_SUCCESS, rechargeProps);
+
+                robotNotifyAsyncService.notifyPaymentSucceeded(
+                        stripeEventId,
+                        session.getId(),
+                        clerkUserId,
+                        featureCode,
+                        packageType != null ? packageType : "unknown",
+                        quotaAmount,
+                        priceCents,
+                        currency,
+                        customerEmail,
+                        paymentIntentId
+                );
             }
         } else {
             log.warn("支付回调跳过充值: clerk_user_id 为空或 quota_amount 无效");
@@ -237,10 +259,48 @@ public class WebhookController {
     }
 
     /**
+     * Checkout 会话过期（用户未完成支付即关闭/超时），对应需求「退出付款」
+     */
+    private void handleCheckoutSessionExpired(Session session, String stripeEventId) {
+        Map<String, String> metadata = session.getMetadata();
+        String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
+        String packageType = metadata != null ? metadata.get("package_type") : null;
+        String creditsStr = metadata != null ? metadata.get("credits") : null;
+        String featureCode = metadata != null ? metadata.get("feature_code") : null;
+        if (featureCode == null || featureCode.isEmpty()) {
+            featureCode = FeatureCode.TASK_CREATE.getCode();
+        }
+        long quotaAmount = 0L;
+        try {
+            quotaAmount = creditsStr != null && !creditsStr.isEmpty() ? Long.parseLong(creditsStr) : 0L;
+        } catch (NumberFormatException ignored) {
+        }
+        if (quotaAmount <= 0 && packageType != null) {
+            Long fromPackage = quotaRechargeService.getQuotaAmountFromPackage(featureCode, packageType);
+            if (fromPackage != null) {
+                quotaAmount = fromPackage;
+            }
+        }
+        int priceCents = session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0;
+        String currency = session.getCurrency() != null ? session.getCurrency() : "usd";
+
+        robotNotifyAsyncService.notifyCheckoutExpired(
+                stripeEventId,
+                session.getId(),
+                clerkUserId != null ? clerkUserId : "",
+                featureCode,
+                packageType != null ? packageType : "unknown",
+                quotaAmount,
+                priceCents,
+                currency
+        );
+    }
+
+    /**
      * 处理 charge.failed 事件（Stripe 实际发送的支付失败事件）
      * Charge 有 failure_code、failure_message，但 metadata 为空，需通过 payment_intent 拉取 PaymentIntent 获取用户信息
      */
-    private void handleChargeFailed(Charge charge) {
+    private void handleChargeFailed(Charge charge, String stripeEventType) {
         String paymentIntentId = getPaymentIntentId(charge);
         if (paymentIntentId == null || paymentIntentId.isEmpty()) {
             log.warn("charge.failed 无 payment_intent，跳过");
@@ -293,7 +353,7 @@ public class WebhookController {
         log.info("支付失败(charge.failed)！Charge ID: {}, PaymentIntent: {}, 用户: {}, 套餐: {}, 原因: {}",
                 charge.getId(), paymentIntentId, clerkUserId, packageType, failureReason);
 
-        quotaRechargeService.processPaymentFailed(
+        boolean recorded = quotaRechargeService.processPaymentFailed(
                 clerkUserId != null ? clerkUserId : "",
                 featureCode,
                 packageType != null ? packageType : "unknown",
@@ -303,6 +363,20 @@ public class WebhookController {
                 paymentIntentId,
                 failureReason
         );
+        if (recorded) {
+            robotNotifyAsyncService.notifyPaymentFailed(
+                    "payment_failed_" + paymentIntentId,
+                    clerkUserId != null ? clerkUserId : "",
+                    featureCode,
+                    packageType != null ? packageType : "unknown",
+                    quotaAmount,
+                    priceCents,
+                    currency,
+                    paymentIntentId,
+                    failureReason,
+                    stripeEventType
+            );
+        }
     }
 
     private static String getPaymentIntentId(Charge charge) {
@@ -319,7 +393,7 @@ public class WebhookController {
         return "Payment failed";
     }
 
-    private void handlePaymentIntentFailed(PaymentIntent paymentIntent) {
+    private void handlePaymentIntentFailed(PaymentIntent paymentIntent, String stripeEventType) {
         String failureReason = "Payment failed";
         try {
             Object lastError = paymentIntent.getLastPaymentError();
@@ -367,7 +441,7 @@ public class WebhookController {
         log.info("支付失败！PaymentIntent ID: {}, 用户: {}, 套餐: {}, 原因: {}",
                 paymentIntentId, clerkUserId, packageType, failureReason);
 
-        quotaRechargeService.processPaymentFailed(
+        boolean recorded = quotaRechargeService.processPaymentFailed(
                 clerkUserId,
                 featureCode,
                 packageType != null ? packageType : "unknown",
@@ -377,6 +451,20 @@ public class WebhookController {
                 paymentIntentId,
                 failureReason
         );
+        if (recorded) {
+            robotNotifyAsyncService.notifyPaymentFailed(
+                    "payment_failed_" + paymentIntentId,
+                    clerkUserId != null ? clerkUserId : "",
+                    featureCode,
+                    packageType != null ? packageType : "unknown",
+                    quotaAmount,
+                    priceCents,
+                    currency,
+                    paymentIntentId,
+                    failureReason,
+                    stripeEventType
+            );
+        }
     }
 }
 

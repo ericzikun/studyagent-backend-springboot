@@ -127,4 +127,23 @@ public class AsyncConfig {
         
         return executor;
     }
+
+    /**
+     * 钉钉 / Notify 机器人推送（与主业务隔离，小队列即可）
+     */
+    @Bean("robotNotifyExecutor")
+    public Executor robotNotifyExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(500);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("robot-notify-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        log.info("Robot notify 线程池已初始化");
+        return executor;
+    }
 }

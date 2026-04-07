@@ -181,13 +181,15 @@ public class RobotNotifyAsyncService {
                 return;
             }
 
+            Long subjectNumericId = parseFeedbackSubjectId(session.getSubjectId());
+
             String featureLabel;
             String titlePrefix;
             if ("task".equals(session.getSubjectType())) {
                 featureLabel = "Assignment";
                 titlePrefix = "Assignment 用户反馈";
             } else if ("humanizer_task".equals(session.getSubjectType())) {
-                HumanizerTaskEntity ht0 = humanizerTaskMapper.selectById(Long.parseLong(session.getSubjectId()));
+                HumanizerTaskEntity ht0 = subjectNumericId != null ? humanizerTaskMapper.selectById(subjectNumericId) : null;
                 if (ht0 != null && "DETECT".equals(ht0.getTaskType())) {
                     featureLabel = "AI Detection";
                     titlePrefix = "AI Detection 用户反馈";
@@ -216,37 +218,49 @@ public class RobotNotifyAsyncService {
             sb.append("- **反馈时机**: ").append(feedbackTimingCn(session.getTriggerCode())).append("\n");
 
             if ("task".equals(session.getSubjectType())) {
-                long taskId = Long.parseLong(session.getSubjectId());
-                TaskEntity task = taskMapper.selectById(taskId);
-                if (task != null) {
-                    boolean oldUser = hasPriorCompletedTask(clerkUserId, taskId);
-                    sb.append("- **用户类型**: ").append(oldUser ? "老用户" : "新用户").append("\n");
-                    sb.append("- **任务链接**: ").append(editorLink(taskId)).append("\n");
-                    sb.append("- **上传文件**: ").append(formatTaskFileDistribution(taskId)).append("\n");
-                    sb.append("- **用户Query**: ").append(truncateWords(task.getTaskDesc(), 100)).append("\n");
-                    sb.append("- **Subject**: ").append(TaskFieldDisplay.subject(task.getSubject())).append("\n");
-                    sb.append("- **Academic Level**: ").append(TaskFieldDisplay.academicLevel(task.getAcademicLevel())).append("\n");
-                    sb.append("- **Citation**: ").append(TaskFieldDisplay.citationStyle(task.getCitationStyle())).append("\n");
-                    sb.append("- **Estimated Length**: ").append(TaskFieldDisplay.pageLength(task.getPageLength())).append("\n");
-                    sb.append("- **任务执行时长**: ").append(formatSecondsAsMmSs(task.getCostTime())).append("\n");
-                    sb.append("- **追问Q&A**: ").append(extractClarifyingSnippet(task.getRequirementJson())).append("\n");
+                if (subjectNumericId == null) {
+                    sb.append("- **任务**: subject_id 无法解析（非数字且非 Sqids）: ").append(nullToDash(session.getSubjectId())).append("\n");
+                } else {
+                    long taskId = subjectNumericId;
+                    TaskEntity task = taskMapper.selectById(taskId);
+                    if (task != null) {
+                        boolean oldUser = hasPriorCompletedTask(clerkUserId, taskId);
+                        sb.append("- **用户类型**: ").append(oldUser ? "老用户" : "新用户").append("\n");
+                        sb.append("- **任务链接**: ").append(editorLink(taskId)).append("\n");
+                        sb.append("- **上传文件**: ").append(formatTaskFileDistribution(taskId)).append("\n");
+                        sb.append("- **用户Query**: ").append(truncateWords(task.getTaskDesc(), 100)).append("\n");
+                        sb.append("- **Subject**: ").append(TaskFieldDisplay.subject(task.getSubject())).append("\n");
+                        sb.append("- **Academic Level**: ").append(TaskFieldDisplay.academicLevel(task.getAcademicLevel())).append("\n");
+                        sb.append("- **Citation**: ").append(TaskFieldDisplay.citationStyle(task.getCitationStyle())).append("\n");
+                        sb.append("- **Estimated Length**: ").append(TaskFieldDisplay.pageLength(task.getPageLength())).append("\n");
+                        sb.append("- **任务执行时长**: ").append(formatSecondsAsMmSs(task.getCostTime())).append("\n");
+                        sb.append("- **追问Q&A**: ").append(extractClarifyingSnippet(task.getRequirementJson())).append("\n");
+                    } else {
+                        sb.append("- **任务**: 未找到任务记录 id=").append(taskId).append("\n");
+                    }
                 }
             } else if ("humanizer_task".equals(session.getSubjectType())) {
-                long hid = Long.parseLong(session.getSubjectId());
-                HumanizerTaskEntity ht = humanizerTaskMapper.selectById(hid);
-                if (ht != null) {
-                    sb.append("- **任务链接**: ").append(humanizerPageNote(hid)).append("\n");
-                    if ("DETECT".equals(ht.getTaskType())) {
-                        sb.append("- **Detection 耗时**: ").append(ht.getElapsedSeconds() != null ? String.format(Locale.US, "%.0f 秒", ht.getElapsedSeconds()) : "—").append("\n");
-                        sb.append("- **Detection words**: ").append(ht.getTotalWords() != null ? ht.getTotalWords() : "—").append("\n");
-                        sb.append("- **AI 概率**: ").append(ht.getProbability() != null ? String.format(Locale.US, "%.2f%%", ht.getProbability() * 100) : "—").append("\n");
+                if (subjectNumericId == null) {
+                    sb.append("- **任务**: subject_id 无法解析: ").append(nullToDash(session.getSubjectId())).append("\n");
+                } else {
+                    long hid = subjectNumericId;
+                    HumanizerTaskEntity ht = humanizerTaskMapper.selectById(hid);
+                    if (ht != null) {
+                        sb.append("- **任务链接**: ").append(humanizerPageNote(hid)).append("\n");
+                        if ("DETECT".equals(ht.getTaskType())) {
+                            sb.append("- **Detection 耗时**: ").append(ht.getElapsedSeconds() != null ? String.format(Locale.US, "%.0f 秒", ht.getElapsedSeconds()) : "—").append("\n");
+                            sb.append("- **Detection words**: ").append(ht.getTotalWords() != null ? ht.getTotalWords() : "—").append("\n");
+                            sb.append("- **AI 概率**: ").append(ht.getProbability() != null ? String.format(Locale.US, "%.2f%%", ht.getProbability() * 100) : "—").append("\n");
+                        } else {
+                            sb.append("- **Humanizer 耗时**: ").append(ht.getElapsedSeconds() != null ? String.format(Locale.US, "%.0f 秒", ht.getElapsedSeconds()) : "—").append("\n");
+                            sb.append("- **Humanizer words**: ").append(ht.getTotalWords() != null ? ht.getTotalWords() : "—").append("\n");
+                        }
+                        sb.append("- **入口**: ").append(mapHumanizerSource(ht.getSource())).append("\n");
+                        boolean oldHu = hasPriorHumanizerCompleted(clerkUserId, hid, ht.getTaskType());
+                        sb.append("- **用户类型**: ").append(oldHu ? "老用户" : "新用户").append("\n");
                     } else {
-                        sb.append("- **Humanizer 耗时**: ").append(ht.getElapsedSeconds() != null ? String.format(Locale.US, "%.0f 秒", ht.getElapsedSeconds()) : "—").append("\n");
-                        sb.append("- **Humanizer words**: ").append(ht.getTotalWords() != null ? ht.getTotalWords() : "—").append("\n");
+                        sb.append("- **任务**: 未找到 humanizer 任务 id=").append(hid).append("\n");
                     }
-                    sb.append("- **入口**: ").append(mapHumanizerSource(ht.getSource())).append("\n");
-                    boolean oldHu = hasPriorHumanizerCompleted(clerkUserId, hid, ht.getTaskType());
-                    sb.append("- **用户类型**: ").append(oldHu ? "老用户" : "新用户").append("\n");
                 }
             }
 
@@ -600,6 +614,21 @@ public class RobotNotifyAsyncService {
 
     private static String nullToDash(String s) {
         return s == null || s.isEmpty() ? "—" : s;
+    }
+
+    /**
+     * 反馈会话 subject_id：历史为 DB 数字串；前端对外任务 id 为 Sqids 短码（与 {@link TaskIdEncoder} 一致）。
+     */
+    private static Long parseFeedbackSubjectId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return TaskIdEncoder.decode(s);
+        }
     }
 
     private static String featureDisplay(String featureCode) {

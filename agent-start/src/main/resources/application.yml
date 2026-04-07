@@ -158,6 +158,10 @@ notify:
     enabled: ${NOTIFY_RATE_LIMIT_ENABLED:true}
     per-service-per-minute: ${NOTIFY_RATE_LIMIT_PER_SERVICE_PER_MINUTE:60}
 
+# 前端站点根 URL（用于机器人推送中的任务链接，如 /editor/{taskId}）
+app:
+  public-site-url: ${PUBLIC_SITE_URL:http://101.251.176.55:13000}
+
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
   url: ${HUMANIZER_SERVICE_URL:http://localhost:9000}

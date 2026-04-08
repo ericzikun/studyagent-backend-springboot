@@ -4,17 +4,22 @@ import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.service.domain.user.ClerkClient;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 邮件通知服务
@@ -28,12 +33,11 @@ public class EmailNotificationService {
 
     private static final DateTimeFormatter COMPLETED_AT_FORMAT =
             DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH);
-
-    /**
-     * 邮件专用 logo（indigo 与字标/按钮统一），内嵌 data URI，不依赖前端 notification-icon.svg（前端仍为深蓝版）。
-     */
-    private static final String EMAIL_LOGO_DATA_URI =
-            "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwX3ZlcmxhKSI+PHBhdGggZD0iTTEwMCAxODBMMjAgNDBINTBMMTAwIDEzMEwxNTAgNDBIMTgwTDEwMCAxODBaIiBmaWxsPSIjNjM2NmYxIi8+PGNpcmNsZSBjeD0iMjAiIGN5PSI0MCIgcj0iMTIiIGZpbGw9IiM2MzY2ZjEiLz48Y2lyY2xlIGN4PSIxODAiIGN5PSI0MCIgcj0iMTIiIGZpbGw9IiM2MzY2ZjEiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxODAiIHI9IjEyIiBmaWxsPSIjNjM2NmYxIi8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iOTAiIHI9IjgiIGZpbGw9IiM4MThjZjgiLz48Y2lyY2xlIGN4PSI3MCIgY3k9IjYwIiByPSI2IiBmaWxsPSIjODE4Y2Y4Ii8+PGNpcmNsZSBjeD0iMTMwIiBjeT0iNjAiIHI9IjYiIGZpbGw9IiM4MThjZjgiLz48cGF0aCBkPSJNMTAwIDkwTDcwIDYwTTEwMCA5MEwxMzAgNjBNNzAgNjBMMjAgNDBNMTMwIDYwTDE4MCA0MCIgc3Ryb2tlPSIjODE4Y2Y4IiBzdHJva2Utd2lkdGg9IjQiLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJjbGlwMF92ZXJsYSI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IndoaXRlIi8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+";
+    private static final String DEFAULT_SUBJECT_TASK_TITLE = "Your Research";
+    private static final String BRAND_URL = "https://verla.io";
+    private static final int SUBJECT_TASK_TITLE_MAX_LENGTH = 100;
+    private static final String EMAIL_LOGO_CONTENT_ID = "verla-logo";
+    private static final String EMAIL_LOGO_RESOURCE_PATH = "email-assets/notification-icon.png.base64";
 
     private final ClerkClient clerkClient;
     private final WebClient webClient;
@@ -80,8 +84,8 @@ public class EmailNotificationService {
                 return;
             }
 
-            String taskTitle = task.getTaskTitle() != null ? task.getTaskTitle() : "Your Research";
-            String subject = "Task complete — " + taskTitle;
+            String taskTitle = task.getTaskTitle() != null ? task.getTaskTitle() : DEFAULT_SUBJECT_TASK_TITLE;
+            String subject = buildSubject(taskTitle);
             String completedAt = formatCompletedAt(task.getFinishTime());
             String viewUrl = frontendUrl + "/workflow?taskId=" + task.getId();
             String html = buildEmailHtml(taskTitle, completedAt, viewUrl);
@@ -101,6 +105,7 @@ public class EmailNotificationService {
         body.put("subject", subject);
         body.put("html", html);
         body.put("text", text);
+        body.put("attachments", List.of(buildInlineLogoAttachment()));
 
         webClient.post()
                 .uri("https://api.resend.com/emails")
@@ -116,6 +121,24 @@ public class EmailNotificationService {
                         error -> log.warn("邮件发送失败: taskId={}, to={}, error={}",
                                 taskId, to, error.getMessage())
                 );
+    }
+
+    private Map<String, Object> buildInlineLogoAttachment() {
+        return Map.of(
+                "filename", "notification-icon.png",
+                "content", loadInlineLogoBase64(),
+                "content_type", "image/png",
+                "content_id", EMAIL_LOGO_CONTENT_ID
+        );
+    }
+
+    private String loadInlineLogoBase64() {
+        try (var inputStream = new ClassPathResource(EMAIL_LOGO_RESOURCE_PATH).getInputStream()) {
+            return StreamUtils.copyToString(inputStream, StandardCharsets.UTF_8)
+                    .replaceAll("\\s+", "");
+        } catch (IOException e) {
+            throw new IllegalStateException("无法加载邮件 logo 资源: " + EMAIL_LOGO_RESOURCE_PATH, e);
+        }
     }
 
     private String buildPlainText(String taskTitle, String completedAt, String viewUrl) {
@@ -153,10 +176,12 @@ public class EmailNotificationService {
                               <table role="presentation" cellpadding="0" cellspacing="0">
                                 <tr>
                                   <td style="vertical-align:middle;padding-right:10px;">
-                                    <img src="%s" alt="" width="32" height="32" style="display:block;border:0;">
+                                    <a href="%s" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none;">
+                                      <img src="cid:%s" alt="Verla" width="32" height="32" style="display:block;border:0;">
+                                    </a>
                                   </td>
                                   <td style="vertical-align:middle;">
-                                    <span style="font-size:32px;font-weight:700;line-height:32px;color:#6366f1;letter-spacing:-0.02em;">Verla</span>
+                                    <a href="%s" target="_blank" rel="noopener noreferrer" style="font-size:32px;font-weight:700;line-height:32px;color:#6366f1;letter-spacing:-0.02em;text-decoration:none;">Verla</a>
                                   </td>
                                 </tr>
                               </table>
@@ -194,7 +219,7 @@ public class EmailNotificationService {
                           <tr>
                             <td style="padding:14px 24px 18px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:left;">
                               <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.55;">
-                                Automated message from <a href="https://verla.io" style="color:#6366f1;text-decoration:none;">Verla</a>.
+                                Automated message from <a href="%s" style="color:#6366f1;text-decoration:none;">Verla</a>.
                                 You received this because a task you submitted finished.
                               </p>
                             </td>
@@ -205,7 +230,28 @@ public class EmailNotificationService {
                   </table>
                 </body>
                 </html>
-                """.formatted(EMAIL_LOGO_DATA_URI, escapeHtml(taskTitle), escapeHtml(completedAt), viewUrl);
+                """.formatted(BRAND_URL, EMAIL_LOGO_CONTENT_ID, BRAND_URL, escapeHtml(taskTitle), escapeHtml(completedAt), viewUrl, BRAND_URL);
+    }
+
+    static String buildSubject(String taskTitle) {
+        String normalizedTitle = normalizeSubjectTitle(taskTitle);
+        if (normalizedTitle.length() > SUBJECT_TASK_TITLE_MAX_LENGTH) {
+            normalizedTitle = normalizedTitle.substring(0, SUBJECT_TASK_TITLE_MAX_LENGTH - 3) + "...";
+        }
+        return "Task complete — " + normalizedTitle;
+    }
+
+    private static String normalizeSubjectTitle(String taskTitle) {
+        String fallback = DEFAULT_SUBJECT_TASK_TITLE;
+        if (taskTitle == null || taskTitle.isBlank()) {
+            return fallback;
+        }
+        String normalized = taskTitle
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+                .replaceAll("\\s+", " ")
+                .trim();
+        return Objects.equals(normalized, "") ? fallback : normalized;
     }
 
     private static String formatCompletedAt(LocalDateTime finishTime) {

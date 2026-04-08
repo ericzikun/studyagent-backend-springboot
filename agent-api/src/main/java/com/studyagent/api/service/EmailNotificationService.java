@@ -1,5 +1,6 @@
 package com.studyagent.api.service;
 
+import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.service.domain.user.ClerkClient;
 
@@ -83,7 +84,8 @@ public class EmailNotificationService {
             String taskTitle = task.getTaskTitle() != null ? task.getTaskTitle() : "Your Research";
             String subject = "Task complete — " + taskTitle;
             String completedAt = formatCompletedAt(task.getFinishTime());
-            String viewUrl = frontendUrl + "/workflow?taskId=" + task.getId();
+            String encodedTaskId = TaskIdEncoder.encode(task.getId());
+            String viewUrl = frontendUrl + "/workflow?taskId=" + encodedTaskId;
             String html = buildEmailHtml(taskTitle, completedAt, viewUrl);
             String text = buildPlainText(taskTitle, completedAt, viewUrl);
 

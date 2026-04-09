@@ -35,6 +35,7 @@ public class NotifyController {
                 .eventId(request.getEventId())
                 .sourceService(request.getSourceService())
                 .scene(request.getScene())
+                .target(request.getTarget())
                 .title(request.getTitle())
                 .content(request.getContent())
                 .level(request.getLevel())

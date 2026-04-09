@@ -1,12 +1,17 @@
 # Notify API 接口文档
 
-更新时间：2026-04-03  
+更新时间：2026-04-09  
 接口版本：v1（Message 通道）
 
 > metadata 策略说明（当前实现）：
 > 1) `metadata` value 类型已放开，支持复杂 JSON 结构（object/array 等）。  
 > 2) 保留 `sanitizeMetadata` 统一处理流程。  
 > 3) 当前不启用 metadata key 白名单过滤；后续可在 `sanitizeMetadata` 位置按治理需要补充白名单逻辑。
+>
+> `target` 多群路由说明（本次改造）：  
+> 1) 请求体 `target` 为必填字段。  
+> 2) `target` 必须命中服务端配置 `targets.<key>`。  
+> 3) 生效前提：服务端发布包含 `target` 路由逻辑的新版本。
 
 ## 1. 适用范围
 
@@ -47,6 +52,7 @@
   "eventId": "<string, optional, 1-64，建议唯一，如 evt_20260402_10001>",
   "sourceService": "<enum, required, springboot_backend|python_backend|frontend|humanizer>",
   "scene": "<string, optional, 1-64，如 payment.success>",
+  "target": "<string, required, 路由键，如 default|payment|monitoring|feedback>",
   "title": "<string, required, 1-80>",
   "content": "<string, required, 1-2000>",
   "level": "<enum, optional, info|warn|error|critical，默认 info>",
@@ -68,21 +74,24 @@
    - 必填枚举：`springboot_backend`、`python_backend`、`frontend`、`humanizer`。
 3. `scene`
    - 可选；建议使用 `domain.action` 风格（如 `payment.success`、`task.failed`）。
-4. `title`
+4. `target`
+   - 必填；决定消息发往哪个钉钉机器人（即哪个 webhook）。
+   - 取值不写死在代码里，必须存在于服务端配置文件 `targets.<key>` 中。
+5. `title`
    - 必填；用于钉钉消息标题，长度 1-80。
-5. `content`
+6. `content`
    - 必填；正文长度 1-2000。
    - 发送到钉钉时会截断到 1000 字符，建议调用方控制内容长度。
-6. `level`
+7. `level`
    - 可选枚举：`info`、`warn`、`error`、`critical`；默认 `info`。
-7. `contentType`
+8. `contentType`
    - 可选枚举：`text`、`markdown`；默认 `markdown`。
-8. `env`
+9. `env`
    - 可选枚举：`local`、`test`、`online`。
    - 未传时默认取 `notify.default-env`（默认 `online`）。
-9. `timestamp`
+10. `timestamp`
    - 可选；推荐 ISO-8601，未传则服务端填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8）。
-10. `metadata`
+11. `metadata`
    - 可选；通用业务扩展字段。
    - 支持复杂 JSON 值类型（`object/array/string/number/boolean/null`）。
    - 进入发送前统一经过 `sanitizeMetadata` 处理（脱敏、结构标准化）。
@@ -94,6 +103,7 @@
 ```json
 {
   "sourceService": "springboot_backend",
+  "target": "default",
   "title": "系统通知",
   "content": "服务启动完成"
 }
@@ -106,6 +116,7 @@
   "eventId": "evt_20260402_10001",
   "sourceService": "springboot_backend",
   "scene": "payment.success",
+  "target": "payment",
   "title": "支付成功通知",
   "content": "用户 user_123 完成支付，金额 99 元",
   "level": "info",
@@ -126,6 +137,17 @@
 - `metadata` 仍统一经过 `sanitizeMetadata`，用于标准化输出与后续治理扩展。
 - 代码中会保留注释说明：后续可在 `sanitizeMetadata` 位置引入白名单过滤策略。
 - 敏感键（如 `phone/mobile/email/token/secret/password/accesskey`）仍按脱敏规则处理。
+
+## 4.5 target 路由规则（多群）
+
+1. 配置文件中可配置多个机器人：
+   - `targets.default`
+   - `targets.payment`
+   - `targets.monitoring`
+   - `targets.feedback`
+2. 请求体传 `target=<key>` 时，路由到 `targets.<key>`。
+3. 缺少 `target` 时，返回 `4000`（参数校验失败，不发送）。
+4. `target` 不存在时，返回 `4004`（不发送消息）。
 
 ## 5. 响应规范
 
@@ -202,6 +224,7 @@
 2. `level`：`info` | `warn` | `error` | `critical`
 3. `contentType`：`text` | `markdown`
 4. `env`：`local` | `test` | `online`
+5. `target`：配置型路由键（字符串，必填，需存在于 `targets.<key>`）
 
 ### 5.4.2 响应体枚举
 
@@ -215,7 +238,7 @@
 - `4001`：鉴权失败
 - `4002`：限流
 - `4003`：幂等去重命中
-- `4004`：枚举值非法
+- `4004`：枚举值非法或 `target` 路由不存在
 - `5000`：下游失败或内部错误
 
 ### 5.4.4 HTTP 状态码说明
@@ -266,6 +289,7 @@ curl -X POST "http://localhost:8080/api/v1/notify/events" \
     "eventId": "evt_20260402_local_001",
     "sourceService": "springboot_backend",
     "scene": "notify.local.test",
+    "target": "monitoring",
     "title": "Notify API本地联调",
     "content": "这是一条本地测试消息",
     "level": "info",
@@ -281,6 +305,7 @@ curl -X POST "http://localhost:8080/api/v1/notify/events" \
 
 - [ ] 已拿到本环境 `X-Notify-Token`
 - [ ] `sourceService` 使用合法枚举值
+- [ ] `target` 已在服务端 `targets.<key>` 配置存在
 - [ ] 生产场景已接入稳定 `eventId`（支持幂等重试）
 - [ ] 已按规范处理 `4001/4002/5000`
 - [ ] 已记录 `traceId` 用于排障

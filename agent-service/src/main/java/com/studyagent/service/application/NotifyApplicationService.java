@@ -33,6 +33,7 @@ public class NotifyApplicationService {
     private static final Set<String> LEVEL_SET = Set.of("info", "warn", "error", "critical");
     private static final Set<String> CONTENT_TYPE_SET = Set.of("text", "markdown");
     private static final Set<String> ENV_SET = Set.of("local", "test", "online");
+    private static final int TARGET_MAX_LENGTH = 64;
     private static final int TITLE_MAX_LENGTH = 80;
     private static final int CONTENT_MAX_LENGTH = 2000;
     private static final int SEND_CONTENT_MAX_LENGTH = 1000;
@@ -58,6 +59,7 @@ public class NotifyApplicationService {
         String eventId = normalizeEventId(request.getEventId());
         String sourceService = null;
         String scene = safeTrim(request.getScene());
+        String target = null;
         String level = null;
         String contentType = null;
         String env = null;
@@ -71,6 +73,7 @@ public class NotifyApplicationService {
             }
 
             sourceService = validateSourceService(request.getSourceService());
+            target = validateTarget(request.getTarget());
             level = validateEnumWithDefault(request.getLevel(), LEVEL_SET, "level", "info");
             contentType = validateEnumWithDefault(request.getContentType(), CONTENT_TYPE_SET, "contentType", "markdown");
             env = validateEnv(request.getEnv());
@@ -81,6 +84,13 @@ public class NotifyApplicationService {
             if (!StringUtils.equals(StringUtils.trimToEmpty(notifyToken), StringUtils.trimToEmpty(notifyConfig.getApiToken()))) {
                 return buildError(4001, "invalid notify token", eventId, sourceService, scene, level, contentType, env,
                         "rejected", "AUTH_ERROR", "X-Notify-Token is invalid", false);
+            }
+
+            // 发送前先校验 target route 是否存在，避免落到 infra 异常分支；
+            // 这样可以稳定返回业务语义错误码 4004。
+            if (!notifySender.supportsTarget(target)) {
+                return buildError(4004, "invalid enum value", eventId, sourceService, scene, level, contentType, env,
+                        "rejected", "VALIDATION_ERROR", "target is invalid", false);
             }
 
             RateLimitDecision rateLimitDecision = checkRateLimit(sourceService);
@@ -104,6 +114,7 @@ public class NotifyApplicationService {
                     .eventId(eventId)
                     .sourceService(sourceService)
                     .scene(scene)
+                    .target(target)
                     .title(title)
                     .content(truncateForSend(content))
                     .level(level)
@@ -133,8 +144,8 @@ public class NotifyApplicationService {
                     .error(null)
                     .build();
 
-            log.info("notify dispatch success: eventId={}, sourceService={}, scene={}, level={}, contentType={}, env={}, status=sent",
-                    eventId, sourceService, scene, level, contentType, env);
+            log.info("notify dispatch success: eventId={}, sourceService={}, scene={}, target={}, level={}, contentType={}, env={}, status=sent",
+                    eventId, sourceService, scene, target, level, contentType, env);
             return NotifyDispatchResult.builder()
                     .code(0)
                     .message("ok")
@@ -158,6 +169,18 @@ public class NotifyApplicationService {
         }
         if (!SOURCE_SERVICE_SET.contains(value)) {
             throw new NotifyValidationException(4004, "invalid enum value", "sourceService is invalid", "VALIDATION_ERROR");
+        }
+        return value;
+    }
+
+    private String validateTarget(String target) {
+        // target 是必填 routing key（例如 default/payment/monitoring）。
+        String value = safeLower(target);
+        if (StringUtils.isBlank(value)) {
+            throw new NotifyValidationException(4000, "invalid request", "target is required", "VALIDATION_ERROR");
+        }
+        if (value.length() > TARGET_MAX_LENGTH) {
+            throw new NotifyValidationException(4000, "invalid request", "target exceeds max length", "VALIDATION_ERROR");
         }
         return value;
     }
@@ -210,8 +233,8 @@ public class NotifyApplicationService {
             if (StringUtils.isBlank(key)) {
                 continue;
             }
-            // Intentionally keep all metadata keys for now.
-            // Future governance can introduce key-level whitelist filtering here if needed.
+            // 当前先保留所有 metadata key；
+            // 后续需要治理时，可在这里增加 key 白名单过滤。
             output.put(key, sanitizeMetadataValue(key, entry.getValue()));
         }
         return output;

@@ -23,6 +23,8 @@ import java.util.Map;
 public class DingTalkWebhookConfigLoader {
 
     private final NotifyConfig notifyConfig;
+    // 从外部 config file 加载的 route 缓存。
+    // 运行期不做 hot reload，修改 route 后需要重启服务生效。
     private volatile Map<String, DingTalkEndpoint> endpoints;
 
     @PostConstruct
@@ -42,6 +44,7 @@ public class DingTalkWebhookConfigLoader {
         Map<String, DingTalkEndpoint> current = getEndpoints();
         DingTalkEndpoint endpoint = current.get(normalizedTarget);
         if (endpoint == null) {
+            // 由上层转换成业务校验错误响应。
             throw new IllegalArgumentException("notify target route not found: " + normalizedTarget);
         }
         return endpoint;
@@ -59,6 +62,7 @@ public class DingTalkWebhookConfigLoader {
         }
         synchronized (this) {
             if (endpoints == null) {
+                // 兜底 lazy load：正常流程会在启动时 init() 完成加载。
                 endpoints = loadEndpointsOrThrow();
             }
             return endpoints;
@@ -125,6 +129,7 @@ public class DingTalkWebhookConfigLoader {
                 loadedTargets.put(key, new DingTalkEndpoint(url.trim(), StringUtils.trimToNull(secret)));
             }
 
+            // 保持与历史 single-route 实现兼容：必须存在 default。
             if (!loadedTargets.containsKey("default")) {
                 throw new IllegalStateException("invalid dingtalk config file: targets.default missing");
             }
@@ -136,6 +141,7 @@ public class DingTalkWebhookConfigLoader {
     }
 
     private String normalizeTargetKey(Object value) {
+        // 统一转为 lowercase，避免调用方大小写不一致导致 route 误判。
         return StringUtils.lowerCase(StringUtils.trimToNull(toNullableString(value)));
     }
 

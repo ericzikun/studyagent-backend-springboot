@@ -86,6 +86,8 @@ public class NotifyApplicationService {
                         "rejected", "AUTH_ERROR", "X-Notify-Token is invalid", false);
             }
 
+            // 发送前先校验 target route 是否存在，避免落到 infra 异常分支；
+            // 这样可以稳定返回业务语义错误码 4004。
             if (!notifySender.supportsTarget(target)) {
                 return buildError(4004, "invalid enum value", eventId, sourceService, scene, level, contentType, env,
                         "rejected", "VALIDATION_ERROR", "target is invalid", false);
@@ -172,6 +174,7 @@ public class NotifyApplicationService {
     }
 
     private String validateTarget(String target) {
+        // target 是必填 routing key（例如 default/payment/monitoring）。
         String value = safeLower(target);
         if (StringUtils.isBlank(value)) {
             throw new NotifyValidationException(4000, "invalid request", "target is required", "VALIDATION_ERROR");
@@ -230,8 +233,8 @@ public class NotifyApplicationService {
             if (StringUtils.isBlank(key)) {
                 continue;
             }
-            // Intentionally keep all metadata keys for now.
-            // Future governance can introduce key-level whitelist filtering here if needed.
+            // 当前先保留所有 metadata key；
+            // 后续需要治理时，可在这里增加 key 白名单过滤。
             output.put(key, sanitizeMetadataValue(key, entry.getValue()));
         }
         return output;

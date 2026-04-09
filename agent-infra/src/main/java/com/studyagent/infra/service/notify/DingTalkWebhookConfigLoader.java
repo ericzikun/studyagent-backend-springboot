@@ -14,6 +14,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -22,36 +23,63 @@ import java.util.Map;
 public class DingTalkWebhookConfigLoader {
 
     private final NotifyConfig notifyConfig;
-    private volatile DingTalkEndpoint endpoint;
+    private volatile Map<String, DingTalkEndpoint> endpoints;
 
     @PostConstruct
     public void init() {
         if (!notifyConfig.isEnabled()) {
             return;
         }
-        endpoint = loadEndpointOrThrow();
+        endpoints = loadEndpointsOrThrow();
     }
 
     public DingTalkEndpoint getDefaultEndpoint() {
-        DingTalkEndpoint current = endpoint;
+        return getEndpoint("default");
+    }
+
+    public DingTalkEndpoint getEndpoint(String target) {
+        String normalizedTarget = normalizeTarget(target);
+        Map<String, DingTalkEndpoint> current = getEndpoints();
+        DingTalkEndpoint endpoint = current.get(normalizedTarget);
+        if (endpoint == null) {
+            throw new IllegalArgumentException("notify target route not found: " + normalizedTarget);
+        }
+        return endpoint;
+    }
+
+    public boolean hasEndpoint(String target) {
+        String normalizedTarget = normalizeTarget(target);
+        return getEndpoints().containsKey(normalizedTarget);
+    }
+
+    private Map<String, DingTalkEndpoint> getEndpoints() {
+        Map<String, DingTalkEndpoint> current = endpoints;
         if (current != null) {
             return current;
         }
         synchronized (this) {
-            if (endpoint == null) {
-                endpoint = loadEndpointOrThrow();
+            if (endpoints == null) {
+                endpoints = loadEndpointsOrThrow();
             }
-            return endpoint;
+            return endpoints;
         }
     }
 
-    private DingTalkEndpoint loadEndpointOrThrow() {
+    private String normalizeTarget(String target) {
+        String value = StringUtils.lowerCase(StringUtils.trimToNull(target));
+        if (StringUtils.isBlank(value)) {
+            throw new IllegalArgumentException("notify target route not found: " + target);
+        }
+        return value;
+    }
+
+    private Map<String, DingTalkEndpoint> loadEndpointsOrThrow() {
         NotifyConfig.DingTalk dingTalk = notifyConfig.getDingtalk();
         String configFile = dingTalk == null ? null : dingTalk.getConfigFile();
 
         if (StringUtils.isNotBlank(configFile)) {
-            DingTalkEndpoint fromFile = loadFromFile(configFile.trim());
-            log.info("notify dingtalk config loaded from file: {}", configFile.trim());
+            Map<String, DingTalkEndpoint> fromFile = loadFromFile(configFile.trim());
+            log.info("notify dingtalk config loaded from file: {}, targetCount={}", configFile.trim(), fromFile.size());
             return fromFile;
         }
 
@@ -59,7 +87,7 @@ public class DingTalkWebhookConfigLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private DingTalkEndpoint loadFromFile(String configFile) {
+    private Map<String, DingTalkEndpoint> loadFromFile(String configFile) {
         Path path = Path.of(configFile);
         if (!Files.exists(path) || !Files.isReadable(path)) {
             throw new IllegalStateException("notify.dingtalk.config-file unreadable: " + configFile);
@@ -77,20 +105,38 @@ public class DingTalkWebhookConfigLoader {
                 throw new IllegalStateException("invalid dingtalk config file: targets missing");
             }
 
-            Object defaultObj = targetsMap.get("default");
-            if (!(defaultObj instanceof Map<?, ?> defaultMap)) {
+            Map<String, DingTalkEndpoint> loadedTargets = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : targetsMap.entrySet()) {
+                String key = normalizeTargetKey(entry.getKey());
+                if (StringUtils.isBlank(key)) {
+                    continue;
+                }
+
+                if (!(entry.getValue() instanceof Map<?, ?> targetMap)) {
+                    throw new IllegalStateException("invalid dingtalk config file: targets." + key + " invalid");
+                }
+
+                String url = toNullableString(targetMap.get("url"));
+                String secret = toNullableString(targetMap.get("secret"));
+                if (StringUtils.isBlank(url)) {
+                    throw new IllegalStateException("invalid dingtalk config file: targets." + key + ".url missing");
+                }
+
+                loadedTargets.put(key, new DingTalkEndpoint(url.trim(), StringUtils.trimToNull(secret)));
+            }
+
+            if (!loadedTargets.containsKey("default")) {
                 throw new IllegalStateException("invalid dingtalk config file: targets.default missing");
             }
 
-            String url = toNullableString(defaultMap.get("url"));
-            String secret = toNullableString(defaultMap.get("secret"));
-            if (StringUtils.isBlank(url)) {
-                throw new IllegalStateException("invalid dingtalk config file: targets.default.url missing");
-            }
-            return new DingTalkEndpoint(url.trim(), StringUtils.trimToNull(secret));
+            return Map.copyOf(loadedTargets);
         } catch (Exception ex) {
             throw new IllegalStateException("failed to load notify dingtalk config file: " + ex.getMessage(), ex);
         }
+    }
+
+    private String normalizeTargetKey(Object value) {
+        return StringUtils.lowerCase(StringUtils.trimToNull(toNullableString(value)));
     }
 
     private String toNullableString(Object value) {

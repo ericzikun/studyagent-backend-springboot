@@ -31,8 +31,13 @@ public class DingTalkNotifySender implements NotifySender {
     private final DingTalkWebhookConfigLoader configLoader;
 
     @Override
+    public boolean supportsTarget(String target) {
+        return configLoader.hasEndpoint(target);
+    }
+
+    @Override
     public NotifySendResult send(NotifyMessage message) {
-        DingTalkWebhookConfigLoader.DingTalkEndpoint endpoint = configLoader.getDefaultEndpoint();
+        DingTalkWebhookConfigLoader.DingTalkEndpoint endpoint = configLoader.getEndpoint(message.getTarget());
         String webhookUrl = buildSignedWebhookUrl(endpoint.getUrl(), endpoint.getSecret());
         Map<String, Object> payload = buildPayload(message);
 
@@ -46,7 +51,7 @@ public class DingTalkNotifySender implements NotifySender {
                     .block(Duration.ofSeconds(10));
 
             if (!isDingTalkSuccess(responseBody)) {
-                log.warn("dingtalk send rejected: response={}", responseBody);
+                log.warn("dingtalk send rejected: target={}, response={}", message.getTarget(), responseBody);
                 return NotifySendResult.builder()
                         .success(false)
                         .errorMessage("dingtalk api rejected message")
@@ -60,7 +65,7 @@ public class DingTalkNotifySender implements NotifySender {
                     .retryable(false)
                     .build();
         } catch (Exception ex) {
-            log.error("dingtalk send error: {}", ex.getMessage(), ex);
+            log.error("dingtalk send error: target={}, message={}", message.getTarget(), ex.getMessage(), ex);
             return NotifySendResult.builder()
                     .success(false)
                     .errorMessage(ex.getMessage())

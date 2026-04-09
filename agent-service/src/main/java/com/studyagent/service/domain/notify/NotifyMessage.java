@@ -16,6 +16,7 @@ public class NotifyMessage {
     private String eventId;
     private String sourceService;
     private String scene;
+    private String target;
     private String title;
     private String content;
     private String level;

@@ -1,6 +1,6 @@
 # Notify API 接口文档
 
-更新时间：2026-04-09  
+更新时间：2026-04-11  
 接口版本：v1（Message 通道）
 
 > metadata 策略说明（当前实现）：
@@ -43,6 +43,68 @@
 - `test/online`：由部署环境 docker_compose.yml注入位于同目录下 `.env` 的 `NOTIFY_API_TOKEN`
 - 禁止把真实 token 提交到 GitHub 仓库
 
+## 3.3 新增 target 路由（新增钉钉群时看这里）
+
+这一节是“新增群通知”的集中说明：你需要先在环境机器配置新机器人，再在请求体传对应 `target`。
+
+### 步骤 1：确定要新增的路由键
+
+- 例如要新增“用户反馈群”，可定义 `target=feedback`。
+- 命名建议：全小写、语义化、短词（如 `payment`、`monitoring`、`feedback`）。
+
+### 步骤 2：修改环境机器上的钉钉配置文件（仓库外文件）
+
+按环境修改对应机器上的 `dingtalk-webhook-config.yml`：
+
+- `local`：`$HOME/.studyagent-monitoring-secrets/local/dingtalk-webhook-config.yml`
+- `test`：`/etc/studyagent-monitoring-secrets/test/dingtalk-webhook-config.yml`
+- `online`：`/etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml`
+
+文件结构示例（新增 `feedback` 路由）：
+
+```yaml
+targets:
+  default:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+    secret: "SEC_xxx"
+  monitoring:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=yyy"
+    secret: "SEC_yyy"
+  feedback:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=zzz"
+    secret: "SEC_zzz"
+```
+
+### 步骤 3：确认服务读取的是这份配置
+
+- 通过环境变量 `NOTIFY_DINGTALK_CONFIG_FILE` 指向上面的文件路径。
+- `target` 是否可用，取决于该文件里是否存在 `targets.<target>`。
+- `test/online` 为 Docker 启动时，还需要在 `docker-compose.yml` 中保证：
+  - `environment` 里有 `NOTIFY_DINGTALK_CONFIG_FILE=<容器内路径>`
+  - `volumes` 里已把宿主机配置文件挂载到该容器内路径
+
+### 步骤 4：重启/发布服务后生效
+
+- Notify API 在启动时加载配置；修改 `dingtalk-webhook-config.yml` 后需重启服务。
+
+### 步骤 5：调用接口时传对应 target
+
+例如要发到上面的“用户反馈群”机器人：
+
+```json
+{
+  "sourceService": "springboot_backend",
+  "target": "feedback",
+  "title": "用户反馈通知",
+  "content": "用户提交了新的反馈工单"
+}
+```
+
+### 常见错误与返回码
+
+- 未传 `target`：`4000`（参数校验失败）
+- `target` 在配置中不存在：`4004`（路由不存在）
+
 ## 4. 请求规范
 
 ## 4.1 请求体（通用模板）
@@ -77,6 +139,7 @@
 4. `target`
    - 必填；决定消息发往哪个钉钉机器人（即哪个 webhook）。
    - 取值不写死在代码里，必须存在于服务端配置文件 `targets.<key>` 中。
+   - 新增路由的完整步骤见 `3.3 新增 target 路由（新增钉钉群时看这里）`。
 5. `title`
    - 必填；用于钉钉消息标题，长度 1-80。
 6. `content`
@@ -148,6 +211,8 @@
 2. 请求体传 `target=<key>` 时，路由到 `targets.<key>`。
 3. 缺少 `target` 时，返回 `4000`（参数校验失败，不发送）。
 4. `target` 不存在时，返回 `4004`（不发送消息）。
+
+说明：如果你是第一次新增群通知，优先按 `3.3` 的步骤操作，再回来看这里做规则核对。
 
 ## 5. 响应规范
 

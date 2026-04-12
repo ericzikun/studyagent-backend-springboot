@@ -1,0 +1,30 @@
+# 钉钉自定义机器人 Webhook 配置（多 target 路由）
+#
+# 使用方式：
+# 1. 复制本文件为 dingtalk-webhook-config.yml（与下方路径一致）
+# 2. 将 REPLACE_ME 替换为真实 access_token /加签密钥；不需要的 target 可整段删除，但须保留 default
+# 3. 设置环境变量：NOTIFY_DINGTALK_CONFIG_FILE=<本仓库>/config/dingtalk-webhook-config.yml
+# 4. notify.enabled=true 时启动会加载此文件；改配置后需重启
+#
+# target 名与 Notify API / 内部推送的 target 一致（小写）；机器人推送默认用 notify.default-target（一般为 default）
+
+targets:
+  # 默认群机器人（内部 RobotNotifyService 默认路由）
+  default:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_DEFAULT_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  # 可选：支付/订单类通知单独群
+  payment:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_PAYMENT_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  # 可选：监控/告警类（可与 Alertmanager 共用同一文件结构）
+  monitoring:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_MONITORING_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  # 可选：用户反馈等
+  feedback:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_FEEDBACK_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"

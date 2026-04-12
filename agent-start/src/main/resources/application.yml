@@ -153,6 +153,7 @@ notify:
   default-target: ${NOTIFY_DEFAULT_TARGET:default}
   default-env: ${NOTIFY_DEFAULT_ENV:online}
   dingtalk:
+    # 本地示例：复制仓库 config/dingtalk-webhook-config.example.yml 为 config/dingtalk-webhook-config.yml 后设置绝对路径
     config-file: ${NOTIFY_DINGTALK_CONFIG_FILE:}
   idempotency:
     enabled: ${NOTIFY_IDEMPOTENCY_ENABLED:true}

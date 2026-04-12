@@ -6,6 +6,7 @@ import com.studyagent.service.application.request.NotifyDispatchRequest;
 import com.studyagent.service.config.NotifyConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -31,10 +32,12 @@ public class RobotNotifyService {
             log.debug("robot notify skipped: notify api token empty");
             return;
         }
+        String target = StringUtils.defaultIfBlank(notifyConfig.getDefaultTarget(), "default");
         NotifyDispatchRequest req = NotifyDispatchRequest.builder()
                 .eventId(eventId)
                 .sourceService("springboot_backend")
                 .scene(scene)
+                .target(target)
                 .title(title)
                 .content(markdownContent)
                 .level("info")

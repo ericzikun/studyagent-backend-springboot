@@ -145,9 +145,12 @@ task:
     save-draft-idempotency-ttl-seconds: ${TASK_SAVE_DRAFT_IDEM_TTL:60}
 
 # Notify API（message 通道）
+# api-token 默认仅本地联调用；生产务必 NOTIFY_API_TOKEN 覆盖，勿提交真实 token
 notify:
   enabled: ${NOTIFY_ENABLED:false}
-  api-token: ${NOTIFY_API_TOKEN:}
+  api-token: ${NOTIFY_API_TOKEN:dev-local-notify-token}
+  # 机器人推送等内部调用未传 target 时使用，需与 dingtalk 配置 targets 下的 key 一致
+  default-target: ${NOTIFY_DEFAULT_TARGET:default}
   default-env: ${NOTIFY_DEFAULT_ENV:online}
   dingtalk:
     config-file: ${NOTIFY_DINGTALK_CONFIG_FILE:}
@@ -157,6 +160,16 @@ notify:
   rate-limit:
     enabled: ${NOTIFY_RATE_LIMIT_ENABLED:true}
     per-service-per-minute: ${NOTIFY_RATE_LIMIT_PER_SERVICE_PER_MINUTE:60}
+
+# 数据日报/周报（钉钉 Notify，仅统计 DB 可算指标）
+# manual-trigger-token 默认仅本地；测试接口 X-Report-Token；生产请 REPORT_TRIGGER_TOKEN 覆盖
+report:
+  scheduling-enabled: ${REPORT_SCHEDULING_ENABLED:true}
+  manual-trigger-token: ${REPORT_TRIGGER_TOKEN:dev-local-report-token}
+  title-prefix: ${REPORT_TITLE_PREFIX:Verla 数据}
+  # 北京时间；可覆盖默认值
+  daily-cron: ${REPORT_DAILY_CRON:0 0 12 * * ?}
+  weekly-cron: ${REPORT_WEEKLY_CRON:0 0 12 ? * SUN}
 
 # 前端站点根 URL（用于机器人推送中的任务链接，如 /editor/{taskId}）
 app:

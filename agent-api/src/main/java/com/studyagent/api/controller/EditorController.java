@@ -2,17 +2,22 @@ package com.studyagent.api.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.request.EditorExportPdfRequest;
+import com.studyagent.api.dto.request.EditorExportWordRequest;
 import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.api.dto.request.SaveEditorContentRequest;
+import com.studyagent.api.dto.response.EditorExportResponse;
 import com.studyagent.api.dto.response.GetEditorContentResponse;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.TaskOutputEntity;
 import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.mapper.TaskOutputMapper;
+import com.studyagent.service.application.EditorExportApplicationService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import com.google.gson.Gson;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +37,7 @@ public class EditorController {
     private final TaskOutputMapper taskOutputMapper;
     private final TaskMapper taskMapper;
     private final UserRepository userRepository;
+    private final EditorExportApplicationService editorExportApplicationService;
     private final Gson gson = new Gson();
     
     @GetMapping("/content/{taskId}")
@@ -142,6 +148,62 @@ public class EditorController {
         
         return Result.success(response);
     }
+
+    @PostMapping("/export/word")
+    public Result<EditorExportResponse> exportWord(
+            @Valid @RequestBody EditorExportWordRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        Result<?> permissionError = checkEditorPermission(internalTaskId, clerkUserId);
+        if (permissionError != null) {
+            return (Result<EditorExportResponse>) permissionError;
+        }
+
+        try {
+            var result = editorExportApplicationService.exportWord(request.getRawBody(), request.getFilename());
+            return Result.success(EditorExportResponse.builder()
+                    .objectId(result.objectId())
+                    .downloadUrl(result.downloadUrl())
+                    .filename(result.filename())
+                    .build());
+        } catch (IllegalArgumentException e) {
+            return Result.error(ApiCode.BAD_REQUEST, e.getMessage());
+        } catch (Exception e) {
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
+    @PostMapping("/export/pdf")
+    public Result<EditorExportResponse> exportPdf(
+            @Valid @RequestBody EditorExportPdfRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        Long internalTaskId = TaskIdEncoder.decode(request.getTaskId());
+        if (internalTaskId == null) {
+            return Result.error(ApiCode.TASK_NOT_FOUND);
+        }
+        Result<?> permissionError = checkEditorPermission(internalTaskId, clerkUserId);
+        if (permissionError != null) {
+            return (Result<EditorExportResponse>) permissionError;
+        }
+
+        try {
+            var result = editorExportApplicationService.convertWordToPdf(
+                    request.getSourceObjectId(),
+                    request.getFilename());
+            return Result.success(EditorExportResponse.builder()
+                    .objectId(result.objectId())
+                    .downloadUrl(result.downloadUrl())
+                    .filename(result.filename())
+                    .build());
+        } catch (IllegalArgumentException e) {
+            return Result.error(ApiCode.BAD_REQUEST, e.getMessage());
+        } catch (Exception e) {
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
+        }
+    }
     
     /**
      * 校验编辑器访问权限：管理员可访问任意任务，普通用户仅能访问自己的任务
@@ -164,4 +226,3 @@ public class EditorController {
         return null;
     }
 }
-

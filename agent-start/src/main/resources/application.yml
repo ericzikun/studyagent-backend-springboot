@@ -117,6 +117,12 @@ file:
     local-retention-days: ${FILE_LOCAL_RETENTION_DAYS:7}
     purge-cron: ${FILE_LOCAL_PURGE_CRON:0 0 3 * * ?}
 
+editor:
+  export:
+    temp-dir: ${EDITOR_EXPORT_TEMP_DIR:${java.io.tmpdir}/studyagent-editor-export}
+    pdf-command-template: "${EDITOR_EXPORT_PDF_COMMAND:soffice --headless --convert-to pdf --outdir {outdir} {input}}"
+    timeout-seconds: ${EDITOR_EXPORT_TIMEOUT_SECONDS:120}
+
 # 阿里云 OSS 配置
 aliyun:
   oss:

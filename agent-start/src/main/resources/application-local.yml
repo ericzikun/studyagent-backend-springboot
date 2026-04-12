@@ -1,10 +1,10 @@
 spring:
   datasource:
     # 本地环境配置
-    # 如果使用 Docker 启动 MySQL，端口可能是 13306
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:fzk971228}
+    # 本地开发通过 SSH 隧道连接测试库时，默认使用本机 13306 端口
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:13306}/${DB_NAME:studyagent}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:studyagent}
+    password: ${DB_PASSWORD:studyagent2024}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -37,6 +37,12 @@ file:
     base-path: ${FILE_STORAGE_PATH:../storage}
     upload-path: ${FILE_UPLOAD_PATH:../storage/uploads}
     output-path: ${FILE_OUTPUT_PATH:../storage/outputs}
+
+editor:
+  export:
+    temp-dir: ${EDITOR_EXPORT_TEMP_DIR:/Users/alf/.studyagent/editor-export}
+    pdf-command-template: "${EDITOR_EXPORT_PDF_COMMAND:docker run --rm -v {workdir}:/work local-libreoffice soffice --headless --convert-to pdf --outdir /work /work/{input_basename}}"
+    timeout-seconds: ${EDITOR_EXPORT_TIMEOUT_SECONDS:120}
 
 # 日志配置
 logging:

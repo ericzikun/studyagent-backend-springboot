@@ -151,6 +151,11 @@ notify:
   api-token: ${NOTIFY_API_TOKEN:dev-local-notify-token}
   # 机器人推送等内部调用未传 target 时使用，需与 dingtalk 配置 targets 下的 key 一致
   default-target: ${NOTIFY_DEFAULT_TARGET:default}
+  # 内部机器人按业务线路由（值 = dingtalk 配置文件里 targets 的 key；默认均为 default 即单群）
+  robot-target:
+    assignment: ${NOTIFY_ROBOT_TARGET_ASSIGNMENT:default}
+    feedback: ${NOTIFY_ROBOT_TARGET_FEEDBACK:default}
+    report: ${NOTIFY_ROBOT_TARGET_REPORT:default}
   default-env: ${NOTIFY_DEFAULT_ENV:online}
   dingtalk:
     # 本地示例：复制仓库 config/dingtalk-webhook-config.example.yml 为 config/dingtalk-webhook-config.yml 后设置绝对路径

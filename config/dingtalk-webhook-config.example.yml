@@ -1,30 +1,29 @@
 # 钉钉自定义机器人 Webhook 配置（多 target 路由）
 #
 # 使用方式：
-# 1. 复制本文件为 dingtalk-webhook-config.yml（与下方路径一致）
-# 2. 将 REPLACE_ME 替换为真实 access_token /加签密钥；不需要的 target 可整段删除，但须保留 default
-# 3. 设置环境变量：NOTIFY_DINGTALK_CONFIG_FILE=<本仓库>/config/dingtalk-webhook-config.yml
-# 4. notify.enabled=true 时启动会加载此文件；改配置后需重启
+# 1. 复制本文件为 dingtalk-webhook-config.yml 并填写真实 url/secret
+# 2. 至少保留 targets.default；多群时增加 assignment / feedback / report，与 application.yml 中 notify.robot-target 对齐
+# 3. NOTIFY_DINGTALK_CONFIG_FILE 指向本文件；notify.enabled=true；修改后需重启
 #
-# target 名与 Notify API / 内部推送的 target 一致（小写）；机器人推送默认用 notify.default-target（一般为 default）
+# 与 Spring 配置对应关系（notify.robot-target.* 的值须与下列 key 一致）：
+#   assignment — Stripe 付费成功/失败/退出付款（作业侧商业播报）
+#   feedback   — 用户反馈提交
+#   report     — 数据日报、周报
 
 targets:
-  # 默认群机器人（内部 RobotNotifyService 默认路由）
+  # 兜底；未单独配置 robot-target 时各线路由默认走 default
   default:
     url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_DEFAULT_TOKEN"
     secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
 
-  # 可选：支付/订单类通知单独群
-  payment:
-    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_PAYMENT_TOKEN"
+  assignment:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ASSIGNMENT_TOKEN"
     secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
 
-  # 可选：监控/告警类（可与 Alertmanager 共用同一文件结构）
-  monitoring:
-    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_MONITORING_TOKEN"
-    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
-
-  # 可选：用户反馈等
   feedback:
-    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_FEEDBACK_TOKEN"
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_FEEDBACK_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  report:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_REPORT_TOKEN"
     secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"

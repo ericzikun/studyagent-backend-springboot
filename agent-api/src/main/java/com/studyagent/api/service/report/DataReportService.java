@@ -1,6 +1,7 @@
 package com.studyagent.api.service.report;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.studyagent.api.service.robot.RobotNotifyRouteKind;
 import com.studyagent.api.service.robot.RobotNotifyService;
 import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.common.quota.FeatureCode;
@@ -86,7 +87,7 @@ public class DataReportService {
             Map<String, Object> meta = new HashMap<>();
             meta.put("kind", "daily_report");
             meta.put("report_day", reportDayBjt.toString());
-            robotNotifyService.dispatch(eventId, "notify.report.daily", truncateTitle(title), truncateContent(md), meta);
+            robotNotifyService.dispatch(RobotNotifyRouteKind.REPORT, eventId, "notify.report.daily", truncateTitle(title), truncateContent(md), meta);
         } catch (Exception e) {
             log.warn("pushDailyReportAsync failed: {}", e.getMessage(), e);
         }
@@ -122,7 +123,7 @@ public class DataReportService {
             Map<String, Object> meta = new HashMap<>();
             meta.put("kind", "weekly_report");
             meta.put("week_end_exclusive", weekEndExclusiveBjt.toString());
-            robotNotifyService.dispatch(eventId, "notify.report.weekly", truncateTitle(title), truncateContent(md), meta);
+            robotNotifyService.dispatch(RobotNotifyRouteKind.REPORT, eventId, "notify.report.weekly", truncateTitle(title), truncateContent(md), meta);
         } catch (Exception e) {
             log.warn("pushWeeklyReportAsync failed: {}", e.getMessage(), e);
         }

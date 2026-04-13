@@ -94,7 +94,7 @@ public class RobotNotifyAsyncService {
             );
             Map<String, Object> meta = baseMeta("payment_success", stripeEventId, clerkUserId, featureCode);
             meta.put("stripe_session_id", sessionId);
-            robotNotifyService.dispatch(stripeEventId, "notify.payment.success", title, truncate(md, 2000), meta);
+            robotNotifyService.dispatch(RobotNotifyRouteKind.ASSIGNMENT, stripeEventId, "notify.payment.success", title, truncate(md, 2000), meta);
         } catch (Exception e) {
             log.warn("notifyPaymentSucceeded failed: {}", e.getMessage(), e);
         }
@@ -126,7 +126,7 @@ public class RobotNotifyAsyncService {
             sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
             Map<String, Object> meta = baseMeta("payment_failed", notifyEventId, clerkUserId, featureCode);
             meta.put("payment_intent_id", paymentIntentId);
-            robotNotifyService.dispatch(notifyEventId, "notify.payment.failed", title, truncate(sb.toString(), 2000), meta);
+            robotNotifyService.dispatch(RobotNotifyRouteKind.ASSIGNMENT, notifyEventId, "notify.payment.failed", title, truncate(sb.toString(), 2000), meta);
         } catch (Exception e) {
             log.warn("notifyPaymentFailed failed: {}", e.getMessage(), e);
         }
@@ -159,7 +159,7 @@ public class RobotNotifyAsyncService {
             sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
             Map<String, Object> meta = baseMeta("checkout_expired", stripeEventId, clerkUserId, featureCode);
             meta.put("stripe_session_id", sessionId);
-            robotNotifyService.dispatch(stripeEventId, "notify.checkout.expired", title, truncate(sb.toString(), 2000), meta);
+            robotNotifyService.dispatch(RobotNotifyRouteKind.ASSIGNMENT, stripeEventId, "notify.checkout.expired", title, truncate(sb.toString(), 2000), meta);
         } catch (Exception e) {
             log.warn("notifyCheckoutExpired failed: {}", e.getMessage(), e);
         }
@@ -274,6 +274,7 @@ public class RobotNotifyAsyncService {
 
             String title = "[" + titlePrefix + "] " + submissionId;
             robotNotifyService.dispatch(
+                    RobotNotifyRouteKind.FEEDBACK,
                     "feedback_" + submissionId,
                     "notify.feedback.submitted",
                     truncate(title, 80),

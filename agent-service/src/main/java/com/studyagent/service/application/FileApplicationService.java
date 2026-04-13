@@ -41,19 +41,20 @@ public class FileApplicationService {
      */
     @Transactional
     public String uploadFile(String base64Content, String filename) {
-        // 1. 解码 base64
         byte[] fileContent = fileDomainService.decodeBase64(base64Content);
-        
-        // 2. 验证文件
+        return uploadFileBytes(fileContent, filename);
+    }
+
+    /**
+     * 直接上传字节数组文件，供服务端生成/转换后的文件落库使用。
+     */
+    @Transactional
+    public String uploadFileBytes(byte[] fileContent, String filename) {
         fileDomainService.validateFile(fileContent, filename);
-        
-        // 3. 生成 objectId
+
         String objectId = fileDomainService.generateObjectId();
-        
-        // 4. 保存文件到存储
         String storagePath = saveFileToStorage(fileContent, objectId, filename);
-        
-        // 5. 创建文件领域模型
+
         File file = File.builder()
             .objectId(objectId)
             .originalFilename(filename)
@@ -61,21 +62,18 @@ public class FileApplicationService {
             .contentType(detectContentType(filename))
             .fileSize((long) fileContent.length)
             .storagePath(storagePath)
-            .storageType(1) // 1-本地存储
-            .markdownStatus(0) // 0-未转换
+            .storageType(1)
+            .markdownStatus(0)
             .build();
-        
-        // 6. 保存文件记录
+
         File savedFile = fileRepository.save(file);
-        
         log.info("文件上传成功: objectId={}, filename={}", savedFile.getObjectId(), filename);
-        
-        // 7. 异步上传到阿里云 OSS 作为备份
+
         if (ossStorageService.isEnabled()) {
             log.info("开始异步上传文件到 OSS: objectId={}", savedFile.getObjectId());
             ossStorageService.uploadFileAsync(fileContent, savedFile.getObjectId(), filename);
         }
-        
+
         return savedFile.getObjectId();
     }
     
@@ -228,7 +226,8 @@ public class FileApplicationService {
         String ext = fileDomainService.extractFileExtension(filename);
         return switch (ext.toLowerCase()) {
             case "pdf" -> "application/pdf";
-            case "doc", "docx" -> "application/msword";
+            case "doc" -> "application/msword";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case "xls" -> "application/vnd.ms-excel";
             case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case "ppt", "pptx" -> ext.equalsIgnoreCase("ppt") 
@@ -243,4 +242,3 @@ public class FileApplicationService {
         };
     }
 }
-

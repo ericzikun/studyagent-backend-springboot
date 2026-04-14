@@ -53,9 +53,24 @@ class NotifyControllerTest {
         assertThat(result.getData().getError().getType()).isEqualTo("AUTH_ERROR");
     }
 
+    @Test
+    void shouldReturnValidationErrorWhenTargetMissing() {
+        NotifyEventRequest request = baseRequest().toBuilder()
+                .target(" ")
+                .build();
+
+        Result<NotifyEventResponse> result = notifyController.notifyEvent(request, "notify-token");
+
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(4000);
+        assertThat(result.getData().getStatus()).isEqualTo("rejected");
+        assertThat(result.getData().getError()).isNotNull();
+        assertThat(result.getData().getError().getType()).isEqualTo("VALIDATION_ERROR");
+    }
+
     private NotifyEventRequest baseRequest() {
         return NotifyEventRequest.builder()
                 .sourceService("springboot_backend")
+                .target("default")
                 .title("系统通知")
                 .content("服务启动完成")
                 .build();

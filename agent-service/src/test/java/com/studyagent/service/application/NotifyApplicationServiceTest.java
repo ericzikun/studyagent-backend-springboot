@@ -133,6 +133,47 @@ class NotifyApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectWhenTargetMissing() {
+        NotifyDispatchRequest request = baseRequest().toBuilder()
+                .target(" ")
+                .build();
+
+        NotifyDispatchResult result = service.dispatch(request, "notify-token");
+
+        assertThat(result.getCode()).isEqualTo(4000);
+        assertThat(result.getData().getStatus()).isEqualTo("rejected");
+        assertThat(result.getData().getError().getType()).isEqualTo("VALIDATION_ERROR");
+        assertThat(result.getData().getError().getDetail()).contains("target is required");
+    }
+
+    @Test
+    void shouldRejectWhenTargetRouteNotConfigured() {
+        NotifyConfig config = new NotifyConfig();
+        config.setEnabled(true);
+        config.setApiToken("notify-token");
+
+        NotifySender sender = new NotifySender() {
+            @Override
+            public boolean supportsTarget(String target) {
+                return false;
+            }
+
+            @Override
+            public NotifySendResult send(NotifyMessage message) {
+                return NotifySendResult.builder().success(true).deliveryId("dt_unused").build();
+            }
+        };
+
+        NotifyApplicationService routeService = new NotifyApplicationService(config, sender);
+        NotifyDispatchResult result = routeService.dispatch(baseRequest().toBuilder().target("payment").build(), "notify-token");
+
+        assertThat(result.getCode()).isEqualTo(4004);
+        assertThat(result.getData().getStatus()).isEqualTo("rejected");
+        assertThat(result.getData().getError().getType()).isEqualTo("VALIDATION_ERROR");
+        assertThat(result.getData().getError().getDetail()).contains("target is invalid");
+    }
+
+    @Test
     void shouldAllowComplexMetadataAndKeepCustomKeys() {
         NotifyConfig config = new NotifyConfig();
         config.setEnabled(true);
@@ -271,6 +312,7 @@ class NotifyApplicationServiceTest {
         return NotifyDispatchRequest.builder()
                 .sourceService("springboot_backend")
                 .scene("task.failed")
+                .target("default")
                 .title("任务失败")
                 .content("任务 task_9527 执行失败")
                 .level("error")

@@ -75,7 +75,7 @@ DingTalk Client
 ### 5.3 请求体（通用模板 + 示例）
 
 `Notify API` 是通用消息入口，不绑定支付场景。  
-最小必填字段确实只有 3 个（`sourceService/title/content`），但生产建议额外传 `eventId/scene/level/contentType/env` 以便治理和排障。
+最小必填字段为 4 个（`sourceService/target/title/content`），其余字段按业务场景补充。
 
 #### 5.3.1 通用请求模板
 
@@ -84,6 +84,7 @@ DingTalk Client
   "eventId": "<string, optional, 1-64，建议唯一，如 evt_20260401_10001>",
   "sourceService": "<enum, required, springboot_backend|python_backend|frontend|humanizer>",
   "scene": "<string, optional, 1-64，如 order.shipped>",
+  "target": "<string, required, 路由键，如 default|payment|monitoring|feedback>",
   "title": "<string, required, 1-80>",
   "content": "<string, required, 1-2000>",
   "level": "<enum, optional, info|warn|error|critical，默认 info>",
@@ -105,19 +106,22 @@ DingTalk Client
    - 必填枚举：`springboot_backend`、`python_backend`、`frontend`、`humanizer`。
 3. `scene`
    - 可选；建议使用 `domain.action` 风格（如 `payment.success`、`task.failed`）。
-4. `title`
+4. `target`
+   - 必填；用于选择发送到哪个钉钉机器人（即哪个 webhook）。
+   - 可用值由密钥文件中的 `targets.<key>` 决定，不在代码中写死。
+5. `title`
    - 必填；用于钉钉消息标题，建议简短明确。
-5. `content`
+6. `content`
    - 必填；正文内容，建议避免敏感信息明文。
-6. `level`
+7. `level`
    - 可选枚举：`info`、`warn`、`error`、`critical`。
-7. `contentType`
+8. `contentType`
    - 可选枚举：`text`、`markdown`，默认 `markdown`。
-8. `env`
+9. `env`
    - 可选枚举：`local`、`test`、`online`，默认取配置 `notify.default-env`（默认 `online`）。
-9. `timestamp`
+10. `timestamp`
    - 可选；推荐 ISO-8601，未传则服务端填充为 `yyyy-MM-dd HH:mm:ss`（UTC+8）。
-10. `metadata`
+11. `metadata`
    - 可选；通用业务扩展字段。
    - 支持复杂 JSON 值类型（`object/array/string/number/boolean/null`）。
    - 请求进入发送前统一经过 `sanitizeMetadata` 处理。
@@ -129,6 +133,7 @@ DingTalk Client
 ```json
 {
   "sourceService": "springboot_backend",
+  "target": "default",
   "title": "系统通知",
   "content": "服务启动完成"
 }
@@ -141,6 +146,7 @@ DingTalk Client
   "eventId": "evt_20260401_10001",
   "sourceService": "python_backend",
   "scene": "task.failed",
+  "target": "monitoring",
   "title": "任务执行失败",
   "content": "任务 task_9527 执行失败，错误码 E_AGENT_TIMEOUT",
   "level": "error",
@@ -226,6 +232,10 @@ DingTalk Client
 3. `contentType`：`text` | `markdown`
 4. `env`：`local` | `test` | `online`
 
+请求体配置型字段：
+
+1. `target`：字符串路由键（必填）；必须存在于 `dingtalk-webhook-config.yml` 的 `targets.<key>` 中。
+
 响应体枚举：
 
 1. `data.status`：`sent` | `deduplicated` | `rejected` | `failed`
@@ -237,7 +247,7 @@ DingTalk Client
 2. `4001` 鉴权失败
 3. `4002` 触发频率过高（限流）
 4. `4003` 重复事件（幂等命中）
-5. `4004` 枚举值非法（如 `sourceService/level/contentType/env` 非法）
+5. `4004` 枚举值非法或目标路由不存在（如 `sourceService/level/contentType/env` 非法，或 `target` 在配置中不存在）
 6. `5000` 下游钉钉调用失败
 
 ## 6. 钉钉消息格式
@@ -318,7 +328,7 @@ DingTalk Client
 ### 8.3 `agent-infra` 层
 
 1. 实现 `DingTalkNotifySender`：调用钉钉 webhook。
-2. 新增 `DingTalkWebhookConfigLoader`：从 `notify.dingtalk.config-file` 加载机器人配置。
+2. 新增 `DingTalkWebhookConfigLoader`：从 `notify.dingtalk.config-file` 加载机器人配置（`targets` map），并按 `target` 选择路由。
 
 ## 9. 配置项建议
 
@@ -350,7 +360,7 @@ notify:
    - 服务间调用鉴权 token，对应请求头 `X-Notify-Token`。
 3. `notify.dingtalk.config-file`
    - 钉钉机器人配置文件路径（唯一配置来源）。
-   - 文件结构可复用监控看板使用的 `dingtalk-webhook-config.yml`，读取 `targets.default.url/secret`。
+   - 文件结构可复用监控看板使用的 `dingtalk-webhook-config.yml`，读取 `targets.<target>.url/secret`。
 4. `notify.idempotency.enabled`
    - 是否启用幂等去重能力（基于 `eventId + sourceService`）。
 5. `notify.idempotency.ttl-seconds`
@@ -363,7 +373,7 @@ notify:
 配置约束建议：
 
 1. 必须配置 `notify.dingtalk.config-file`，并确保文件可读。
-2. 文件读取 `targets.default.url/secret`。
+2. 文件必须包含 `targets.default.url/secret`，可按需增加 `targets.payment/targets.monitoring/targets.feedback` 等。
 3. `notify.enabled=true` 且 `config-file` 不可用时，启动失败（fail-fast）。
 
 ### 9.2 三环境钉钉机器人接入（沿用监控看板方式）
@@ -373,6 +383,35 @@ notify:
 1. `local`：`$HOME/.studyagent-monitoring-secrets/local/dingtalk-webhook-config.yml`
 2. `test`：`/etc/studyagent-monitoring-secrets/test/dingtalk-webhook-config.yml`
 3. `online`：`/etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml`
+
+当前环境 `Notify API` 固定 token（一览）：
+
+1. `test`：`sa_notify_test_v1_c2a0f94d1b0b4d8dbb9f6e5a37a2e941`
+2. `online`：`sa_notify_online_v1_59e6c4bf7ad34bd3a1d9f5230e54b884`
+
+多群路由配置示例（同环境可配置多个机器人）：
+
+```yaml
+targets:
+  default:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<DEFAULT_TOKEN>"
+    secret: "SEC<DEFAULT_SECRET>"
+  payment:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<PAYMENT_TOKEN>"
+    secret: "SEC<PAYMENT_SECRET>"
+  monitoring:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<MONITORING_TOKEN>"
+    secret: "SEC<MONITORING_SECRET>"
+  feedback:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<FEEDBACK_TOKEN>"
+    secret: "SEC<FEEDBACK_SECRET>"
+```
+
+路由规则：
+
+1. 请求体必须传 `target=<key>`，并发送到 `targets.<key>`。
+2. 缺少 `target` 时返回 `4000`（参数校验失败），不发送。
+3. `target` 未配置时返回 `4004`，不发送。
 
 ### 9.3 启动方式差异（本地直启 vs 测试/线上 Docker）
 
@@ -402,6 +441,86 @@ services:
 
 3. 线上同理（把 `test` 路径替换为 `online` 路径）。
 
+### 9.4 线上部署最小清单（online）
+
+按你们当前部署习惯（Docker + 同目录 `.env`）上线时，建议只做以下必做项：
+
+1. 准备线上机器人密钥文件（仓库外）
+
+```bash
+mkdir -p /etc/studyagent-monitoring-secrets/online
+vi /etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml
+chmod 600 /etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml
+```
+
+文件至少包含：
+
+```yaml
+targets:
+  default:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<ONLINE_TOKEN>"
+    secret: "SEC<ONLINE_SECRET>"
+  payment:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<ONLINE_PAYMENT_TOKEN>"
+    secret: "SEC<ONLINE_PAYMENT_SECRET>"
+  monitoring:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<ONLINE_MONITORING_TOKEN>"
+    secret: "SEC<ONLINE_MONITORING_SECRET>"
+  feedback:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=<ONLINE_FEEDBACK_TOKEN>"
+    secret: "SEC<ONLINE_FEEDBACK_SECRET>"
+```
+
+2. 在线上 compose 同目录 `.env` 增加 Notify 变量
+
+```env
+NOTIFY_ENABLED=true
+NOTIFY_API_TOKEN=sa_notify_online_v1_59e6c4bf7ad34bd3a1d9f5230e54b884
+NOTIFY_DEFAULT_ENV=online
+NOTIFY_DINGTALK_CONFIG_FILE=/etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml
+NOTIFY_IDEMPOTENCY_ENABLED=true
+NOTIFY_IDEMPOTENCY_TTL_SECONDS=600
+NOTIFY_RATE_LIMIT_ENABLED=true
+NOTIFY_RATE_LIMIT_PER_SERVICE_PER_MINUTE=60
+```
+
+3. 在线上 `docker-compose.yml` 的 `springboot-backend` 增加（或确认已存在）
+
+- `environment`：映射上面 `NOTIFY_*` 变量。
+- `volumes`：挂载密钥文件（只读）：
+
+```yaml
+- /etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml:/etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml:ro
+```
+
+4. 启动/重建 Spring Boot 容器
+
+```bash
+docker compose --env-file /app/study-agent-new-struct/docker-aliyun-20260125/.env \
+  -f /app/study-agent-new-struct/docker-aliyun-20260125/docker-compose.yml \
+  up -d --build springboot-backend
+```
+
+5. 启动后验证（容器内）
+
+```bash
+docker compose -f /app/study-agent-new-struct/docker-aliyun-20260125/docker-compose.yml \
+  exec springboot-backend sh -lc \
+  'printenv | grep ^NOTIFY_; ls -l /etc/studyagent-monitoring-secrets/online/dingtalk-webhook-config.yml'
+```
+
+预期：
+
+- `NOTIFY_ENABLED=true`
+- `NOTIFY_API_TOKEN` 非空
+- `NOTIFY_DEFAULT_ENV=online`
+- 配置文件存在且可读
+
+6. 联调验证
+
+- 用 `X-Notify-Token: ${NOTIFY_API_TOKEN}` 调用 `/api/v1/notify/events`。
+- 返回 `meta.statusCode=0` 且钉钉收到消息，视为上线完成。
+
 ## 10. 日志与排障
 
 每次请求至少记录：
@@ -427,7 +546,7 @@ services:
 3. token 错误时拒绝请求。
 4. 相同 `eventId` 重复提交命中幂等。
 5. 高频请求触发限流。
-6. 任一枚举字段非法（`sourceService/level/contentType/env`）触发 `4004`。
+6. 任一枚举字段非法（`sourceService/level/contentType/env`）或 `target` 未配置，触发 `4004`；缺少 `target` 触发 `4000`。
 7. 钉钉返回失败时，接口正确返回并记录错误。
 8. 所有响应都包含 `meta.traceId`，失败响应包含 `data.error.retryable`。
 9. `metadata` 支持复杂 JSON 值类型，并在 `sanitizeMetadata` 后可稳定展示（无白名单丢弃）。
@@ -466,6 +585,7 @@ curl -X POST "http://localhost:8080/api/v1/notify/events" \
     "eventId": "evt_20260402_10001",
     "sourceService": "springboot_backend",
     "scene": "payment.success",
+    "target": "payment",
     "title": "支付成功通知",
     "content": "用户 user_123 完成支付，金额 99 元",
     "level": "info",
@@ -488,6 +608,7 @@ headers.set("X-Notify-Token", System.getenv("NOTIFY_API_TOKEN"));
 
 Map<String, Object> body = new HashMap<>();
 body.put("sourceService", "springboot_backend");
+body.put("target", "monitoring");
 body.put("title", "系统通知");
 body.put("content", "服务启动完成");
 body.put("level", "info");
@@ -513,6 +634,7 @@ headers = {
 payload = {
     "sourceService": "python_backend",
     "scene": "task.failed",
+    "target": "feedback",
     "title": "任务失败",
     "content": "任务 task_9527 执行失败，错误码 E_TIMEOUT",
     "level": "error",
@@ -541,7 +663,7 @@ print(resp.status_code, resp.text)
 
 3. 钉钉签名错误（下游失败）
    - 现象：返回 `5000`，日志出现 `dingtalk api rejected message`。
-   - 排查：确认 `dingtalk-webhook-config.yml` 中的 `targets.default.secret` 与 `url` 配套，且未混用其他机器人密钥。
+   - 排查：确认 `dingtalk-webhook-config.yml` 中对应 `targets.<target>.secret` 与 `url` 配套，且未混用其他机器人密钥。
 
 ### 15.2 回滚方案
 
@@ -555,14 +677,15 @@ print(resp.status_code, resp.text)
 1. Notify API 请求将被拒绝，不再投递到钉钉。
 2. 其他业务接口不受影响。
 
-## 16. 当前实现状态（截至 2026-04-02）
+## 16. 当前实现状态（截至 2026-04-09）
 
 已完成：
 
 1. `POST /api/v1/notify/events` 主链路（鉴权、参数校验、幂等、限流、钉钉投递）。
 2. `notify.dingtalk.config-file` 唯一路径加载与 fail-fast。
 3. `local/test/online` 三环境路径约定与本地直启/Docker 配置说明。
-4. 单测覆盖：鉴权、枚举、幂等、限流、消息构建、配置读取校验。
+4. `target` 多群路由能力（请求体 `target` 必填；按 `targets.<key>` 路由；缺少 `target` 返回 `4000`，未配置返回 `4004`）。
+5. 单测覆盖：鉴权、枚举、幂等、限流、消息构建、配置读取校验、多目标路由。
 
 未完成（后续验收项）：
 

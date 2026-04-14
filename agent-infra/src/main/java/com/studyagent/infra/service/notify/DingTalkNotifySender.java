@@ -31,8 +31,15 @@ public class DingTalkNotifySender implements NotifySender {
     private final DingTalkWebhookConfigLoader configLoader;
 
     @Override
+    public boolean supportsTarget(String target) {
+        // 供 service 层做快速业务校验（4004），避免无效请求进入网络调用。
+        return configLoader.hasEndpoint(target);
+    }
+
+    @Override
     public NotifySendResult send(NotifyMessage message) {
-        DingTalkWebhookConfigLoader.DingTalkEndpoint endpoint = configLoader.getDefaultEndpoint();
+        // 根据请求里的 target 选择对应机器人 route。
+        DingTalkWebhookConfigLoader.DingTalkEndpoint endpoint = configLoader.getEndpoint(message.getTarget());
         String webhookUrl = buildSignedWebhookUrl(endpoint.getUrl(), endpoint.getSecret());
         Map<String, Object> payload = buildPayload(message);
 
@@ -46,7 +53,7 @@ public class DingTalkNotifySender implements NotifySender {
                     .block(Duration.ofSeconds(10));
 
             if (!isDingTalkSuccess(responseBody)) {
-                log.warn("dingtalk send rejected: response={}", responseBody);
+                log.warn("dingtalk send rejected: target={}, response={}", message.getTarget(), responseBody);
                 return NotifySendResult.builder()
                         .success(false)
                         .errorMessage("dingtalk api rejected message")
@@ -60,7 +67,7 @@ public class DingTalkNotifySender implements NotifySender {
                     .retryable(false)
                     .build();
         } catch (Exception ex) {
-            log.error("dingtalk send error: {}", ex.getMessage(), ex);
+            log.error("dingtalk send error: target={}, message={}", message.getTarget(), ex.getMessage(), ex);
             return NotifySendResult.builder()
                     .success(false)
                     .errorMessage(ex.getMessage())
@@ -185,6 +192,7 @@ public class DingTalkNotifySender implements NotifySender {
         }
 
         try {
+            // 钉钉加签机器人要求 query params 中带 timestamp + HMAC 签名。
             long timestamp = System.currentTimeMillis();
             String stringToSign = timestamp + "\n" + secret;
             Mac mac = Mac.getInstance("HmacSHA256");

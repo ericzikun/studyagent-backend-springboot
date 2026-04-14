@@ -159,9 +159,9 @@ notify:
   default-target: ${NOTIFY_DEFAULT_TARGET:default}
   # 内部机器人按业务线路由（值 = dingtalk 配置文件里 targets 的 key；默认均为 default 即单群）
   robot-target:
-    assignment: ${NOTIFY_ROBOT_TARGET_ASSIGNMENT:default}
-    feedback: ${NOTIFY_ROBOT_TARGET_FEEDBACK:default}
-    report: ${NOTIFY_ROBOT_TARGET_REPORT:default}
+    assignment: ${NOTIFY_ROBOT_TARGET_ASSIGNMENT:assignment}
+    feedback: ${NOTIFY_ROBOT_TARGET_FEEDBACK:feedback}
+    report: ${NOTIFY_ROBOT_TARGET_REPORT:report}
   default-env: ${NOTIFY_DEFAULT_ENV:online}
   dingtalk:
     # 本地示例：复制仓库 config/dingtalk-webhook-config.example.yml 为 config/dingtalk-webhook-config.yml 后设置绝对路径

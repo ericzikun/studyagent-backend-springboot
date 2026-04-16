@@ -42,6 +42,18 @@ public class TaskAgentEntityRepositoryImpl implements TaskAgentEntityRepository 
     }
 
     @Override
+    public TaskAgentEntity findUniqueByTaskIdAndAgentName(Long taskId, String agentName) {
+        LambdaQueryWrapper<TaskAgentEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TaskAgentEntity::getTaskId, taskId)
+               .eq(TaskAgentEntity::getAgentName, agentName)
+               .orderByDesc(TaskAgentEntity::getUpdatedAt)
+               .orderByDesc(TaskAgentEntity::getId)
+               .last("LIMIT 2");
+        java.util.List<TaskAgentEntity> matches = taskAgentMapper.selectList(wrapper);
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    @Override
     public TaskAgentEntity findByTaskIdAndAgentNameAndSubtaskId(Long taskId, String agentName, String subtaskId) {
         LambdaQueryWrapper<TaskAgentEntity> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(TaskAgentEntity::getTaskId, taskId)

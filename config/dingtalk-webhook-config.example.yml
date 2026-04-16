@@ -1,0 +1,29 @@
+# 钉钉自定义机器人 Webhook 配置（多 target 路由）
+#
+# 使用方式：
+# 1. 复制本文件为 dingtalk-webhook-config.yml 并填写真实 url/secret
+# 2. 至少保留 targets.default；多群时增加 assignment / feedback / report，与 application.yml 中 notify.robot-target 对齐
+# 3. NOTIFY_DINGTALK_CONFIG_FILE 指向本文件；notify.enabled=true；修改后需重启
+#
+# 与 Spring 配置对应关系（notify.robot-target.* 的值须与下列 key 一致）：
+#   assignment — Stripe 付费成功/失败/退出付款（作业侧商业播报）
+#   feedback   — 用户反馈提交
+#   report     — 数据日报、周报
+
+targets:
+  # 兜底；未单独配置 robot-target 时各线路由默认走 default
+  default:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_DEFAULT_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  assignment:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ASSIGNMENT_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  feedback:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_FEEDBACK_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"
+
+  report:
+    url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_REPORT_TOKEN"
+    secret: "SEC_REPLACE_OR_DELETE_IF_NO_SIGN"

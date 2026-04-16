@@ -6,6 +6,7 @@ import com.studyagent.api.dto.request.SubmitFeedbackRequest;
 import com.studyagent.api.dto.response.ConsumeTriggerResponse;
 import com.studyagent.api.dto.response.SubmitFeedbackResponse;
 import com.studyagent.api.service.FeedbackApplicationService;
+import com.studyagent.api.service.robot.RobotNotifyAsyncService;
 import com.studyagent.common.api.ApiCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class FeedbackController {
 
     private final FeedbackApplicationService feedbackApplicationService;
+    private final RobotNotifyAsyncService robotNotifyAsyncService;
 
     /**
      * 消费触发：判断是否应弹窗，返回 session 和模板信息
@@ -60,6 +62,7 @@ public class FeedbackController {
                 request.getSelectedTagCodes(),
                 request.getComment(),
                 request.getContact());
+        robotNotifyAsyncService.notifyFeedbackSubmitted(clerkUserId, request.getPromptSessionId(), response.getSubmissionId());
         return Result.success(response);
     }
 }

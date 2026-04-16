@@ -243,19 +243,21 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
     }
 
     private Map<String, TaskAgentEntity> buildAgentNameToAgentMap(List<TaskAgentEntity> agents) {
-        Map<String, TaskAgentEntity> map = new HashMap<>();
+        Map<String, List<TaskAgentEntity>> grouped = new HashMap<>();
         for (TaskAgentEntity agent : agents) {
             String agentName = agent.getAgentName();
-            String subtaskId = agent.getSubtaskId();
             if (agentName != null && !agentName.trim().isEmpty()) {
-                TaskAgentEntity existing = map.get(agentName);
-                if (existing == null || ((existing.getSubtaskId() == null || existing.getSubtaskId().isEmpty())
-                        && subtaskId != null && !subtaskId.isEmpty())) {
-                    map.put(agentName, agent);
-                }
+                grouped.computeIfAbsent(agentName.trim(), key -> new ArrayList<>()).add(agent);
             }
         }
-        return map;
+
+        Map<String, TaskAgentEntity> uniqueAgents = new HashMap<>();
+        for (Map.Entry<String, List<TaskAgentEntity>> entry : grouped.entrySet()) {
+            if (entry.getValue().size() == 1) {
+                uniqueAgents.put(entry.getKey(), entry.getValue().get(0));
+            }
+        }
+        return uniqueAgents;
     }
 
     private List<TaskDetailDTO.SubTaskInfo> buildSubTaskInfoList(

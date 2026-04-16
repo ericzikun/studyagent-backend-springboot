@@ -436,7 +436,7 @@ public class AgentEventApplicationService {
 
         TaskAgentEntity existing = taskAgentRepository.findByTaskIdAndAgentNameAndSubtaskId(taskId, agentName, subtaskId);
         if (existing == null && subtaskId.isEmpty()) {
-            existing = taskAgentRepository.findByTaskIdAndAgentName(taskId, agentName);
+            existing = taskAgentRepository.findUniqueByTaskIdAndAgentName(taskId, agentName);
         }
         
         if (existing == null) {
@@ -605,7 +605,7 @@ public class AgentEventApplicationService {
 
         TaskAgentEntity agent = taskAgentRepository.findByTaskIdAndAgentNameAndSubtaskId(taskId, agentName, subtaskId);
         if (agent == null && subtaskId.isEmpty()) {
-            agent = taskAgentRepository.findByTaskIdAndAgentName(taskId, agentName);
+            agent = taskAgentRepository.findUniqueByTaskIdAndAgentName(taskId, agentName);
         }
         if (agent != null) {
             agent.setAgentStatus(3); // Completed
@@ -620,6 +620,8 @@ public class AgentEventApplicationService {
             
             taskAgentRepository.save(agent);
             log.info("Agent完成: taskId={}, agent={}, subtaskId={}", taskId, agentName, subtaskId);
+        } else {
+            log.warn("Agent完成事件未匹配到唯一记录，跳过状态更新: taskId={}, agent={}, subtaskId={}", taskId, agentName, subtaskId);
         }
     }
 

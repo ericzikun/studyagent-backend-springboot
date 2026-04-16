@@ -29,6 +29,8 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
     private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
     private static final int ACTIVITY_LIMIT = 10;
     private static final int SUBTASK_STATUS_COMPLETED = 2;
+    private static final int AGENT_STATUS_WAITING = 1;
+    private static final String AGENT_NAME_PENDING_ASSIGNMENT = "Pending Assignment";
     private static final String PHASE_COMPOSE = "COMPOSE";
 
     /** 模拟进度窗口：任务开始后前 N 秒内若 Python 未推送真实进度，则按时间线性展示 0~10% */
@@ -225,8 +227,6 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         return taskAgentMapper.selectList(
                 new LambdaQueryWrapper<TaskAgentEntity>()
                         .eq(TaskAgentEntity::getTaskId, taskId)
-                        .isNotNull(TaskAgentEntity::getSubtaskId)
-                        .ne(TaskAgentEntity::getSubtaskId, "")
                         .orderByDesc(TaskAgentEntity::getUpdatedAt)
         );
     }
@@ -279,6 +279,9 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                     finalAgentName = tableName;
                 }
             }
+            if (finalAgentName == null || finalAgentName.trim().isEmpty()) {
+                finalAgentName = AGENT_NAME_PENDING_ASSIGNMENT;
+            }
 
             TaskDetailDTO.SubTaskInfo.SubTaskInfoBuilder builder = TaskDetailDTO.SubTaskInfo.builder()
                     .title(st.getTitle())
@@ -288,7 +291,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                     .subtaskCode(subtaskCode);
 
             if (agent != null) {
-                builder.agentStatus(agent.getAgentStatus())
+                builder.agentStatus(agent.getAgentStatus() != null ? agent.getAgentStatus() : AGENT_STATUS_WAITING)
                         .agentCompletePercent(agent.getCompletePercent() != null ? agent.getCompletePercent().doubleValue() : 0.0)
                         .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
                         .agentStartTime(toEpochSecond(agent.getAgentStartTime()))
@@ -296,7 +299,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                         .agentPriority(agent.getAgentPriority() != null ? agent.getAgentPriority() : 1)
                         .agentOutput(agent.getAgentOutput() != null ? agent.getAgentOutput() : "");
             } else {
-                builder.agentStatus(0)
+                builder.agentStatus(AGENT_STATUS_WAITING)
                         .agentCompletePercent(0.0)
                         .agentDesc("")
                         .agentStartTime(0L)
@@ -348,10 +351,12 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                             : "";
 
                     return TaskDetailDTO.AgentInfo.builder()
-                            .agentName(agent.getAgentName())
+                            .agentName(agent.getAgentName() != null && !agent.getAgentName().trim().isEmpty()
+                                    ? agent.getAgentName()
+                                    : AGENT_NAME_PENDING_ASSIGNMENT)
                             .subtaskId(subtaskId)
                             .subtaskTitle(subtaskTitle)
-                            .agentStatus(agent.getAgentStatus())
+                            .agentStatus(agent.getAgentStatus() != null ? agent.getAgentStatus() : AGENT_STATUS_WAITING)
                             .completePercent(agent.getCompletePercent() != null ? agent.getCompletePercent().doubleValue() : 0.0)
                             .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
                             .agentStartTime(toEpochSecond(agent.getAgentStartTime()))
@@ -404,7 +409,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
             }
             result.add(TaskDetailDTO.AgentInfo.builder()
                     .agentName(agentName)
-                    .agentStatus(2)
+                    .agentStatus(AGENT_STATUS_WAITING)
                     .completePercent(completePercent)
                     .agentDesc("AI Agent: " + agentName)
                     .agentStartTime(agentStartTime)

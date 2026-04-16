@@ -297,7 +297,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                     .subtaskCode(subtaskCode);
 
             if (agent != null) {
-                builder.agentStatus(agent.getAgentStatus() != null ? agent.getAgentStatus() : AGENT_STATUS_WAITING)
+                builder.agentStatus(resolveDisplayAgentStatus(agent))
                         .agentCompletePercent(agent.getCompletePercent() != null ? agent.getCompletePercent().doubleValue() : 0.0)
                         .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
                         .agentStartTime(toEpochSecond(agent.getAgentStartTime()))
@@ -362,7 +362,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                                     : AGENT_NAME_PENDING_ASSIGNMENT)
                             .subtaskId(subtaskId)
                             .subtaskTitle(subtaskTitle)
-                            .agentStatus(agent.getAgentStatus() != null ? agent.getAgentStatus() : AGENT_STATUS_WAITING)
+                            .agentStatus(resolveDisplayAgentStatus(agent))
                             .completePercent(agent.getCompletePercent() != null ? agent.getCompletePercent().doubleValue() : 0.0)
                             .agentDesc(agent.getAgentDesc() != null ? agent.getAgentDesc() : "")
                             .agentStartTime(toEpochSecond(agent.getAgentStartTime()))
@@ -372,6 +372,20 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    private int resolveDisplayAgentStatus(TaskAgentEntity agent) {
+        Integer rawStatus = agent.getAgentStatus();
+        if (rawStatus != null && rawStatus >= AGENT_STATUS_WAITING) {
+            return rawStatus;
+        }
+        if (agent.getAgentFinishTime() != null) {
+            return 3;
+        }
+        boolean hasExecutionSignal = agent.getAgentStartTime() != null
+                || (agent.getCompletePercent() != null && agent.getCompletePercent().doubleValue() > 0.0)
+                || (agent.getAgentOutput() != null && !agent.getAgentOutput().trim().isEmpty());
+        return hasExecutionSignal ? 2 : AGENT_STATUS_WAITING;
     }
 
     @SuppressWarnings("SameParameterValue")

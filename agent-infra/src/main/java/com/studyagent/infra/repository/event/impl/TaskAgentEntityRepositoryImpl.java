@@ -35,6 +35,8 @@ public class TaskAgentEntityRepositoryImpl implements TaskAgentEntityRepository 
         LambdaQueryWrapper<TaskAgentEntity> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(TaskAgentEntity::getTaskId, taskId)
                .eq(TaskAgentEntity::getAgentName, agentName)
+               .orderByDesc(TaskAgentEntity::getUpdatedAt)
+               .orderByDesc(TaskAgentEntity::getId)
                .last("LIMIT 1");
         return taskAgentMapper.selectOne(wrapper);
     }
@@ -44,14 +46,15 @@ public class TaskAgentEntityRepositoryImpl implements TaskAgentEntityRepository 
         LambdaQueryWrapper<TaskAgentEntity> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(TaskAgentEntity::getTaskId, taskId)
                .eq(TaskAgentEntity::getAgentName, agentName);
-        
-        // 处理 subtaskId 可能为 null 的情况
-        if (subtaskId != null) {
-            wrapper.eq(TaskAgentEntity::getSubtaskId, subtaskId);
+
+        String normalizedSubtaskId = subtaskId != null ? subtaskId.trim() : "";
+        if (!normalizedSubtaskId.isEmpty()) {
+            wrapper.eq(TaskAgentEntity::getSubtaskId, normalizedSubtaskId);
         } else {
-            wrapper.isNull(TaskAgentEntity::getSubtaskId);
+            wrapper.and(w -> w.eq(TaskAgentEntity::getSubtaskId, "").or().isNull(TaskAgentEntity::getSubtaskId));
         }
-        
+        wrapper.orderByDesc(TaskAgentEntity::getUpdatedAt)
+               .orderByDesc(TaskAgentEntity::getId);
         wrapper.last("LIMIT 1");
         return taskAgentMapper.selectOne(wrapper);
     }

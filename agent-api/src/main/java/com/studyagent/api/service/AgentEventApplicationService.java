@@ -279,7 +279,7 @@ public class AgentEventApplicationService {
         taskRepository.save(task);
         
         // 批量更新未完成的子任务状态为失败
-        subTaskRepository.updatePendingStatusByTaskId(taskId, 3, "执行失败"); // Failed
+        subTaskRepository.updatePendingStatusByTaskId(taskId, 3, "Failed");
         
         // 批量更新未完成的 Agent 状态为失败
         taskAgentRepository.failPendingByTaskId(taskId);

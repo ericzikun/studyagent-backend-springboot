@@ -21,6 +21,12 @@ public interface SubTaskEntityRepository {
      * 批量更新任务下所有子任务状态
      */
     void updateStatusByTaskId(Long taskId, int status, String processDesc);
+
+    /**
+     * 批量更新任务下所有未进入终态的子任务状态。
+     * 终态定义：已完成、已失败。
+     */
+    void updateUnfinishedStatusByTaskId(Long taskId, int status, String processDesc);
     
     /**
      * 批量更新任务下所有待处理子任务状态

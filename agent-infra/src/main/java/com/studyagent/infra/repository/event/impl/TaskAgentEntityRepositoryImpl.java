@@ -93,6 +93,18 @@ public class TaskAgentEntityRepositoryImpl implements TaskAgentEntityRepository 
     }
 
     @Override
+    public void completePendingByTaskId(Long taskId, LocalDateTime finishTime) {
+        LambdaUpdateWrapper<TaskAgentEntity> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(TaskAgentEntity::getTaskId, taskId)
+               .notIn(TaskAgentEntity::getAgentStatus, 3, 4) // 排除已完成和已失败的终态
+               .set(TaskAgentEntity::getAgentStatus, 3) // Completed
+               .set(TaskAgentEntity::getCompletePercent, new BigDecimal("100.00"))
+               .set(TaskAgentEntity::getAgentFinishTime, finishTime)
+               .set(TaskAgentEntity::getUpdatedAt, LocalDateTime.now());
+        taskAgentMapper.update(null, wrapper);
+    }
+
+    @Override
     public void failPendingByTaskId(Long taskId) {
         LambdaUpdateWrapper<TaskAgentEntity> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(TaskAgentEntity::getTaskId, taskId)

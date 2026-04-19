@@ -49,6 +49,17 @@ public class SubTaskEntityRepositoryImpl implements SubTaskEntityRepository {
     }
 
     @Override
+    public void updateUnfinishedStatusByTaskId(Long taskId, int status, String processDesc) {
+        LambdaUpdateWrapper<SubTaskEntity> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(SubTaskEntity::getTaskId, taskId)
+               .notIn(SubTaskEntity::getStatus, 2, 3) // 排除已完成和已失败的终态
+               .set(SubTaskEntity::getStatus, status)
+               .set(SubTaskEntity::getProcessDesc, processDesc)
+               .set(SubTaskEntity::getUpdatedAt, LocalDateTime.now());
+        subTaskMapper.update(null, wrapper);
+    }
+
+    @Override
     public void updatePendingStatusByTaskId(Long taskId, int status, String processDesc) {
         LambdaUpdateWrapper<SubTaskEntity> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(SubTaskEntity::getTaskId, taskId)

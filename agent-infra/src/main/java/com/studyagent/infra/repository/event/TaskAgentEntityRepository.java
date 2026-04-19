@@ -40,6 +40,12 @@ public interface TaskAgentEntityRepository {
      * 批量完成任务下所有Agent
      */
     void completeAllByTaskId(Long taskId, LocalDateTime finishTime);
+
+    /**
+     * 批量完成任务下所有未进入终态的 Agent。
+     * 终态定义：已完成、已失败。
+     */
+    void completePendingByTaskId(Long taskId, LocalDateTime finishTime);
     
     /**
      * 批量将未完成的Agent状态设为失败

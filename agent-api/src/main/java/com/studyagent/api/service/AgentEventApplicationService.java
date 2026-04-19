@@ -211,7 +211,17 @@ public class AgentEventApplicationService {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
-        
+
+        Integer currentStatus = task.getStatus();
+        if (TaskStatus.DRAFT.getCode().equals(currentStatus)) {
+            log.info("TASK_COMPLETED 忽略: taskId={} 已为草稿（停止后的异步完成事件）", taskId);
+            return;
+        }
+        if (TaskStatus.FAILED.getCode().equals(currentStatus)) {
+            log.info("TASK_COMPLETED 忽略: taskId={} 已失败，保留失败终态", taskId);
+            return;
+        }
+
         // 更新任务
         task.setStatus(3); // Completed
         task.setFinishTime(finishTime);
@@ -229,12 +239,12 @@ public class AgentEventApplicationService {
         }
         
         taskRepository.save(task);
-        
-        // 批量更新子任务状态
-        subTaskRepository.updateStatusByTaskId(taskId, 2, "Completed"); // Completed
-        
-        // 批量更新 Agent 状态
-        taskAgentRepository.completeAllByTaskId(taskId, finishTime);
+
+        // 仅补齐未进入终态的子任务，避免把已失败的子任务覆盖为 Completed
+        subTaskRepository.updateUnfinishedStatusByTaskId(taskId, 2, "Completed");
+
+        // 仅补齐未进入终态的 Agent，避免把已失败的 Agent 覆盖为 Completed
+        taskAgentRepository.completePendingByTaskId(taskId, finishTime);
         
         log.info("任务完成: taskId={}, costTime={}s", taskId, task.getCostTime());
         

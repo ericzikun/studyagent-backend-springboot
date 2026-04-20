@@ -89,6 +89,9 @@ public class TaskApplicationService {
     private final TaskSubmitConfig taskSubmitConfig;
     private final QuotaDomainService quotaDomainService;
     private final Gson gson = new Gson();
+    static final int GENERATED_TASK_TITLE_MAX_LENGTH = 50;
+    private static final String DEFAULT_GENERATED_TASK_TITLE = "Assignment";
+    static final String DEFAULT_TASK_DESCRIPTION = "Task without description";
 
     /**
      * 新建草稿短时间幂等：key = clerkUserId + '#' + sha256(内容指纹)，value 为已提交成功的草稿 id 与过期时间。
@@ -176,12 +179,13 @@ public class TaskApplicationService {
                 existing != null ? existing.getRequirementJson() : null,
                 request.getRequirementsJson(),
                 request.getClarifyingQuestions());
+        String taskDesc = normalizeTaskDescription(request.getTaskDesc());
 
         Task task = Task.builder()
                 .id(existing != null ? existing.getId() : null)
                 .clerkUserId(existing != null ? existing.getClerkUserId() : userInfo.clerkUserId)
-                .taskTitle(request.getTaskTitle())
-                .taskDesc(request.getTaskDesc())
+                .taskTitle(generateTaskTitleFromDescription(request.getTaskDesc()))
+                .taskDesc(taskDesc)
                 .subject(request.getSubject())
                 .academicLevel(request.getAcademicLevel())
                 .priorityLevel(request.getPriorityLevel())
@@ -486,11 +490,17 @@ public class TaskApplicationService {
 
     private Long persistDraftRowAndFiles(SaveDraftRequest request, ClerkClient.UserInfo userInfo, Task existing,
             LocalDateTime dueDate, String mergedRequirementJson) {
+        String taskDesc = request.getTaskDesc() != null
+                ? normalizeTaskDescription(request.getTaskDesc())
+                : firstNonNull(existing != null ? existing.getTaskDesc() : null, DEFAULT_TASK_DESCRIPTION);
+        String taskTitle = request.getTaskDesc() != null
+                ? generateTaskTitleFromDescription(request.getTaskDesc())
+                : firstNonNull(existing != null ? existing.getTaskTitle() : null, DEFAULT_GENERATED_TASK_TITLE);
         Task.TaskBuilder builder = Task.builder()
                 .id(existing != null ? existing.getId() : null)
                 .clerkUserId(userInfo.clerkUserId)
-                .taskTitle(firstNonNull(request.getTaskTitle(), existing != null ? existing.getTaskTitle() : null))
-                .taskDesc(firstNonNull(request.getTaskDesc(), existing != null ? existing.getTaskDesc() : null))
+                .taskTitle(taskTitle)
+                .taskDesc(taskDesc)
                 .subject(firstNonNull(request.getSubject(), existing != null ? existing.getSubject() : null))
                 .academicLevel(
                         firstNonNull(request.getAcademicLevel(), existing != null ? existing.getAcademicLevel() : null))
@@ -616,10 +626,30 @@ public class TaskApplicationService {
         fp.put("specialInstructions", request.getSpecialInstructions());
         fp.put("subject", request.getSubject());
         fp.put("taskDesc", request.getTaskDesc());
-        fp.put("taskTitle", request.getTaskTitle());
         fp.put("mergedRequirementJson", mergedRequirementJson != null ? mergedRequirementJson : "");
         String payload = gson.toJson(fp);
         return clerkUserId + "#" + sha256Hex(payload);
+    }
+
+    static String generateTaskTitleFromDescription(String taskDesc) {
+        if (taskDesc == null) {
+            return DEFAULT_GENERATED_TASK_TITLE;
+        }
+        String normalized = taskDesc.trim();
+        if (normalized.isEmpty()) {
+            return DEFAULT_GENERATED_TASK_TITLE;
+        }
+        if (normalized.length() <= GENERATED_TASK_TITLE_MAX_LENGTH) {
+            return normalized;
+        }
+        return normalized.substring(0, GENERATED_TASK_TITLE_MAX_LENGTH);
+    }
+
+    static String normalizeTaskDescription(String taskDesc) {
+        if (taskDesc == null || taskDesc.trim().isEmpty()) {
+            return DEFAULT_TASK_DESCRIPTION;
+        }
+        return taskDesc;
     }
 
     private static String sha256Hex(String s) {

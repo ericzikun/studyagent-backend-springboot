@@ -23,10 +23,6 @@ public class TaskDomainService {
             throw new IllegalArgumentException("Task title is required");
         }
         
-        if (task.getTaskDesc() == null || task.getTaskDesc().trim().isEmpty()) {
-            throw new IllegalArgumentException("Task description is required");
-        }
-        
         // dueDate is optional, if provided validate it's not in the past
         if (task.getDueDate() != null && task.getDueDate().isBefore(java.time.LocalDateTime.now())) {
             throw new IllegalArgumentException("Due date cannot be in the past");
@@ -60,4 +56,3 @@ public class TaskDomainService {
         }
     }
 }
-

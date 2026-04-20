@@ -17,7 +17,6 @@ import java.util.List;
 @AllArgsConstructor
 public class SaveDraftRequest {
     private Long draftId;
-    private String taskTitle;
     private String taskDesc;
     private Integer subject;
     private Integer academicLevel;
@@ -32,4 +31,3 @@ public class SaveDraftRequest {
     private String requirementsJson;
     private String token; // Clerk token
 }
-

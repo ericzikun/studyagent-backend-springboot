@@ -102,7 +102,6 @@ public class TaskController {
         com.studyagent.service.application.request.SubmitTaskRequest appRequest = 
             com.studyagent.service.application.request.SubmitTaskRequest.builder()
                 .draftId(internalDraftId)
-                .taskTitle(request.getTaskTitle())
                 .taskDesc(request.getTaskDesc())
                 .subject(request.getSubject())
                 .academicLevel(request.getAcademicLevel())
@@ -148,7 +147,6 @@ public class TaskController {
         com.studyagent.service.application.request.SaveDraftRequest appRequest =
             com.studyagent.service.application.request.SaveDraftRequest.builder()
                 .draftId(internalDraftId)
-                .taskTitle(request.getTaskTitle())
                 .taskDesc(request.getTaskDesc())
                 .subject(request.getSubject())
                 .academicLevel(request.getAcademicLevel())
@@ -630,4 +628,3 @@ public class TaskController {
         private Integer pageSize;
     }
 }
-

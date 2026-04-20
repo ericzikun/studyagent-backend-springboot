@@ -12,7 +12,6 @@ import java.util.List;
 public class SaveDraftRequest {
     /** 草稿 ID（Sqids 编码，可选，有则更新无则创建） */
     private String draftId;
-    private String taskTitle;
     private String taskDesc;
     private Integer subject;
     private Integer academicLevel;
@@ -26,4 +25,3 @@ public class SaveDraftRequest {
     private String clarifyingQuestions;
     private String requirementsJson;
 }
-

@@ -17,7 +17,6 @@ import java.util.List;
 @AllArgsConstructor
 public class SubmitTaskRequest {
     private Long draftId;
-    private String taskTitle;
     private String taskDesc;
     private Integer subject;
     private Integer academicLevel;
@@ -32,4 +31,3 @@ public class SubmitTaskRequest {
     private String clarifyingQuestions;
     private String requirementsJson;
 }
-

@@ -1,8 +1,6 @@
 package com.studyagent.api.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -16,10 +14,6 @@ public class SubmitTaskRequest {
     /** 草稿ID（Sqids 编码，可选） */
     private String draftId;
 
-    @NotBlank(message = "任务标题不能为空")
-    private String taskTitle;
-    
-    @NotBlank(message = "任务描述不能为空")
     private String taskDesc;
     
     @NotNull(message = "学科不能为空")
@@ -51,4 +45,3 @@ public class SubmitTaskRequest {
     /** 需求补充（JSON字符串） */
     private String requirementsJson;
 }
-

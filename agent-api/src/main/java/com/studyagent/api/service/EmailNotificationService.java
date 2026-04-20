@@ -183,7 +183,7 @@ public class EmailNotificationService {
                                     </a>
                                   </td>
                                   <td style="vertical-align:middle;">
-                                    <a href="%s" target="_blank" rel="noopener noreferrer" style="font-size:32px;font-weight:700;line-height:32px;color:#6366f1;letter-spacing:-0.02em;text-decoration:none;">Verla</a>
+                                    <a href="%s" target="_blank" rel="noopener noreferrer" style="font-size:32px;font-weight:700;line-height:32px;color:#232323;letter-spacing:-0.02em;text-decoration:none;">Verla</a>
                                   </td>
                                 </tr>
                               </table>
@@ -196,17 +196,17 @@ public class EmailNotificationService {
                                 Your report is ready to review.
                               </p>
                               <p style="margin:0 0 6px;font-size:14px;color:#334155;line-height:1.45;">
-                                <span style="font-weight:600;color:#6366f1;">Task:</span> %s
+                                <span style="font-weight:600;color:#232323;">Task:</span> %s
                               </p>
                               <p style="margin:0 0 22px;font-size:14px;color:#334155;line-height:1.45;">
-                                <span style="font-weight:600;color:#6366f1;">Completed at:</span> %s
+                                <span style="font-weight:600;color:#232323;">Completed at:</span> %s
                               </p>
                               <table role="presentation" width="100%%" cellpadding="0" cellspacing="0">
                                 <tr>
                                   <td align="center" style="padding:0;">
                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                       <tr>
-                                        <td style="background-color:#6366f1;border-radius:8px;">
+                                        <td style="background-color:#232323;border-radius:8px;">
                                           <a href="%s" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:11px 22px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
                                             View results
                                           </a>
@@ -221,7 +221,7 @@ public class EmailNotificationService {
                           <tr>
                             <td style="padding:14px 24px 18px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:left;">
                               <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.55;">
-                                Automated message from <a href="%s" style="color:#6366f1;text-decoration:none;">Verla</a>.
+                                Automated message from <a href="%s" style="color:#232323;text-decoration:none;">Verla</a>.
                                 You received this because a task you submitted finished.
                               </p>
                             </td>

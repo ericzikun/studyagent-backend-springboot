@@ -2,6 +2,7 @@ package com.studyagent.infra.repository.event;
 
 import com.studyagent.infra.entity.TaskEntity;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -18,4 +19,12 @@ public interface TaskEntityRepository {
      * 保存任务
      */
     void save(TaskEntity task);
+
+    /**
+     * 仅在任务仍处于「待执行 / 执行中」时标记为失败。
+     * 与 {@code stopTask} 将任务置为草稿并发时，避免用 TASK_FAILED 覆盖已写入的 DRAFT。
+     *
+     * @return 是否成功更新（影响行数 &gt; 0）
+     */
+    boolean markFailedIfExecuting(Long taskId, LocalDateTime finishTime, Integer costTime, String errorMessage);
 }

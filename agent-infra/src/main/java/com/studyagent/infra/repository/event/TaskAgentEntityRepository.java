@@ -18,6 +18,12 @@ public interface TaskAgentEntityRepository {
      * 根据任务ID和Agent名称查找
      */
     TaskAgentEntity findByTaskIdAndAgentName(Long taskId, String agentName);
+
+    /**
+     * 仅当同名 Agent 记录唯一时返回。
+     * 用于缺少 subtaskId 时的安全兜底，避免同名 Agent 串状态。
+     */
+    TaskAgentEntity findUniqueByTaskIdAndAgentName(Long taskId, String agentName);
     
     /**
      * 根据任务ID、Agent名称和子任务ID查找

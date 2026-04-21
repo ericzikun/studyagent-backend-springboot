@@ -280,7 +280,7 @@ public class AgentEventApplicationService {
         taskRepository.save(task);
         
         // 批量更新未完成的子任务状态为失败
-        subTaskRepository.updatePendingStatusByTaskId(taskId, 3, "执行失败"); // Failed
+        subTaskRepository.updatePendingStatusByTaskId(taskId, 3, "Failed");
         
         // 批量更新未完成的 Agent 状态为失败
         taskAgentRepository.failPendingByTaskId(taskId);
@@ -429,18 +429,22 @@ public class AgentEventApplicationService {
         LocalDateTime startTime = toLocalDateTime(request.getTimestamp());
         
         String agentName = getStringValue(payload, "agentName");
+        String subtaskId = normalizeSubtaskId(getStringValue(payload, "assignedSubtaskId"));
         if (agentName == null || agentName.isEmpty()) {
             log.warn("Agent名称为空，跳过: taskId={}", taskId);
             return;
         }
-        
-        // 检查是否已存在（upsert 逻辑）
-        TaskAgentEntity existing = taskAgentRepository.findByTaskIdAndAgentName(taskId, agentName);
+
+        TaskAgentEntity existing = taskAgentRepository.findByTaskIdAndAgentNameAndSubtaskId(taskId, agentName, subtaskId);
+        if (existing == null && subtaskId.isEmpty()) {
+            existing = taskAgentRepository.findUniqueByTaskIdAndAgentName(taskId, agentName);
+        }
         
         if (existing == null) {
             TaskAgentEntity agent = new TaskAgentEntity();
             agent.setTaskId(taskId);
             agent.setAgentName(agentName);
+            agent.setSubtaskId(subtaskId);
             agent.setAgentDesc(getStringValue(payload, "agentDesc"));
             agent.setAgentStatus(2); // Running
             agent.setCompletePercent(new BigDecimal("0.00"));
@@ -456,8 +460,11 @@ public class AgentEventApplicationService {
             if (existing.getAgentStatus() != 3) { // 不是已完成状态
                 existing.setAgentStatus(2); // Running
                 existing.setUpdatedAt(LocalDateTime.now());
-                taskAgentRepository.save(existing);
             }
+            if ((existing.getSubtaskId() == null || existing.getSubtaskId().isBlank()) && !subtaskId.isEmpty()) {
+                existing.setSubtaskId(subtaskId);
+            }
+            taskAgentRepository.save(existing);
             log.debug("Agent已存在，更新状态: taskId={}, agent={}", taskId, agentName);
         }
     }
@@ -595,8 +602,12 @@ public class AgentEventApplicationService {
         LocalDateTime finishTime = toLocalDateTime(request.getTimestamp());
         
         String agentName = getStringValue(payload, "agentName");
-        
-        TaskAgentEntity agent = taskAgentRepository.findByTaskIdAndAgentName(taskId, agentName);
+        String subtaskId = normalizeSubtaskId(getStringValue(payload, "subtaskId"));
+
+        TaskAgentEntity agent = taskAgentRepository.findByTaskIdAndAgentNameAndSubtaskId(taskId, agentName, subtaskId);
+        if (agent == null && subtaskId.isEmpty()) {
+            agent = taskAgentRepository.findUniqueByTaskIdAndAgentName(taskId, agentName);
+        }
         if (agent != null) {
             agent.setAgentStatus(3); // Completed
             agent.setCompletePercent(new BigDecimal("100.00"));
@@ -609,7 +620,9 @@ public class AgentEventApplicationService {
             }
             
             taskAgentRepository.save(agent);
-            log.info("Agent完成: taskId={}, agent={}", taskId, agentName);
+            log.info("Agent完成: taskId={}, agent={}, subtaskId={}", taskId, agentName, subtaskId);
+        } else {
+            log.warn("Agent完成事件未匹配到唯一记录，跳过状态更新: taskId={}, agent={}, subtaskId={}", taskId, agentName, subtaskId);
         }
     }
 
@@ -839,6 +852,10 @@ public class AgentEventApplicationService {
             case "FAILED": return 3;
             default: return 0;
         }
+    }
+
+    private String normalizeSubtaskId(String subtaskId) {
+        return subtaskId == null ? "" : subtaskId.trim();
     }
     
     private int parseFormat(String format) {

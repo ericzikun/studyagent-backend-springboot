@@ -13,6 +13,7 @@ import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.HumanizerTaskEntity;
 import com.studyagent.infra.mapper.HumanizerTaskMapper;
+import com.studyagent.api.util.TaskIdEncoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -120,22 +121,33 @@ public class FeedbackApplicationService {
     }
 
     private void validateSubjectOwnership(String clerkUserId, String subjectType, String subjectIdStr) {
-        try {
-            if ("task".equals(subjectType)) {
-                Long taskId = Long.parseLong(subjectIdStr);
-                TaskEntity task = taskMapper.selectById(taskId);
-                if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
-                    throw new BusinessException(ApiCode.NO_PERMISSION);
-                }
-            } else if ("humanizer_task".equals(subjectType)) {
-                Long id = Long.parseLong(subjectIdStr);
-                HumanizerTaskEntity task = humanizerTaskMapper.selectById(id);
-                if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
-                    throw new BusinessException(ApiCode.NO_PERMISSION);
-                }
+        Long numericId = parseFeedbackSubjectId(subjectIdStr);
+        if (numericId == null) {
+            throw new BusinessException(ApiCode.NO_PERMISSION);
+        }
+        if ("task".equals(subjectType)) {
+            TaskEntity task = taskMapper.selectById(numericId);
+            if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
+                throw new BusinessException(ApiCode.NO_PERMISSION);
             }
+        } else if ("humanizer_task".equals(subjectType)) {
+            HumanizerTaskEntity task = humanizerTaskMapper.selectById(numericId);
+            if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
+                throw new BusinessException(ApiCode.NO_PERMISSION);
+            }
+        }
+    }
+
+    /** 数字串或 Sqids 短码（与 TaskIdEncoder 一致） */
+    private static Long parseFeedbackSubjectId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        try {
+            return Long.parseLong(s);
         } catch (NumberFormatException e) {
-            log.warn("Invalid subjectId format: {}", subjectIdStr);
+            return TaskIdEncoder.decode(s);
         }
     }
 

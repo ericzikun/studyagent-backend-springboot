@@ -117,6 +117,12 @@ file:
     local-retention-days: ${FILE_LOCAL_RETENTION_DAYS:7}
     purge-cron: ${FILE_LOCAL_PURGE_CRON:0 0 3 * * ?}
 
+editor:
+  export:
+    temp-dir: ${EDITOR_EXPORT_TEMP_DIR:${java.io.tmpdir}/studyagent-editor-export}
+    pdf-command-template: "${EDITOR_EXPORT_PDF_COMMAND:soffice --headless --convert-to pdf --outdir {outdir} {input}}"
+    timeout-seconds: ${EDITOR_EXPORT_TIMEOUT_SECONDS:120}
+
 # 阿里云 OSS 配置
 aliyun:
   oss:
@@ -143,6 +149,43 @@ task:
     daily-limit-per-user: ${TASK_DAILY_LIMIT_PER_USER:3}
     # 无 draftId 的新建保存：同用户、同内容指纹在窗口内只落库一次（秒）；0 关闭
     save-draft-idempotency-ttl-seconds: ${TASK_SAVE_DRAFT_IDEM_TTL:60}
+
+# Notify API（message 通道）
+# api-token 默认仅本地联调用；生产务必 NOTIFY_API_TOKEN 覆盖，勿提交真实 token
+notify:
+  enabled: ${NOTIFY_ENABLED:false}
+  api-token: ${NOTIFY_API_TOKEN:dev-local-notify-token}
+  # 机器人推送等内部调用未传 target 时使用，需与 dingtalk 配置 targets 下的 key 一致
+  default-target: ${NOTIFY_DEFAULT_TARGET:default}
+  # 内部机器人按业务线路由（值 = dingtalk 配置文件里 targets 的 key；默认均为 default 即单群）
+  robot-target:
+    assignment: ${NOTIFY_ROBOT_TARGET_ASSIGNMENT:assignment}
+    feedback: ${NOTIFY_ROBOT_TARGET_FEEDBACK:feedback}
+    report: ${NOTIFY_ROBOT_TARGET_REPORT:report}
+  default-env: ${NOTIFY_DEFAULT_ENV:online}
+  dingtalk:
+    # 本地示例：复制仓库 config/dingtalk-webhook-config.example.yml 为 config/dingtalk-webhook-config.yml 后设置绝对路径
+    config-file: ${NOTIFY_DINGTALK_CONFIG_FILE:}
+  idempotency:
+    enabled: ${NOTIFY_IDEMPOTENCY_ENABLED:true}
+    ttl-seconds: ${NOTIFY_IDEMPOTENCY_TTL_SECONDS:600}
+  rate-limit:
+    enabled: ${NOTIFY_RATE_LIMIT_ENABLED:true}
+    per-service-per-minute: ${NOTIFY_RATE_LIMIT_PER_SERVICE_PER_MINUTE:60}
+
+# 数据日报/周报（钉钉 Notify，仅统计 DB 可算指标）
+# manual-trigger-token 默认仅本地；测试接口 X-Report-Token；生产请 REPORT_TRIGGER_TOKEN 覆盖
+report:
+  scheduling-enabled: ${REPORT_SCHEDULING_ENABLED:true}
+  manual-trigger-token: ${REPORT_TRIGGER_TOKEN:dev-local-report-token}
+  title-prefix: ${REPORT_TITLE_PREFIX:Verla 数据}
+  # 北京时间；可覆盖默认值
+  daily-cron: ${REPORT_DAILY_CRON:0 0 12 * * ?}
+  weekly-cron: ${REPORT_WEEKLY_CRON:0 0 12 ? * SUN}
+
+# 前端站点根 URL（用于机器人推送中的任务链接，如 /editor/{taskId}）
+app:
+  public-site-url: ${PUBLIC_SITE_URL:http://101.251.176.55:13000}
 
 # Humanizer/AI检测 Python 服务配置（独立 Docker 容器，端口 9000）
 humanizer-service:
@@ -244,4 +287,3 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
-

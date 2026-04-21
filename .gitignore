@@ -25,6 +25,9 @@ logs/
 # Storage
 storage/
 
+# 钉钉 Webhook 真实配置（从 config/dingtalk-webhook-config.example.yml 复制后填写密钥）
+config/dingtalk-webhook-config.yml
+
 # Environment variables (敏感信息，不要提交)
 .env
 .env.local

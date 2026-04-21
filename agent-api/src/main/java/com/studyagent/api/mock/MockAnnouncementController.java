@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 
 @RestController
 @RequestMapping("/v1/announcement")
@@ -28,15 +27,7 @@ public class MockAnnouncementController {
     private final MockStateStore mockStateStore;
 
     @GetMapping("/list")
-    public Result<AnnouncementListResponse> list(
-        @RequestHeader(value = "Authorization", required = false) String authorization
-    ) {
-        MockAuthSupport.MockUser user = mockAuthSupport.requireUser(authorization);
-        if (user == null) {
-            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
-        }
-
-        Set<String> readIds = mockStateStore.readAnnouncementIds(user.uid());
+    public Result<AnnouncementListResponse> list() {
         List<NotificationItemResponse> notifications = mockStateStore.listAnnouncements().stream()
             .map(item -> NotificationItemResponse.builder()
                 .id(item.publicId)
@@ -44,7 +35,6 @@ public class MockAnnouncementController {
                 .message(item.message)
                 .content(item.content)
                 .createdAt(item.createdAtEpochSec)
-                .isRead(readIds.contains(item.publicId))
                 .build())
             .toList();
 

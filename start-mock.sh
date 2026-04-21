@@ -33,7 +33,9 @@ if [ -n "$EXISTING_PID" ]; then
     read -p "是否停止旧进程并重新启动? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        kill "$EXISTING_PID" && info "已停止旧进程 $EXISTING_PID" || true
+        for pid in $EXISTING_PID; do
+            kill "$pid" && info "已停止旧进程 $pid" || true
+        done
         sleep 1
     else
         info "退出，保持旧进程运行"

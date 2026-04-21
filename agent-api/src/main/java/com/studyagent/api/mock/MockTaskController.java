@@ -106,7 +106,7 @@ public class MockTaskController {
 
         MockStateStore.MockTaskRecord record = new MockStateStore.MockTaskRecord();
         record.clerkUserId = user.uid();
-        record.taskTitle = request.getTaskTitle();
+        record.taskTitle = deriveTaskTitle(request.getTaskDesc(), request.getRequirementsJson(), "未命名任务");
         record.taskDesc = request.getTaskDesc();
         record.subject = request.getSubject();
         record.academicLevel = request.getAcademicLevel();
@@ -153,7 +153,7 @@ public class MockTaskController {
         Long decodedDraftId = request.getDraftId() == null ? null : TaskIdEncoder.decode(request.getDraftId());
         record.taskId = decodedDraftId == null ? 0L : decodedDraftId;
         record.clerkUserId = user.uid();
-        record.taskTitle = defaultString(request.getTaskTitle(), "未命名草稿");
+        record.taskTitle = deriveTaskTitle(request.getTaskDesc(), request.getRequirementsJson(), "未命名草稿");
         record.taskDesc = defaultString(request.getTaskDesc(), "");
         record.subject = request.getSubject() == null ? 0 : request.getSubject();
         record.academicLevel = request.getAcademicLevel() == null ? 0 : request.getAcademicLevel();
@@ -646,8 +646,37 @@ public class MockTaskController {
         return (value == null || value.isBlank()) ? fallback : value;
     }
 
+    private String deriveTaskTitle(String taskDesc, String requirementsJson, String fallback) {
+        String source = firstNonBlankLine(taskDesc);
+        if (source == null) {
+            source = firstNonBlankLine(requirementsJson);
+        }
+        if (source == null) {
+            return fallback;
+        }
+
+        String normalized = source.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 48) {
+            return normalized;
+        }
+        return normalized.substring(0, 48).trim() + "...";
+    }
+
+    private String firstNonBlankLine(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        for (String line : value.split("\\R")) {
+            if (line != null && !line.isBlank()) {
+                return line.trim();
+            }
+        }
+        return null;
+    }
+
     private boolean containsFailTrigger(SubmitTaskRequest request) {
-        return containsIgnoreCase(request.getTaskTitle(), "fail")
+        String derivedTitle = deriveTaskTitle(request.getTaskDesc(), request.getRequirementsJson(), "");
+        return containsIgnoreCase(derivedTitle, "fail")
             || containsIgnoreCase(request.getTaskDesc(), "fail")
             || containsIgnoreCase(request.getSpecialInstructions(), "fail")
             || containsIgnoreCase(request.getRequirementsJson(), "fail")
@@ -655,7 +684,8 @@ public class MockTaskController {
     }
 
     private boolean containsCostTrigger(SubmitTaskRequest request) {
-        return containsIgnoreCase(request.getTaskTitle(), "cost")
+        String derivedTitle = deriveTaskTitle(request.getTaskDesc(), request.getRequirementsJson(), "");
+        return containsIgnoreCase(derivedTitle, "cost")
             || containsIgnoreCase(request.getTaskDesc(), "cost")
             || containsIgnoreCase(request.getSpecialInstructions(), "cost")
             || containsIgnoreCase(request.getRequirementsJson(), "cost")

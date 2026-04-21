@@ -248,39 +248,45 @@ public class AgentEventApplicationService {
 
     /**
      * 处理任务失败事件
+     * <p>
+     * 必须与 {@link com.studyagent.service.application.TaskApplicationService#stopTask} 并发安全：
+     * 停止会先原子将任务置为 DRAFT；若此处仍用「读改写」则可能在 RR 下用旧快照把 DRAFT 覆盖为 FAILED。
+     * 因此主状态仅通过 {@code markFailedIfExecuting}（WHERE status IN (PENDING, IN_PROGRESS)）单行更新。
      */
     @Transactional
     protected void handleTaskFailed(AgentEventRequest request) {
         Long taskId = request.getTaskId();
         Map<String, Object> payload = request.getPayload();
         LocalDateTime finishTime = toLocalDateTime(request.getTimestamp());
-        
+        String errorMessage = getStringValue(payload, "errorMessage");
+
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             log.warn("任务不存在: taskId={}", taskId);
             return;
         }
 
-        // 用户停止后 Java 已将主任务置为草稿；Python 侧 stop 常走异常路径仍会发 TASK_FAILED，不得覆盖为失败
+        // 快速路径：已为草稿则不必走条件更新（与 markFailedIfExecuting 等价，便于日志）
         if (TaskStatus.DRAFT.getCode().equals(task.getStatus())) {
             log.info("TASK_FAILED 忽略: taskId={} 已为草稿（停止后的异步失败事件）", taskId);
             return;
         }
-        
-        // 更新任务
-        task.setStatus(4); // Failed
-        task.setFinishTime(finishTime);
-        if (task.getStartTime() != null) {
+
+        Integer costTime = null;
+        if (task.getStartTime() != null && finishTime != null) {
             long seconds = java.time.Duration.between(task.getStartTime(), finishTime).getSeconds();
-            task.setCostTime((int) seconds);
+            costTime = (int) seconds;
         }
-        task.setErrorMessage(getStringValue(payload, "errorMessage"));
-        
-        taskRepository.save(task);
-        
+
+        boolean updated = taskRepository.markFailedIfExecuting(taskId, finishTime, costTime, errorMessage);
+        if (!updated) {
+            log.info("TASK_FAILED 跳过: taskId={} 未从执行态更新为失败（可能已停止为草稿或已终态）", taskId);
+            return;
+        }
+
         // 批量更新未完成的子任务状态为失败
         subTaskRepository.updatePendingStatusByTaskId(taskId, 3, "执行失败"); // Failed
-        
+
         // 批量更新未完成的 Agent 状态为失败
         taskAgentRepository.failPendingByTaskId(taskId);
 
@@ -291,7 +297,7 @@ public class AgentEventApplicationService {
             log.warn("任务失败退款异常: taskId={}, error={}", taskId, ex.getMessage());
         }
 
-        log.info("任务失败: taskId={}, error={}", taskId, getStringValue(payload, "errorMessage"));
+        log.info("任务失败: taskId={}, error={}", taskId, errorMessage);
     }
 
     /**

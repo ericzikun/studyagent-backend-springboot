@@ -33,6 +33,11 @@ services:
       STRIPE_PRICE_STARTER: ${STRIPE_PRICE_STARTER:-price_xxx}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-price_xxx}
       STRIPE_PRICE_ACADEMIC: ${STRIPE_PRICE_ACADEMIC:-price_xxx}
+
+      # PostHog 配置
+      POSTHOG_ENABLED: ${POSTHOG_ENABLED:-true}
+      POSTHOG_API_KEY: ${POSTHOG_API_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
       
       # Python 后端配置（使用 Docker Compose 中的服务名）
       PYTHON_BACKEND_URL: ${PYTHON_BACKEND_URL:-http://backend:8000}
@@ -72,4 +77,3 @@ networks:
     # 如果网络不存在，请先运行: cd docker && docker-compose up -d mysql
     external: true
     name: studyagent-network
-

@@ -3,8 +3,6 @@ package com.studyagent.service.domain.payment;
 import lombok.Builder;
 import lombok.Data;
 
-import java.util.Map;
-
 /**
  * 支付会话状态查询结果
  */
@@ -19,4 +17,9 @@ public class SessionStatusResult {
     private String customerEmail;
     private Long createdAt;
     private String clerkUserId;
+    private String packageType;
+    private String featureCode;
+    private Integer credits;
+    private Integer purchasedQuantity;
+    private String purchasedUnit;
 }

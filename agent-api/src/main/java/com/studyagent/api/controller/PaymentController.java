@@ -97,11 +97,6 @@ public class PaymentController {
             data.put("customerEmail", result.getCustomerEmail());
             data.put("createdAt", result.getCreatedAt());
             data.put("clerkUserId", result.getClerkUserId());
-            data.put("packageType", result.getPackageType());
-            data.put("featureCode", result.getFeatureCode());
-            data.put("credits", result.getCredits());
-            data.put("purchasedQuantity", result.getPurchasedQuantity());
-            data.put("purchasedUnit", result.getPurchasedUnit());
             return Result.success(data);
         } catch (PaymentDomainException e) {
             if ("STRIPE_ERROR".equals(e.getCode())) {

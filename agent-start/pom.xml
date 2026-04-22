@@ -15,10 +15,6 @@
     <artifactId>agent-start</artifactId>
     <packaging>jar</packaging>
 
-    <properties>
-        <app.mainClass>com.studyagent.start.StudyAgentApplication</app.mainClass>
-    </properties>
-
     <dependencies>
         <!-- Common Module (日志、工具类) -->
         <dependency>
@@ -85,7 +81,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>${app.mainClass}</mainClass>
+                    <mainClass>com.studyagent.start.StudyAgentApplication</mainClass>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
@@ -104,3 +100,4 @@
         </plugins>
     </build>
 </project>
+

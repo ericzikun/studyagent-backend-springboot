@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 认证应用服务
@@ -29,19 +30,25 @@ public class AuthApplicationService {
      * @param token Clerk token
      * @return 用户信息
      */
-    public User getCurrentUser(String token) {
+    public AuthenticatedUser getCurrentUser(String token) {
         // 1. 验证 token
         ClerkClient.UserInfo userInfo = clerkClient.verifyToken(token);
 
         // 2. 获取或创建用户
         User user = clerkClient.getOrCreateUser(userInfo.clerkUserId);
 
-        // 3. 更新用户信息（如果需要）
-        if (userInfo.email != null || userInfo.displayName != null) {
+        // 3. 解析邮箱：JWT 优先；库内仍为空时再请求 Clerk API（旧用户回填）
+        String resolvedEmail = resolveEmailForPersist(userInfo, user.getEmail());
+        boolean displayFromToken = userInfo.displayName != null;
+        boolean emailToPersist = hasText(resolvedEmail)
+            && !resolvedEmail.equals(Optional.ofNullable(user.getEmail()).orElse(""));
+
+        if (displayFromToken || emailToPersist) {
             User updatedUser = User.builder()
                 .id(user.getId())
                 .clerkUserId(user.getClerkUserId())
-                .displayName(userInfo.displayName != null ? userInfo.displayName : user.getDisplayName())
+                .email(hasText(resolvedEmail) ? resolvedEmail : user.getEmail())
+                .displayName(displayFromToken ? userInfo.displayName : user.getDisplayName())
                 .locale(user.getLocale())
                 .isAdmin(user.getIsAdmin())
                 .isActive(user.getIsActive())
@@ -52,7 +59,7 @@ public class AuthApplicationService {
 
         // 4. 埋点：用户登录成功
         Map<String, Object> loginProps = new HashMap<>();
-        loginProps.put("email", userInfo.email);
+        loginProps.put("email", Optional.ofNullable(user.getEmail()).orElse(userInfo.email));
         loginProps.put("display_name", user.getDisplayName());
         loginProps.put("locale", user.getLocale());
         loginProps.put("is_admin", user.getIsAdmin());
@@ -62,13 +69,30 @@ public class AuthApplicationService {
 
         // 5. 设置用户属性
         Map<String, Object> userProps = new HashMap<>();
-        userProps.put("email", userInfo.email);
+        userProps.put("email", Optional.ofNullable(user.getEmail()).orElse(userInfo.email));
         userProps.put("name", user.getDisplayName());
         userProps.put("locale", user.getLocale());
         userProps.put("is_admin", user.getIsAdmin());
         analyticsService.setUserProperties(user.getClerkUserId(), userProps);
 
-        return user;
+        return new AuthenticatedUser(user, userInfo);
+    }
+
+    private String resolveEmailForPersist(ClerkClient.UserInfo userInfo, String storedEmail) {
+        if (hasText(userInfo.email)) {
+            return userInfo.email.trim();
+        }
+        if (!hasText(storedEmail)) {
+            String fromApi = clerkClient.getUserEmail(userInfo.clerkUserId);
+            if (hasText(fromApi)) {
+                return fromApi.trim();
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 }
 

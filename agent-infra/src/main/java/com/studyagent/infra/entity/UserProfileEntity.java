@@ -12,6 +12,7 @@ import lombok.EqualsAndHashCode;
 @TableName("user_profiles")
 public class UserProfileEntity extends BaseEntity {
     private String clerkUserId;
+    private String email;
     private String displayName;
     private String locale;
     private Boolean isAdmin;

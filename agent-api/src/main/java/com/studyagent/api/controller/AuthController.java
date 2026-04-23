@@ -3,7 +3,7 @@ package com.studyagent.api.controller;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.response.UserInfoResponse;
 import com.studyagent.service.application.AuthApplicationService;
-import com.studyagent.service.domain.user.User;
+import com.studyagent.service.application.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -23,14 +23,19 @@ public class AuthController {
     @GetMapping("/me")
     public Result<UserInfoResponse> getCurrentUser(
             @RequestHeader("Authorization") String token) {
-        User user = authApplicationService.getCurrentUser(token);
-        
+        AuthenticatedUser auth = authApplicationService.getCurrentUser(token);
+        var user = auth.user();
+        var tokenInfo = auth.tokenInfo();
+
+        Boolean verified = tokenInfo.emailVerified != null ? tokenInfo.emailVerified : Boolean.FALSE;
+
         UserInfoResponse response = UserInfoResponse.builder()
             .uid(user.getClerkUserId())
+            .email(user.getEmail())
             .displayName(user.getDisplayName())
             .locale(user.getLocale())
             .isAdmin(user.getIsAdmin())
-            .emailVerified(false) // TODO: 从 Clerk 获取
+            .emailVerified(verified)
             .build();
         
         return Result.success(response);

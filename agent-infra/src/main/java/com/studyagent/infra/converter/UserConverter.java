@@ -19,6 +19,7 @@ public class UserConverter {
         return User.builder()
             .id(UserId.of(entity.getClerkUserId()))
             .clerkUserId(entity.getClerkUserId())
+            .email(entity.getEmail())
             .displayName(entity.getDisplayName())
             .locale(entity.getLocale())
             .isAdmin(entity.getIsAdmin())
@@ -35,6 +36,7 @@ public class UserConverter {
         UserProfileEntity entity = new UserProfileEntity();
         entity.setId(null); // Clerk User ID 是主键
         entity.setClerkUserId(domain.getClerkUserId());
+        entity.setEmail(domain.getEmail());
         entity.setDisplayName(domain.getDisplayName());
         entity.setLocale(domain.getLocale());
         entity.setIsAdmin(domain.getIsAdmin());

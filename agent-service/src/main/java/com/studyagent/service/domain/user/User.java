@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 public class User {
     UserId id;
     String clerkUserId;
+    /** 与 Clerk 同步的邮箱，库内可空（旧数据登录时回填） */
+    String email;
     String displayName;
     String locale;
     Boolean isAdmin;

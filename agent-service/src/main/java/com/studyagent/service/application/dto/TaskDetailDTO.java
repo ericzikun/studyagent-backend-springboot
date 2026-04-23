@@ -25,6 +25,11 @@ public class TaskDetailDTO {
     private List<OutputInfo> outputDetailInfoList;
     private List<UploadedFileInfo> uploadedFileInfoList;
 
+    /**
+     * 追问 Q&amp;A 与追问内附件 objectId 引用（由 requirementJson 解析，便于详情直接展示）
+     */
+    private List<ClarifyingQuestionInfo> clarifyingQuestionList;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -123,5 +128,31 @@ public class TaskDetailDTO {
         private Long fileSize;
         private Long uploadTime;
         private String downloadUrl;
+        /** TASK：主需求上传；CLARIFY：某条追问下上传 */
+        private String attachmentSource;
+        /** 当 attachmentSource=CLARIFY 时对应追问项 id */
+        private String clarifyQuestionId;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClarifyAttachmentInfo {
+        private String objectId;
+        private String filename;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClarifyingQuestionInfo {
+        private String id;
+        private String question;
+        private String tag;
+        private String answer;
+        private Boolean skipped;
+        private List<ClarifyAttachmentInfo> attachments;
     }
 }

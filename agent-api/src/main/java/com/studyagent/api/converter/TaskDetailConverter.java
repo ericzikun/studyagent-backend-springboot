@@ -4,6 +4,7 @@ import com.studyagent.api.dto.response.TaskDetailResponse;
 import com.studyagent.service.application.dto.TaskDetailDTO;
 
 import java.util.Collections;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +34,9 @@ public final class TaskDetailConverter {
                         : Collections.emptyList())
                 .uploadedFileInfoList(dto.getUploadedFileInfoList() != null
                         ? dto.getUploadedFileInfoList().stream().map(TaskDetailConverter::toUploadedFileInfoResponse).collect(Collectors.toList())
+                        : Collections.emptyList())
+                .clarifyingQuestionList(dto.getClarifyingQuestionList() != null
+                        ? dto.getClarifyingQuestionList().stream().map(TaskDetailConverter::toClarifyingQuestionInfoResponse).collect(Collectors.toList())
                         : Collections.emptyList())
                 .build();
     }
@@ -128,6 +132,39 @@ public final class TaskDetailConverter {
                 .fileSize(info.getFileSize())
                 .uploadTime(info.getUploadTime())
                 .downloadUrl(info.getDownloadUrl())
+                .attachmentSource(info.getAttachmentSource())
+                .clarifyQuestionId(info.getClarifyQuestionId())
+                .build();
+    }
+
+    private static TaskDetailResponse.ClarifyingQuestionInfoResponse toClarifyingQuestionInfoResponse(
+            TaskDetailDTO.ClarifyingQuestionInfo q) {
+        if (q == null) {
+            return null;
+        }
+        return TaskDetailResponse.ClarifyingQuestionInfoResponse.builder()
+                .id(q.getId())
+                .question(q.getQuestion())
+                .tag(q.getTag())
+                .answer(q.getAnswer())
+                .skipped(q.getSkipped())
+                .attachments(q.getAttachments() != null
+                        ? q.getAttachments().stream()
+                        .map(TaskDetailConverter::toClarifyAttachmentInfoResponse)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList())
+                        : Collections.emptyList())
+                .build();
+    }
+
+    private static TaskDetailResponse.ClarifyAttachmentInfoResponse toClarifyAttachmentInfoResponse(
+            TaskDetailDTO.ClarifyAttachmentInfo a) {
+        if (a == null) {
+            return null;
+        }
+        return TaskDetailResponse.ClarifyAttachmentInfoResponse.builder()
+                .objectId(a.getObjectId())
+                .filename(a.getFilename())
                 .build();
     }
 }

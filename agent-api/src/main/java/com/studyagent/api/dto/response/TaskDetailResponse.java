@@ -57,6 +57,11 @@ public class TaskDetailResponse {
      * 上传文件信息列表
      */
     private List<UploadedFileInfoResponse> uploadedFileInfoList;
+
+    /**
+     * 追问问题、回答及追问下附件 objectId 引用（与 taskBaseInfo.requirementJson 同源，已解析）
+     */
+    private List<ClarifyingQuestionInfoResponse> clarifyingQuestionList;
     
     /**
      * 任务基础信息
@@ -275,6 +280,34 @@ public class TaskDetailResponse {
         
         /** 文件下载链接 */
         private String downloadUrl;
+
+        /** TASK：主区上传；CLARIFY：追问下上传 */
+        private String attachmentSource;
+
+        /** 当来自追问时，对应追问项 id */
+        private String clarifyQuestionId;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClarifyAttachmentInfoResponse {
+        private String objectId;
+        private String filename;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClarifyingQuestionInfoResponse {
+        private String id;
+        private String question;
+        private String tag;
+        private String answer;
+        private Boolean skipped;
+        private List<ClarifyAttachmentInfoResponse> attachments;
     }
 }
 

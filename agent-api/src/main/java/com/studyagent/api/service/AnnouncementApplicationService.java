@@ -17,7 +17,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -31,7 +30,7 @@ public class AnnouncementApplicationService {
     private final AnnouncementMapper announcementMapper;
     private final UserAnnouncementReadMapper userAnnouncementReadMapper;
 
-    public AnnouncementListResponse listForUser(String clerkUserId) {
+    public AnnouncementListResponse listPublic() {
         LocalDateTime now = LocalDateTime.now();
         List<AnnouncementEntity> announcements = announcementMapper.selectList(
                 new LambdaQueryWrapper<AnnouncementEntity>()
@@ -49,32 +48,9 @@ public class AnnouncementApplicationService {
             return AnnouncementListResponse.builder().notifications(List.of()).build();
         }
 
-        List<String> publicIds = announcements.stream()
-                .map(AnnouncementEntity::getPublicId)
-                .collect(Collectors.toList());
-
-        Set<String> readIds = new HashSet<>();
-        if (!publicIds.isEmpty()) {
-            List<UserAnnouncementReadEntity> reads = userAnnouncementReadMapper.selectList(
-                    new LambdaQueryWrapper<UserAnnouncementReadEntity>()
-                            .eq(UserAnnouncementReadEntity::getClerkUserId, clerkUserId)
-                            .in(UserAnnouncementReadEntity::getAnnouncementPublicId, publicIds));
-            for (UserAnnouncementReadEntity r : reads) {
-                readIds.add(r.getAnnouncementPublicId());
-            }
-        }
-
         List<NotificationItemResponse> items = new ArrayList<>(announcements.size());
         for (AnnouncementEntity a : announcements) {
-            LocalDateTime createdBase = a.getPublishAt() != null ? a.getPublishAt() : a.getCreatedAt();
-            items.add(NotificationItemResponse.builder()
-                    .id(a.getPublicId())
-                    .title(a.getTitle())
-                    .message(a.getMessage())
-                    .content(a.getContent())
-                    .createdAt(localDateTimeToEpochSeconds(createdBase))
-                    .isRead(readIds.contains(a.getPublicId()))
-                    .build());
+            items.add(toNotificationItem(a));
         }
 
         return AnnouncementListResponse.builder().notifications(items).build();
@@ -136,5 +112,18 @@ public class AnnouncementApplicationService {
             return 0L;
         }
         return dt.atZone(ZoneId.systemDefault()).toEpochSecond();
+    }
+
+    private static NotificationItemResponse toNotificationItem(AnnouncementEntity announcement) {
+        LocalDateTime createdBase = announcement.getPublishAt() != null
+                ? announcement.getPublishAt()
+                : announcement.getCreatedAt();
+        return NotificationItemResponse.builder()
+                .id(announcement.getPublicId())
+                .title(announcement.getTitle())
+                .message(announcement.getMessage())
+                .content(announcement.getContent())
+                .createdAt(localDateTimeToEpochSeconds(createdBase))
+                .build();
     }
 }

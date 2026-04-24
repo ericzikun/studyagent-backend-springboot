@@ -11,9 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * 公告/通知：内容来自 announcements 表配置，已读状态按用户持久化。
+ * 公告/通知：内容来自 announcements 表配置。
  * <p>
- * GET  /v1/announcement/list  — 当前用户通知列表
+ * GET  /v1/announcement/list  — 公开通知列表
  * POST /v1/announcement/read   — 标记已读（body: ids）
  */
 @RestController
@@ -24,12 +24,8 @@ public class AnnouncementController {
     private final AnnouncementApplicationService announcementApplicationService;
 
     @GetMapping("/list")
-    public Result<AnnouncementListResponse> list(
-            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        if (clerkUserId == null || clerkUserId.isEmpty()) {
-            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
-        }
-        AnnouncementListResponse data = announcementApplicationService.listForUser(clerkUserId);
+    public Result<AnnouncementListResponse> list() {
+        AnnouncementListResponse data = announcementApplicationService.listPublic();
         return Result.success(data);
     }
 

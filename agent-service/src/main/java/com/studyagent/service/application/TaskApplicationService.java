@@ -63,6 +63,7 @@ import com.studyagent.common.exception.QuotaExceededException;
 import com.studyagent.service.application.dto.SaveDraftResult;
 import com.studyagent.service.application.dto.StopTaskApplicationResult;
 import com.studyagent.service.application.dto.TaskDetailDTO;
+import com.studyagent.service.application.util.RequirementJsonClarifyParser;
 import com.studyagent.service.config.TaskSubmitConfig;
 import com.studyagent.service.application.dto.TaskListItemDTO;
 import com.studyagent.service.application.dto.TaskListResult;
@@ -1002,6 +1003,14 @@ public class TaskApplicationService {
             log.warn("获取任务队列信息失败: taskId={}, error={}", taskId, e.getMessage());
         }
         detail.getTaskBaseInfo().setQueueAheadCount(queueAheadCount);
+
+        String requirementJson = detail.getTaskBaseInfo() != null
+                ? detail.getTaskBaseInfo().getRequirementJson()
+                : null;
+        List<TaskDetailDTO.ClarifyingQuestionInfo> clarifying =
+                RequirementJsonClarifyParser.parseClarifyingQuestionList(requirementJson);
+        RequirementJsonClarifyParser.enrichUploadSources(detail.getUploadedFileInfoList(), clarifying);
+        detail.setClarifyingQuestionList(clarifying);
 
         return detail;
     }

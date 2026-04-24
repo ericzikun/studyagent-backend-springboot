@@ -456,6 +456,7 @@ public class ClerkClientImpl implements ClerkClient {
         User newUser = User.builder()
             .id(com.studyagent.service.domain.user.UserId.of(clerkUserId))
             .clerkUserId(clerkUserId)
+            .email(null)
             .isAdmin(false)
             .isActive(true)
             .locale("en")

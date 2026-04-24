@@ -59,6 +59,7 @@ Mock 模式特性：
 - 不依赖数据库、Clerk、Python 后端
 - 内存态数据，重启后重置
 - 提供 `task/file/auth/health/quota/payment/feedback/announcement` mock 接口（保持 Spring 现有响应结构）
+- `save-draft/submit/detail` 支持追问 Q&A 与追问附件；追问附件可通过 `/v1/file/export` 或 `/v1/file/download/{objectId}` 读取 mock 文件内容
 - 可与前端 Clerk 正常登录并存：前端仍使用 Clerk 登录，Mock API 只做业务接口联调
 
 ### 3. 访问 API 文档

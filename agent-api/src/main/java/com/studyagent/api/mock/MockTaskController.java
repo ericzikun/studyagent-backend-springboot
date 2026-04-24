@@ -1,5 +1,11 @@
 package com.studyagent.api.mock;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.request.ClarifyTaskRequest;
 import com.studyagent.api.dto.request.DeleteTasksRequest;
@@ -22,6 +28,8 @@ import com.studyagent.api.dto.response.TaskListResponse;
 import com.studyagent.api.dto.response.TaskSummaryResponse;
 import com.studyagent.api.util.TaskIdEncoder;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.service.application.dto.TaskDetailDTO;
+import com.studyagent.service.application.util.RequirementJsonClarifyParser;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -49,7 +57,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -57,6 +68,8 @@ import java.util.Optional;
 @RequestMapping("/v1/task")
 @RequiredArgsConstructor
 public class MockTaskController {
+
+    private static final Gson GSON = new Gson();
 
     private final MockStateStore store;
     private final MockAuthSupport mockAuthSupport;
@@ -104,21 +117,36 @@ public class MockTaskController {
             return result;
         }
 
+        MockStateStore.MockTaskRecord existingDraft = Optional.ofNullable(TaskIdEncoder.decode(request.getDraftId()))
+            .flatMap(store::findTask)
+            .filter(t -> user.uid().equals(t.clerkUserId))
+            .orElse(null);
+
         MockStateStore.MockTaskRecord record = new MockStateStore.MockTaskRecord();
         record.clerkUserId = user.uid();
-        record.taskTitle = request.getTaskTitle();
+        record.taskTitle = existingDraft != null && !isBlank(existingDraft.taskTitle)
+            ? existingDraft.taskTitle
+            : titleFromDescription(request.getTaskDesc(), "Mock Assignment");
         record.taskDesc = request.getTaskDesc();
         record.subject = request.getSubject();
         record.academicLevel = request.getAcademicLevel();
         record.priorityLevel = request.getPriorityLevel();
         record.dueDate = request.getDueDate() != null ? request.getDueDate().toString() : LocalDateTime.now().plusDays(7).toString();
-        record.objectIds = request.getObjectIds() == null ? List.of() : new ArrayList<>(request.getObjectIds());
+        record.requirementsJson = mergeRequirementJson(
+            existingDraft == null ? null : existingDraft.requirementsJson,
+            request.getRequirementsJson(),
+            request.getClarifyingQuestions()
+        );
+        record.objectIds = mergeObjectIdsForTaskFiles(
+            request.getObjectIds() == null && existingDraft != null ? existingDraft.objectIds : request.getObjectIds(),
+            request.getClarifyingQuestions(),
+            record.requirementsJson
+        );
         record.format = request.getFormat() == null ? List.of(1) : new ArrayList<>(request.getFormat());
         record.citationStyle = request.getCitationStyle();
         record.pageLength = request.getPageLength() == null ? 5 : request.getPageLength();
         record.specialInstructions = request.getSpecialInstructions();
         record.clarifyingQuestions = request.getClarifyingQuestions();
-        record.requirementsJson = request.getRequirementsJson();
         record.status = MockStateStore.STATUS_PENDING;
         record.completePercent = BigDecimal.ZERO;
         record.queueAheadCount = 0;
@@ -149,23 +177,40 @@ public class MockTaskController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
 
-        MockStateStore.MockTaskRecord record = new MockStateStore.MockTaskRecord();
+        MockStateStore.MockTaskRecord existingDraft = null;
         Long decodedDraftId = request.getDraftId() == null ? null : TaskIdEncoder.decode(request.getDraftId());
+        if (decodedDraftId != null) {
+            existingDraft = store.findTask(decodedDraftId)
+                .filter(t -> user.uid().equals(t.clerkUserId))
+                .orElse(null);
+        }
+
+        MockStateStore.MockTaskRecord record = new MockStateStore.MockTaskRecord();
         record.taskId = decodedDraftId == null ? 0L : decodedDraftId;
         record.clerkUserId = user.uid();
-        record.taskTitle = defaultString(request.getTaskTitle(), "未命名草稿");
+        record.taskTitle = existingDraft != null && !isBlank(existingDraft.taskTitle)
+            ? existingDraft.taskTitle
+            : titleFromDescription(request.getTaskDesc(), "未命名草稿");
         record.taskDesc = defaultString(request.getTaskDesc(), "");
         record.subject = request.getSubject() == null ? 0 : request.getSubject();
         record.academicLevel = request.getAcademicLevel() == null ? 0 : request.getAcademicLevel();
         record.priorityLevel = request.getPriorityLevel() == null ? 0 : request.getPriorityLevel();
         record.dueDate = request.getDueDate() != null ? request.getDueDate().toString() : LocalDateTime.now().plusDays(7).toString();
-        record.objectIds = request.getObjectIds() == null ? List.of() : new ArrayList<>(request.getObjectIds());
+        record.requirementsJson = mergeRequirementJson(
+            existingDraft == null ? null : existingDraft.requirementsJson,
+            request.getRequirementsJson(),
+            request.getClarifyingQuestions()
+        );
+        record.objectIds = mergeObjectIdsForTaskFiles(
+            request.getObjectIds() == null && existingDraft != null ? existingDraft.objectIds : request.getObjectIds(),
+            request.getClarifyingQuestions(),
+            record.requirementsJson
+        );
         record.format = request.getFormat() == null ? List.of(1) : new ArrayList<>(request.getFormat());
         record.citationStyle = request.getCitationStyle() == null ? 0 : request.getCitationStyle();
         record.pageLength = request.getPageLength() == null ? 5 : request.getPageLength();
         record.specialInstructions = request.getSpecialInstructions();
         record.clarifyingQuestions = request.getClarifyingQuestions();
-        record.requirementsJson = request.getRequirementsJson();
         record.completePercent = BigDecimal.ZERO;
         record.queueAheadCount = 0;
         record.costTime = 0;
@@ -303,6 +348,13 @@ public class MockTaskController {
         if (task == null) {
             return Result.error(ApiCode.TASK_NOT_FOUND);
         }
+        List<TaskDetailDTO.ClarifyingQuestionInfo> clarifyingQuestions =
+            RequirementJsonClarifyParser.parseClarifyingQuestionList(task.requirementsJson);
+        List<String> detailObjectIds = mergeObjectIdsForTaskFiles(
+            task.objectIds,
+            task.clarifyingQuestions,
+            task.requirementsJson
+        );
 
         TaskDetailResponse response = TaskDetailResponse.builder()
             .taskBaseInfo(TaskDetailResponse.TaskBaseInfoResponse.builder()
@@ -398,7 +450,8 @@ public class MockTaskController {
                     .outputType(1)
                     .build()
             ))
-            .uploadedFileInfoList(toUploadedFileInfo(task.objectIds))
+            .uploadedFileInfoList(toUploadedFileInfo(detailObjectIds, clarifyingQuestions))
+            .clarifyingQuestionList(toClarifyingQuestionInfoResponse(clarifyingQuestions))
             .build();
 
         return Result.success(response);
@@ -589,10 +642,15 @@ public class MockTaskController {
             .build();
     }
 
-    private List<TaskDetailResponse.UploadedFileInfoResponse> toUploadedFileInfo(List<String> objectIds) {
+    private List<TaskDetailResponse.UploadedFileInfoResponse> toUploadedFileInfo(
+        List<String> objectIds,
+        List<TaskDetailDTO.ClarifyingQuestionInfo> clarifyingQuestions
+    ) {
         if (objectIds == null || objectIds.isEmpty()) {
             return List.of();
         }
+
+        Map<String, String> clarifyQuestionIdByObjectId = clarifyQuestionIdByObjectId(clarifyingQuestions);
 
         return objectIds.stream()
             .map(store::findFile)
@@ -605,8 +663,53 @@ public class MockTaskController {
                 .fileSize(file.fileSize)
                 .uploadTime(file.uploadEpochSec)
                 .downloadUrl("/v1/file/download/" + file.objectId)
+                .attachmentSource(clarifyQuestionIdByObjectId.containsKey(file.objectId) ? "CLARIFY" : "TASK")
+                .clarifyQuestionId(clarifyQuestionIdByObjectId.get(file.objectId))
                 .build())
             .toList();
+    }
+
+    private List<TaskDetailResponse.ClarifyingQuestionInfoResponse> toClarifyingQuestionInfoResponse(
+        List<TaskDetailDTO.ClarifyingQuestionInfo> clarifyingQuestions
+    ) {
+        if (clarifyingQuestions == null || clarifyingQuestions.isEmpty()) {
+            return List.of();
+        }
+        return clarifyingQuestions.stream()
+            .map(q -> TaskDetailResponse.ClarifyingQuestionInfoResponse.builder()
+                .id(q.getId())
+                .question(q.getQuestion())
+                .tag(q.getTag())
+                .answer(q.getAnswer())
+                .skipped(q.getSkipped())
+                .attachments(q.getAttachments() == null
+                    ? List.of()
+                    : q.getAttachments().stream()
+                        .map(a -> TaskDetailResponse.ClarifyAttachmentInfoResponse.builder()
+                            .objectId(a.getObjectId())
+                            .filename(a.getFilename())
+                            .build())
+                        .toList())
+                .build())
+            .toList();
+    }
+
+    private Map<String, String> clarifyQuestionIdByObjectId(List<TaskDetailDTO.ClarifyingQuestionInfo> clarifyingQuestions) {
+        if (clarifyingQuestions == null || clarifyingQuestions.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new HashMap<>();
+        for (TaskDetailDTO.ClarifyingQuestionInfo q : clarifyingQuestions) {
+            if (q == null || q.getAttachments() == null || isBlank(q.getId())) {
+                continue;
+            }
+            for (TaskDetailDTO.ClarifyAttachmentInfo attachment : q.getAttachments()) {
+                if (attachment != null && !isBlank(attachment.getObjectId())) {
+                    result.putIfAbsent(attachment.getObjectId(), q.getId());
+                }
+            }
+        }
+        return result;
     }
 
     private int toTaskStatusCode(String status) {
@@ -646,17 +749,169 @@ public class MockTaskController {
         return (value == null || value.isBlank()) ? fallback : value;
     }
 
+    private String titleFromDescription(String taskDesc, String fallback) {
+        if (taskDesc == null || taskDesc.isBlank()) {
+            return fallback;
+        }
+        String normalized = taskDesc.trim().replaceAll("\\s+", " ");
+        return normalized.length() <= 60 ? normalized : normalized.substring(0, 60);
+    }
+
+    private String mergeRequirementJson(String existingJson, String requirementsJson, String clarifyingQuestions) {
+        boolean hasRequirements = requirementsJson != null && !requirementsJson.trim().isEmpty();
+        boolean hasClarifying = clarifyingQuestions != null && !clarifyingQuestions.trim().isEmpty();
+        if (!hasRequirements && !hasClarifying) {
+            return existingJson;
+        }
+
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (existingJson != null && !existingJson.trim().isEmpty()) {
+            Object parsedExisting = parseJsonOrString(existingJson);
+            if (parsedExisting instanceof Map<?, ?> existingMap) {
+                for (Map.Entry<?, ?> entry : existingMap.entrySet()) {
+                    if (entry.getKey() != null) {
+                        merged.put(String.valueOf(entry.getKey()), entry.getValue());
+                    }
+                }
+            } else {
+                merged.put("existingRequirementJson", parsedExisting);
+            }
+        }
+        if (hasRequirements) {
+            merged.put("requirementsJson", parseJsonOrString(requirementsJson));
+        }
+        if (hasClarifying) {
+            merged.put("clarifyingQuestions", clarifyingQuestions);
+        }
+        return GSON.toJson(merged);
+    }
+
+    private Object parseJsonOrString(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return raw;
+        }
+        try {
+            return GSON.fromJson(raw, Object.class);
+        } catch (JsonSyntaxException e) {
+            return raw;
+        }
+    }
+
+    private List<String> mergeObjectIdsForTaskFiles(
+        List<String> mainObjectIds,
+        String clarifyingQuestionsJson,
+        String requirementJson
+    ) {
+        List<String> result = new ArrayList<>();
+        if (mainObjectIds != null) {
+            for (String objectId : mainObjectIds) {
+                addDistinctObjectId(result, objectId);
+            }
+        }
+        appendClarifyingAttachmentObjectIdsFromArrayJson(clarifyingQuestionsJson, result);
+        appendClarifyingAttachmentObjectIdsFromRequirementJson(requirementJson, result);
+        return result;
+    }
+
+    private void appendClarifyingAttachmentObjectIdsFromRequirementJson(String requirementJson, List<String> result) {
+        if (requirementJson == null || requirementJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(requirementJson).getAsJsonObject();
+            if (!root.has("clarifyingQuestions")) {
+                return;
+            }
+            JsonArray clarifyingQuestions = resolveClarifyingArray(root.get("clarifyingQuestions"));
+            appendClarifyingAttachmentObjectIds(clarifyingQuestions, result);
+        } catch (Exception ignored) {
+            // Mock 环境容忍不完整的 requirementJson，避免联调被历史草稿阻断。
+        }
+    }
+
+    private void appendClarifyingAttachmentObjectIdsFromArrayJson(String clarifyingQuestionsJson, List<String> result) {
+        if (clarifyingQuestionsJson == null || clarifyingQuestionsJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonArray clarifyingQuestions = JsonParser.parseString(clarifyingQuestionsJson).getAsJsonArray();
+            appendClarifyingAttachmentObjectIds(clarifyingQuestions, result);
+        } catch (Exception ignored) {
+            // Mock 环境容忍前端开发时的临时 payload。
+        }
+    }
+
+    private JsonArray resolveClarifyingArray(JsonElement raw) {
+        if (raw == null || raw.isJsonNull()) {
+            return null;
+        }
+        if (raw.isJsonArray()) {
+            return raw.getAsJsonArray();
+        }
+        if (raw.isJsonPrimitive() && raw.getAsJsonPrimitive().isString()) {
+            String json = raw.getAsString();
+            if (json == null || json.isBlank()) {
+                return null;
+            }
+            JsonElement parsed = JsonParser.parseString(json);
+            return parsed.isJsonArray() ? parsed.getAsJsonArray() : null;
+        }
+        return null;
+    }
+
+    private void appendClarifyingAttachmentObjectIds(JsonArray clarifyingQuestions, List<String> result) {
+        if (clarifyingQuestions == null || clarifyingQuestions.isEmpty()) {
+            return;
+        }
+        for (JsonElement item : clarifyingQuestions) {
+            if (!item.isJsonObject()) {
+                continue;
+            }
+            JsonObject question = item.getAsJsonObject();
+            if (question.has("attachments") && question.get("attachments").isJsonArray()) {
+                for (JsonElement attachmentEl : question.get("attachments").getAsJsonArray()) {
+                    if (!attachmentEl.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject attachment = attachmentEl.getAsJsonObject();
+                    addDistinctObjectId(result, firstJsonString(attachment, "objectId", "object_id"));
+                }
+            }
+            addDistinctObjectId(result, firstJsonString(question, "attachmentObjectId", "attachment_object_id"));
+        }
+    }
+
+    private String firstJsonString(JsonObject object, String... keys) {
+        if (object == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (object.has(key) && !object.get(key).isJsonNull()) {
+                return object.get(key).getAsString();
+            }
+        }
+        return null;
+    }
+
+    private void addDistinctObjectId(List<String> result, String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return;
+        }
+        String normalized = objectId.trim();
+        if (!result.contains(normalized)) {
+            result.add(normalized);
+        }
+    }
+
     private boolean containsFailTrigger(SubmitTaskRequest request) {
-        return containsIgnoreCase(request.getTaskTitle(), "fail")
-            || containsIgnoreCase(request.getTaskDesc(), "fail")
+        return containsIgnoreCase(request.getTaskDesc(), "fail")
             || containsIgnoreCase(request.getSpecialInstructions(), "fail")
             || containsIgnoreCase(request.getRequirementsJson(), "fail")
             || containsIgnoreCase(request.getClarifyingQuestions(), "fail");
     }
 
     private boolean containsCostTrigger(SubmitTaskRequest request) {
-        return containsIgnoreCase(request.getTaskTitle(), "cost")
-            || containsIgnoreCase(request.getTaskDesc(), "cost")
+        return containsIgnoreCase(request.getTaskDesc(), "cost")
             || containsIgnoreCase(request.getSpecialInstructions(), "cost")
             || containsIgnoreCase(request.getRequirementsJson(), "cost")
             || containsIgnoreCase(request.getClarifyingQuestions(), "cost");

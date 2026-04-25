@@ -281,3 +281,34 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
+
+# ============================================================
+# Verla 链路配置（V2）
+# 对应文档 docs/verla-Java侧MVP技术方案.md §16 / §23 / §24
+# ============================================================
+verla:
+  mq:
+    shard-count: 4
+    events-exchange: studyagent.events
+    command-exchange: studyagent.command
+    dlx-exchange: studyagent.dlx
+    unroutable-exchange: studyagent.unroutable
+  internal:
+    # /internal/* 鉴权 token；Py 在 Header X-Verla-Internal-Token 携带
+    token: ${VERLA_INTERNAL_TOKEN:dev-internal-token-please-change}
+    # 允许调用 /internal/* 的客户端 IP CIDR 白名单
+    allow-cidrs: ${VERLA_INTERNAL_ALLOW_CIDRS:127.0.0.1/32,172.16.0.0/12,10.0.0.0/8}
+    # GET 请求是否跳过 HMAC 校验（POST/PUT 强制校验）
+    skip-hmac-on-get: true
+    # Day 1 期间 Controller 用 mock 返回；Day 2 接入真实 Service 后改 false
+    mock-data: true
+  context-cache:
+    conv-summary-ttl: 60s
+    turn-meta-ttl: 30s
+    sess-meta-ttl: 10s
+  sse:
+    emitter-timeout-ms: 0
+    heartbeat-interval-ms: 15000
+  watchdog:
+    turn-timeout-seconds: 120
+    session-progress-timeout-seconds: 60

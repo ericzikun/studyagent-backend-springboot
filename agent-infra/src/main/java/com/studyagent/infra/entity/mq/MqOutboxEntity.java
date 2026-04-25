@@ -66,6 +66,48 @@ public class MqOutboxEntity {
      */
     private String errorMessage;
 
+    // ========== Verla 扩展字段（迁移 027_V2，老链路全部为 NULL） ==========
+
+    /**
+     * Verla 关联 ID：conv:{cid}:turn:{tid}:sess:{sid}
+     */
+    private String correlationId;
+
+    /**
+     * 保序键：session:{sessionId}
+     */
+    private String orderingKey;
+
+    /**
+     * 信封 schema 版本，默认 1
+     */
+    private Integer schemaVersion;
+
+    /**
+     * Verla conversation id（老链路 NULL）
+     */
+    private Long conversationId;
+
+    /**
+     * Verla turn id（老链路 NULL）
+     */
+    private Long turnId;
+
+    /**
+     * Verla session id（老链路 NULL）
+     */
+    private Long sessionId;
+
+    /**
+     * 目标 exchange（NULL 走默认 commandExchange）
+     */
+    private String exchange;
+
+    /**
+     * 路由键（独立于 action，便于按 shard / 队列分发）
+     */
+    private String routingKey;
+
     /**
      * 创建时间
      */

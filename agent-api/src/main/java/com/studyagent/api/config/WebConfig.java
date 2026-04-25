@@ -28,7 +28,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/api/v1/notify/**",        // Notify API，使用 X-Notify-Token 鉴权
                 "/v1/webhook/**",           // Stripe Webhook，使用签名验证
                 "/v1/payment/config",        // Pricing 页面支付配置，允许未登录访问
-                "/v1/internal/reports/**"    // 数据报表手动触发，使用 X-Report-Token
+                "/v1/internal/reports/**",   // 数据报表手动触发，使用 X-Report-Token
+                "/v1/internal/**"            // Verla 内部 API（Python -> Java），使用 IP 白名单 + Token + HMAC
             );
     }
 }

@@ -31,7 +31,11 @@ public class VerlaInternalAuthFilter extends OncePerRequestFilter {
 
     public static final String HEADER_TOKEN = "X-Verla-Internal-Token";
     public static final String HEADER_SIG   = "X-Verla-Signature";
-    public static final String INTERNAL_PREFIX = "/internal/";
+    /**
+     * 与现网 {@code /v1/internal/reports/**} 风格保持一致，所有内部接口统一在 {@code /v1/internal/} 下。
+     * 文档 §10 / §23 中写为 "/internal/" 是逻辑命名，对外实现都加上 {@code /v1} 前缀。
+     */
+    public static final String INTERNAL_PREFIX = "/v1/internal/verla/";
 
     @Value("${verla.internal.token:}")
     private String token;

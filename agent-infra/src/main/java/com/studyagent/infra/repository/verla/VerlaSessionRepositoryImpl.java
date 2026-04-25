@@ -1,0 +1,102 @@
+package com.studyagent.infra.repository.verla;
+
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.studyagent.infra.entity.verla.VerlaSessionEntity;
+import com.studyagent.infra.mapper.verla.VerlaSessionMapper;
+import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Repository
+public class VerlaSessionRepositoryImpl
+        extends ServiceImpl<VerlaSessionMapper, VerlaSessionEntity>
+        implements VerlaSessionRepository {
+
+    @Override
+    public VerlaSession save(VerlaSession session) {
+        VerlaSessionEntity entity = toEntity(session);
+        this.saveOrUpdate(entity);
+        session.setId(entity.getId());
+        return toDomain(entity);
+    }
+
+    @Override
+    public VerlaSession findById(Long id) {
+        return toDomain(this.getById(id));
+    }
+
+    @Override
+    public VerlaSession findByIdForUpdate(Long id) {
+        return toDomain(this.baseMapper.selectByIdForUpdate(id));
+    }
+
+    @Override
+    public List<VerlaSession> findByTurn(Long turnId) {
+        return this.baseMapper.selectByTurn(turnId)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<VerlaSession> findCompletedSiblings(Long turnId, Long excludeSessionId) {
+        Long exclude = excludeSessionId == null ? -1L : excludeSessionId;
+        return this.baseMapper.selectCompletedSiblings(turnId, exclude)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public VerlaSession findByCorrelationId(String correlationId) {
+        return toDomain(this.baseMapper.selectByCorrelationId(correlationId));
+    }
+
+    private VerlaSession toDomain(VerlaSessionEntity e) {
+        if (e == null) {
+            return null;
+        }
+        return VerlaSession.builder()
+                .id(e.getId())
+                .conversationId(e.getConversationId())
+                .turnId(e.getTurnId())
+                .kind(e.getKind())
+                .featureCode(e.getFeatureCode())
+                .status(e.getStatus())
+                .correlationId(e.getCorrelationId())
+                .contextRefJson(e.getContextRefJson())
+                .resultJson(e.getResultJson())
+                .errorJson(e.getErrorJson())
+                .expectedSeq(e.getExpectedSeq())
+                .lastEventSeq(e.getLastEventSeq())
+                .lastProgressAt(e.getLastProgressAt())
+                .startedAt(e.getStartedAt())
+                .endedAt(e.getEndedAt())
+                .createdAt(e.getCreatedAt())
+                .updatedAt(e.getUpdatedAt())
+                .build();
+    }
+
+    private VerlaSessionEntity toEntity(VerlaSession d) {
+        if (d == null) {
+            return null;
+        }
+        return new VerlaSessionEntity()
+                .setId(d.getId())
+                .setConversationId(d.getConversationId())
+                .setTurnId(d.getTurnId())
+                .setKind(d.getKind())
+                .setFeatureCode(d.getFeatureCode())
+                .setStatus(d.getStatus())
+                .setCorrelationId(d.getCorrelationId())
+                .setContextRefJson(d.getContextRefJson())
+                .setResultJson(d.getResultJson())
+                .setErrorJson(d.getErrorJson())
+                .setExpectedSeq(d.getExpectedSeq())
+                .setLastEventSeq(d.getLastEventSeq())
+                .setLastProgressAt(d.getLastProgressAt())
+                .setStartedAt(d.getStartedAt())
+                .setEndedAt(d.getEndedAt())
+                .setCreatedAt(d.getCreatedAt())
+                .setUpdatedAt(d.getUpdatedAt());
+    }
+}

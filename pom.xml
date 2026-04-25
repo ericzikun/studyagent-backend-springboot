@@ -54,6 +54,9 @@
 
         <!-- PostHog (使用 legacy SDK，包名 com.posthog.java，与阿里云兼容) -->
         <posthog.version>1.1.0</posthog.version>
+
+        <!-- Caffeine：Verla 上下文查询本地缓存（PR-10） -->
+        <caffeine.version>3.1.8</caffeine.version>
     </properties>
 
     <dependencyManagement>
@@ -134,6 +137,13 @@
                 <groupId>com.posthog.java</groupId>
                 <artifactId>posthog</artifactId>
                 <version>${posthog.version}</version>
+            </dependency>
+
+            <!-- Caffeine: 本地高性能缓存，用于 Verla 上下文查询的 lookaside -->
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
 
             <!-- Agent Common (内部模块) -->

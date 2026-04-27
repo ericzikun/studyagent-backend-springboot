@@ -41,6 +41,17 @@ class SessionStateMachineTest {
     }
 
     @Test
+    void dispatching_can_short_circuit_to_terminal() {
+        // Plan session 在 ACK 之前直接收到 PLAN_INTENT_RESOLVED → orchestrator 以 AGENT_COMPLETED 推进
+        assertEquals(SUCCEEDED, sm.next(DISPATCHING, AGENT_COMPLETED));
+        // Py 还没回 AGENT_STARTED 就出错
+        assertEquals(FAILED, sm.next(DISPATCHING, AGENT_FAILED));
+        // 用户立刻取消 / Py 立刻取消
+        assertEquals(CANCELLING, sm.next(DISPATCHING, USER_CANCEL));
+        assertEquals(CANCELLED, sm.next(DISPATCHING, AGENT_CANCELLED));
+    }
+
+    @Test
     void reject_invalid_event() {
         assertThrows(IllegalStateException.class,
                 () -> sm.next(CREATED, AGENT_COMPLETED));

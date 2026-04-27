@@ -19,6 +19,20 @@ clerk:
   api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
   frontend-api-url: ${CLERK_FRONTEND_API_URL:}
 
+# 本地开发：跳过 Clerk 鉴权，header X-Dev-User / query dev_user 决定 clerkUserId
+# ⚠️ 仅本地有效，生产/Docker 环境（application-prod.yml / application-docker.yml）默认不开。
+# 详见 docs/verla-端到端调用链路-做作业示例.md §四
+auth:
+  dev-bypass:
+    enabled: ${AUTH_DEV_BYPASS:true}
+    default-user: ${AUTH_DEV_DEFAULT_USER:dev-user-001}
+
+# 本地开发：MockPyCommandConsumer 异步回事件的基础延迟（ms）
+verla:
+  mq:
+    mock:
+      delay-base-ms: ${VERLA_MOCK_DELAY_MS:50}
+
 # Python 后端配置（本地环境）
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}

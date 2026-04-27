@@ -48,8 +48,24 @@ public class AuthInterceptor implements HandlerInterceptor {
      */
     @Value("${clerk.enable-sdk-verification:false}")
     private boolean enableSdkVerification;
-    
-    
+
+    /**
+     * 本地开发用 dev-bypass：跳过 Clerk 校验，从 header X-Dev-User 或 query dev_user 取 userId。
+     * <ul>
+     *   <li>默认关闭（生产/Docker baseline 不会启用）；</li>
+     *   <li>仅 application-local.yml / application-dev.yml 显式置为 true；</li>
+     *   <li>开启后日志会以 WARN 提示，避免误生产配置。</li>
+     * </ul>
+     * 详见 docs/verla-端到端调用链路-做作业示例.md §四。
+     */
+    @Value("${auth.dev-bypass.enabled:false}")
+    private boolean devBypassEnabled;
+
+    /** 当 dev-bypass 开启但调用方完全没传 dev_user/X-Dev-User 时使用的兜底用户 */
+    @Value("${auth.dev-bypass.default-user:dev-user-001}")
+    private String devBypassDefaultUser;
+
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         // 允许 OPTIONS 预检请求（CORS）
@@ -72,6 +88,27 @@ public class AuthInterceptor implements HandlerInterceptor {
                 authHeader = "Bearer " + qsToken;
             }
         }
+
+        // 本地开发兜底：dev-bypass 仅在 application-{local,dev}.yml 显式打开时生效。
+        if ((authHeader == null || !authHeader.startsWith("Bearer ")) && devBypassEnabled) {
+            String devUser = request.getHeader("X-Dev-User");
+            if (devUser == null || devUser.isBlank()) {
+                devUser = request.getParameter("dev_user");
+            }
+            if (devUser == null || devUser.isBlank()) {
+                devUser = devBypassDefaultUser;
+            }
+            log.warn("[AuthInterceptor] dev-bypass active, clerkUserId={} for {} {} (do NOT enable in prod)",
+                    devUser, request.getMethod(), request.getRequestURI());
+            ClerkClient.UserInfo info = new ClerkClient.UserInfo();
+            info.clerkUserId = devUser;
+            info.displayName = devUser;
+            info.email = devUser + "@local.dev";
+            request.setAttribute("clerkUserId", devUser);
+            request.setAttribute("userInfo", info);
+            return true;
+        }
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                 "MISSING_TOKEN", "Authorization header is missing or invalid");

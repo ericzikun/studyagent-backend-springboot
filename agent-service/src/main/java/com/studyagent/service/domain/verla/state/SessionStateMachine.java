@@ -27,10 +27,21 @@ public class SessionStateMachine {
         table.put(CREATED, Map.of(
                 DISPATCH, DISPATCHING));
 
+        // DISPATCHING 行额外接受 AGENT_COMPLETED / AGENT_FAILED / AGENT_CANCELLED / USER_CANCEL：
+        // 真实链路通常 DISPATCHING → RUNNING → SUCCEEDED，但存在两类合法跳过 RUNNING 的情况：
+        //   1) Plan session：Py 内部很快出意图，可能在 broker confirm 前就直接回 PLAN_INTENT_RESOLVED；
+        //      orchestrator.onPlanResolved 会以 AGENT_COMPLETED 推进状态机。
+        //   2) Agent session：极端情况下 Py 还没来得及发 AGENT_STARTED 就出错回 AGENT_FAILED，
+        //      或用户在 ACK_OK 之后立刻取消（USER_CANCEL）。
+        // 补这几条让状态机在合法链路上不抛 IllegalStateException。
         table.put(DISPATCHING, Map.of(
                 ACK_OK, DISPATCHING,
                 ACK_FAIL, FAILED,
                 AGENT_STARTED, RUNNING,
+                AGENT_COMPLETED, SUCCEEDED,
+                AGENT_FAILED, FAILED,
+                AGENT_CANCELLED, CANCELLED,
+                USER_CANCEL, CANCELLING,
                 WATCHDOG_TIMEOUT, FAILED));
 
         table.put(RUNNING, Map.of(

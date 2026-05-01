@@ -4,14 +4,19 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
+import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.VerlaToolCall;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import com.studyagent.service.domain.verla.repo.VerlaToolCallRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -38,7 +43,9 @@ import java.util.concurrent.ConcurrentMap;
  * <ul>
  *     <li>三层本地 Caffeine 缓存：conv / turn / sess（MVP 不接 Redis，等 Day 6 后迁移）</li>
  *     <li>conv / turn 用 version 号做 key 后缀，写时 INCR 即天然失效</li>
+ *     <li>conv 层缓存 key 含 {@code messageLimit}，避免不同 limit 复用错误的消息切片</li>
  *     <li>sess 不带 version，依赖较短 TTL</li>
+ *     <li>V2：artifacts / toolCalls 不做专用缓存（体量可控且变更频率中等）</li>
  * </ul>
  *
  * <h3>SingleFlight</h3>
@@ -53,6 +60,8 @@ public class VerlaContextQueryService {
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaMessageRepository messageRepository;
+    private final VerlaArtifactRepository artifactRepository;
+    private final VerlaToolCallRepository toolCallRepository;
     private final MeterRegistry meterRegistry;
 
     @Value("${verla.context-cache.conv-summary-ttl-seconds:60}")
@@ -66,6 +75,12 @@ public class VerlaContextQueryService {
 
     @Value("${verla.context-cache.recent-message-limit:20}")
     private int recentMessageLimit;
+
+    @Value("${verla.context-cache.trace-limit-default:50}")
+    private int traceLimitDefault;
+
+    @Value("${verla.context-cache.artifact-limit-default:80}")
+    private int artifactLimitDefault;
 
     @Value("${verla.context-cache.max-entries-per-layer:5000}")
     private long maxEntriesPerLayer;
@@ -117,9 +132,20 @@ public class VerlaContextQueryService {
      * @param turnVersion 可选；同上，命中 turn 层缓存
      */
     public VerlaSessionContextView getSessionContext(Long sessionId, Long convVersion, Long turnVersion) {
+        return getSessionContext(sessionId, convVersion, turnVersion, VerlaSessionContextQueryOptions.defaults());
+    }
+
+    /**
+     * V2：带 trace / summaries / artifacts / 可调消息与 trace 条数上限。
+     */
+    public VerlaSessionContextView getSessionContext(Long sessionId, Long convVersion, Long turnVersion,
+                                                     VerlaSessionContextQueryOptions options) {
         if (sessionId == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId");
         }
+        VerlaSessionContextQueryOptions opts = options == null
+                ? VerlaSessionContextQueryOptions.defaults() : options;
+
         VerlaSession session = loadSession(sessionId);
         if (session == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "session=" + sessionId);
@@ -128,12 +154,37 @@ public class VerlaContextQueryService {
         if (turn == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "turn=" + session.getTurnId());
         }
-        ConvSummary convSummary = loadConvSummary(session.getConversationId(), convVersion);
+
+        int msgLimit = clampMessageLimit(opts.getMessageLimit());
+        ConvSummary convSummary = loadConvSummary(session.getConversationId(), convVersion, msgLimit);
         if (convSummary == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conv=" + session.getConversationId());
         }
 
         List<VerlaSession> siblings = sessionRepository.findCompletedSiblings(turn.getId(), session.getId());
+
+        int trLimit = clampTraceLimit(opts.getTraceLimit());
+
+        List<VerlaArtifact> artifacts = List.of();
+        if (opts.isIncludeArtifacts()) {
+            artifacts = artifactRepository.findByConversation(session.getConversationId());
+            if (artifacts.size() > artifactLimitDefault) {
+                artifacts = artifacts.subList(0, artifactLimitDefault);
+            }
+        }
+
+        List<VerlaToolCall> recentToolCalls = List.of();
+        if (opts.isIncludeTrace()) {
+            recentToolCalls = toolCallRepository.listBySession(sessionId, trLimit);
+        }
+
+        List<VerlaSessionContextView.ToolCallSummaryView> summaries = List.of();
+        if (opts.isIncludeToolSummaries()) {
+            summaries = toolCallRepository.listVisibleByConversation(session.getConversationId(), trLimit)
+                    .stream()
+                    .map(VerlaContextQueryService::toSummaryView)
+                    .toList();
+        }
 
         String hitLayer = computeHitLayer(session, turn, convSummary, convVersion, turnVersion);
         return VerlaSessionContextView.builder()
@@ -142,7 +193,32 @@ public class VerlaContextQueryService {
                 .session(session)
                 .upstreamSessions(siblings)
                 .recentMessages(convSummary.recentMessages)
+                .artifacts(artifacts)
+                .toolSummaries(summaries)
+                .recentToolCalls(recentToolCalls)
+                .traceIncluded(opts.isIncludeTrace())
                 .cacheHitLayer(hitLayer)
+                .build();
+    }
+
+    private int clampMessageLimit(Integer req) {
+        int lim = req == null ? recentMessageLimit : req;
+        return Math.max(1, Math.min(lim, 100));
+    }
+
+    private int clampTraceLimit(Integer req) {
+        int lim = req == null ? traceLimitDefault : req;
+        return Math.max(1, Math.min(lim, 200));
+    }
+
+    private static VerlaSessionContextView.ToolCallSummaryView toSummaryView(VerlaToolCall c) {
+        return VerlaSessionContextView.ToolCallSummaryView.builder()
+                .toolCallId(c.getToolCallId())
+                .agentName(c.getAgentName())
+                .toolName(c.getToolName())
+                .summary(c.getSummary())
+                .status(c.getStatus())
+                .visibility(c.getVisibility())
                 .build();
     }
 
@@ -200,7 +276,7 @@ public class VerlaContextQueryService {
     // ====================================================================
     // conv 层（含最近消息聚合）
     // ====================================================================
-    private ConvSummary loadConvSummary(Long convId, Long convVersion) {
+    private ConvSummary loadConvSummary(Long convId, Long convVersion, int messageLimit) {
         VerlaConversation peek = conversationRepository.findById(convId);
         if (peek == null) {
             return null;
@@ -208,7 +284,7 @@ public class VerlaContextQueryService {
         Long realVer = peek.getVersion() == null ? 0L : peek.getVersion();
         long usedVer = (convVersion == null) ? realVer : convVersion;
 
-        String key = convId + ":v" + usedVer;
+        String key = convId + ":v" + usedVer + ":ml" + messageLimit;
         ConvSummary cached = convCache.getIfPresent(key);
         if (cached != null && Objects.equals(cached.conversation.getVersion(), realVer)) {
             return cached;
@@ -219,9 +295,10 @@ public class VerlaContextQueryService {
             if (conv == null) {
                 return null;
             }
-            List<VerlaMessage> recent = messageRepository.findByCursor(convId, null, recentMessageLimit);
+            List<VerlaMessage> recent = messageRepository.findByCursor(convId, null, messageLimit);
             ConvSummary s = new ConvSummary(conv, recent);
-            convCache.put(convId + ":v" + (conv.getVersion() == null ? 0L : conv.getVersion()), s);
+            convCache.put(convId + ":v" + (conv.getVersion() == null ? 0L : conv.getVersion())
+                    + ":ml" + messageLimit, s);
             return s;
         });
     }

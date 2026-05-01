@@ -282,6 +282,11 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
 
+# 浏览器跨域：在默认白名单之外追加 Origin（逗号分隔），例如 https://app.example.com
+studyagent:
+  cors:
+    extra-allowed-origins: ${STUDYAGENT_CORS_EXTRA_ORIGINS:}
+
 # ============================================================
 # Verla 链路配置（V2）
 # 对应文档 docs/verla-Java侧MVP技术方案.md §16 / §23 / §24
@@ -312,3 +317,8 @@ verla:
   watchdog:
     turn-timeout-seconds: 120
     session-progress-timeout-seconds: 60
+  attachment:
+    max-bytes: ${VERLA_ATTACHMENT_MAX_BYTES:33554432}
+    sign-ttl-seconds: ${VERLA_ATTACHMENT_SIGN_TTL_SECONDS:3600}
+    allowed-mimes: ${VERLA_ATTACHMENT_ALLOWED_MIMES:application/pdf,image/png,image/jpeg,image/webp,text/plain}
+    oss-key-prefix: ${VERLA_ATTACHMENT_OSS_KEY_PREFIX:verla/v2/attachments}

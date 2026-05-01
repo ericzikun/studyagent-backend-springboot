@@ -131,10 +131,15 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 根据配置选择验证方式
             if (enableSdkVerification && clerkSecretKey != null && !clerkSecretKey.isEmpty()
                     && !clerkSecretKey.equals("sk_test_xxx")) {
-                // 方式 1: 使用 Clerk 官方 SDK 验证（验证 JWT 签名，更安全）
-                userInfo = verifyWithClerkSdk(request, token);
+                // Verla SSE：JWT 仅能通过 ?access_token= 传递；Clerk AuthenticateRequest 常报 SESSION_TOKEN_MISSING，
+                // 与 EventSource 限制不符。此处与其它降级路径一致，使用 JWT 解析（校验 exp / sub）。
+                if (isVerlaSseRequest(request)) {
+                    log.debug("[AuthInterceptor] Verla SSE 跳过 Clerk AuthenticateRequest，使用 JWT 解析");
+                    userInfo = clerkClient.verifyToken(token);
+                } else {
+                    userInfo = verifyWithClerkSdk(request, token);
+                }
             } else {
-                // 方式 2: 使用本地 JWT 解析（更快，但不验证签名）
                 userInfo = clerkClient.verifyToken(token);
             }
             
@@ -211,7 +216,11 @@ public class AuthInterceptor implements HandlerInterceptor {
                 List<String> headerValues = Collections.list(servletRequest.getHeaders(headerName));
                 headersMap.put(headerName.toLowerCase(), headerValues);
             }
-            
+
+            // Clerk AuthenticateRequest 只认 HTTP headers；Verla SSE 的 JWT 在 query access_token，
+            // preHandle 已解析为 token，必须显式注入 Authorization，否则会报 SESSION_TOKEN_MISSING。
+            headersMap.put("authorization", Collections.singletonList("Bearer " + token));
+
             // 构建验证选项
             AuthenticateRequestOptions options = AuthenticateRequestOptions
                 .secretKey(clerkSecretKey)

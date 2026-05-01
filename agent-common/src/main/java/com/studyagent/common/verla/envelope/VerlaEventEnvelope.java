@@ -1,5 +1,6 @@
 package com.studyagent.common.verla.envelope;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -62,6 +63,7 @@ public class VerlaEventEnvelope {
      */
     private Long eventSeq;
 
+    @JsonDeserialize(using = LenientInstantDeserializer.class)
     private Instant timestamp;
 
     private VerlaProducerInfo producer;

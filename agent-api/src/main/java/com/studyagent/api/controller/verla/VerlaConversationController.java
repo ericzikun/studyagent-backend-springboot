@@ -16,6 +16,8 @@ import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +50,7 @@ public class VerlaConversationController {
 
     private final VerlaConversationService conversationService;
     private final VerlaTurnOrchestrator turnOrchestrator;
+    private final ObjectMapper objectMapper;
 
     // ========================================================
     // 1) POST /v1/verla/conversations  ——  创建对话 Tab
@@ -140,7 +144,7 @@ public class VerlaConversationController {
                 .userId(clerkUserId)
                 .text(req.getText())
                 .clientMessageId(req.getClientMessageId())
-                .attachmentsJson(req.getAttachments() == null ? null : req.getAttachments().toString())
+                .attachmentsJson(writeAttachmentsJson(req.getAttachments()))
                 .skipPlanIfPossible(req.getSkipPlanIfPossible() == null || req.getSkipPlanIfPossible())
                 .build();
         SendMessageResult result = turnOrchestrator.onUserMessage(cmd);
@@ -173,6 +177,17 @@ public class VerlaConversationController {
     private void ensureLogin(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
+        }
+    }
+
+    private String writeAttachmentsJson(List<Map<String, Object>> attachments) {
+        if (attachments == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(attachments);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "attachments must be JSON-serializable");
         }
     }
 }

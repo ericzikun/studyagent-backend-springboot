@@ -41,6 +41,18 @@ public class VerlaSessionContextVO {
     private List<UpstreamSessionVO> upstreamSessions;
     private List<RecentMessageVO> recentMessages;
 
+    /** V2：conversation 级 artifact（{@code includeArtifacts=false} 时空数组） */
+    private List<VerlaArtifactVO> artifacts;
+
+    /** V2：USER_VISIBLE 工具摘要（{@code includeToolSummaries=true}） */
+    private List<ToolSummaryVO> toolSummaries;
+
+    /** V2：当前 session tool trace（{@code includeTrace=true}） */
+    private List<VerlaToolCallVO> recentToolCalls;
+
+    /** V2：是否包含完整 trace（与请求 {@code includeTrace} 一致） */
+    private Boolean traceIncluded;
+
     /** 命中缓存层标记：none / sess / turn / conv */
     private String cacheHitLayer;
 
@@ -66,8 +78,48 @@ public class VerlaSessionContextVO {
                         : v.getRecentMessages().stream()
                             .map(RecentMessageVO::from)
                             .collect(Collectors.toList()))
+                .artifacts(v.getArtifacts() == null ? List.of()
+                        : v.getArtifacts().stream()
+                            .map(VerlaArtifactVO::from)
+                            .collect(Collectors.toList()))
+                .toolSummaries(v.getToolSummaries() == null ? List.of()
+                        : v.getToolSummaries().stream()
+                            .map(ToolSummaryVO::from)
+                            .collect(Collectors.toList()))
+                .recentToolCalls(v.getRecentToolCalls() == null ? List.of()
+                        : v.getRecentToolCalls().stream()
+                            .map(VerlaToolCallVO::from)
+                            .collect(Collectors.toList()))
+                .traceIncluded(v.getTraceIncluded() != null ? v.getTraceIncluded() : Boolean.FALSE)
                 .cacheHitLayer(v.getCacheHitLayer())
                 .build();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ToolSummaryVO {
+        private String toolCallId;
+        private String agentName;
+        private String toolName;
+        private String summary;
+        private String status;
+        private String visibility;
+
+        public static ToolSummaryVO from(VerlaSessionContextView.ToolCallSummaryView s) {
+            if (s == null) {
+                return null;
+            }
+            return ToolSummaryVO.builder()
+                    .toolCallId(s.getToolCallId())
+                    .agentName(s.getAgentName())
+                    .toolName(s.getToolName())
+                    .summary(s.getSummary())
+                    .status(s.getStatus())
+                    .visibility(s.getVisibility())
+                    .build();
+        }
     }
 
     @Data
@@ -96,19 +148,27 @@ public class VerlaSessionContextVO {
     @AllArgsConstructor
     public static class RecentMessageVO {
         private Long messageId;
+        private Long conversationId;
         private Long turnId;
+        private Long sourceSessionId;
         private String role;
         private String text;
         private String blocksJson;
+        private String attachmentsJson;
+        private String metaJson;
         private LocalDateTime createdAt;
 
         public static RecentMessageVO from(VerlaMessage m) {
             return RecentMessageVO.builder()
                     .messageId(m.getId())
+                    .conversationId(m.getConversationId())
                     .turnId(m.getTurnId())
+                    .sourceSessionId(m.getSourceSessionId())
                     .role(m.getRole())
                     .text(m.getTextContent())
                     .blocksJson(m.getBlocksJson())
+                    .attachmentsJson(m.getAttachmentsJson())
+                    .metaJson(m.getMetaJson())
                     .createdAt(m.getCreatedAt())
                     .build();
         }

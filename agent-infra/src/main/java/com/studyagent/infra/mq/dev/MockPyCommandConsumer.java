@@ -18,6 +18,7 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -33,13 +34,15 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Mock Py command consumer（dev / local profile）
  * <p>
- * 详见 docs/verla-Java侧MVP技术方案.md §18 PR-11、docs/verla-端到端调用链路-做作业示例.md §3。
+ * 详见 docs/verla-Java侧MVP技术方案.md §18 PR-11、docs/verla-端到端调用链路-做作业示例.md §3、
+ * docs/V2/5.1 Java后端 + 数据库 V2 升级技术方案.md §5.3。
  * <p>
  * 职责：
  * <ol>
@@ -49,16 +52,27 @@ import java.util.concurrent.atomic.AtomicLong;
  *       让 Java 侧 inbox/cursor/handler 跑完一整个 happy path。</li>
  * </ol>
  * <p>
- * 模拟时序（与文档 §6 / §11.5 一致）：
+ * 模拟时序（与文档 §6 / §11.5 / V2 §4 一致）：
  * <pre>
  * cmd.plan.intent      ──► (200ms)  PLAN_INTENT_RESOLVED { intent, slots }
+ *                       └── 30% 概率走 clarify 分支：
+ *                             (150ms)  AGENT_CLARIFY_FORM_ISSUED { formId, schema }
+ *                             (250ms)  PLAN_NEEDS_CLARIFY { question }
  * cmd.agent.run        ──► (50ms)   AGENT_STARTED
- *                         (200ms)  AGENT_STEP_STREAM_CHUNK { delta: "片段 1 ..." }
- *                         (400ms)  AGENT_STEP_STREAM_CHUNK { delta: "片段 2 ..." }
- *                         (600ms)  AGENT_STEP_STREAM_CHUNK { delta: "片段 3 ..." }
- *                         (900ms)  AGENT_COMPLETED { summary }
- * cmd.agent.control.cancel ─► (100ms) AGENT_CANCELLED
- * cmd.agent.control.retry  ─► no-op (留给真 Py 处理)
+ *                          (150ms)  AGENT_TOOL_CALL_RECORDED  { tool=web_search, status=RUNNING }
+ *                          (200ms)  AGENT_STEP_STREAM_CHUNK   { delta: "片段 1 ..." }
+ *                          (350ms)  AGENT_TOOL_CALL_RECORDED  { tool=web_search, status=SUCCEEDED }
+ *                          (400ms)  AGENT_STEP_STREAM_CHUNK   { delta: "片段 2 ..." }
+ *                          (600ms)  AGENT_STEP_STREAM_CHUNK   { delta: "片段 3 ..." }
+ *                          (800ms)  AGENT_ARTIFACT_UPDATED    { artifactUid, kind=assignment_card, status=READY }
+ *                          (900ms)  AGENT_COMPLETED           { summary, artifactCount=1 }
+ * cmd.agent.control.cancel  ──► (100ms) AGENT_CANCELLED
+ * cmd.agent.control.retry   ──► no-op (留给真 Py 处理)
+ * cmd.clarify.submit        ──► (200ms) PLAN_INTENT_RESOLVED { intent, slots from answers }
+ * cmd.attachment.parse      ──► (200ms) ATTACHMENT_PARSED status=PARSING progress=30
+ *                              (500ms) ATTACHMENT_PARSED status=PARSING progress=70
+ *                              (700ms) AGENT_ARTIFACT_UPDATED { kind=document_markdown }
+ *                              (900ms) ATTACHMENT_PARSED status=PARSED summary primaryArtifactUid
  * </pre>
  * <p>
  * 仅在 {@code spring.profiles.active in (dev, local)} 时启用，生产环境一定不能启动此 bean。
@@ -66,6 +80,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 @Component
 @Profile({"dev", "local"})
+@ConditionalOnProperty(name = "verla.mq.mock.enabled", havingValue = "true", matchIfMissing = false)
 public class MockPyCommandConsumer {
 
     private static final String PRODUCER_SERVICE = "py-mock";
@@ -78,10 +93,14 @@ public class MockPyCommandConsumer {
     private final ConcurrentHashMap<Long, AtomicLong> sessionSeq = new ConcurrentHashMap<>();
     private final String instanceId;
 
+    /** plan agent 触发 clarify form 的概率 (0~100)。可通过 verla.mq.mock.clarify-rate 配置。 */
+    private final int clarifyRate;
+
     public MockPyCommandConsumer(ObjectMapper objectMapper,
                                  RabbitTemplate rabbitTemplate,
                                  VerlaRabbitConfig rabbitConfig,
-                                 @Value("${verla.mq.mock.delay-base-ms:50}") long delayBaseMs) {
+                                 @Value("${verla.mq.mock.delay-base-ms:50}") long delayBaseMs,
+                                 @Value("${verla.mq.mock.clarify-rate:30}") int clarifyRate) {
         this.objectMapper = objectMapper;
         this.rabbitTemplate = rabbitTemplate;
         this.rabbitConfig = rabbitConfig;
@@ -91,7 +110,9 @@ public class MockPyCommandConsumer {
             return t;
         });
         this.instanceId = "local-" + Long.toHexString(System.nanoTime() & 0xffffffL);
-        log.info("[MockPy] enabled, instanceId={}, delayBaseMs={}", instanceId, delayBaseMs);
+        this.clarifyRate = Math.max(0, Math.min(100, clarifyRate));
+        log.info("[MockPy] enabled, instanceId={}, delayBaseMs={}, clarifyRate={}%",
+                instanceId, delayBaseMs, this.clarifyRate);
     }
 
     @PreDestroy
@@ -125,6 +146,22 @@ public class MockPyCommandConsumer {
     )
     public void onControl(Message msg, Channel channel) throws IOException {
         handle("CONTROL", msg, channel, this::scheduleControlResponse);
+    }
+
+    @RabbitListener(
+            queues = VerlaRabbitConfig.CMD_CLARIFY_QUEUE,
+            containerFactory = "verlaListenerContainerFactory"
+    )
+    public void onClarify(Message msg, Channel channel) throws IOException {
+        handle("CLARIFY", msg, channel, this::scheduleClarifyResponse);
+    }
+
+    @RabbitListener(
+            queues = VerlaRabbitConfig.CMD_ATTACHMENT_QUEUE,
+            containerFactory = "verlaListenerContainerFactory"
+    )
+    public void onAttachment(Message msg, Channel channel) throws IOException {
+        handle("ATTACHMENT", msg, channel, this::scheduleAttachmentResponse);
     }
 
     // ============================================================
@@ -172,6 +209,16 @@ public class MockPyCommandConsumer {
         String intent = hint != null && !hint.isBlank() ? hint : inferIntent(userText);
         Map<String, Object> slots = inferSlots(userText, intent);
 
+        // V2: 30% 概率走 clarify 分支（关键词触发可强制开/关）
+        if (shouldClarify(userText)) {
+            String formId = "form_mock_" + UUID.randomUUID().toString().substring(0, 8);
+            scheduleEvent(cmd, VerlaAgentEventType.AGENT_CLARIFY_FORM_ISSUED,
+                    buildClarifyFormPayload(formId, intent), 150);
+            scheduleEvent(cmd, VerlaAgentEventType.PLAN_NEEDS_CLARIFY,
+                    buildPlanClarifyHintPayload(formId, intent), 250);
+            return;
+        }
+
         Map<String, Object> body = new HashMap<>();
         body.put("intent", intent);
         body.put("slots", slots);
@@ -180,11 +227,59 @@ public class MockPyCommandConsumer {
         scheduleEvent(cmd, VerlaAgentEventType.PLAN_INTENT_RESOLVED, body, 200);
     }
 
+    private boolean shouldClarify(String userText) {
+        if (userText != null) {
+            String t = userText.toLowerCase(Locale.ROOT);
+            if (containsAny(t, "再问", "请追问", "clarify", "ask me")) return true;
+            if (containsAny(t, "不要追问", "no clarify", "skip clarify")) return false;
+        }
+        return clarifyRate > 0 && ThreadLocalRandom.current().nextInt(100) < clarifyRate;
+    }
+
+    private Map<String, Object> buildClarifyFormPayload(String formId, String intent) {
+        Map<String, Object> p = new HashMap<>();
+        p.put("formId", formId);
+        p.put("title", "请补充以下信息");
+        p.put("description", "为了更好地帮你处理「" + intent + "」，需要先确认几个问题");
+
+        List<Map<String, Object>> schema = new ArrayList<>();
+        schema.add(Map.of(
+                "key", "subject",
+                "label", "学科",
+                "type", "select",
+                "options", List.of("math", "physics", "chemistry", "english", "chinese"),
+                "required", true));
+        schema.add(Map.of(
+                "key", "deadline",
+                "label", "截止时间",
+                "type", "date",
+                "required", false));
+        schema.add(Map.of(
+                "key", "extraNote",
+                "label", "其他说明",
+                "type", "textarea",
+                "required", false));
+        p.put("schema", schema);
+        return p;
+    }
+
+    private Map<String, Object> buildPlanClarifyHintPayload(String formId, String intent) {
+        Map<String, Object> p = new HashMap<>();
+        p.put("question", "请先填写上方表单，回答后我会继续处理「" + intent + "」");
+        p.put("formId", formId);
+        return p;
+    }
+
     private void scheduleAgentResponse(VerlaCommandEnvelope cmd) {
         Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
         String agentType = String.valueOf(payload.getOrDefault("agentType", "qa"));
 
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_STARTED, Map.of("agentType", agentType), 50);
+
+        // V2: 插入 1 次 user-visible 工具调用 trace（RUNNING → SUCCEEDED 同 callId 幂等）
+        String toolCallId = "call_mock_" + UUID.randomUUID().toString().substring(0, 8);
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_TOOL_CALL_RECORDED,
+                buildToolCallPayload(toolCallId, agentType, "RUNNING", null, null), 150);
 
         List<String> chunks = mockChunks(agentType);
         for (int i = 0; i < chunks.size(); i++) {
@@ -196,11 +291,62 @@ public class MockPyCommandConsumer {
                     chunkPayload, 200L + idx * 200L);
         }
 
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_TOOL_CALL_RECORDED,
+                buildToolCallPayload(toolCallId, agentType, "SUCCEEDED", 200, "返回 5 条相关结果"),
+                350);
+
+        // V2: 在 completed 之前发 artifact_updated（让前端右栏材料能渲染）
+        String artifactUid = "artifact_mock_" + UUID.randomUUID().toString().substring(0, 8);
+        long artifactDelay = 250L + chunks.size() * 200L;
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_ARTIFACT_UPDATED,
+                buildArtifactPayload(artifactUid, agentType), artifactDelay);
+
         Map<String, Object> doneBody = new HashMap<>();
         doneBody.put("summary", "[Mock] " + agentType + " 已完成");
-        doneBody.put("artifactCount", 0);
+        doneBody.put("artifactCount", 1);
+        doneBody.put("primaryArtifactUid", artifactUid);
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_COMPLETED, doneBody,
                 300L + chunks.size() * 200L);
+    }
+
+    private Map<String, Object> buildToolCallPayload(String callId, String agentType,
+                                                    String status, Integer durationMs,
+                                                    String summary) {
+        Map<String, Object> p = new HashMap<>();
+        p.put("toolCallId", callId);
+        p.put("agentName", agentType);
+        p.put("toolName", "web_search");
+        p.put("status", status);
+        p.put("visibility", "USER_VISIBLE");
+        p.put("toolInput", Map.of("query", "[mock] 关于 " + agentType + " 的搜索"));
+        if ("SUCCEEDED".equals(status)) {
+            p.put("toolOutput", Map.of(
+                    "resultCount", 5,
+                    "topResults", List.of(
+                            Map.of("title", "[mock] 结果 1", "url", "https://example.com/1"),
+                            Map.of("title", "[mock] 结果 2", "url", "https://example.com/2"))));
+            p.put("finishedAt", Instant.now().toString());
+        } else {
+            p.put("startedAt", Instant.now().toString());
+        }
+        if (durationMs != null) p.put("durationMs", durationMs);
+        if (summary != null)    p.put("summary", summary);
+        p.put("meta", Map.of("model", "mock-search-1", "tokens", 42));
+        return p;
+    }
+
+    private Map<String, Object> buildArtifactPayload(String artifactUid, String agentType) {
+        Map<String, Object> p = new HashMap<>();
+        p.put("artifactUid", artifactUid);
+        p.put("kind", "assignment".equals(agentType) ? "assignment_card" : "qa_summary");
+        p.put("mime", "text/markdown");
+        p.put("status", "READY");
+        p.put("version", 1);
+        p.put("summary", "[Mock] " + agentType + " 产物摘要");
+        p.put("bodyOrRef", "# Mock 产物\n\n这是来自 MockPy 的产物正文（agentType=" + agentType + "）。");
+        p.put("sizeBytes", 256L);
+        p.put("meta", Map.of("agent", agentType, "model", "mock-llm-1"));
+        return p;
     }
 
     private void scheduleControlResponse(VerlaCommandEnvelope cmd) {
@@ -210,6 +356,89 @@ public class MockPyCommandConsumer {
         } else {
             log.debug("[MockPy/CONTROL] action={} no event response (mock)", cmd.getAction());
         }
+    }
+
+    /**
+     * V2: 用户提交 clarify form → mock 直接当成"plan 拿到完整 slots"，
+     * 200ms 后回 PLAN_INTENT_RESOLVED 让 turn 续跑（同 sessionId / correlationId）。
+     */
+    private void scheduleClarifyResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String formId = stringField(payload, "formId");
+        String intent = stringField(payload, "intent");
+        if (intent == null || intent.isBlank()) intent = "qa";
+
+        Object answers = payload.get("answers");
+        Map<String, Object> slots = new HashMap<>();
+        if (answers instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() != null) slots.put(e.getKey().toString(), e.getValue());
+            }
+        }
+        slots.putIfAbsent("kind", "homework");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("intent", intent);
+        body.put("slots", slots);
+        body.put("confidence", 0.99);
+        body.put("clarifiedFormId", formId);
+
+        log.info("[MockPy/CLARIFY] formId={} → reply PLAN_INTENT_RESOLVED intent={} slots={}",
+                formId, intent, slots.keySet());
+        scheduleEvent(cmd, VerlaAgentEventType.PLAN_INTENT_RESOLVED, body, 200);
+    }
+
+    /**
+     * V2: cmd.attachment.parse → 多阶段 ATTACHMENT_PARSED + 1 个 AGENT_ARTIFACT_UPDATED（document_markdown）。
+     */
+    private void scheduleAttachmentResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String objectId = stringField(payload, "objectId");
+        if (objectId == null || objectId.isBlank()) {
+            log.warn("[MockPy/ATTACHMENT] missing objectId in payload, skip");
+            return;
+        }
+        String filename = stringField(payload, "filename");
+        if (filename == null) filename = objectId;
+
+        // PARSING progress=30
+        Map<String, Object> p1 = new HashMap<>();
+        p1.put("objectId", objectId);
+        p1.put("status", "PARSING");
+        p1.put("progress", 30);
+        scheduleEvent(cmd, VerlaAgentEventType.ATTACHMENT_PARSED, p1, 200);
+
+        // PARSING progress=70
+        Map<String, Object> p2 = new HashMap<>();
+        p2.put("objectId", objectId);
+        p2.put("status", "PARSING");
+        p2.put("progress", 70);
+        scheduleEvent(cmd, VerlaAgentEventType.ATTACHMENT_PARSED, p2, 500);
+
+        // 主产物（markdown 全文）
+        String artifactUid = "artifact_doc_" + UUID.randomUUID().toString().substring(0, 8);
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", artifactUid);
+        art.put("sourceObjectId", objectId);
+        art.put("kind", "document_markdown");
+        art.put("mime", "text/markdown");
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("summary", "[Mock] " + filename + " 解析完成");
+        art.put("bodyOrRef", "# " + filename + "\n\n[mock] 这是模拟解析后的 markdown 全文。\n");
+        art.put("sizeBytes", 1024L);
+        art.put("meta", Map.of("page_count", 3));
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_ARTIFACT_UPDATED, art, 700);
+
+        // PARSED 终态
+        Map<String, Object> p3 = new HashMap<>();
+        p3.put("objectId", objectId);
+        p3.put("status", "PARSED");
+        p3.put("summary", "[Mock] " + filename + " 解析完成");
+        p3.put("primaryArtifactUid", artifactUid);
+        p3.put("artifactUids", List.of(artifactUid));
+        p3.put("meta", Map.of("page_count", 3, "char_count", 1024));
+        scheduleEvent(cmd, VerlaAgentEventType.ATTACHMENT_PARSED, p3, 900);
     }
 
     /** 把事件构造好后扔给调度器，延迟 N ms 异步发布 */

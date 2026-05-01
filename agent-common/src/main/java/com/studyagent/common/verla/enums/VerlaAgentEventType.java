@@ -14,6 +14,26 @@ public enum VerlaAgentEventType {
 
     PLAN_INTENT_RESOLVED(false),
     PLAN_NEEDS_CLARIFY(false),
+    /** Py plan runner：开始意图解析（可选观测事件） */
+    PLAN_INTENT_STARTED(false),
+
+    /** Assignment 域 —— 需求理解子阶段 */
+    ASSIGNMENT_REQUIREMENT_UNDERSTANDING_STARTED(false),
+    ASSIGNMENT_REQUIREMENT_UNDERSTANDING_PROGRESS(false),
+    ASSIGNMENT_REQUIREMENT_UNDERSTANDING_COMPLETED(false),
+
+    /** Assignment 域 —— 整体生命周期（Py assignment_flow_service） */
+    ASSIGNMENT_STARTED(false),
+    ASSIGNMENT_PLAN_DECOMPOSED(false),
+    ASSIGNMENT_PROGRESS(false),
+    ASSIGNMENT_ARTIFACT_UPDATED(false),
+    ASSIGNMENT_COMPLETED(true),
+    ASSIGNMENT_FAILED(true),
+    ASSIGNMENT_CANCELLED(true),
+
+    /** Materials 域 */
+    MATERIALS_STARTED(false),
+    MATERIALS_COMPLETED(true),
 
     AGENT_STARTED(false),
     AGENT_PLAN_DECOMPOSED(false),
@@ -24,6 +44,13 @@ public enum VerlaAgentEventType {
     AGENT_BLOCK_ISSUED(false),
     AGENT_PROGRESS(false),
     AGENT_ARTIFACT_UPDATED(false),
+
+    /** V2: agent 工具调用 trace（visibility=INTERNAL/USER_VISIBLE） */
+    AGENT_TOOL_CALL_RECORDED(false),
+    /** V2: agent 发起澄清问卷 */
+    AGENT_CLARIFY_FORM_ISSUED(false),
+    /** V2: 上传附件解析完成（含 PARSING / PARSED / FAILED 三种 status） */
+    ATTACHMENT_PARSED(false),
 
     AGENT_COMPLETED(true),
     AGENT_FAILED(true),
@@ -39,7 +66,13 @@ public enum VerlaAgentEventType {
     }
 
     private static final Set<VerlaAgentEventType> TERMINALS = Set.of(
-        AGENT_COMPLETED, AGENT_FAILED, AGENT_CANCELLED);
+            AGENT_COMPLETED,
+            AGENT_FAILED,
+            AGENT_CANCELLED,
+            ASSIGNMENT_COMPLETED,
+            ASSIGNMENT_FAILED,
+            ASSIGNMENT_CANCELLED,
+            MATERIALS_COMPLETED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

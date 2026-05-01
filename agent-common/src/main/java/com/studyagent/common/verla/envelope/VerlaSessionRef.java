@@ -1,6 +1,8 @@
 package com.studyagent.common.verla.envelope;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
+import com.studyagent.common.verla.enums.VerlaSessionKindDeserializer;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,6 +19,7 @@ public class VerlaSessionRef {
 
     private Long sessionId;
 
+    @JsonDeserialize(using = VerlaSessionKindDeserializer.class)
     private VerlaSessionKind kind;
 
     /**

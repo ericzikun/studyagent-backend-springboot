@@ -320,6 +320,46 @@ public class OssService implements OssStorageService {
         }
     }
 
+    @Override
+    public boolean putBytesAtKey(String ossKey, byte[] content) {
+        if (!ossConfig.isEnabled() || ossClient == null) {
+            return false;
+        }
+        if (ossKey == null || ossKey.isBlank() || content == null) {
+            return false;
+        }
+        try {
+            try (InputStream inputStream = new ByteArrayInputStream(content)) {
+                PutObjectRequest putObjectRequest = new PutObjectRequest(
+                        ossConfig.getBucketName(),
+                        ossKey.trim(),
+                        inputStream
+                );
+                PutObjectResult result = ossClient.putObject(putObjectRequest);
+                log.info("[OSS] Verla putBytesAtKey ok key={}, etag={}", ossKey, result.getETag());
+                return true;
+            }
+        } catch (OSSException oe) {
+            log.error("[OSS] Verla putBytesAtKey OSS error key={}, code={}", ossKey, oe.getErrorCode());
+            return false;
+        } catch (ClientException ce) {
+            log.error("[OSS] Verla putBytesAtKey client error key={}, {}", ossKey, ce.getMessage());
+            return false;
+        } catch (Exception e) {
+            log.error("[OSS] Verla putBytesAtKey failed key={}", ossKey, e);
+            return false;
+        }
+    }
+
+    @Override
+    public String formatVerlaStorageUri(String ossKey) {
+        if (!isEnabled() || ossKey == null || ossKey.isBlank()) {
+            return null;
+        }
+        String bucket = ossConfig.getBucketName();
+        return "oss://" + bucket + "/" + ossKey.trim();
+    }
+
     private boolean isBlank(String str) {
         return str == null || str.trim().isEmpty();
     }

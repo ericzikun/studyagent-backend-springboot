@@ -49,7 +49,7 @@ import java.util.UUID;
  * 详见 docs/verla-Java侧MVP技术方案.md §7 / §9 / §11.2 / §11.3 / §11.5。
  * <ul>
  *     <li>{@link #onUserMessage(SendMessageCommand)} —— 用户消息入口（控制器调用）</li>
- *     <li>{@link #onPlanResolved(Long, String, Map)} —— Plan handler 调，PLAN_INTENT_RESOLVED</li>
+ *     <li>{@link #onPlanResolved(Long, String, Map, String)} —— Plan handler 调，PLAN_INTENT_RESOLVED</li>
  *     <li>{@link #onPlanNeedsClarify(Long, Map)} —— Plan handler 调，PLAN_NEEDS_CLARIFY</li>
  *     <li>{@link #onAgentStarted(Long)} / {@link #onAgentCompleted(Long, Map)} / {@link #onAgentFailed(Long, Map)} —— Agent handler 用</li>
  * </ul>
@@ -136,7 +136,8 @@ public class VerlaTurnOrchestrator {
      * </pre>
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public void onPlanResolved(Long planSessionId, String intent, Map<String, Object> resolvedSlots) {
+    public void onPlanResolved(Long planSessionId, String intent, Map<String, Object> resolvedSlots,
+                               String planAssistantContent) {
         VerlaSession planSession = sessionRepository.findByIdForUpdate(planSessionId);
         if (planSession == null) {
             log.warn("[Verla] onPlanResolved: plan session missing id={}", planSessionId);
@@ -158,6 +159,7 @@ public class VerlaTurnOrchestrator {
 
         // 2) turn: PLANNING → DISPATCHING（PLAN_OK），如果已经在 DISPATCHING 之后则幂等忽略
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        boolean planningJustFinished = (curTurn == TurnStatus.PLANNING);
         if (curTurn == TurnStatus.PLANNING) {
             TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.PLAN_OK);
             turn.setStatus(nextTurn.name());
@@ -171,6 +173,19 @@ public class VerlaTurnOrchestrator {
         turn.setUpdatedAt(LocalDateTime.now());
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
+
+        if (planningJustFinished && planAssistantContent != null && !planAssistantContent.isBlank()) {
+            VerlaMessage assistant = VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(planSessionId)
+                    .textContent(planAssistantContent)
+                    .blocksJson(serializeJson(Map.of("phase", "plan_intent", "intent", intent)))
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            messageRepository.save(assistant);
+        }
 
         // 3) 在 conversation 上沉淀 primaryIntent + bump version
         if (conv != null && intent != null && !intent.isBlank()
@@ -277,6 +292,7 @@ public class VerlaTurnOrchestrator {
         }
 
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        boolean agentTurnJustFinished = (curTurn == TurnStatus.RUNNING_AGENT);
         if (curTurn == TurnStatus.RUNNING_AGENT) {
             TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.AGENT_OK);
             turn.setStatus(nextTurn.name());
@@ -284,6 +300,22 @@ public class VerlaTurnOrchestrator {
             turn.setUpdatedAt(LocalDateTime.now());
             turn.setLastProgressAt(LocalDateTime.now());
             turnRepository.save(turn);
+        }
+
+        if (agentTurnJustFinished) {
+            String reply = extractAssistantReply(result);
+            if (reply != null && !reply.isBlank()) {
+                VerlaMessage assistant = VerlaMessage.builder()
+                        .conversationId(turn.getConversationId())
+                        .turnId(turn.getId())
+                        .role("assistant")
+                        .sourceSessionId(agentSessionId)
+                        .textContent(reply)
+                        .blocksJson(serializeJson(result))
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                messageRepository.save(assistant);
+            }
         }
 
         if (turn != null) {
@@ -537,6 +569,21 @@ public class VerlaTurnOrchestrator {
             log.warn("[Verla] json serialize failed: {}", e.getMessage());
             throw new BusinessException(ApiCode.INTERNAL_ERROR, "json serialize failed");
         }
+    }
+
+    /** Py ASSIGNMENT_COMPLETED / AGENT_COMPLETED 等 payload 中可作为对用户可见回复的字段 */
+    private static String extractAssistantReply(Map<String, Object> result) {
+        if (result == null || result.isEmpty()) {
+            return null;
+        }
+        String[] keys = {"finalResult", "summary", "answer", "text", "message", "content"};
+        for (String key : keys) {
+            Object v = result.get(key);
+            if (v instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        }
+        return null;
     }
 
     private static String extractClarifyText(Map<String, Object> clarifyBlock) {

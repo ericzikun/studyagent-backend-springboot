@@ -24,9 +24,8 @@ posthog:
   api-key: ${POSTHOG_API_KEY:}
   host: ${POSTHOG_HOST:https://app.posthog.com}
 
-# PostHog 配置（开发环境）
-posthog:
-  enabled: ${POSTHOG_ENABLED:false}
-  api-key: ${POSTHOG_API_KEY:}
-  host: ${POSTHOG_HOST:https://app.posthog.com}
-
+verla:
+  mq:
+    mock:
+      # 与 application-local 一致：默认关 MockPy，避免与 verla_agent 抢队列；纯 Java  mock 时 VERLA_MQ_MOCK_ENABLED=true
+      enabled: ${VERLA_MQ_MOCK_ENABLED:false}

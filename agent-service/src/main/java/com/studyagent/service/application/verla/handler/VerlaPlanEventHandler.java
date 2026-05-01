@@ -56,9 +56,10 @@ public class VerlaPlanEventHandler implements VerlaEventHandler {
                             planSessionId, row.getEventSeq());
                     return;
                 }
+                String content = stringField(payload, "content");
                 log.info("[Verla/plan] PLAN_INTENT_RESOLVED sessionId={} intent={} slots={}",
                         planSessionId, intent, slots.keySet());
-                orchestrator.onPlanResolved(planSessionId, intent, slots);
+                orchestrator.onPlanResolved(planSessionId, intent, slots, content);
             }
             case PLAN_NEEDS_CLARIFY -> {
                 Object clarifyObj = payload.get("clarify");

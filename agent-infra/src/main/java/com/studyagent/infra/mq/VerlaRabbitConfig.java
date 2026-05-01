@@ -29,6 +29,8 @@ import java.util.List;
  *   verla.cmd.plan        ← cmd.plan.intent
  *   verla.cmd.agent       ← cmd.agent.run
  *   verla.cmd.control     ← cmd.agent.control.cancel / retry
+ *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
+ *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
  *
  * 事件侧（新增 studyagent.events Topic）：
  *   verla.event.s00 ~ s03 ← verla.event.s{shard}.#
@@ -52,9 +54,13 @@ public class VerlaRabbitConfig {
 
     // -------------------- Verla 命令队列 --------------------
 
-    public static final String CMD_PLAN_QUEUE    = "verla.cmd.plan";
-    public static final String CMD_AGENT_QUEUE   = "verla.cmd.agent";
-    public static final String CMD_CONTROL_QUEUE = "verla.cmd.control";
+    public static final String CMD_PLAN_QUEUE       = "verla.cmd.plan";
+    public static final String CMD_AGENT_QUEUE      = "verla.cmd.agent";
+    public static final String CMD_CONTROL_QUEUE    = "verla.cmd.control";
+    /** V2: 用户提交澄清问卷响应 */
+    public static final String CMD_CLARIFY_QUEUE    = "verla.cmd.clarify";
+    /** V2: finalize 上传后触发附件解析 */
+    public static final String CMD_ATTACHMENT_QUEUE = "verla.cmd.attachment";
 
     // -------------------- DLX / 兜底 --------------------
 
@@ -67,12 +73,44 @@ public class VerlaRabbitConfig {
     @Value("${verla.mq.shard-count:" + VerlaShardCalculator.DEFAULT_SHARD_COUNT + "}")
     private int shardCount;
 
+    /**
+     * 是否为 Verla 命令队列 / 事件 shard 队列声明 {@code x-dead-letter-exchange}。
+     * <p>
+     * 若 Broker 上已有同名队列且<strong>未</strong>配置死信交换机，而此处设为 {@code true}，
+     * RabbitMQ 会返回 {@code PRECONDITION_FAILED inequivalent arg 'x-dead-letter-exchange'}，
+     * 导致 Spring 启动失败。本地沿用旧拓扑时可设为 {@code false}；生产建议 {@code true}，
+     * 或删除旧队列后由应用按新参数重建。
+     */
+    @Value("${verla.mq.dead-letter-enabled:true}")
+    private boolean deadLetterEnabled;
+
+    /**
+     * 是否为 Verla 消费队列声明 {@code x-single-active-consumer=true}。
+     * <p>
+     * 旧拓扑队列若未带该参数，声明时会 {@code PRECONDITION_FAILED inequivalent arg 'x-single-active-consumer'}。
+     * 本地兼容时可设为 {@code false}；生产多实例抢同一队列时建议 {@code true}，或删队列后重建。
+     */
+    @Value("${verla.mq.single-active-consumer-enabled:true}")
+    private boolean singleActiveConsumerEnabled;
+
     public int getShardCount() {
         return shardCount;
     }
 
     public void setShardCount(int shardCount) {
         this.shardCount = shardCount;
+    }
+
+    /** Verla 消费队列： durable + 可选 single-active-consumer + 可选 DLX */
+    private Queue buildVerlaConsumerQueue(String queueName) {
+        QueueBuilder b = QueueBuilder.durable(queueName);
+        if (singleActiveConsumerEnabled) {
+            b = b.withArgument("x-single-active-consumer", true);
+        }
+        if (deadLetterEnabled) {
+            b = b.withArgument("x-dead-letter-exchange", DLX_EXCHANGE);
+        }
+        return b.build();
     }
 
     // ===================== Exchanges =====================
@@ -99,26 +137,17 @@ public class VerlaRabbitConfig {
 
     @Bean
     public Queue verlaCmdPlanQueue() {
-        return QueueBuilder.durable(CMD_PLAN_QUEUE)
-                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
-                .withArgument("x-single-active-consumer", true)
-                .build();
+        return buildVerlaConsumerQueue(CMD_PLAN_QUEUE);
     }
 
     @Bean
     public Queue verlaCmdAgentQueue() {
-        return QueueBuilder.durable(CMD_AGENT_QUEUE)
-                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
-                .withArgument("x-single-active-consumer", true)
-                .build();
+        return buildVerlaConsumerQueue(CMD_AGENT_QUEUE);
     }
 
     @Bean
     public Queue verlaCmdControlQueue() {
-        return QueueBuilder.durable(CMD_CONTROL_QUEUE)
-                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
-                .withArgument("x-single-active-consumer", true)
-                .build();
+        return buildVerlaConsumerQueue(CMD_CONTROL_QUEUE);
     }
 
     @Bean
@@ -145,6 +174,30 @@ public class VerlaRabbitConfig {
                 .with(VerlaCommandAction.CMD_AGENT_RETRY.getCode());
     }
 
+    // -------------------- V2 Command Queues --------------------
+
+    @Bean
+    public Queue verlaCmdClarifyQueue() {
+        return buildVerlaConsumerQueue(CMD_CLARIFY_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdClarifyBinding(Queue verlaCmdClarifyQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdClarifyQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_CLARIFY_SUBMIT.getCode());
+    }
+
+    @Bean
+    public Queue verlaCmdAttachmentQueue() {
+        return buildVerlaConsumerQueue(CMD_ATTACHMENT_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdAttachmentBinding(Queue verlaCmdAttachmentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAttachmentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_ATTACHMENT_PARSE.getCode());
+    }
+
     // ===================== Event Shard Queues =====================
 
     /**
@@ -158,10 +211,7 @@ public class VerlaRabbitConfig {
         for (int i = 0; i < shardCount; i++) {
             String qName = VerlaRoutingKey.queueOfShard(i);
             String pattern = VerlaRoutingKey.bindingPatternOfShard(i);
-            Queue q = QueueBuilder.durable(qName)
-                    .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
-                    .withArgument("x-single-active-consumer", true)
-                    .build();
+            Queue q = buildVerlaConsumerQueue(qName);
             Binding b = BindingBuilder.bind(q).to(verlaEventsExchange()).with(pattern);
             all.add(new ShardDeclarable(qName, q, b));
         }

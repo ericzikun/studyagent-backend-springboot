@@ -20,7 +20,13 @@ public enum VerlaCommandAction {
     CMD_AGENT_CANCEL("cmd.agent.control.cancel"),
 
     /** 重试失败的 agent 执行 */
-    CMD_AGENT_RETRY("cmd.agent.control.retry");
+    CMD_AGENT_RETRY("cmd.agent.control.retry"),
+
+    /** V2: 用户提交澄清问卷的响应 */
+    CMD_CLARIFY_SUBMIT("cmd.clarify.submit"),
+
+    /** V2: 触发附件解析（finalize 上传时下发） */
+    CMD_ATTACHMENT_PARSE("cmd.attachment.parse");
 
     private final String code;
 

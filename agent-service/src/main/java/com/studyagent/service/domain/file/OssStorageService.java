@@ -58,4 +58,14 @@ public interface OssStorageService {
      * @return 内容；未启用、不存在或失败时返回 null
      */
     byte[] getObjectBytes(String ossKey);
+
+    /**
+     * 将字节上传到指定 OSS Key（不修改 legacy {@code files} 表；供 Verla V2 等使用）。
+     */
+    boolean putBytesAtKey(String ossKey, byte[] content);
+
+    /**
+     * Verla V2 附件存储 URI：{@code oss://{bucket}/{key}}。
+     */
+    String formatVerlaStorageUri(String ossKey);
 }

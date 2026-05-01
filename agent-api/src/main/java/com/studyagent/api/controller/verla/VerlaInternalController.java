@@ -4,10 +4,13 @@ import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
+import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
 import com.studyagent.api.dto.verla.response.VerlaSessionContextVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaContextQueryService;
+import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -41,6 +44,7 @@ import java.util.stream.Collectors;
 public class VerlaInternalController {
 
     private final VerlaContextQueryService contextQueryService;
+    private final VerlaAttachmentService attachmentService;
     private final VerlaConversationRepository conversationRepository;
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
@@ -54,10 +58,23 @@ public class VerlaInternalController {
     public Result<VerlaSessionContextVO> getSessionContext(
             @PathVariable Long sessionId,
             @RequestParam(value = "convVersion", required = false) Long convVersion,
-            @RequestParam(value = "turnVersion", required = false) Long turnVersion) {
-        log.info("[verla-internal] getSessionContext sid={} convVer={} turnVer={}",
-                sessionId, convVersion, turnVersion);
-        VerlaSessionContextView view = contextQueryService.getSessionContext(sessionId, convVersion, turnVersion);
+            @RequestParam(value = "turnVersion", required = false) Long turnVersion,
+            @RequestParam(value = "includeTrace", defaultValue = "false") boolean includeTrace,
+            @RequestParam(value = "includeToolSummaries", defaultValue = "false") boolean includeToolSummaries,
+            @RequestParam(value = "includeArtifacts", defaultValue = "true") boolean includeArtifacts,
+            @RequestParam(value = "messageLimit", required = false) Integer messageLimit,
+            @RequestParam(value = "traceLimit", required = false) Integer traceLimit) {
+        log.info("[verla-internal] getSessionContext sid={} convVer={} turnVer={} trace={} summaries={} arts={} msgLim={} traceLim={}",
+                sessionId, convVersion, turnVersion, includeTrace, includeToolSummaries,
+                includeArtifacts, messageLimit, traceLimit);
+        VerlaSessionContextQueryOptions opts = VerlaSessionContextQueryOptions.builder()
+                .includeTrace(includeTrace)
+                .includeToolSummaries(includeToolSummaries)
+                .includeArtifacts(includeArtifacts)
+                .messageLimit(messageLimit)
+                .traceLimit(traceLimit)
+                .build();
+        VerlaSessionContextView view = contextQueryService.getSessionContext(sessionId, convVersion, turnVersion, opts);
         return Result.success(VerlaSessionContextVO.from(view));
     }
 
@@ -118,5 +135,15 @@ public class VerlaInternalController {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND);
         }
         return Result.success(s);
+    }
+
+    // ====================================================================
+    // 6) GET /v1/internal/verla/attachments/{objectId}
+    //    Py 拉附件元数据 + storage_uri（local file://）
+    // ====================================================================
+    @GetMapping("/attachments/{objectId}")
+    public Result<VerlaAttachmentVO> getAttachment(@PathVariable String objectId) {
+        log.info("[verla-internal] getAttachment objectId={}", objectId);
+        return Result.success(VerlaAttachmentVO.fromInternal(attachmentService.getForInternal(objectId)));
     }
 }

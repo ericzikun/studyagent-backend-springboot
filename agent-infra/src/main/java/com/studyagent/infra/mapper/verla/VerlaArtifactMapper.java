@@ -16,4 +16,7 @@ public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
     @Select("SELECT * FROM verla_artifacts WHERE session_id = #{sid} "
             + "ORDER BY updated_at DESC, id DESC")
     List<VerlaArtifactEntity> selectBySession(@Param("sid") Long sessionId);
+
+    @Select("SELECT * FROM verla_artifacts WHERE artifact_uid = #{uid} LIMIT 1")
+    VerlaArtifactEntity selectByUid(@Param("uid") String artifactUid);
 }

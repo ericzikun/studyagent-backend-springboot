@@ -1,5 +1,6 @@
 package com.studyagent.service.application.verla;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -40,7 +41,9 @@ import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -58,6 +61,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class VerlaTurnOrchestrator {
+
+    /** 与前端约定：伪装 user message 的 JSON，{@code kind} 常量 */
+    private static final String ASSIGNMENT_CONFIRM_KIND = "verla_assignment_confirm";
 
     private static final String PRODUCER_SERVICE = "java-agent-service";
     private static final String INSTANCE_ID = resolveHostname();
@@ -85,10 +91,25 @@ public class VerlaTurnOrchestrator {
 
     /**
      * 用户提交消息入口（核心）。
+     * <p>
+     * 若会话存在 {@link TurnStatus#AWAITING_ASSIGN_CONFIRM} 的 turn，则本条请求的 {@code text}
+     * 必须为 JSON，且 {@code kind} 为 {@code verla_assignment_confirm}（表单填写或 skip），否则拒绝；
+     * 成功则在<strong>同一 turn</strong>上插入 user 消息并派发 {@code cmd.agent.run}。
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult onUserMessage(SendMessageCommand cmd) {
         VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
+
+        Optional<VerlaTurn> awaitingAssign =
+                turnRepository.findAwaitingAssignConfirmForUpdate(cmd.getConversationId());
+        if (awaitingAssign.isPresent()) {
+            Map<String, Object> confirm = parseAssignmentConfirmPayload(cmd.getText());
+            if (confirm == null) {
+                throw new BusinessException(ApiCode.BAD_REQUEST,
+                        "会话正在等待作业确认：请将 text 设为 JSON，且 kind=\"" + ASSIGNMENT_CONFIRM_KIND + "\"");
+            }
+            return submitAssignmentConfirm(conv, awaitingAssign.get(), cmd, confirm);
+        }
 
         VerlaMessage userMsg = insertUserMessagePlaceholder(conv.getId(), cmd);
         VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
@@ -125,14 +146,16 @@ public class VerlaTurnOrchestrator {
     // ==========================================================
 
     /**
-     * PLAN_INTENT_RESOLVED：plan session 完成 → turn 推进到 DISPATCHING → 派发 agent session。
+     * PLAN_INTENT_RESOLVED：plan session 完成 → turn 推进；作业意图时进入 {@link TurnStatus#AWAITING_ASSIGN_CONFIRM}
+     * 等待前端用 JSON user 消息确认后再 {@code cmd.agent.run}；其它意图仍为 PLAN_OK→DISPATCHING 并立即派发 agent。
      * <p>
      * 文档 §9 / §11.5：
      * <pre>
      * plan session → SUCCEEDED；
      * conv.primaryIntent 沉淀；
      * turn: PLANNING --PLAN_OK--> DISPATCHING --START_AGENT--> RUNNING_AGENT；
-     * spawnAgentSession 写 outbox cmd.agent.run。
+     * 或 PLANNING --PLAN_OK_AWAIT_ASSIGN_CONFIRM--> AWAITING_ASSIGN_CONFIRM（作业意图）；
+     * spawnAgentSession 写 outbox cmd.agent.run（仅 DISPATCHING 且尚无 agent_session_id 时）。
      * </pre>
      */
     @Transactional(propagation = Propagation.REQUIRED)
@@ -157,11 +180,15 @@ public class VerlaTurnOrchestrator {
             sessionRepository.save(planSession);
         }
 
-        // 2) turn: PLANNING → DISPATCHING（PLAN_OK），如果已经在 DISPATCHING 之后则幂等忽略
+        // 2) turn：作业意图进入 AWAITING_ASSIGN_CONFIRM，否则 PLAN_OK → DISPATCHING
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
         boolean planningJustFinished = (curTurn == TurnStatus.PLANNING);
+        boolean deferAssignmentConfirm = intentNeedsAssignmentConfirm(intent);
         if (curTurn == TurnStatus.PLANNING) {
-            TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.PLAN_OK);
+            TurnEvent planEv = deferAssignmentConfirm
+                    ? TurnEvent.PLAN_OK_AWAIT_ASSIGN_CONFIRM
+                    : TurnEvent.PLAN_OK;
+            TurnStatus nextTurn = turnStateMachine.next(curTurn, planEv);
             turn.setStatus(nextTurn.name());
         } else if (curTurn.isTerminal()) {
             log.warn("[Verla] onPlanResolved: turn already terminal turnId={} status={}",
@@ -198,8 +225,13 @@ public class VerlaTurnOrchestrator {
             conversationRepository.incrementVersion(conv.getId());
         }
 
-        // 4) 派发 agent session
-        spawnAgentSession(conv, turn, intent, resolvedSlots);
+        TurnStatus afterPlan = TurnStatus.valueOf(turn.getStatus());
+        if (afterPlan == TurnStatus.DISPATCHING && turn.getAgentSessionId() == null) {
+            spawnAgentSession(conv, turn, intent, resolvedSlots, null);
+        } else if (deferAssignmentConfirm && afterPlan == TurnStatus.AWAITING_ASSIGN_CONFIRM) {
+            log.info("[Verla] assignment intent awaits confirm JSON convId={} turnId={}",
+                    turn.getConversationId(), turn.getId());
+        }
     }
 
     /**
@@ -425,7 +457,8 @@ public class VerlaTurnOrchestrator {
      * 创建 agent session 并写 outbox 命令（同事务）
      */
     private VerlaSession spawnAgentSession(VerlaConversation conv, VerlaTurn turn,
-                                           String intent, Map<String, Object> resolvedSlots) {
+                                           String intent, Map<String, Object> resolvedSlots,
+                                           Map<String, Object> assignmentConfirm) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -461,7 +494,7 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildAgentRunEnvelope(conv, turn, s, intent, resolvedSlots);
+        VerlaCommandEnvelope env = buildAgentRunEnvelope(conv, turn, s, intent, resolvedSlots, assignmentConfirm);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_AGENT_RUN.getCode());
         return s;
@@ -511,10 +544,14 @@ public class VerlaTurnOrchestrator {
 
     private VerlaCommandEnvelope buildAgentRunEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                        VerlaSession session, String intent,
-                                                       Map<String, Object> slots) {
+                                                       Map<String, Object> slots,
+                                                       Map<String, Object> assignmentConfirm) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("slots", slots == null ? Map.of() : slots);
+        if (assignmentConfirm != null && !assignmentConfirm.isEmpty()) {
+            payload.put("assignmentConfirm", assignmentConfirm);
+        }
         payload.put("contextRef", Map.of(
                 "type", "internal-rpc",
                 "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
@@ -550,6 +587,88 @@ public class VerlaTurnOrchestrator {
                         .kind(VerlaSessionKind.valueOf(s.getKind()))
                         .feature(s.getFeatureCode())
                         .build());
+    }
+
+    private SendMessageResult submitAssignmentConfirm(VerlaConversation conv, VerlaTurn turn,
+                                                    SendMessageCommand cmd,
+                                                    Map<String, Object> confirmPayload) {
+        TurnStatus cur = TurnStatus.valueOf(turn.getStatus());
+        if (cur != TurnStatus.AWAITING_ASSIGN_CONFIRM) {
+            throw new BusinessException(ApiCode.BAD_REQUEST, "turn is not awaiting assignment confirmation");
+        }
+
+        VerlaMessage userMsg = VerlaMessage.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .role("user")
+                .textContent(cmd.getText())
+                .attachmentsJson(cmd.getAttachmentsJson())
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(userMsg);
+
+        TurnStatus next = turnStateMachine.next(cur, TurnEvent.ASSIGNMENT_CONFIRM_RECEIVED);
+        turn.setStatus(next.name());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaConversation refreshedConv = conversationRepository.findById(conv.getId());
+        Map<String, Object> slots = deserializeSlotsJson(turn.getResolvedSlotsJson());
+        VerlaSession agentSession = spawnAgentSession(
+                refreshedConv, turn, turn.getResolvedIntent(), slots, confirmPayload);
+
+        if (refreshedConv != null) {
+            conversationRepository.incrementVersion(refreshedConv.getId());
+        }
+
+        log.info("[Verla] assignment confirm → agent run convId={} turnId={} agentSessionId={}",
+                conv.getId(), turn.getId(), agentSession.getId());
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .planSessionId(turn.getPlanSessionId())
+                .agentSessionId(agentSession.getId())
+                .build();
+    }
+
+    private Map<String, Object> parseAssignmentConfirmPayload(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> m = objectMapper.readValue(text.trim(), new TypeReference<Map<String, Object>>() {});
+            Object kind = m.get("kind");
+            if (!ASSIGNMENT_CONFIRM_KIND.equals(kind == null ? null : kind.toString())) {
+                return null;
+            }
+            return m;
+        } catch (Exception e) {
+            log.debug("[Verla] not assignment confirm JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static boolean intentNeedsAssignmentConfirm(String intent) {
+        if (intent == null) {
+            return false;
+        }
+        String u = intent.trim().toUpperCase(Locale.ROOT);
+        return "ASSIGNMENT".equals(u) || "ASSIGNEMNT".equals(u);
+    }
+
+    private Map<String, Object> deserializeSlotsJson(String json) {
+        if (json == null || json.isBlank()) {
+            return new HashMap<>();
+        }
+        try {
+            Map<String, Object> m = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+            return m != null ? new HashMap<>(m) : new HashMap<>();
+        } catch (Exception e) {
+            log.warn("[Verla] deserializeSlotsJson failed: {}", e.getMessage());
+            return new HashMap<>();
+        }
     }
 
     private String buildPlanResultJson(String intent, Map<String, Object> slots) {

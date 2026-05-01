@@ -54,11 +54,20 @@ class TurnStateMachineTest {
 
     // -------- Reject paths --------
     @Test
+    void assignment_plan_ok_waits_confirm_then_dispatch() {
+        assertEquals(AWAITING_ASSIGN_CONFIRM, sm.next(PLANNING, PLAN_OK_AWAIT_ASSIGN_CONFIRM));
+        assertEquals(DISPATCHING, sm.next(AWAITING_ASSIGN_CONFIRM, ASSIGNMENT_CONFIRM_RECEIVED));
+        assertEquals(RUNNING_AGENT, sm.next(DISPATCHING, START_AGENT));
+    }
+
+    @Test
     void invalid_transition_throws() {
         assertThrows(IllegalStateException.class,
                 () -> sm.next(CREATED, AGENT_OK));
         assertThrows(IllegalStateException.class,
                 () -> sm.next(PLANNING, START_AGENT));
+        assertThrows(IllegalStateException.class,
+                () -> sm.next(AWAITING_ASSIGN_CONFIRM, START_AGENT));
         assertThrows(IllegalStateException.class,
                 () -> sm.next(AWAITING_CLARIFY, AGENT_OK));
     }

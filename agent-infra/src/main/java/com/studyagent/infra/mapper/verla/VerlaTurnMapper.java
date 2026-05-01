@@ -17,4 +17,9 @@ public interface VerlaTurnMapper extends BaseMapper<VerlaTurnEntity> {
 
     @Select("SELECT * FROM verla_turns WHERE id = #{id} FOR UPDATE")
     VerlaTurnEntity selectByIdForUpdate(@Param("id") Long id);
+
+    @Select("SELECT * FROM verla_turns "
+            + "WHERE conversation_id = #{conversationId} AND status = 'AWAITING_ASSIGN_CONFIRM' "
+            + "ORDER BY id DESC LIMIT 1 FOR UPDATE")
+    VerlaTurnEntity selectAwaitingAssignConfirmForUpdate(@Param("conversationId") Long conversationId);
 }

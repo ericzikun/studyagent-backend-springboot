@@ -13,10 +13,14 @@ public enum TurnEvent {
     SKIP_PLAN,
     /** plan 完成，意图识别成功 */
     PLAN_OK,
+    /** plan 完成且为作业意图：等待前端 assignment 确认 JSON，再派发 agent */
+    PLAN_OK_AWAIT_ASSIGN_CONFIRM,
     /** plan 需要澄清 */
     PLAN_CLARIFY,
     /** plan session 失败 */
     PLAN_FAIL,
+    /** 前端已提交 assignment 确认（伪装 user message JSON） */
+    ASSIGNMENT_CONFIRM_RECEIVED,
     /** 派发 agent session（spawnAgentSession） */
     START_AGENT,
     /** agent 完成 */

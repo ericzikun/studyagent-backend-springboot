@@ -30,9 +30,14 @@ public class TurnStateMachine {
 
         table.put(PLANNING, Map.of(
                 PLAN_OK, DISPATCHING,
+                PLAN_OK_AWAIT_ASSIGN_CONFIRM, AWAITING_ASSIGN_CONFIRM,
                 PLAN_CLARIFY, AWAITING_CLARIFY,
                 PLAN_FAIL, FAILED,
                 USER_CANCEL, CANCELLING));
+
+        table.put(AWAITING_ASSIGN_CONFIRM, Map.of(
+                ASSIGNMENT_CONFIRM_RECEIVED, DISPATCHING,
+                USER_CANCEL, CANCELLED));
 
         table.put(AWAITING_CLARIFY, Map.of(
                 SUBMIT, PLANNING,

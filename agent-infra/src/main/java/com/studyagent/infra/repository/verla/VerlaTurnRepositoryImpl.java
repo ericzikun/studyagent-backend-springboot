@@ -8,6 +8,7 @@ import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Repository
@@ -37,6 +38,12 @@ public class VerlaTurnRepositoryImpl
     public List<VerlaTurn> findRecentByConversation(Long conversationId, int limit) {
         return this.baseMapper.selectRecentByConversation(conversationId, limit)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<VerlaTurn> findAwaitingAssignConfirmForUpdate(Long conversationId) {
+        VerlaTurnEntity e = this.baseMapper.selectAwaitingAssignConfirmForUpdate(conversationId);
+        return Optional.ofNullable(toDomain(e));
     }
 
     private VerlaTurn toDomain(VerlaTurnEntity e) {

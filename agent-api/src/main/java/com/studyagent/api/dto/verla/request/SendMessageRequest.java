@@ -9,6 +9,10 @@ import java.util.Map;
 @Data
 public class SendMessageRequest {
 
+    /**
+     * 用户可见正文。轮次处于作业确认等待态时，应为 JSON：
+     * {@code {"kind":"verla_assignment_confirm","skipped":true}} 或含 {@code answers} 等字段。
+     */
     @NotBlank
     private String text;
 

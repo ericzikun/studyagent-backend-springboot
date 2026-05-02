@@ -1,6 +1,7 @@
 package com.studyagent.service.application.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
@@ -61,6 +62,8 @@ public class VerlaTurnOrchestrator {
 
     private static final String PRODUCER_SERVICE = "java-agent-service";
     private static final String INSTANCE_ID = resolveHostname();
+    private static final TypeReference<Map<String, Object>> MAP_STRING_OBJECT =
+            new TypeReference<>() {};
     /**
      * 命令 exchange，与 RabbitMQConfig.COMMAND_EXCHANGE / VerlaRabbitConfig.COMMAND_EXCHANGE 保持一致。
      */
@@ -132,7 +135,7 @@ public class VerlaTurnOrchestrator {
      * plan session → SUCCEEDED；
      * conv.primaryIntent 沉淀；
      * turn: PLANNING --PLAN_OK--> DISPATCHING --START_AGENT--> RUNNING_AGENT；
-     * spawnAgentSession 写 outbox cmd.agent.run。
+     * spawnAgentSession 写 outbox cmd.assignment.run。
      * </pre>
      */
     @Transactional(propagation = Propagation.REQUIRED)
@@ -198,8 +201,70 @@ public class VerlaTurnOrchestrator {
             conversationRepository.incrementVersion(conv.getId());
         }
 
-        // 4) 派发 agent session
-        spawnAgentSession(conv, turn, intent, resolvedSlots);
+        if (!isAssignmentIntent(intent)) {
+            if (curTurn == TurnStatus.PLANNING) {
+                TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.PLAN_COMPLETE);
+                turn.setStatus(nextTurn.name());
+                turn.setEndedAt(LocalDateTime.now());
+                turn.setUpdatedAt(LocalDateTime.now());
+                turnRepository.save(turn);
+            }
+            log.info("[Verla] plan resolved as non-assignment intent={}, turnId={} → no agent dispatch",
+                    intent, turn.getId());
+            return;
+        }
+
+        if (planningJustFinished) {
+            log.info("[Verla] plan resolved as assignment, turnId={} waits for user confirmation",
+                    turn.getId());
+        }
+    }
+
+    /**
+     * 用户在前端确认进入作业完成功能后，才从已解析的 assignment plan 派发 agent session。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startAssignmentFromLatestPlan(String userId, Long conversationId) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaTurn latest = turnRepository.findRecentByConversation(conversationId, 1)
+                .stream().findFirst().orElse(null);
+        if (latest == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+
+        VerlaTurn turn = turnRepository.findByIdForUpdate(latest.getId());
+        String intent = turn.getResolvedIntent();
+        if (!isAssignmentIntent(intent)) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE,
+                    "latest plan is not assignment intent");
+        }
+        if (turn.getAgentSessionId() != null) {
+            return SendMessageResult.builder()
+                    .turnId(turn.getId())
+                    .userMessageId(turn.getUserMessageId())
+                    .planSessionId(turn.getPlanSessionId())
+                    .agentSessionId(turn.getAgentSessionId())
+                    .skipPlanReason("assignment_already_started")
+                    .build();
+        }
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (curTurn != TurnStatus.DISPATCHING) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE,
+                    "assignment plan is not ready to start");
+        }
+
+        VerlaSession agentSession = spawnAgentSession(
+                conv,
+                turn,
+                intent,
+                parseSlotsJson(turn.getResolvedSlotsJson()));
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(turn.getUserMessageId())
+                .planSessionId(turn.getPlanSessionId())
+                .agentSessionId(agentSession.getId())
+                .build();
     }
 
     /**
@@ -430,7 +495,7 @@ public class VerlaTurnOrchestrator {
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
                 .turnId(turn.getId())
-                .kind(VerlaSessionKind.AGENT.name())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
                 .featureCode(intent)
                 .status(SessionStatus.CREATED.name())
                 .correlationId("placeholder")
@@ -449,7 +514,7 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
-        // turn: DISPATCHING → RUNNING_AGENT（START_AGENT 表示已发出 cmd.agent.run）
+        // turn: DISPATCHING → RUNNING_AGENT（START_AGENT 表示已发出 cmd.assignment.run）
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
         if (curTurn == TurnStatus.DISPATCHING) {
             TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
@@ -463,7 +528,7 @@ public class VerlaTurnOrchestrator {
 
         VerlaCommandEnvelope env = buildAgentRunEnvelope(conv, turn, s, intent, resolvedSlots);
         mqOutboxService.createVerlaCommand(env, commandExchange,
-                VerlaCommandAction.CMD_AGENT_RUN.getCode());
+                VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
         return s;
     }
 
@@ -520,7 +585,7 @@ public class VerlaTurnOrchestrator {
                 "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 "convVersion", conv == null ? null : conv.getVersion()));
 
-        return baseEnvelope(VerlaCommandAction.CMD_AGENT_RUN, conv, turn, session)
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_RUN, conv, turn, session)
                 .payload(payload)
                 .build();
     }
@@ -557,6 +622,29 @@ public class VerlaTurnOrchestrator {
         map.put("intent", intent);
         map.put("slots", slots);
         return serializeJson(map);
+    }
+
+    private Map<String, Object> parseSlotsJson(String slotsJson) {
+        if (slotsJson == null || slotsJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(slotsJson, MAP_STRING_OBJECT);
+        } catch (Exception e) {
+            log.warn("[Verla] resolved slots json parse failed: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private static boolean isAssignmentIntent(String intent) {
+        if (intent == null) {
+            return false;
+        }
+        String normalized = intent.trim()
+                .toUpperCase()
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "ASSIGNMENT".equals(normalized) || "CREATE_ASSIGNMENT".equals(normalized);
     }
 
     private String serializeJson(Object obj) {

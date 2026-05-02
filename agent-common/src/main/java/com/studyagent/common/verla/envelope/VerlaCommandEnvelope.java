@@ -19,7 +19,7 @@ import java.util.Map;
  *   "messageId": "cmd_01JR00X",
  *   "correlationId": "conv:1001:turn:55:sess:9001",
  *   "orderingKey": "session:9001",
- *   "action": "cmd.agent.run",
+ *   "action": "cmd.assignment.run",
  *   "timestamp": "...",
  *   "producer": {...},
  *   "conversation": {...},
@@ -64,7 +64,7 @@ public class VerlaCommandEnvelope {
     /**
      * 业务 payload（按 action 不同结构不同）
      * <p>
-     * 例如 cmd.agent.run 时包含 agentType / contextRef / options 等
+     * 例如 cmd.assignment.run 时包含 agentType / contextRef / options 等
      */
     private Map<String, Object> payload;
 }

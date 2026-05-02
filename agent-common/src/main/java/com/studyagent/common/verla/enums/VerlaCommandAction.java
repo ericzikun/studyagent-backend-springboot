@@ -13,8 +13,8 @@ public enum VerlaCommandAction {
     /** 意图识别 */
     CMD_PLAN_INTENT("cmd.plan.intent"),
 
-    /** 启动一次 agent 执行（如作业 / materials 等功能） */
-    CMD_AGENT_RUN("cmd.agent.run"),
+    /** 启动一次 assignment 执行 */
+    CMD_ASSIGNMENT_RUN("cmd.assignment.run"),
 
     /** 取消进行中的 agent 执行 */
     CMD_AGENT_CANCEL("cmd.agent.control.cancel"),

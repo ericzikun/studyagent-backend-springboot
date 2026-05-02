@@ -16,6 +16,8 @@ public enum VerlaAgentEventType {
     PLAN_NEEDS_CLARIFY(false),
     /** Py plan runner：开始意图解析（可选观测事件） */
     PLAN_INTENT_STARTED(false),
+    /** Py plan runner：意图解析对话流式增量 */
+    PLAN_INTENT_STREAM_CHUNK(false),
 
     /** Assignment 域 —— 需求理解子阶段 */
     ASSIGNMENT_REQUIREMENT_UNDERSTANDING_STARTED(false),

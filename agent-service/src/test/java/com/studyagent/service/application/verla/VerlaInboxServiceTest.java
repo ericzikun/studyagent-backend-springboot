@@ -142,7 +142,7 @@ class VerlaInboxServiceTest {
                 .timestamp(Instant.now())
                 .conversation(VerlaConversationRef.builder().conversationId(1L).build())
                 .turn(VerlaTurnRef.builder().turnId(1L).build())
-                .session(VerlaSessionRef.builder().sessionId(sessionId).kind(VerlaSessionKind.AGENT).build())
+                .session(VerlaSessionRef.builder().sessionId(sessionId).kind(VerlaSessionKind.ASSIGNMENT).build())
                 .build();
     }
 

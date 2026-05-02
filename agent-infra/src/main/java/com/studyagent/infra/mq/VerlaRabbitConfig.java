@@ -27,7 +27,7 @@ import java.util.List;
  * <pre>
  * 命令侧（复用 studyagent.command Direct）：
  *   verla.cmd.plan        ← cmd.plan.intent
- *   verla.cmd.agent       ← cmd.agent.run
+ *   verla.cmd.agent       ← cmd.assignment.run
  *   verla.cmd.control     ← cmd.agent.control.cancel / retry
  *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
  *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
@@ -159,7 +159,7 @@ public class VerlaRabbitConfig {
     @Bean
     public Binding verlaCmdAgentBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
-                .with(VerlaCommandAction.CMD_AGENT_RUN.getCode());
+                .with(VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
     }
 
     @Bean

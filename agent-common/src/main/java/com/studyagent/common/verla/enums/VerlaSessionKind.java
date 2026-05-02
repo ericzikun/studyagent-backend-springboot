@@ -10,8 +10,8 @@ public enum VerlaSessionKind {
     /** 意图识别 */
     PLAN,
 
-    /** 功能 agent（如作业） */
-    AGENT,
+    /** 作业/Assignment 执行 */
+    ASSIGNMENT,
 
     /** 学习材料生成 */
     MATERIALS

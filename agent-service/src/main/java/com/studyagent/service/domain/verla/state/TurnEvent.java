@@ -13,6 +13,8 @@ public enum TurnEvent {
     SKIP_PLAN,
     /** plan 完成，意图识别成功 */
     PLAN_OK,
+    /** plan 完成且无需进入 agent 执行（例如 GENERAL_CHAT） */
+    PLAN_COMPLETE,
     /** plan 需要澄清 */
     PLAN_CLARIFY,
     /** plan session 失败 */

@@ -30,6 +30,7 @@ public class TurnStateMachine {
 
         table.put(PLANNING, Map.of(
                 PLAN_OK, DISPATCHING,
+                PLAN_COMPLETE, COMPLETED,
                 PLAN_CLARIFY, AWAITING_CLARIFY,
                 PLAN_FAIL, FAILED,
                 USER_CANCEL, CANCELLING));

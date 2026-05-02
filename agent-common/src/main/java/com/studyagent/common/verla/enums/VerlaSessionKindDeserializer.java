@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.util.Locale;
 
 /**
- * Python 历史载荷曾发出 {@code "ASSIGNMENT"}；Java 枚举仅为 {@link VerlaSessionKind#AGENT}。
+ * 历史载荷可能仍发出 {@code "AGENT"}；当前枚举改名为 {@link VerlaSessionKind#ASSIGNMENT}。
  * 兼容旧消息/DLX 重投。
  */
 public class VerlaSessionKindDeserializer extends JsonDeserializer<VerlaSessionKind> {
@@ -21,8 +21,8 @@ public class VerlaSessionKindDeserializer extends JsonDeserializer<VerlaSessionK
             return null;
         }
         String v = raw.trim();
-        if ("ASSIGNMENT".equalsIgnoreCase(v)) {
-            return VerlaSessionKind.AGENT;
+        if ("AGENT".equalsIgnoreCase(v)) {
+            return VerlaSessionKind.ASSIGNMENT;
         }
         try {
             return VerlaSessionKind.valueOf(v.toUpperCase(Locale.ROOT));

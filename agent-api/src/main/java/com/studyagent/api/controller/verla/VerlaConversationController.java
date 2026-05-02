@@ -152,6 +152,19 @@ public class VerlaConversationController {
     }
 
     // ========================================================
+    // 6.1) POST /v1/verla/conversations/{cid}/assignment/start
+    //      —— 用户确认进入作业完成功能后派发 agent
+    // ========================================================
+    @PostMapping("/{cid}/assignment/start")
+    public Result<SendMessageResponseVO> startAssignment(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        SendMessageResult result = turnOrchestrator.startAssignmentFromLatestPlan(clerkUserId, cid);
+        return Result.success(SendMessageResponseVO.from(result));
+    }
+
+    // ========================================================
     // 7) GET /v1/verla/conversations/{cid}/messages  ——  历史消息（游标分页）
     // ========================================================
     @GetMapping("/{cid}/messages")

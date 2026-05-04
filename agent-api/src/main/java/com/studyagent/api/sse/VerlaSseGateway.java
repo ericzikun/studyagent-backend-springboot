@@ -77,7 +77,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
     }
 
     /**
-     * 注册一个新的 SseEmitter；若 lastEventId 非空，先补发该 conv 中 id > lastEventId 且 PROCESSED 的事件。\
+     * 注册一个新的 SseEmitter；补发该 conv 中 inbox.id &gt; lastEventId（或 lastEventId 缺失时从 0）的已 PROCESSED 事件。
      */
     public SseEmitter register(Long conversationId, Long lastEventId) {
         SseEmitter em = new SseEmitter(EMITTER_TIMEOUT_MS);
@@ -105,14 +105,14 @@ public class VerlaSseGateway implements VerlaSsePublisher {
             return em;
         }
 
-        // 补发：lastEventId == null 表示新连接，无需回放；> 0 才回放历史
-        if (lastEventId != null && lastEventId > 0) {
-            try {
-                replay(conversationId, lastEventId, em);
-            } catch (Exception e) {
-                log.warn("[Verla/sse] replay failed cid={} after={}: {}",
-                        conversationId, lastEventId, e.getMessage());
-            }
+        // 补发：lastEventId>0 时只补该游标之后的事件；否则从 0 回放本会话已 PROCESSED 记录。
+        // 避免「事件先于 SSE 连接落库」时 live publish 因无 emitter 被丢弃、客户端永远收不到（如 Humanizer 很快结束）。
+        long replayAfter = (lastEventId != null && lastEventId > 0) ? lastEventId : 0L;
+        try {
+            replay(conversationId, replayAfter, em);
+        } catch (Exception e) {
+            log.warn("[Verla/sse] replay failed cid={} after={}: {}",
+                    conversationId, replayAfter, e.getMessage());
         }
         return em;
     }
@@ -124,6 +124,11 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         }
         CopyOnWriteArrayList<SseEmitter> list = emitters.get(conversationId);
         if (list == null || list.isEmpty()) {
+            log.warn(
+                    "[Verla/sse] publish skipped — no SSE subscribers (event already in inbox): cid={} type={} inboxRowId={}",
+                    conversationId,
+                    payload.getType(),
+                    payload.getId());
             return;
         }
         Iterator<SseEmitter> it = list.iterator();
@@ -150,8 +155,9 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         });
     }
 
-    private void replay(Long conversationId, Long afterId, SseEmitter em) {
+    private void replay(Long conversationId, long afterId, SseEmitter em) {
         long cursor = afterId;
+        boolean fullCatchUp = afterId == 0L;
         while (true) {
             List<VerlaEventInbox> page = inboxRepository.findReplayByConversation(
                     conversationId, cursor, REPLAY_BATCH);
@@ -159,6 +165,10 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 break;
             }
             for (VerlaEventInbox row : page) {
+                if (fullCatchUp && shouldOmitPlanIntentReplay(row.getEventType())) {
+                    cursor = row.getId();
+                    continue;
+                }
                 VerlaSseEventPayload p = toReplayPayload(row);
                 sendOne(em, p, conversationId);
                 cursor = row.getId();
@@ -167,6 +177,18 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 break;
             }
         }
+    }
+
+    /**
+     * 首轮全量补发（afterId=0）时跳过已在 /messages 历史里的 Plan 流式/收敛事件，减轻与 hydrate 重复；
+     * Agent/Humanizer 等仍原样补发。
+     */
+    private static boolean shouldOmitPlanIntentReplay(String eventType) {
+        if (eventType == null) {
+            return false;
+        }
+        return "PLAN_INTENT_STREAM_CHUNK".equals(eventType)
+                || "PLAN_INTENT_RESOLVED".equals(eventType);
     }
 
     private void sendOne(SseEmitter em, VerlaSseEventPayload payload, Long conversationId) {

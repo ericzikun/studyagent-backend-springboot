@@ -134,8 +134,10 @@ public class VerlaTurnOrchestrator {
      * <pre>
      * plan session → SUCCEEDED；
      * conv.primaryIntent 沉淀；
-     * turn: PLANNING --PLAN_OK--> DISPATCHING --START_AGENT--> RUNNING_AGENT；
-     * spawnAgentSession 写 outbox cmd.assignment.run。
+     * turn: PLANNING --PLAN_OK--> DISPATCHING；
+     * · ASSIGNMENT：留在 DISPATCHING，等用户确认后再发 cmd.assignment.run；
+     * · AI_DETECTION / AI_HUMANIZER：立刻 spawnCapabilitySession → cmd.detection.run / cmd.humanizer.run，
+     *   turn --START_AGENT--> RUNNING_AGENT；
      * </pre>
      */
     @Transactional(propagation = Propagation.REQUIRED)
@@ -199,6 +201,15 @@ public class VerlaTurnOrchestrator {
         }
         if (conv != null) {
             conversationRepository.incrementVersion(conv.getId());
+        }
+
+        if (isAiDetectionIntent(intent)) {
+            spawnCapabilitySession(conv, turn, intent, resolvedSlots, VerlaCommandAction.CMD_DETECTION_RUN);
+            return;
+        }
+        if (isAiHumanizerIntent(intent)) {
+            spawnCapabilitySession(conv, turn, intent, resolvedSlots, VerlaCommandAction.CMD_HUMANIZER_RUN);
+            return;
         }
 
         if (!isAssignmentIntent(intent)) {
@@ -532,6 +543,62 @@ public class VerlaTurnOrchestrator {
         return s;
     }
 
+    /**
+     * AI 检测 / Humanizer：创建 agent session 并写 outbox（同事务），立即发往 Py。
+     */
+    private VerlaSession spawnCapabilitySession(VerlaConversation conv, VerlaTurn turn,
+                                               String intent, Map<String, Object> resolvedSlots,
+                                               VerlaCommandAction commandAction) {
+        if (turn.getAgentSessionId() != null) {
+            log.info("[Verla] capability already dispatched turnId={} agentSessionId={}, skip duplicate",
+                    turn.getId(), turn.getAgentSessionId());
+            return sessionRepository.findById(turn.getAgentSessionId());
+        }
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv == null ? turn.getConversationId() : conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .featureCode(intent)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        SessionStatus afterDispatch = sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH);
+        s.setStatus(afterDispatch.name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (curTurn == TurnStatus.DISPATCHING) {
+            TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
+            turn.setStatus(next.name());
+        } else {
+            log.warn("[Verla] spawnCapabilitySession: turn not DISPATCHING, status={} turnId={}",
+                    curTurn, turn.getId());
+        }
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildCapabilityEnvelope(
+                conv, turn, s, intent, resolvedSlots, commandAction,
+                resolveTurnUserText(turn));
+        mqOutboxService.createVerlaCommand(env, commandExchange, commandAction.getCode());
+        log.info("[Verla] dispatched {} turnId={} sessionId={}", commandAction.getCode(), turn.getId(), s.getId());
+        return s;
+    }
+
     // ==========================================================
     // helpers
     // ==========================================================
@@ -590,6 +657,39 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
+    private VerlaCommandEnvelope buildCapabilityEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                        VerlaSession session, String intent,
+                                                        Map<String, Object> slots,
+                                                        VerlaCommandAction action,
+                                                        String userMessageText) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("agentType", intent);
+        payload.put("slots", slots == null ? Map.of() : slots);
+        if (userMessageText != null && !userMessageText.isBlank()) {
+            payload.put("userText", userMessageText.trim());
+        }
+        payload.put("contextRef", Map.of(
+                "type", "internal-rpc",
+                "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                "convVersion", conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(action, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    /** 本轮用户输入正文（Humanizer/检测等在 Py 侧优先读 payload.userText，避免强依赖 internal context）。 */
+    private String resolveTurnUserText(VerlaTurn turn) {
+        if (turn.getUserMessageId() == null) {
+            return "";
+        }
+        VerlaMessage m = messageRepository.findById(turn.getUserMessageId());
+        if (m == null || m.getTextContent() == null) {
+            return "";
+        }
+        return m.getTextContent().trim();
+    }
+
     private VerlaCommandEnvelope.VerlaCommandEnvelopeBuilder baseEnvelope(
             VerlaCommandAction action, VerlaConversation conv, VerlaTurn turn, VerlaSession s) {
         return VerlaCommandEnvelope.builder()
@@ -645,6 +745,28 @@ public class VerlaTurnOrchestrator {
                 .replace('-', '_')
                 .replace(' ', '_');
         return "ASSIGNMENT".equals(normalized) || "CREATE_ASSIGNMENT".equals(normalized);
+    }
+
+    private static boolean isAiDetectionIntent(String intent) {
+        if (intent == null) {
+            return false;
+        }
+        String normalized = intent.trim()
+                .toUpperCase()
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "AI_DETECTION".equals(normalized);
+    }
+
+    private static boolean isAiHumanizerIntent(String intent) {
+        if (intent == null) {
+            return false;
+        }
+        String normalized = intent.trim()
+                .toUpperCase()
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "AI_HUMANIZER".equals(normalized);
     }
 
     private String serializeJson(Object obj) {

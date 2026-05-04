@@ -193,9 +193,15 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
-    public Binding verlaCmdAttachmentBinding(Queue verlaCmdAttachmentQueue, DirectExchange commandExchange) {
-        return BindingBuilder.bind(verlaCmdAttachmentQueue).to(commandExchange)
-                .with(VerlaCommandAction.CMD_ATTACHMENT_PARSE.getCode());
+    public Binding verlaCmdAgentDetectionBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_DETECTION_RUN.getCode());
+    }
+
+    @Bean
+    public Binding verlaCmdAgentHumanizerBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_HUMANIZER_RUN.getCode());
     }
 
     // ===================== Event Shard Queues =====================

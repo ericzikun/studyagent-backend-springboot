@@ -26,7 +26,13 @@ public enum VerlaCommandAction {
     CMD_CLARIFY_SUBMIT("cmd.clarify.submit"),
 
     /** V2: 触发附件解析（finalize 上传时下发） */
-    CMD_ATTACHMENT_PARSE("cmd.attachment.parse");
+    CMD_ATTACHMENT_PARSE("cmd.attachment.parse"),
+
+    /** V2: AI 检测（Python humanizer_engine / 远程 Flask） */
+    CMD_DETECTION_RUN("cmd.detection.run"),
+
+    /** V2: 文本 Humanizer 改写 */
+    CMD_HUMANIZER_RUN("cmd.humanizer.run");
 
     private final String code;
 

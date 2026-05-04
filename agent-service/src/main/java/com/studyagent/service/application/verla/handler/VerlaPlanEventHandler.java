@@ -17,7 +17,8 @@ import java.util.Set;
  * <p>
  * 详见 docs/verla-Java侧MVP技术方案.md §11.5。
  * <ul>
- *     <li>{@link VerlaAgentEventType#PLAN_INTENT_RESOLVED} → orchestrator.onPlanResolved → spawn agent</li>
+ *     <li>{@link VerlaAgentEventType#PLAN_INTENT_RESOLVED} → orchestrator.onPlanResolved →
+ *     assignment 待确认 / 或 AI 检测、Humanizer 直接下发 Py</li>
  *     <li>{@link VerlaAgentEventType#PLAN_NEEDS_CLARIFY} → orchestrator.onPlanNeedsClarify → 写 assistant 消息</li>
  * </ul>
  */

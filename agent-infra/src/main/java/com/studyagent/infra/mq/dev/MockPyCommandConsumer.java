@@ -271,6 +271,15 @@ public class MockPyCommandConsumer {
     }
 
     private void scheduleAgentResponse(VerlaCommandEnvelope cmd) {
+        if (VerlaCommandAction.CMD_DETECTION_RUN.getCode().equals(cmd.getAction())) {
+            scheduleCapabilityMock(cmd, VerlaCommandAction.CMD_DETECTION_RUN);
+            return;
+        }
+        if (VerlaCommandAction.CMD_HUMANIZER_RUN.getCode().equals(cmd.getAction())) {
+            scheduleCapabilityMock(cmd, VerlaCommandAction.CMD_HUMANIZER_RUN);
+            return;
+        }
+
         Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
         String agentType = String.valueOf(payload.getOrDefault("agentType", "qa"));
 
@@ -307,6 +316,35 @@ public class MockPyCommandConsumer {
         doneBody.put("primaryArtifactUid", artifactUid);
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_COMPLETED, doneBody,
                 300L + chunks.size() * 200L);
+    }
+
+    /** Mock：检测 / Humanizer — 简化为 STARTED → ARTIFACT → COMPLETED（与真 Py 事件形状接近）。 */
+    private void scheduleCapabilityMock(VerlaCommandEnvelope cmd, VerlaCommandAction action) {
+        String stage = action == VerlaCommandAction.CMD_DETECTION_RUN ? "ai_detection" : "ai_humanizer";
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_STARTED, Map.of("stage", stage), 50);
+
+        String artifactUid = "artifact_mock_" + UUID.randomUUID().toString().substring(0, 8);
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", artifactUid);
+        if (action == VerlaCommandAction.CMD_DETECTION_RUN) {
+            art.put("kind", "ai_detection_report");
+            art.put("mime", "application/json");
+            art.put("summary", "[Mock] AI detection");
+            art.put("bodyOrRef", "{\"probability\":0.12,\"label\":\"Human Written\"}");
+        } else {
+            art.put("kind", "humanizer_result");
+            art.put("mime", "text/plain");
+            art.put("summary", "[Mock] Humanized text");
+            art.put("bodyOrRef", "[Mock] rewritten paragraph.");
+        }
+        art.put("status", "READY");
+        art.put("version", 1);
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_ARTIFACT_UPDATED, art, 200);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("artifactUid", artifactUid);
+        done.put("summary", "[Mock] " + action.getCode() + " done");
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_COMPLETED, done, 350);
     }
 
     private Map<String, Object> buildToolCallPayload(String callId, String agentType,

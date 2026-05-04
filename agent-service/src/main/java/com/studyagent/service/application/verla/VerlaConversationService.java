@@ -31,15 +31,17 @@ public class VerlaConversationService {
     private final ConversationStateMachine conversationStateMachine;
 
     @Transactional
-    public VerlaConversation create(String userId, String title, String workspaceJson) {
+    public VerlaConversation create(String userId, String title, String workspaceJson, String primaryIntent) {
         if (userId == null || userId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
         }
         LocalDateTime now = LocalDateTime.now();
+        String intent = primaryIntent == null || primaryIntent.isBlank() ? null : primaryIntent.trim();
         VerlaConversation c = VerlaConversation.builder()
                 .userId(userId)
                 .title(title == null || title.isBlank() ? "新对话" : title)
                 .status(ConversationStatus.ACTIVE.getDbValue())
+                .primaryIntent(intent)
                 .workspaceJson(workspaceJson)
                 .turnCount(0)
                 .version(1L)

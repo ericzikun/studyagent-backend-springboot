@@ -19,6 +19,13 @@ public enum VerlaAgentEventType {
     /** Py plan runner：意图解析对话流式增量 */
     PLAN_INTENT_STREAM_CHUNK(false),
 
+    /** Assignment 域 —— 需求理解 / 澄清入口（Py assignment_clarify_service） */
+    ASSIGNMENT_CLARIFY_STARTED(false),
+    ASSIGNMENT_CLARIFY_STREAM_CHUNK(false),
+    ASSIGNMENT_CLARIFY_COMPLETED(true),
+    ASSIGNMENT_CLARIFY_FAILED(true),
+    ASSIGNMENT_CLARIFY_CANCELLED(true),
+
     /** Assignment 域 —— 需求理解子阶段 */
     ASSIGNMENT_REQUIREMENT_UNDERSTANDING_STARTED(false),
     ASSIGNMENT_REQUIREMENT_UNDERSTANDING_PROGRESS(false),
@@ -71,6 +78,9 @@ public enum VerlaAgentEventType {
             AGENT_COMPLETED,
             AGENT_FAILED,
             AGENT_CANCELLED,
+            ASSIGNMENT_CLARIFY_COMPLETED,
+            ASSIGNMENT_CLARIFY_FAILED,
+            ASSIGNMENT_CLARIFY_CANCELLED,
             ASSIGNMENT_COMPLETED,
             ASSIGNMENT_FAILED,
             ASSIGNMENT_CANCELLED,

@@ -163,6 +163,12 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
+    public Binding verlaCmdAssignmentClarifyBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
+    }
+
+    @Bean
     public Binding verlaCmdControlCancelBinding(Queue verlaCmdControlQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdControlQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_AGENT_CANCEL.getCode());

@@ -232,7 +232,7 @@ public class VerlaTurnOrchestrator {
     }
 
     /**
-     * 用户在前端确认进入作业完成功能后，才从已解析的 assignment plan 派发 agent session。
+     * 用户在前端确认进入作业功能后，先从已解析的 assignment plan 派发 clarify session。
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult startAssignmentFromLatestPlan(String userId, Long conversationId) {
@@ -537,9 +537,9 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildAgentRunEnvelope(conv, turn, s, intent, resolvedSlots);
+        VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(conv, turn, s, intent, resolvedSlots);
         mqOutboxService.createVerlaCommand(env, commandExchange,
-                VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
+                VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
         return s;
     }
 
@@ -641,18 +641,22 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
-    private VerlaCommandEnvelope buildAgentRunEnvelope(VerlaConversation conv, VerlaTurn turn,
-                                                       VerlaSession session, String intent,
-                                                       Map<String, Object> slots) {
+    private VerlaCommandEnvelope buildAssignmentClarifyEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                               VerlaSession session, String intent,
+                                                               Map<String, Object> slots) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("slots", slots == null ? Map.of() : slots);
+        String userText = resolveTurnUserText(turn);
+        if (userText != null && !userText.isBlank()) {
+            payload.put("userText", userText);
+        }
         payload.put("contextRef", Map.of(
                 "type", "internal-rpc",
                 "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 "convVersion", conv == null ? null : conv.getVersion()));
 
-        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_RUN, conv, turn, session)
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY, conv, turn, session)
                 .payload(payload)
                 .build();
     }

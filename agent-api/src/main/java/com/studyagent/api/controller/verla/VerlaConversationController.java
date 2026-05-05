@@ -61,11 +61,12 @@ public class VerlaConversationController {
             @RequestBody(required = false) CreateConversationRequest req) {
         ensureLogin(clerkUserId);
         String title = req == null ? null : req.getTitle();
+        String primaryIntent = req == null ? null : req.getPrimaryIntent();
         String workspaceJson = null;
         if (req != null && req.getWorkspace() != null) {
             workspaceJson = String.valueOf(req.getWorkspace());
         }
-        VerlaConversation c = conversationService.create(clerkUserId, title, workspaceJson);
+        VerlaConversation c = conversationService.create(clerkUserId, title, workspaceJson, primaryIntent);
         return Result.success(VerlaConversationVO.from(c));
     }
 
@@ -146,6 +147,7 @@ public class VerlaConversationController {
                 .clientMessageId(req.getClientMessageId())
                 .attachmentsJson(writeAttachmentsJson(req.getAttachments()))
                 .skipPlanIfPossible(req.getSkipPlanIfPossible() == null || req.getSkipPlanIfPossible())
+                .forceIntent(req.getForceIntent())
                 .build();
         SendMessageResult result = turnOrchestrator.onUserMessage(cmd);
         return Result.success(SendMessageResponseVO.from(result));

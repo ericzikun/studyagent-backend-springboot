@@ -20,4 +20,7 @@ public class SendMessageRequest {
 
     /** 默认 true，复用 conv.primaryIntent */
     private Boolean skipPlanIfPossible;
+
+    /** 非空时跳过 Plan，直接走 AI 检测 / Humanizer（值为 AI_DETECTION 或 AI_HUMANIZER） */
+    private String forceIntent;
 }

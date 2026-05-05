@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.verla.dto.VerlaConversationContextView;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
 import com.studyagent.service.domain.verla.VerlaArtifact;
@@ -36,7 +37,8 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Verla 内部接口的核心查询服务（PR-10）
  * <p>
- * 负责为 Py 暴露的 {@code GET /v1/internal/verla/sessions/{sid}/context} 提供一把拿全的上下文。
+ * 负责为 Py 暴露的 {@code GET /v1/internal/verla/sessions/{sid}/context}
+ * 与 {@code GET /v1/internal/verla/conversations/{cid}/context}。
  * 详见 docs/verla-Java侧MVP技术方案.md §10.
  *
  * <h3>缓存策略</h3>
@@ -199,6 +201,96 @@ public class VerlaContextQueryService {
                 .traceIncluded(opts.isIncludeTrace())
                 .cacheHitLayer(hitLayer)
                 .build();
+    }
+
+    /**
+     * Conversation 级 hydrate：消息历史、最新 turn、artifacts、可选 tool trace/summaries。
+     * <p>
+     * 消息按 id desc；{@code beforeMessageId == null} 时首屏可走 conv 摘要缓存。
+     * 返回 {@link VerlaConversationContextView#getNextCursor()} 供 Py 分页直至拿满全量 history。
+     */
+    public VerlaConversationContextView getConversationContext(Long conversationId,
+                                                             Long convVersion,
+                                                             Long beforeMessageId,
+                                                             VerlaSessionContextQueryOptions options) {
+        if (conversationId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId");
+        }
+        VerlaSessionContextQueryOptions opts =
+                options == null ? VerlaSessionContextQueryOptions.defaults() : options;
+
+        VerlaConversation convHead = conversationRepository.findById(conversationId);
+        if (convHead == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conversation=" + conversationId);
+        }
+
+        int msgLimit = clampConversationMessageLimit(opts.getMessageLimit());
+        List<VerlaMessage> messages;
+        VerlaConversation convForResponse = convHead;
+        String hitLayer;
+
+        if (beforeMessageId == null) {
+            ConvSummary cs = loadConvSummary(conversationId, convVersion, msgLimit);
+            if (cs == null) {
+                throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conversation=" + conversationId);
+            }
+            convForResponse = cs.conversation;
+            messages = cs.recentMessages;
+            boolean verMatch = convVersion != null && cs.conversation.getVersion() != null
+                    && convVersion.equals(cs.conversation.getVersion());
+            hitLayer = verMatch ? "conv" : "none";
+        } else {
+            messages = messageRepository.findByCursor(conversationId, beforeMessageId, msgLimit);
+            hitLayer = "none";
+        }
+
+        Long nextCursor = null;
+        if (messages != null && messages.size() >= msgLimit) {
+            nextCursor = messages.get(messages.size() - 1).getId();
+        }
+
+        List<VerlaTurn> latestTurns = turnRepository.findRecentByConversation(conversationId, 1);
+        VerlaTurn latestTurn = latestTurns.isEmpty() ? null : latestTurns.get(0);
+
+        int trLimit = clampTraceLimit(opts.getTraceLimit());
+
+        List<VerlaArtifact> artifacts = List.of();
+        if (opts.isIncludeArtifacts()) {
+            artifacts = artifactRepository.findByConversation(conversationId);
+            if (artifacts.size() > artifactLimitDefault) {
+                artifacts = artifacts.subList(0, artifactLimitDefault);
+            }
+        }
+
+        List<VerlaToolCall> recentToolCalls = List.of();
+        if (opts.isIncludeTrace()) {
+            recentToolCalls = toolCallRepository.listVisibleByConversation(conversationId, trLimit);
+        }
+
+        List<VerlaSessionContextView.ToolCallSummaryView> summaries = List.of();
+        if (opts.isIncludeToolSummaries()) {
+            summaries = toolCallRepository.listVisibleByConversation(conversationId, trLimit).stream()
+                    .map(VerlaContextQueryService::toSummaryView)
+                    .toList();
+        }
+
+        return VerlaConversationContextView.builder()
+                .conversation(convForResponse)
+                .latestTurn(latestTurn)
+                .recentMessages(messages == null ? List.of() : messages)
+                .nextCursor(nextCursor)
+                .artifacts(artifacts)
+                .toolSummaries(summaries)
+                .recentToolCalls(recentToolCalls)
+                .traceIncluded(opts.isIncludeTrace())
+                .cacheHitLayer(hitLayer)
+                .build();
+    }
+
+    /** Conversation context：单页消息上限允许更大（与 {@link VerlaMessageRepositoryImpl#findByCursor} 上限对齐）。 */
+    private int clampConversationMessageLimit(Integer req) {
+        int lim = req == null ? recentMessageLimit : req;
+        return Math.max(1, Math.min(lim, 200));
     }
 
     private int clampMessageLimit(Integer req) {

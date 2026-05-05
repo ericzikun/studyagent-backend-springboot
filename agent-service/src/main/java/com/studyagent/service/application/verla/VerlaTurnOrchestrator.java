@@ -701,6 +701,10 @@ public class VerlaTurnOrchestrator {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userText", userText);
         payload.put("primaryIntentHint", conv.getPrimaryIntent());
+        payload.put("contextRef", Map.of(
+                "type", "internal-rpc",
+                "endpoint", "/v1/internal/verla/conversations/" + conv.getId() + "/context",
+                "convVersion", conv.getVersion()));
 
         return baseEnvelope(VerlaCommandAction.CMD_PLAN_INTENT, conv, turn, session)
                 .payload(payload)

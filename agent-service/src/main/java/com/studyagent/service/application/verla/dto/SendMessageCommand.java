@@ -34,4 +34,10 @@ public class SendMessageCommand {
      */
     @Builder.Default
     private boolean skipPlanIfPossible = true;
+
+    /**
+     * 若设为 {@code AI_DETECTION} / {@code AI_HUMANIZER}，则<strong>跳过意图识别 Plan</strong>，
+     * 直接进入对应 capability（派发 {@code cmd.detection.run} / {@code cmd.humanizer.run}）。
+     */
+    private String forceIntent;
 }

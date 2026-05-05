@@ -41,7 +41,9 @@ import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -91,6 +93,11 @@ public class VerlaTurnOrchestrator {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult onUserMessage(SendMessageCommand cmd) {
+        Optional<String> forced = parseForcedCapabilityIntent(cmd.getForceIntent());
+        if (forced.isPresent()) {
+            return onUserMessageForcedCapability(cmd, forced.get());
+        }
+
         VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
 
         VerlaMessage userMsg = insertUserMessagePlaceholder(conv.getId(), cmd);
@@ -121,6 +128,65 @@ public class VerlaTurnOrchestrator {
                 .userMessageId(userMsg.getId())
                 .planSessionId(planSession.getId())
                 .build();
+    }
+
+    /**
+     * 跳过 Plan / 意图识别：前台已选定 AI Detection 或 Humanizer 时直接派发 Py capability。
+     */
+    private SendMessageResult onUserMessageForcedCapability(SendMessageCommand cmd, String intent) {
+        VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
+
+        VerlaMessage userMsg = insertUserMessagePlaceholder(conv.getId(), cmd);
+        VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
+
+        TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
+        turn.setStatus(afterSkip.name());
+        turn.setResolvedIntent(intent);
+        turn.setResolvedSlotsJson(serializeJson(Map.of()));
+        turn.setUpdatedAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+
+        if (intent != null && !intent.isBlank() && !intent.equals(conv.getPrimaryIntent())) {
+            conv.setPrimaryIntent(intent);
+            conv.setUpdatedAt(LocalDateTime.now());
+            conversationRepository.save(conv);
+        }
+
+        conversationRepository.touchOnNewTurn(conv.getId(), turn.getId());
+        conversationRepository.incrementVersion(conv.getId());
+
+        VerlaCommandAction action = "AI_DETECTION".equals(intent)
+                ? VerlaCommandAction.CMD_DETECTION_RUN
+                : VerlaCommandAction.CMD_HUMANIZER_RUN;
+        VerlaSession agentSession = spawnCapabilitySession(conv, turn, intent, Map.of(), action);
+
+        log.info("[Verla] forced capability intent={} convId={}, turnId={}, agentSessionId={}",
+                intent, conv.getId(), turn.getId(), agentSession.getId());
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .planSessionId(null)
+                .agentSessionId(agentSession.getId())
+                .skipPlanReason("forced_capability")
+                .build();
+    }
+
+    private Optional<String> parseForcedCapabilityIntent(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+        String n = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        if ("AI_DETECTION".equals(n)) {
+            return Optional.of("AI_DETECTION");
+        }
+        if ("AI_HUMANIZER".equals(n)) {
+            return Optional.of("AI_HUMANIZER");
+        }
+        throw new BusinessException(ApiCode.PARAM_ERROR, "forceIntent must be AI_DETECTION or AI_HUMANIZER");
     }
 
     // ==========================================================

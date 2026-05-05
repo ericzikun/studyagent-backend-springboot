@@ -147,6 +147,7 @@ public class VerlaConversationController {
                 .clientMessageId(req.getClientMessageId())
                 .attachmentsJson(writeAttachmentsJson(req.getAttachments()))
                 .skipPlanIfPossible(req.getSkipPlanIfPossible() == null || req.getSkipPlanIfPossible())
+                .forceIntent(req.getForceIntent())
                 .build();
         SendMessageResult result = turnOrchestrator.onUserMessage(cmd);
         return Result.success(SendMessageResponseVO.from(result));

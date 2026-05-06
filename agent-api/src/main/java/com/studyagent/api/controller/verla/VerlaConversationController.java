@@ -140,6 +140,9 @@ public class VerlaConversationController {
             @PathVariable Long cid,
             @RequestBody @Valid SendMessageRequest req) {
         ensureLogin(clerkUserId);
+        log.info("[Verla] sendMessage HTTP: cid={}, forceIntent='{}', skipPlan={}, text='{}'",
+                cid, req.getForceIntent(), req.getSkipPlanIfPossible(),
+                req.getText() == null ? null : req.getText().substring(0, Math.min(50, req.getText().length())));
         SendMessageCommand cmd = SendMessageCommand.builder()
                 .conversationId(cid)
                 .userId(clerkUserId)

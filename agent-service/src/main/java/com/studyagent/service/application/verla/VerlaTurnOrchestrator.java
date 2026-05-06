@@ -93,6 +93,9 @@ public class VerlaTurnOrchestrator {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult onUserMessage(SendMessageCommand cmd) {
+        log.info("[Verla] onUserMessage received: convId={}, forceIntent='{}', text='{}'",
+                cmd.getConversationId(), cmd.getForceIntent(),
+                cmd.getText() == null ? null : cmd.getText().substring(0, Math.min(50, cmd.getText().length())));
         Optional<String> forced = parseForcedCapabilityIntent(cmd.getForceIntent());
         if (forced.isPresent()) {
             return onUserMessageForcedCapability(cmd, forced.get());
@@ -131,7 +134,7 @@ public class VerlaTurnOrchestrator {
     }
 
     /**
-     * 跳过 Plan / 意图识别：前台已选定 AI Detection 或 Humanizer 时直接派发 Py capability。
+     * 跳过 Plan / 意图识别：前台已选定具体能力时直接派发 Py capability。
      */
     private SendMessageResult onUserMessageForcedCapability(SendMessageCommand cmd, String intent) {
         VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
@@ -158,10 +161,15 @@ public class VerlaTurnOrchestrator {
         conversationRepository.touchOnNewTurn(conv.getId(), turn.getId());
         conversationRepository.incrementVersion(conv.getId());
 
-        VerlaCommandAction action = "AI_DETECTION".equals(intent)
-                ? VerlaCommandAction.CMD_DETECTION_RUN
-                : VerlaCommandAction.CMD_HUMANIZER_RUN;
-        VerlaSession agentSession = spawnCapabilitySession(conv, turn, intent, Map.of(), action);
+        VerlaSession agentSession;
+        if (isAssignmentIntent(intent)) {
+            agentSession = spawnAgentSession(conv, turn, intent, Map.of());
+        } else {
+            VerlaCommandAction action = "AI_DETECTION".equals(intent)
+                    ? VerlaCommandAction.CMD_DETECTION_RUN
+                    : VerlaCommandAction.CMD_HUMANIZER_RUN;
+            agentSession = spawnCapabilitySession(conv, turn, intent, Map.of(), action);
+        }
 
         log.info("[Verla] forced capability intent={} convId={}, turnId={}, agentSessionId={}",
                 intent, conv.getId(), turn.getId(), agentSession.getId());
@@ -186,7 +194,11 @@ public class VerlaTurnOrchestrator {
         if ("AI_HUMANIZER".equals(n)) {
             return Optional.of("AI_HUMANIZER");
         }
-        throw new BusinessException(ApiCode.PARAM_ERROR, "forceIntent must be AI_DETECTION or AI_HUMANIZER");
+        if (isAssignmentIntent(n)) {
+            return Optional.of("ASSIGNMENT");
+        }
+        throw new BusinessException(ApiCode.PARAM_ERROR,
+                "forceIntent must be ASSIGNMENT, AI_DETECTION or AI_HUMANIZER");
     }
 
     // ==========================================================
@@ -202,8 +214,7 @@ public class VerlaTurnOrchestrator {
      * conv.primaryIntent 沉淀；
      * turn: PLANNING --PLAN_OK--> DISPATCHING；
      * · ASSIGNMENT：留在 DISPATCHING，等用户确认后再发 cmd.assignment.run；
-     * · AI_DETECTION / AI_HUMANIZER：立刻 spawnCapabilitySession → cmd.detection.run / cmd.humanizer.run，
-     *   turn --START_AGENT--> RUNNING_AGENT；
+     * · AI_DETECTION / AI_HUMANIZER / GENERAL_CHAT：只沉淀 intent，由 dashboard 询问用户确认后再跳转能力页；
      * </pre>
      */
     @Transactional(propagation = Propagation.REQUIRED)
@@ -269,15 +280,6 @@ public class VerlaTurnOrchestrator {
             conversationRepository.incrementVersion(conv.getId());
         }
 
-        if (isAiDetectionIntent(intent)) {
-            spawnCapabilitySession(conv, turn, intent, resolvedSlots, VerlaCommandAction.CMD_DETECTION_RUN);
-            return;
-        }
-        if (isAiHumanizerIntent(intent)) {
-            spawnCapabilitySession(conv, turn, intent, resolvedSlots, VerlaCommandAction.CMD_HUMANIZER_RUN);
-            return;
-        }
-
         if (!isAssignmentIntent(intent)) {
             if (curTurn == TurnStatus.PLANNING) {
                 TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.PLAN_COMPLETE);
@@ -286,7 +288,7 @@ public class VerlaTurnOrchestrator {
                 turn.setUpdatedAt(LocalDateTime.now());
                 turnRepository.save(turn);
             }
-            log.info("[Verla] plan resolved as non-assignment intent={}, turnId={} → no agent dispatch",
+            log.info("[Verla] plan resolved as routed intent={}, turnId={} → wait for frontend confirmation",
                     intent, turn.getId());
             return;
         }

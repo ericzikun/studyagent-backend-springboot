@@ -19,6 +19,8 @@ public class VerlaMessageVO {
     private String role;
     private Long sourceSessionId;
     private String text;
+    /** 用户消息附件数组的原始 JSON 字符串（objectId / filename / mime 等） */
+    private String attachmentsJson;
     /** 卡片/Block 数组的原始 JSON 字符串（前端按 §22.2 解析） */
     private String blocksJson;
     private LocalDateTime createdAt;
@@ -30,6 +32,7 @@ public class VerlaMessageVO {
                 .role(m.getRole())
                 .sourceSessionId(m.getSourceSessionId())
                 .text(m.getTextContent())
+                .attachmentsJson(m.getAttachmentsJson())
                 .blocksJson(m.getBlocksJson())
                 .createdAt(m.getCreatedAt())
                 .build();

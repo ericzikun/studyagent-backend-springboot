@@ -1,15 +1,22 @@
 package com.studyagent.infra.mq;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -51,49 +58,43 @@ public class OutboxDispatchScheduler {
 
     /**
      * 发送单条消息到 RabbitMQ
+     * <p>
+     * - 老链路（taskId 非空 / 无 sessionId）：保持原有 envelope = { eventId, action, taskId, payload, timestamp }
+     *   走 {@link RabbitMQConfig#COMMAND_EXCHANGE} + routingKey = action。
+     * - Verla 链路（{@link MqOutbox#isVerla()} = true）：直接把 mq_outbox.payload 当 JSON body 透传，
+     *   走自带的 exchange / routing_key，并把 messageId / correlationId / orderingKey 放进 message header，
+     *   便于消费侧（Py / Java listener）按 header 路由与去重，不破坏信封 schema。
      */
     public void sendMessage(MqOutbox message) {
         try {
-            // 构建消息体
-            Map<String, Object> body = new HashMap<>();
-            body.put("eventId", message.getEventId());
-            body.put("action", message.getAction());
-            body.put("taskId", message.getTaskId());
-            body.put("timestamp", LocalDateTime.now().toString());
+            String exchange;
+            String routingKey;
+            Message amqpMessage;
 
-            if (message.getPayload() != null && !message.getPayload().isEmpty()) {
-                try {
-                    body.put("payload", objectMapper.readTree(message.getPayload()));
-                } catch (Exception e) {
-                    body.put("payload", message.getPayload()); // 如果不是JSON对象则原样发送字符串
+            if (message.isVerla()) {
+                exchange = nullToDefault(message.getExchange(), RabbitMQConfig.COMMAND_EXCHANGE);
+                routingKey = message.getRoutingKey();
+                if (routingKey == null || routingKey.isEmpty()) {
+                    handleSendFailure(message, "Verla outbox missing routingKey");
+                    return;
                 }
+                amqpMessage = buildVerlaMessage(message);
             } else {
-                body.put("payload", new HashMap<>());
+                exchange = RabbitMQConfig.COMMAND_EXCHANGE;
+                routingKey = message.getAction();
+                amqpMessage = buildLegacyMessage(message);
             }
 
-            String routingKey = message.getAction();
-
-            // 使用 rabbitTemplate 的确认机制回调
             CorrelationData correlationData = new CorrelationData(message.getId().toString());
+            rabbitTemplate.send(exchange, routingKey, amqpMessage, correlationData);
 
-            // 发送消息
-            rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.COMMAND_EXCHANGE,
-                    routingKey,
-                    body,
-                    correlationData);
-
-            // 同步等待 Confirm（可选：也可以做成异步Callback机制以提升吞吐量。为了稳妥此处可暂用简单机制，由 ConfirmCallback
-            // 异步处理或直接使用 waitForConfirms）
-            // 在这里我们利用 getFuture() 阻塞等待最多 3 秒获取 ACK
             CorrelationData.Confirm confirm = correlationData.getFuture().get(3, TimeUnit.SECONDS);
 
             if (confirm.isAck()) {
-                // Broker 成功接收
                 mqOutboxRepository.markAsSent(message.getId());
-                log.info("Broker 成功接收消息: eventId={}, action={}", message.getEventId(), message.getAction());
+                log.info("Broker ack: eventId={}, action={}, exchange={}, rk={}",
+                        message.getEventId(), message.getAction(), exchange, routingKey);
             } else {
-                // Broker 明确拒收
                 handleSendFailure(message, "Broker NACK: " + confirm.getReason());
             }
 
@@ -101,6 +102,50 @@ public class OutboxDispatchScheduler {
             log.error("发送 MQ 消息发生异常: eventId={}", message.getEventId(), e);
             handleSendFailure(message, e.getMessage());
         }
+    }
+
+    private Message buildLegacyMessage(MqOutbox message) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("eventId", message.getEventId());
+        body.put("action", message.getAction());
+        body.put("taskId", message.getTaskId());
+        body.put("timestamp", LocalDateTime.now().toString());
+
+        if (message.getPayload() != null && !message.getPayload().isEmpty()) {
+            try {
+                body.put("payload", objectMapper.readTree(message.getPayload()));
+            } catch (Exception e) {
+                body.put("payload", message.getPayload());
+            }
+        } else {
+            body.put("payload", new HashMap<>());
+        }
+
+        MessageConverter converter = rabbitTemplate.getMessageConverter();
+        MessageProperties props = new MessageProperties();
+        props.setMessageId(message.getEventId());
+        return converter.toMessage(body, props);
+    }
+
+    private Message buildVerlaMessage(MqOutbox message) {
+        String payload = message.getPayload() == null ? "{}" : message.getPayload();
+        return MessageBuilder.withBody(payload.getBytes(StandardCharsets.UTF_8))
+                .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                .setContentEncoding(StandardCharsets.UTF_8.name())
+                .setMessageId(message.getEventId())
+                .setHeader("messageId", message.getEventId())
+                .setHeader("correlationId", message.getCorrelationId())
+                .setHeader("orderingKey", message.getOrderingKey())
+                .setHeader("schemaVersion", message.getSchemaVersion())
+                .setHeader("conversationId", message.getConversationId())
+                .setHeader("turnId", message.getTurnId())
+                .setHeader("sessionId", message.getSessionId())
+                .setHeader("action", message.getAction())
+                .build();
+    }
+
+    private static String nullToDefault(String s, String def) {
+        return (s == null || s.isEmpty()) ? def : s;
     }
 
     private void handleSendFailure(MqOutbox message, String errorMsg) {

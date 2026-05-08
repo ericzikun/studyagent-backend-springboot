@@ -40,6 +40,13 @@ public enum VerlaAgentEventType {
     ASSIGNMENT_FAILED(true),
     ASSIGNMENT_CANCELLED(true),
 
+    /** Assignment AgentFlow 域（Py assignment_flow_service 新事件体系） */
+    ASSIGNMENT_AGENT_FLOW_STARTED(false),
+    ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED(false),
+    ASSIGNMENT_AGENT_FLOW_COMPLETED(true),
+    ASSIGNMENT_AGENT_FLOW_FAILED(true),
+    ASSIGNMENT_AGENT_FLOW_CANCELLED(true),
+
     /** Materials 域 */
     MATERIALS_STARTED(false),
     MATERIALS_COMPLETED(true),
@@ -84,6 +91,9 @@ public enum VerlaAgentEventType {
             ASSIGNMENT_COMPLETED,
             ASSIGNMENT_FAILED,
             ASSIGNMENT_CANCELLED,
+            ASSIGNMENT_AGENT_FLOW_COMPLETED,
+            ASSIGNMENT_AGENT_FLOW_FAILED,
+            ASSIGNMENT_AGENT_FLOW_CANCELLED,
             MATERIALS_COMPLETED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {

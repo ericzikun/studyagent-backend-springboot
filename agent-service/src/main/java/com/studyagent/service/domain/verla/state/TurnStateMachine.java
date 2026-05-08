@@ -41,6 +41,7 @@ public class TurnStateMachine {
 
         table.put(DISPATCHING, Map.of(
                 START_AGENT, RUNNING_AGENT,
+                PLAN_COMPLETE, COMPLETED,
                 USER_CANCEL, CANCELLING,
                 AGENT_FAIL, FAILED));
 

@@ -31,7 +31,8 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
 
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
             VerlaAgentEventType.AGENT_ARTIFACT_UPDATED,
-            VerlaAgentEventType.ASSIGNMENT_ARTIFACT_UPDATED);
+            VerlaAgentEventType.ASSIGNMENT_ARTIFACT_UPDATED,
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED);
 
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaConversationRepository conversationRepository;

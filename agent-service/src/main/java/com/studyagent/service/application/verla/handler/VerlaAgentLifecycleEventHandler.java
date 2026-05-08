@@ -37,6 +37,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_FAILED,
             VerlaAgentEventType.ASSIGNMENT_CANCELLED,
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED,
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_CANCELLED,
             VerlaAgentEventType.MATERIALS_STARTED,
             VerlaAgentEventType.MATERIALS_COMPLETED);
 
@@ -55,19 +59,27 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 ? Map.of() : env.getPayload();
 
         switch (type) {
-            case AGENT_STARTED, ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED -> {
+            case AGENT_STARTED, ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED,
+                    ASSIGNMENT_AGENT_FLOW_STARTED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentStarted(sessionId);
             }
-            case AGENT_COMPLETED, ASSIGNMENT_CLARIFY_COMPLETED, ASSIGNMENT_COMPLETED, MATERIALS_COMPLETED -> {
+            case ASSIGNMENT_CLARIFY_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentClarifyCompleted(sessionId, payload);
+            }
+            case AGENT_COMPLETED, ASSIGNMENT_COMPLETED, MATERIALS_COMPLETED,
+                    ASSIGNMENT_AGENT_FLOW_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCompleted(sessionId, payload);
             }
-            case AGENT_FAILED, ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED -> {
+            case AGENT_FAILED, ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED,
+                    ASSIGNMENT_AGENT_FLOW_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentFailed(sessionId, payload);
             }
-            case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED -> {
+            case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
+                    ASSIGNMENT_AGENT_FLOW_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCancelled(sessionId);
             }

@@ -312,11 +312,13 @@ CREATE TABLE IF NOT EXISTS verla_attachments (
     object_id         VARCHAR(64)  NOT NULL                       COMMENT '业务唯一 ID（att_*），前端引用用',
     conversation_id   BIGINT       NOT NULL,
     turn_id           BIGINT       DEFAULT NULL                   COMMENT '可空：上传后未提交时为 NULL',
+    session_id        BIGINT       DEFAULT NULL                   COMMENT '可空：上传时所处 session，预上传阶段为 NULL',
     user_id           VARCHAR(64)  NOT NULL                       COMMENT 'clerkUserId',
     filename          VARCHAR(255) NOT NULL,
     mime              VARCHAR(96)  NOT NULL,
     size_bytes        BIGINT       NOT NULL,
     storage_uri       VARCHAR(512) NOT NULL                       COMMENT 'oss://... / file://...',
+    oss_key           VARCHAR(512) DEFAULT NULL                   COMMENT 'OSS/local object key for V2 attachment bytes',
     checksum_sha256   VARCHAR(64)  DEFAULT NULL,
     status            VARCHAR(16)  NOT NULL DEFAULT 'UPLOADED'    COMMENT 'UPLOADED / PARSING / PARSED / FAILED',
     parse_progress    INT          DEFAULT NULL                   COMMENT '0~100，PARSING 阶段',
@@ -330,6 +332,7 @@ CREATE TABLE IF NOT EXISTS verla_attachments (
     UNIQUE KEY uk_object_id (object_id),
     KEY idx_conv_created (conversation_id, created_at),
     KEY idx_turn         (turn_id),
+    KEY idx_session      (session_id),
     KEY idx_user_created (user_id, created_at),
     KEY idx_status       (status, updated_at)
 ) ENGINE = InnoDB

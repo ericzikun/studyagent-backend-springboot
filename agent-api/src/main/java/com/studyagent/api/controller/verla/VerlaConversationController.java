@@ -1,10 +1,13 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.verla.request.AssignmentClarifyContinueRequest;
 import com.studyagent.api.dto.verla.request.CreateConversationRequest;
 import com.studyagent.api.dto.verla.request.PatchConversationRequest;
+import com.studyagent.api.dto.verla.request.PlanConfirmRequest;
 import com.studyagent.api.dto.verla.request.SendMessageRequest;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
+import com.studyagent.api.dto.verla.response.PlanConfirmResponseVO;
 import com.studyagent.api.dto.verla.response.SendMessageResponseVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
@@ -12,6 +15,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
+import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -157,15 +161,78 @@ public class VerlaConversationController {
     }
 
     // ========================================================
-    // 6.1) POST /v1/verla/conversations/{cid}/assignment/start
-    //      —— 用户确认进入作业完成功能后派发 agent
+    // 6.1) POST /v1/verla/conversations/{cid}/assignment/clarify/start
+    //      —— 用户确认进入作业完成功能后先启动 requirement clarify stage_0
     // ========================================================
-    @PostMapping("/{cid}/assignment/start")
-    public Result<SendMessageResponseVO> startAssignment(
+    @PostMapping("/{cid}/assignment/clarify/start")
+    public Result<SendMessageResponseVO> startAssignmentClarify(
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable Long cid) {
         ensureLogin(clerkUserId);
-        SendMessageResult result = turnOrchestrator.startAssignmentFromLatestPlan(clerkUserId, cid);
+        SendMessageResult result = turnOrchestrator.startAssignmentClarifyFromLatestPlan(clerkUserId, cid);
+        return Result.success(SendMessageResponseVO.from(result));
+    }
+
+    @PostMapping("/{cid}/plan/confirm")
+    public Result<PlanConfirmResponseVO> confirmPlan(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid,
+            @RequestBody @Valid PlanConfirmRequest req) {
+        ensureLogin(clerkUserId);
+        PlanConfirmResult result = turnOrchestrator.confirmLatestPlan(
+                clerkUserId,
+                cid,
+                Boolean.TRUE.equals(req.getConfirmed()),
+                req.getSomethingElseText());
+        return Result.success(PlanConfirmResponseVO.from(result));
+    }
+
+    @PostMapping("/{cid}/assignment/clarify/continue")
+    public Result<SendMessageResponseVO> continueAssignmentClarify(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid,
+            @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
+        ensureLogin(clerkUserId);
+        AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
+        SendMessageResult result = turnOrchestrator.continueAssignmentClarify(
+                clerkUserId,
+                cid,
+                body.getSessionId(),
+                body.getStage(),
+                body.getUserChoice(),
+                body.getText(),
+                body.getObjectIds(),
+                body.getReservedFields(),
+                body.getAppendAskAnswers());
+        return Result.success(SendMessageResponseVO.from(result));
+    }
+
+    @PostMapping("/{cid}/assignment/clarify/finalize")
+    public Result<SendMessageResponseVO> finalizeAssignmentClarify(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid,
+            @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
+        ensureLogin(clerkUserId);
+        AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
+        SendMessageResult result = turnOrchestrator.continueAssignmentClarify(
+                clerkUserId,
+                cid,
+                body.getSessionId(),
+                "stage_3",
+                body.getUserChoice(),
+                body.getText(),
+                body.getObjectIds(),
+                body.getReservedFields(),
+                body.getAppendAskAnswers());
+        return Result.success(SendMessageResponseVO.from(result));
+    }
+
+    @PostMapping("/{cid}/assignment/run")
+    public Result<SendMessageResponseVO> runAssignment(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        SendMessageResult result = turnOrchestrator.startAssignmentRunFromFinalClarify(clerkUserId, cid);
         return Result.success(SendMessageResponseVO.from(result));
     }
 

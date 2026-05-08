@@ -19,7 +19,7 @@ public enum TurnEvent {
     PLAN_CLARIFY,
     /** plan session 失败 */
     PLAN_FAIL,
-    /** 派发 agent session（spawnAgentSession） */
+    /** 派发 agent session */
     START_AGENT,
     /** agent 完成 */
     AGENT_OK,

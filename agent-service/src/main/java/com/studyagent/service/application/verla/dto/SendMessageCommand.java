@@ -30,7 +30,7 @@ public class SendMessageCommand {
     /**
      * 是否允许在已有 primaryIntent 时跳 plan
      * <p>
-     * MVP（Day 2）始终走 plan 路径，PR-12 才接通 spawnAgentSession。
+     * MVP（Day 2）始终走 plan 路径，PR-12 才接通 direct capability dispatch。
      */
     @Builder.Default
     private boolean skipPlanIfPossible = true;

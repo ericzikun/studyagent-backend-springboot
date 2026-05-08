@@ -13,6 +13,7 @@ import com.studyagent.common.verla.envelope.VerlaSessionRef;
 import com.studyagent.common.verla.envelope.VerlaTurnRef;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -41,6 +42,7 @@ import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -163,7 +165,7 @@ public class VerlaTurnOrchestrator {
 
         VerlaSession agentSession;
         if (isAssignmentIntent(intent)) {
-            agentSession = spawnAgentSession(conv, turn, intent, Map.of());
+            agentSession = spawnAssignmentClarifyInitialSession(conv, turn, intent, Map.of());
         } else {
             VerlaCommandAction action = "AI_DETECTION".equals(intent)
                     ? VerlaCommandAction.CMD_DETECTION_RUN
@@ -213,7 +215,7 @@ public class VerlaTurnOrchestrator {
      * plan session → SUCCEEDED；
      * conv.primaryIntent 沉淀；
      * turn: PLANNING --PLAN_OK--> DISPATCHING；
-     * · ASSIGNMENT：留在 DISPATCHING，等用户确认后再发 cmd.assignment.run；
+     * · ASSIGNMENT：留在 DISPATCHING，等用户确认后再发 cmd.assignment.clarify stage_0；
      * · AI_DETECTION / AI_HUMANIZER / GENERAL_CHAT：只沉淀 intent，由 dashboard 询问用户确认后再跳转能力页；
      * </pre>
      */
@@ -300,10 +302,10 @@ public class VerlaTurnOrchestrator {
     }
 
     /**
-     * 用户在前端确认进入作业功能后，先从已解析的 assignment plan 派发 clarify session。
+     * 用户在前端确认进入作业功能后，先从已解析的 assignment plan 派发 clarify stage_0 session。
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public SendMessageResult startAssignmentFromLatestPlan(String userId, Long conversationId) {
+    public SendMessageResult startAssignmentClarifyFromLatestPlan(String userId, Long conversationId) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         VerlaTurn latest = turnRepository.findRecentByConversation(conversationId, 1)
                 .stream().findFirst().orElse(null);
@@ -323,17 +325,17 @@ public class VerlaTurnOrchestrator {
                     .userMessageId(turn.getUserMessageId())
                     .planSessionId(turn.getPlanSessionId())
                     .agentSessionId(turn.getAgentSessionId())
-                    .skipPlanReason("assignment_already_started")
+                    .skipPlanReason("assignment_clarify_already_started")
                     .build();
         }
 
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
         if (curTurn != TurnStatus.DISPATCHING) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE,
-                    "assignment plan is not ready to start");
+                    "assignment plan is not ready to start clarify");
         }
 
-        VerlaSession agentSession = spawnAgentSession(
+        VerlaSession agentSession = spawnAssignmentClarifyInitialSession(
                 conv,
                 turn,
                 intent,
@@ -343,6 +345,205 @@ public class VerlaTurnOrchestrator {
                 .userMessageId(turn.getUserMessageId())
                 .planSessionId(turn.getPlanSessionId())
                 .agentSessionId(agentSession.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public PlanConfirmResult confirmLatestPlan(String userId, Long conversationId,
+                                               boolean confirmed,
+                                               String somethingElseText) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaTurn latest = turnRepository.findRecentByConversation(conversationId, 1)
+                .stream().findFirst().orElse(null);
+        if (latest == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+
+        VerlaTurn turn = turnRepository.findByIdForUpdate(latest.getId());
+        String text = somethingElseText == null ? "" : somethingElseText.trim();
+
+        if (!confirmed && !text.isBlank()) {
+            recordPlanConfirmationMessage(turn, "something_else", text);
+            closePlanTurn(turn);
+            clearPrimaryIntent(conv);
+            SendMessageResult nextPlan = onUserMessage(SendMessageCommand.builder()
+                    .conversationId(conversationId)
+                    .userId(userId)
+                    .text(text)
+                    .skipPlanIfPossible(false)
+                    .build());
+            return PlanConfirmResult.builder()
+                    .success(true)
+                    .nextStage("planning")
+                    .redirectUrl(null)
+                    .messageResult(nextPlan)
+                    .build();
+        }
+
+        if (!confirmed) {
+            recordPlanConfirmationMessage(turn, "rejected", "");
+            closePlanTurn(turn);
+            clearPrimaryIntent(conv);
+            return PlanConfirmResult.builder()
+                    .success(true)
+                    .nextStage("dashboard")
+                    .redirectUrl("/dashboard")
+                    .messageResult(SendMessageResult.builder()
+                            .turnId(turn.getId())
+                            .userMessageId(turn.getUserMessageId())
+                            .planSessionId(turn.getPlanSessionId())
+                            .agentSessionId(turn.getAgentSessionId())
+                            .skipPlanReason("plan_rejected")
+                            .build())
+                    .build();
+        }
+
+        String intent = turn.getResolvedIntent();
+        if (isAssignmentIntent(intent)) {
+            return PlanConfirmResult.builder()
+                    .success(true)
+                    .nextStage("understanding")
+                    .redirectUrl("/dashboard/create?type=assignment&stage=understanding"
+                            + "&surface=workspace-preview&stream=verla&cid=" + conversationId)
+                    .messageResult(SendMessageResult.builder()
+                            .turnId(turn.getId())
+                            .userMessageId(turn.getUserMessageId())
+                            .planSessionId(turn.getPlanSessionId())
+                            .agentSessionId(turn.getAgentSessionId())
+                            .skipPlanReason("assignment_understanding_pending")
+                            .build())
+                    .build();
+        }
+
+        if (isAiDetectionIntent(intent)) {
+            return PlanConfirmResult.builder()
+                    .success(true)
+                    .nextStage("redirecting")
+                    .redirectUrl("/dashboard/create?type=ai-detection&stream=verla&cid=" + conversationId)
+                    .messageResult(SendMessageResult.builder()
+                            .turnId(turn.getId())
+                            .userMessageId(turn.getUserMessageId())
+                            .planSessionId(turn.getPlanSessionId())
+                            .agentSessionId(turn.getAgentSessionId())
+                            .build())
+                    .build();
+        }
+
+        if (isAiHumanizerIntent(intent)) {
+            return PlanConfirmResult.builder()
+                    .success(true)
+                    .nextStage("redirecting")
+                    .redirectUrl("/dashboard/create?type=humanizer&stream=verla&cid=" + conversationId)
+                    .messageResult(SendMessageResult.builder()
+                            .turnId(turn.getId())
+                            .userMessageId(turn.getUserMessageId())
+                            .planSessionId(turn.getPlanSessionId())
+                            .agentSessionId(turn.getAgentSessionId())
+                            .build())
+                    .build();
+        }
+
+        return PlanConfirmResult.builder()
+                .success(true)
+                .nextStage("dashboard")
+                .redirectUrl("/dashboard")
+                .messageResult(SendMessageResult.builder()
+                        .turnId(turn.getId())
+                        .userMessageId(turn.getUserMessageId())
+                        .planSessionId(turn.getPlanSessionId())
+                        .agentSessionId(turn.getAgentSessionId())
+                        .build())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult continueAssignmentClarify(String userId, Long conversationId,
+                                                       Long previousSessionId,
+                                                       String stage,
+                                                       String userChoice,
+                                                       String text,
+                                                       List<String> objectIds,
+                                                       Map<String, Object> reservedFields,
+                                                       List<Map<String, Object>> appendAskAnswers) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaSession previous = previousSessionId == null ? null : sessionRepository.findById(previousSessionId);
+        VerlaTurn baseTurn = previous == null
+                ? turnRepository.findRecentByConversation(conversationId, 1).stream().findFirst().orElse(null)
+                : turnRepository.findById(previous.getTurnId());
+        if (baseTurn == null || !conversationId.equals(baseTurn.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+
+        VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
+        String normalizedStage = normalizeClarifyStage(stage);
+        String normalizedChoice = normalizeClarifyChoice(userChoice);
+        String messageText = buildClarifyUserMessageText(
+                normalizedStage, normalizedChoice, text, reservedFields, appendAskAnswers);
+        VerlaMessage userMessage = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(turn.getId())
+                .role("user")
+                .textContent(messageText)
+                .attachmentsJson(objectIds == null || objectIds.isEmpty()
+                        ? null : serializeJson(objectIds.stream()
+                        .map(objectId -> Map.<String, Object>of("objectId", objectId))
+                        .toList()))
+                .blocksJson(serializeJson(Map.of(
+                        "phase", "assignment_clarify",
+                        "stage", normalizedStage,
+                        "userChoice", normalizedChoice == null ? "" : normalizedChoice,
+                        "reservedFields", reservedFields == null ? Map.of() : reservedFields,
+                        "appendAskAnswers", appendAskAnswers == null ? List.of() : appendAskAnswers)))
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(userMessage);
+
+        VerlaSession nextSession = spawnAssignmentClarifySession(
+                conv,
+                turn,
+                isAssignmentIntent(turn.getResolvedIntent()) ? turn.getResolvedIntent() : "ASSIGNMENT",
+                parseSlotsJson(turn.getResolvedSlotsJson()),
+                normalizedStage,
+                normalizedChoice,
+                text,
+                objectIds,
+                reservedFields,
+                appendAskAnswers);
+        conversationRepository.incrementVersion(conversationId);
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMessage.getId())
+                .planSessionId(turn.getPlanSessionId())
+                .agentSessionId(nextSession.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startAssignmentRunFromFinalClarify(String userId, Long conversationId) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaTurn latest = turnRepository.findRecentByConversation(conversationId, 1)
+                .stream().findFirst().orElse(null);
+        if (latest == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(latest.getId());
+        Map<String, Object> finalClarifyResult = findLatestFinalClarifyResult(turn);
+        if (finalClarifyResult.isEmpty()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE,
+                    "assignment clarify is not finalized");
+        }
+
+        VerlaSession runSession = spawnAssignmentRunSession(
+                conv,
+                turn,
+                isAssignmentIntent(turn.getResolvedIntent()) ? turn.getResolvedIntent() : "ASSIGNMENT",
+                finalClarifyResult);
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(turn.getUserMessageId())
+                .planSessionId(turn.getPlanSessionId())
+                .agentSessionId(runSession.getId())
                 .build();
     }
 
@@ -467,6 +668,41 @@ public class VerlaTurnOrchestrator {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentClarifyCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(result));
+            sessionRepository.save(s);
+        }
+
+        String reply = extractAssistantReply(result);
+        if (reply != null && !reply.isBlank()) {
+            VerlaMessage assistant = VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent(reply)
+                    .blocksJson(serializeJson(result))
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            messageRepository.save(assistant);
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
     /**
      * AGENT_FAILED：agent session FAILED + turn FAILED。
      */
@@ -566,10 +802,11 @@ public class VerlaTurnOrchestrator {
     }
 
     /**
-     * 创建 agent session 并写 outbox 命令（同事务）
+     * 创建 assignment clarify 首轮 session 并写 outbox 命令（同事务）
      */
-    private VerlaSession spawnAgentSession(VerlaConversation conv, VerlaTurn turn,
-                                           String intent, Map<String, Object> resolvedSlots) {
+    private VerlaSession spawnAssignmentClarifyInitialSession(VerlaConversation conv, VerlaTurn turn,
+                                                              String intent,
+                                                              Map<String, Object> resolvedSlots) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -593,7 +830,7 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
-        // turn: DISPATCHING → RUNNING_AGENT（START_AGENT 表示已发出 cmd.assignment.run）
+        // turn: DISPATCHING → RUNNING_AGENT（START_AGENT 表示已发出 assignment clarify stage_0）
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
         if (curTurn == TurnStatus.DISPATCHING) {
             TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
@@ -605,9 +842,90 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(conv, turn, s, intent, resolvedSlots);
+        VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
+                conv, turn, s, intent, resolvedSlots,
+                "stage_0", null, "", List.of(), Map.of(), List.of());
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
+        return s;
+    }
+
+    private VerlaSession spawnAssignmentClarifySession(VerlaConversation conv, VerlaTurn turn,
+                                                       String intent, Map<String, Object> resolvedSlots,
+                                                       String stage, String userChoice, String userText,
+                                                       List<String> objectIds,
+                                                       Map<String, Object> reservedFields,
+                                                       List<Map<String, Object>> appendAskAnswers) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv == null ? turn.getConversationId() : conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .featureCode(intent)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
+                conv, turn, s, intent, resolvedSlots, stage, userChoice, userText,
+                objectIds, reservedFields, appendAskAnswers);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
+        return s;
+    }
+
+    private VerlaSession spawnAssignmentRunSession(VerlaConversation conv, VerlaTurn turn,
+                                                   String intent,
+                                                   Map<String, Object> finalClarifyResult) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv == null ? turn.getConversationId() : conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .featureCode(intent)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildAssignmentRunEnvelope(conv, turn, s, intent, finalClarifyResult);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
         return s;
     }
 
@@ -698,15 +1016,57 @@ public class VerlaTurnOrchestrator {
         return turnRepository.save(t);
     }
 
+    private void recordPlanConfirmationMessage(VerlaTurn turn, String choice, String text) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("phase", "plan_confirmation");
+        block.put("choice", choice);
+        if (text != null && !text.isBlank()) {
+            block.put("somethingElseText", text);
+        }
+        VerlaMessage message = VerlaMessage.builder()
+                .conversationId(turn.getConversationId())
+                .turnId(turn.getId())
+                .role("user")
+                .textContent(text == null || text.isBlank() ? choice : text)
+                .blocksJson(serializeJson(block))
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(message);
+    }
+
+    private void closePlanTurn(VerlaTurn turn) {
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (curTurn.isTerminal()) {
+            return;
+        }
+        if (curTurn == TurnStatus.DISPATCHING || curTurn == TurnStatus.PLANNING) {
+            TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.PLAN_COMPLETE);
+            turn.setStatus(nextTurn.name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turn.setLastProgressAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+    }
+
+    private void clearPrimaryIntent(VerlaConversation conv) {
+        if (conv == null || conv.getPrimaryIntent() == null) {
+            return;
+        }
+        conv.setPrimaryIntent(null);
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationRepository.save(conv);
+        conversationRepository.incrementVersion(conv.getId());
+    }
+
     private VerlaCommandEnvelope buildPlanIntentEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                          VerlaSession session, String userText) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userText", userText);
         payload.put("primaryIntentHint", conv.getPrimaryIntent());
-        payload.put("contextRef", Map.of(
-                "type", "internal-rpc",
-                "endpoint", "/v1/internal/verla/conversations/" + conv.getId() + "/context",
-                "convVersion", conv.getVersion()));
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/conversations/" + conv.getId() + "/context",
+                conv.getVersion()));
 
         return baseEnvelope(VerlaCommandAction.CMD_PLAN_INTENT, conv, turn, session)
                 .payload(payload)
@@ -715,18 +1075,29 @@ public class VerlaTurnOrchestrator {
 
     private VerlaCommandEnvelope buildAssignmentClarifyEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                                VerlaSession session, String intent,
-                                                               Map<String, Object> slots) {
+                                                               Map<String, Object> slots,
+                                                               String stage,
+                                                               String userChoice,
+                                                               String userText,
+                                                               List<String> objectIds,
+                                                               Map<String, Object> reservedFields,
+                                                               List<Map<String, Object>> appendAskAnswers) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
+        payload.put("stage", normalizeClarifyStage(stage));
+        payload.put("userChoice", normalizeClarifyChoice(userChoice));
+        payload.put("objectIds", objectIds == null ? List.of() : objectIds);
         payload.put("slots", slots == null ? Map.of() : slots);
-        String userText = resolveTurnUserText(turn);
         if (userText != null && !userText.isBlank()) {
             payload.put("userText", userText);
+        } else {
+            payload.put("userText", "");
         }
-        payload.put("contextRef", Map.of(
-                "type", "internal-rpc",
-                "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
-                "convVersion", conv == null ? null : conv.getVersion()));
+        payload.put("reservedFields", reservedFields == null ? Map.of() : reservedFields);
+        payload.put("appendAskAnswers", appendAskAnswers == null ? List.of() : appendAskAnswers);
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
 
         return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY, conv, turn, session)
                 .payload(payload)
@@ -744,12 +1115,28 @@ public class VerlaTurnOrchestrator {
         if (userMessageText != null && !userMessageText.isBlank()) {
             payload.put("userText", userMessageText.trim());
         }
-        payload.put("contextRef", Map.of(
-                "type", "internal-rpc",
-                "endpoint", "/v1/internal/verla/sessions/" + session.getId() + "/context",
-                "convVersion", conv == null ? null : conv.getVersion()));
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
 
         return baseEnvelope(action, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildAssignmentRunEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                           VerlaSession session, String intent,
+                                                           Map<String, Object> finalClarifyResult) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("agentType", intent);
+        payload.put("requirementForm", finalClarifyResult.getOrDefault("requirementForm", Map.of()));
+        payload.put("requirementUnderstanding", finalClarifyResult.get("requirementUnderstanding"));
+        payload.put("clarifyResult", finalClarifyResult);
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_RUN, conv, turn, session)
                 .payload(payload)
                 .build();
     }
@@ -810,6 +1197,22 @@ public class VerlaTurnOrchestrator {
             log.warn("[Verla] resolved slots json parse failed: {}", e.getMessage());
             return Map.of();
         }
+    }
+
+    private Map<String, Object> findLatestFinalClarifyResult(VerlaTurn turn) {
+        List<VerlaSession> sessions = sessionRepository.findByTurn(turn.getId());
+        for (int i = sessions.size() - 1; i >= 0; i--) {
+            VerlaSession session = sessions.get(i);
+            if (!VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())) {
+                continue;
+            }
+            Map<String, Object> result = parseSlotsJson(session.getResultJson());
+            if ("stage_3".equals(String.valueOf(result.get("stage")))
+                    && Boolean.TRUE.equals(result.get("isReadyForGeneration"))) {
+                return result;
+            }
+        }
+        return Map.of();
     }
 
     private static boolean isAssignmentIntent(String intent) {
@@ -878,6 +1281,67 @@ public class VerlaTurnOrchestrator {
         }
         Object q = clarifyBlock.get("question");
         return q == null ? null : q.toString();
+    }
+
+    private static String normalizeClarifyStage(String stage) {
+        if ("stage_2".equals(stage) || "stage_3".equals(stage)) {
+            return stage;
+        }
+        return "stage_0";
+    }
+
+    private static String normalizeClarifyChoice(String userChoice) {
+        if (userChoice == null || userChoice.isBlank()) {
+            return null;
+        }
+        if ("generateion".equals(userChoice)) {
+            return "generation";
+        }
+        if ("deep_understanding".equals(userChoice) || "generation".equals(userChoice)) {
+            return userChoice;
+        }
+        return null;
+    }
+
+    private String buildClarifyUserMessageText(String stage, String userChoice, String text,
+                                               Map<String, Object> reservedFields,
+                                               List<Map<String, Object>> appendAskAnswers) {
+        StringBuilder sb = new StringBuilder();
+        if (text != null && !text.isBlank()) {
+            sb.append(text.trim());
+        }
+        if (userChoice != null && !userChoice.isBlank()) {
+            if (!sb.isEmpty()) {
+                sb.append("\n\n");
+            }
+            sb.append("User choice: ").append(userChoice);
+        }
+        if (reservedFields != null && !reservedFields.isEmpty()) {
+            if (!sb.isEmpty()) {
+                sb.append("\n\n");
+            }
+            sb.append("Reserved fields:\n").append(serializeJson(reservedFields));
+        }
+        if (appendAskAnswers != null && !appendAskAnswers.isEmpty()) {
+            if (!sb.isEmpty()) {
+                sb.append("\n\n");
+            }
+            sb.append("Append ask answers:\n").append(serializeJson(appendAskAnswers));
+        }
+        if (sb.isEmpty()) {
+            return "Continue assignment clarify: " + stage;
+        }
+        return sb.toString();
+    }
+
+    private static Map<String, Object> buildContextRef(String endpoint, Long convVersion) {
+        Map<String, Object> ref = new HashMap<>();
+        ref.put("type", "internal-rpc");
+        ref.put("endpoint", endpoint);
+        if (convVersion != null) {
+            ref.put("convVersion", convVersion);
+        }
+        return ref;
     }
 
     private static String resolveHostname() {

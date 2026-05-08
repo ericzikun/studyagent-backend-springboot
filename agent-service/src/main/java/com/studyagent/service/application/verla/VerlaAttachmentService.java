@@ -33,6 +33,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -81,6 +84,16 @@ public class VerlaAttachmentService {
     @Value("${verla.attachment.oss-key-prefix:verla/v2/attachments}")
     private String ossKeyPrefix;
 
+    /**
+     * 本地开发兜底：OSS 未配置时仍允许 Dashboard 走 V2 上传链路。
+     * 线上保持 false，由 OSS 承载可被 Python 消费的材料。
+     */
+    @Value("${verla.attachment.local-fallback-enabled:false}")
+    private boolean localFallbackEnabled;
+
+    @Value("${verla.attachment.local-root:../storage}")
+    private String localRoot;
+
     /** 逗号分隔 MIME，空表示不校验 */
     @Value("${verla.attachment.allowed-mimes:application/pdf,image/png,image/jpeg,image/webp,text/plain}")
     private String allowedMimesRaw;
@@ -113,8 +126,8 @@ public class VerlaAttachmentService {
                 .expireAfterWrite(Duration.ofSeconds(Math.max(60, signTtlSeconds)))
                 .maximumSize(20_000)
                 .build();
-        log.info("[Verla/attachment/V2] init maxBytes={}, signTtl={}s, ossEnabled={}, ossPrefix={}, allowedMimes={}",
-                maxBytes, signTtlSeconds, ossStorageService.isEnabled(), ossKeyPrefix, allowedMimes);
+        log.info("[Verla/attachment/V2] init maxBytes={}, signTtl={}s, ossEnabled={}, localFallback={}, ossPrefix={}, allowedMimes={}",
+                maxBytes, signTtlSeconds, ossStorageService.isEnabled(), localFallbackEnabled, ossKeyPrefix, allowedMimes);
     }
 
     public static String uploadTokenHeaderName() {
@@ -207,14 +220,20 @@ public class VerlaAttachmentService {
         byte[] body = readFullyLimited(rawIn, att.getSizeBytes());
         String checksum = sha256Hex(body);
 
-        boolean ok = ossStorageService.putBytesAtKey(att.getOssKey(), body);
-        if (!ok) {
-            throw new BusinessException(ApiCode.INTERNAL_ERROR, "OSS upload failed");
-        }
-
-        String storageUri = ossStorageService.formatVerlaStorageUri(att.getOssKey());
-        if (storageUri == null) {
-            throw new BusinessException(ApiCode.INTERNAL_ERROR, "could not build storage URI");
+        String storageUri;
+        if (ossStorageService.isEnabled()) {
+            boolean ok = ossStorageService.putBytesAtKey(att.getOssKey(), body);
+            if (!ok) {
+                throw new BusinessException(ApiCode.INTERNAL_ERROR, "OSS upload failed");
+            }
+            storageUri = ossStorageService.formatVerlaStorageUri(att.getOssKey());
+            if (storageUri == null) {
+                throw new BusinessException(ApiCode.INTERNAL_ERROR, "could not build storage URI");
+            }
+        } else if (localFallbackEnabled) {
+            storageUri = writeLocalFallback(att.getOssKey(), body);
+        } else {
+            throw storageNotConfigured();
         }
 
         attachmentRepository.updateByObjectIdSelective(VerlaAttachment.builder()
@@ -224,7 +243,7 @@ public class VerlaAttachmentService {
                 .build());
 
         uploadTickets.put(objectId, ticket);
-        log.info("[Verla/attachment/V2] OSS stored objectId={} bytes={} uri={}", objectId, body.length, storageUri);
+        log.info("[Verla/attachment/V2] content stored objectId={} bytes={} uri={}", objectId, body.length, storageUri);
     }
 
     @Transactional
@@ -350,10 +369,28 @@ public class VerlaAttachmentService {
     }
 
     private void requireOssConfigured() {
-        if (!ossStorageService.isEnabled()) {
-            throw new BusinessException(ApiCode.PARAM_ERROR,
-                    "Aliyun OSS is not enabled; Verla V2 attachments require OSS (aliyun.oss.enabled=true)");
+        if (!ossStorageService.isEnabled() && !localFallbackEnabled) {
+            throw storageNotConfigured();
         }
+    }
+
+    private BusinessException storageNotConfigured() {
+        return new BusinessException(ApiCode.PARAM_VALIDATION_FAILED,
+                "Verla V2 attachment storage is not configured; set OSS credentials or enable verla.attachment.local-fallback-enabled for local development");
+    }
+
+    private String writeLocalFallback(String objectKey, byte[] body) throws IOException {
+        if (objectKey == null || objectKey.isBlank()) {
+            throw new BusinessException(ApiCode.INTERNAL_ERROR, "attachment object key missing");
+        }
+        Path root = Paths.get(localRoot).toAbsolutePath().normalize();
+        Path target = root.resolve(objectKey).normalize();
+        if (!target.startsWith(root)) {
+            throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "invalid attachment object key");
+        }
+        Files.createDirectories(target.getParent());
+        Files.write(target, body);
+        return target.toUri().toString();
     }
 
     private UploadTicket requireTicket(String objectId, String clerkUserId, String uploadToken) {

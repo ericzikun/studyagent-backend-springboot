@@ -1,0 +1,18 @@
+package com.studyagent.api.dto.verla.request;
+
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
+
+@Data
+public class AssignmentClarifyContinueRequest {
+
+    private Long sessionId;
+    private String stage;
+    private String userChoice;
+    private String text;
+    private List<String> objectIds;
+    private Map<String, Object> reservedFields;
+    private List<Map<String, Object>> appendAskAnswers;
+}

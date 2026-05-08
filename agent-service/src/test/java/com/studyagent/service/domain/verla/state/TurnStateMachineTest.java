@@ -30,6 +30,11 @@ class TurnStateMachineTest {
     }
 
     @Test
+    void plan_can_complete_after_confirmation_reject() {
+        assertEquals(COMPLETED, sm.next(DISPATCHING, PLAN_COMPLETE));
+    }
+
+    @Test
     void clarify_then_resubmit() {
         assertEquals(AWAITING_CLARIFY, sm.next(PLANNING, PLAN_CLARIFY));
         assertEquals(PLANNING, sm.next(AWAITING_CLARIFY, SUBMIT));

@@ -5,7 +5,7 @@ import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaArtifactStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.payload.VerlaArtifactUpdatedPayload;
-import com.studyagent.service.domain.file.OssStorageService;
+import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -16,10 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
@@ -44,7 +41,7 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
 
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaAttachmentRepository attachmentRepository;
-    private final OssStorageService ossStorageService;
+    private final VerlaAttachmentService attachmentService;
     private final VerlaConversationRepository conversationRepository;
     private final ObjectMapper objectMapper;
 
@@ -133,9 +130,9 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
                 return;
             }
 
-            byte[] bytes = readAttachmentBytes(attachment);
+            byte[] bytes = attachmentService.loadAttachmentBytes(p.getSourceObjectId());
             if (bytes == null || bytes.length == 0) {
-                log.warn("[Verla/artifact] sourceObjectId={} has no readable bytes",
+                log.warn("[Verla/artifact] sourceObjectId={} has no readable bytes (cache miss + OSS/file fallback also empty)",
                         p.getSourceObjectId());
                 return;
             }
@@ -150,21 +147,6 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         }
     }
 
-    private byte[] readAttachmentBytes(VerlaAttachment attachment) throws Exception {
-        if (attachment.getOssKey() != null && !attachment.getOssKey().isBlank()) {
-            byte[] ossBytes = ossStorageService.getObjectBytes(attachment.getOssKey());
-            if (ossBytes != null && ossBytes.length > 0) {
-                return ossBytes;
-            }
-        }
-
-        String storageUri = attachment.getStorageUri();
-        if (storageUri != null && storageUri.startsWith("file:")) {
-            return Files.readAllBytes(Path.of(URI.create(storageUri)));
-        }
-        return null;
-    }
-
     @SuppressWarnings("unchecked")
     private void mutateSsePayload(VerlaEventEnvelope env, String body, int sizeBytes) {
         if (env == null || !(env.getPayload() instanceof Map)) {
@@ -173,6 +155,7 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         Map<String, Object> payload = (Map<String, Object>) env.getPayload();
         payload.put("bodyOrRef", body);
         payload.put("sizeBytes", sizeBytes);
+        payload.putIfAbsent("status", VerlaArtifactStatus.READY.name());
     }
 
     private String toJson(Object obj) {

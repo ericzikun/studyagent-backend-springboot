@@ -100,6 +100,8 @@ public class VerlaAttachmentService {
 
     private Set<String> allowedMimes;
     private Cache<String, UploadTicket> uploadTickets;
+    /** 上传后短暂保留字节，供 artifact handler 直接读取，避免回读 OSS/文件的可靠性问题。TTL 10 min。 */
+    private Cache<String, byte[]> uploadedContentCache;
 
     public VerlaAttachmentService(VerlaConversationService conversationService,
                                   VerlaAttachmentRepository attachmentRepository,
@@ -125,6 +127,10 @@ public class VerlaAttachmentService {
         uploadTickets = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(Math.max(60, signTtlSeconds)))
                 .maximumSize(20_000)
+                .build();
+        uploadedContentCache = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .maximumSize(500)
                 .build();
         log.info("[Verla/attachment/V2] init maxBytes={}, signTtl={}s, ossEnabled={}, localFallback={}, ossPrefix={}, allowedMimes={}",
                 maxBytes, signTtlSeconds, ossStorageService.isEnabled(), localFallbackEnabled, ossKeyPrefix, allowedMimes);
@@ -270,6 +276,7 @@ public class VerlaAttachmentService {
                 .checksumSha256(checksum)
                 .build());
 
+        uploadedContentCache.put(objectId, body);
         uploadTickets.put(objectId, ticket);
         log.info("[Verla/attachment/V2] content stored objectId={} bytes={} uri={}", objectId, body.length, storageUri);
     }
@@ -407,6 +414,47 @@ public class VerlaAttachmentService {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
         }
         return a;
+    }
+
+    /**
+     * 读取附件字节：先查内存缓存（上传后 10 min 内有效），再回落 OSS/本地文件。
+     * 供 artifact handler hydrate bodyOrRef 使用，避免对 OSS/文件系统读取可靠性的依赖。
+     */
+    public byte[] loadAttachmentBytes(String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return null;
+        }
+        byte[] cached = uploadedContentCache.getIfPresent(objectId);
+        if (cached != null && cached.length > 0) {
+            log.debug("[Verla/attachment/V2] loadAttachmentBytes cache-hit objectId={} bytes={}", objectId, cached.length);
+            return cached;
+        }
+        VerlaAttachment att = attachmentRepository.findByObjectId(objectId);
+        if (att == null) {
+            return null;
+        }
+        try {
+            return readAttachmentBytesFromStorage(att);
+        } catch (Exception e) {
+            log.warn("[Verla/attachment/V2] loadAttachmentBytes failed objectId={}: {}", objectId, e.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] readAttachmentBytesFromStorage(VerlaAttachment att) throws Exception {
+        if (att.getOssKey() != null && !att.getOssKey().isBlank()) {
+            byte[] ossBytes = ossStorageService.getObjectBytes(att.getOssKey());
+            if (ossBytes != null && ossBytes.length > 0) {
+                return ossBytes;
+            }
+        }
+        String uri = att.getStorageUri();
+        if (uri != null && uri.startsWith("file:")) {
+            return java.nio.file.Files.readAllBytes(java.nio.file.Path.of(java.net.URI.create(uri)));
+        }
+        log.warn("[Verla/attachment/V2] no readable path objectId={} ossKey={} storageUri={}",
+                att.getObjectId(), att.getOssKey(), uri);
+        return null;
     }
 
     /**

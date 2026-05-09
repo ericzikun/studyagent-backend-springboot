@@ -1,18 +1,22 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.verla.request.VerlaUploadFinalizeRequest;
+import com.studyagent.api.dto.verla.request.VerlaUploadSignRequest;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationContextVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
 import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
 import com.studyagent.api.dto.verla.response.VerlaSessionContextVO;
+import com.studyagent.api.dto.verla.response.VerlaUploadSignResponseVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaContextQueryService;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
+import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -21,15 +25,23 @@ import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -176,5 +188,57 @@ public class VerlaInternalController {
     public Result<VerlaAttachmentVO> getAttachment(@PathVariable String objectId) {
         log.info("[verla-internal] getAttachment objectId={}", objectId);
         return Result.success(VerlaAttachmentVO.fromInternal(attachmentService.getForInternal(objectId)));
+    }
+
+    // ====================================================================
+    // 7) Internal agent output upload: Py → Java.
+    //    Auth is handled by VerlaInternalAuthFilter, not by a Clerk user session.
+    // ====================================================================
+    @PostMapping("/v2/uploads/sign")
+    public Result<VerlaUploadSignResponseVO> signAgentOutput(@RequestBody VerlaUploadSignRequest req) {
+        if (req == null || req.getConversationId() == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
+        }
+        VerlaUploadSignResult r = attachmentService.requestSignForInternal(
+                req.getClerkUserId(),
+                req.getConversationId(),
+                req.getFilename(),
+                req.getMime(),
+                req.getSizeBytes() == null ? 0L : req.getSizeBytes(),
+                req.getTurnId(),
+                req.getSessionId());
+        return Result.success(VerlaUploadSignResponseVO.builder()
+                .objectId(r.getObjectId())
+                .uploadPath("/v1/internal/verla/v2/uploads/" + r.getObjectId() + "/content")
+                .method(r.getMethod())
+                .headers(Map.of(VerlaAttachmentService.HDR_UPLOAD_TOKEN, r.getUploadToken()))
+                .expiresInSeconds(r.getExpiresInSeconds())
+                .build());
+    }
+
+    @PutMapping(value = "/v2/uploads/{objectId}/content", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public Result<Void> uploadAgentOutputContent(
+            @PathVariable String objectId,
+            @RequestHeader(VerlaAttachmentService.HDR_UPLOAD_TOKEN) String uploadToken,
+            HttpServletRequest request) {
+        try {
+            attachmentService.uploadContentForInternal(objectId, uploadToken, request.getInputStream());
+        } catch (IOException e) {
+            log.warn("[verla-internal/uploads] IO failed objectId={}: {}", objectId, e.getMessage());
+            throw new BusinessException(ApiCode.INTERNAL_ERROR, "upload failed");
+        }
+        return Result.success(null);
+    }
+
+    @PostMapping("/v2/uploads/{objectId}/finalize")
+    public Result<VerlaAttachmentVO> finalizeAgentOutputUpload(
+            @PathVariable String objectId,
+            @RequestHeader(VerlaAttachmentService.HDR_UPLOAD_TOKEN) String uploadToken,
+            @RequestBody(required = false) VerlaUploadFinalizeRequest body) {
+        Long turnId = body == null ? null : body.getTurnId();
+        String chk = body == null ? null : body.getChecksumSha256();
+        boolean skipParse = body != null && Boolean.TRUE.equals(body.getSkipAttachmentParse());
+        return Result.success(VerlaAttachmentVO.fromInternal(
+                attachmentService.finalizeUploadForInternal(objectId, uploadToken, turnId, chk, skipParse)));
     }
 }

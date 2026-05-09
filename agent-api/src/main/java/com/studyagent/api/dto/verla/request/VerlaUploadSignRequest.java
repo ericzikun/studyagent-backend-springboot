@@ -15,6 +15,8 @@ import lombok.NoArgsConstructor;
 public class VerlaUploadSignRequest {
 
     private Long conversationId;
+    /** Internal agent output upload must carry the Java/Clerk user id explicitly. */
+    private String clerkUserId;
     private String filename;
     private String mime;
     private Long sizeBytes;

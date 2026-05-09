@@ -5,15 +5,23 @@ import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaArtifactStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.payload.VerlaArtifactUpdatedPayload;
+import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
+import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
+import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -35,6 +43,8 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED);
 
     private final VerlaArtifactRepository artifactRepository;
+    private final VerlaAttachmentRepository attachmentRepository;
+    private final OssStorageService ossStorageService;
     private final VerlaConversationRepository conversationRepository;
     private final ObjectMapper objectMapper;
 
@@ -58,6 +68,7 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
             log.debug("[Verla/artifact] synthesized artifact_uid={} sessionId={}",
                     p.getArtifactUid(), row.getSessionId());
         }
+        hydrateBodyFromSourceObject(row, env, p);
 
         VerlaArtifact patch = VerlaArtifact.builder()
                 .artifactUid(p.getArtifactUid())
@@ -96,6 +107,72 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
             log.warn("[Verla/artifact] payload convert failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private void hydrateBodyFromSourceObject(VerlaEventInbox row, VerlaEventEnvelope env,
+                                             VerlaArtifactUpdatedPayload p) {
+        if (p.getBodyOrRef() != null && !p.getBodyOrRef().isBlank()) {
+            return;
+        }
+        if (p.getSourceObjectId() == null || p.getSourceObjectId().isBlank()) {
+            return;
+        }
+
+        try {
+            VerlaAttachment attachment = attachmentRepository.findByObjectId(p.getSourceObjectId());
+            if (attachment == null) {
+                log.warn("[Verla/artifact] sourceObjectId={} not found, skip body hydrate",
+                        p.getSourceObjectId());
+                return;
+            }
+            if (row.getConversationId() != null
+                    && attachment.getConversationId() != null
+                    && !row.getConversationId().equals(attachment.getConversationId())) {
+                log.warn("[Verla/artifact] sourceObjectId={} conversation mismatch rowCid={} attCid={}",
+                        p.getSourceObjectId(), row.getConversationId(), attachment.getConversationId());
+                return;
+            }
+
+            byte[] bytes = readAttachmentBytes(attachment);
+            if (bytes == null || bytes.length == 0) {
+                log.warn("[Verla/artifact] sourceObjectId={} has no readable bytes",
+                        p.getSourceObjectId());
+                return;
+            }
+
+            String body = new String(bytes, StandardCharsets.UTF_8);
+            p.setBodyOrRef(body);
+            p.setSizeBytes((long) bytes.length);
+            mutateSsePayload(env, body, bytes.length);
+        } catch (Exception e) {
+            log.warn("[Verla/artifact] hydrate body failed sourceObjectId={}: {}",
+                    p.getSourceObjectId(), e.getMessage());
+        }
+    }
+
+    private byte[] readAttachmentBytes(VerlaAttachment attachment) throws Exception {
+        if (attachment.getOssKey() != null && !attachment.getOssKey().isBlank()) {
+            byte[] ossBytes = ossStorageService.getObjectBytes(attachment.getOssKey());
+            if (ossBytes != null && ossBytes.length > 0) {
+                return ossBytes;
+            }
+        }
+
+        String storageUri = attachment.getStorageUri();
+        if (storageUri != null && storageUri.startsWith("file:")) {
+            return Files.readAllBytes(Path.of(URI.create(storageUri)));
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mutateSsePayload(VerlaEventEnvelope env, String body, int sizeBytes) {
+        if (env == null || !(env.getPayload() instanceof Map)) {
+            return;
+        }
+        Map<String, Object> payload = (Map<String, Object>) env.getPayload();
+        payload.put("bodyOrRef", body);
+        payload.put("sizeBytes", sizeBytes);
     }
 
     private String toJson(Object obj) {

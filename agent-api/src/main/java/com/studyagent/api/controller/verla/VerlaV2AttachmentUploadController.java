@@ -87,7 +87,9 @@ public class VerlaV2AttachmentUploadController {
         ensureLogin(clerkUserId);
         Long turnId = body == null ? null : body.getTurnId();
         String chk = body == null ? null : body.getChecksumSha256();
-        VerlaAttachment saved = attachmentService.finalizeUpload(clerkUserId, objectId, uploadToken, turnId, chk);
+        boolean skipParse = body != null && Boolean.TRUE.equals(body.getSkipAttachmentParse());
+        VerlaAttachment saved = attachmentService.finalizeUpload(
+                clerkUserId, objectId, uploadToken, turnId, chk, skipParse);
         return Result.success(VerlaAttachmentVO.fromUser(saved));
     }
 

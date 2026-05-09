@@ -19,4 +19,6 @@ public class VerlaUploadFinalizeRequest {
     private Long turnId;
     /** 可选：客户端计算的 SHA-256 hex，与落盘文件校验 */
     private String checksumSha256;
+    /** Agent 输出等无需二次解析的附件，可跳过 cmd.attachment.parse。 */
+    private Boolean skipAttachmentParse;
 }

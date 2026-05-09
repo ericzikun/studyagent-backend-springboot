@@ -68,6 +68,14 @@ public class VerlaConversationService {
         return c;
     }
 
+    public VerlaConversation getForInternal(Long conversationId) {
+        VerlaConversation c = conversationRepository.findById(conversationId);
+        if (c == null || ConversationStatus.fromDb(c.getStatus()) == ConversationStatus.DELETED) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+        return c;
+    }
+
     @Transactional
     public VerlaConversation rename(String userId, Long conversationId, String newTitle) {
         VerlaConversation c = getOwned(userId, conversationId);

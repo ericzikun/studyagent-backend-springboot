@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 public class VerlaConversationVO {
 
     private Long conversationId;
+    private String userId;
     private String title;
     private String status;
     private String primaryIntent;
@@ -26,6 +27,7 @@ public class VerlaConversationVO {
     public static VerlaConversationVO from(VerlaConversation c) {
         return VerlaConversationVO.builder()
                 .conversationId(c.getId())
+                .userId(c.getUserId())
                 .title(c.getTitle())
                 .status(c.getStatus())
                 .primaryIntent(c.getPrimaryIntent())

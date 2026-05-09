@@ -95,7 +95,7 @@ public class VerlaAttachmentService {
     private String localRoot;
 
     /** 逗号分隔 MIME，空表示不校验 */
-    @Value("${verla.attachment.allowed-mimes:application/pdf,image/png,image/jpeg,image/webp,text/plain}")
+    @Value("${verla.attachment.allowed-mimes:application/pdf,image/png,image/jpeg,image/webp,text/plain,text/markdown}")
     private String allowedMimesRaw;
 
     private Set<String> allowedMimes;
@@ -139,6 +139,22 @@ public class VerlaAttachmentService {
                                              String mime, long sizeBytes, Long turnId, Long sessionId) {
         requireOssConfigured();
         ensureUser(clerkUserId);
+        return requestSignForUser(clerkUserId, conversationId, filename, mime, sizeBytes, turnId, sessionId);
+    }
+
+    @Transactional
+    public VerlaUploadSignResult requestSignForInternal(String clerkUserId, long conversationId, String filename,
+                                                        String mime, long sizeBytes,
+                                                        Long turnId, Long sessionId) {
+        requireOssConfigured();
+        if (!StringUtils.hasText(clerkUserId)) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "clerkUserId required");
+        }
+        return requestSignForUser(clerkUserId, conversationId, filename, mime, sizeBytes, turnId, sessionId);
+    }
+
+    private VerlaUploadSignResult requestSignForUser(String clerkUserId, long conversationId, String filename,
+                                                     String mime, long sizeBytes, Long turnId, Long sessionId) {
         if (!StringUtils.hasText(filename)) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "filename required");
         }
@@ -199,7 +215,19 @@ public class VerlaAttachmentService {
         requireOssConfigured();
         ensureUser(clerkUserId);
         UploadTicket ticket = requireTicket(objectId, clerkUserId, uploadToken);
+        uploadContentForUser(clerkUserId, objectId, rawIn, ticket);
+    }
 
+    public void uploadContentForInternal(String objectId, String uploadToken, InputStream rawIn)
+            throws IOException {
+        requireOssConfigured();
+        VerlaAttachment att = getForInternal(objectId);
+        UploadTicket ticket = requireTicket(objectId, att.getUserId(), uploadToken);
+        uploadContentForUser(att.getUserId(), objectId, rawIn, ticket);
+    }
+
+    private void uploadContentForUser(String clerkUserId, String objectId, InputStream rawIn, UploadTicket ticket)
+            throws IOException {
         VerlaAttachment att = attachmentRepository.findByObjectId(objectId);
         if (att == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
@@ -248,10 +276,27 @@ public class VerlaAttachmentService {
 
     @Transactional
     public VerlaAttachment finalizeUpload(String clerkUserId, String objectId, String uploadToken,
-                                          Long turnId, String clientChecksumSha256) {
+                                          Long turnId, String clientChecksumSha256,
+                                          boolean skipAttachmentParse) {
         ensureUser(clerkUserId);
         requireTicket(objectId, clerkUserId, uploadToken);
+        return finalizeUploadForUser(clerkUserId, objectId, turnId, clientChecksumSha256,
+                skipAttachmentParse);
+    }
 
+    @Transactional
+    public VerlaAttachment finalizeUploadForInternal(String objectId, String uploadToken,
+                                                     Long turnId, String clientChecksumSha256,
+                                                     boolean skipAttachmentParse) {
+        VerlaAttachment att = getForInternal(objectId);
+        requireTicket(objectId, att.getUserId(), uploadToken);
+        return finalizeUploadForUser(att.getUserId(), objectId, turnId, clientChecksumSha256,
+                skipAttachmentParse);
+    }
+
+    private VerlaAttachment finalizeUploadForUser(String clerkUserId, String objectId,
+                                                  Long turnId, String clientChecksumSha256,
+                                                  boolean skipAttachmentParse) {
         VerlaAttachment att = attachmentRepository.findByObjectId(objectId);
         if (att == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
@@ -281,6 +326,12 @@ public class VerlaAttachmentService {
         }
 
         VerlaConversation conv = conversationService.getOwned(clerkUserId, att.getConversationId());
+
+        if (skipAttachmentParse) {
+            uploadTickets.invalidate(objectId);
+            log.info("[Verla/attachment/V2] finalize objectId={} → skip cmd.attachment.parse", objectId);
+            return attachmentRepository.findByObjectId(objectId);
+        }
 
         attachmentRepository.updateParseProgress(VerlaAttachment.builder()
                 .objectId(objectId)

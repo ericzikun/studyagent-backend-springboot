@@ -2,17 +2,22 @@ package com.studyagent.api.filter;
 
 import com.studyagent.common.verla.util.VerlaCidrMatcher;
 import com.studyagent.common.verla.util.VerlaHmacUtil;
+import jakarta.servlet.ReadListener;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -39,6 +44,9 @@ public class VerlaInternalAuthFilter extends OncePerRequestFilter {
 
     @Value("${verla.internal.token:}")
     private String token;
+
+    @Value("${verla.internal.hmac-secret:}")
+    private String hmacSecret;
 
     @Value("${verla.internal.allow-cidrs:127.0.0.1/32}")
     private List<String> allowCidrs;
@@ -83,18 +91,17 @@ public class VerlaInternalAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        ContentCachingRequestWrapper cached = new ContentCachingRequestWrapper(request);
-        // 必须先消耗 body，再校验 HMAC
-        cached.getInputStream().readAllBytes();
-        String body = new String(cached.getContentAsByteArray(), StandardCharsets.UTF_8);
-        String expect = VerlaHmacUtil.sha256Hex(token, body);
+        byte[] bodyBytes = request.getInputStream().readAllBytes();
+        String body = new String(bodyBytes, StandardCharsets.UTF_8);
+        String secret = StringUtils.isNotBlank(hmacSecret) ? hmacSecret : token;
+        String expect = VerlaHmacUtil.sha256Hex(secret, body);
         String sig = request.getHeader(HEADER_SIG);
         if (!VerlaHmacUtil.constantTimeEquals(expect, sig)) {
             log.warn("[verla-internal] bad signature from ip={}, uri={}", clientIp, uri);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "bad signature");
             return;
         }
-        filterChain.doFilter(cached, response);
+        filterChain.doFilter(new CachedBodyRequest(request, bodyBytes), response);
     }
 
     /**
@@ -111,5 +118,45 @@ public class VerlaInternalAuthFilter extends OncePerRequestFilter {
             return real.trim();
         }
         return req.getRemoteAddr();
+    }
+
+    private static final class CachedBodyRequest extends HttpServletRequestWrapper {
+        private final byte[] body;
+
+        private CachedBodyRequest(HttpServletRequest request, byte[] body) {
+            super(request);
+            this.body = body == null ? new byte[0] : body;
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream in = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override
+                public boolean isFinished() {
+                    return in.available() == 0;
+                }
+
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setReadListener(ReadListener readListener) {
+                    // Synchronous request processing; no async listener is needed here.
+                }
+
+                @Override
+                public int read() {
+                    return in.read();
+                }
+            };
+        }
+
+        @Override
+        public BufferedReader getReader() {
+            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        }
     }
 }

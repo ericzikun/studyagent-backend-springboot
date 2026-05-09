@@ -30,6 +30,7 @@ import java.util.List;
  *   verla.cmd.agent       ← cmd.assignment.run
  *   verla.cmd.control     ← cmd.agent.control.cancel / retry
  *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
+ *   verla.cmd.materials   ← cmd.materials.generate   (V2)
  *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
  *
  * 事件侧（新增 studyagent.events Topic）：
@@ -59,6 +60,8 @@ public class VerlaRabbitConfig {
     public static final String CMD_CONTROL_QUEUE    = "verla.cmd.control";
     /** V2: 用户提交澄清问卷响应 */
     public static final String CMD_CLARIFY_QUEUE    = "verla.cmd.clarify";
+    /** V2: 学习材料 Flashcard / Quiz 等 */
+    public static final String CMD_MATERIALS_QUEUE   = "verla.cmd.materials";
     /** V2: finalize 上传后触发附件解析 */
     public static final String CMD_ATTACHMENT_QUEUE = "verla.cmd.attachment";
 
@@ -196,6 +199,23 @@ public class VerlaRabbitConfig {
     @Bean
     public Queue verlaCmdAttachmentQueue() {
         return buildVerlaConsumerQueue(CMD_ATTACHMENT_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdAttachmentBinding(Queue verlaCmdAttachmentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAttachmentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_ATTACHMENT_PARSE.getCode());
+    }
+
+    @Bean
+    public Queue verlaCmdMaterialsQueue() {
+        return buildVerlaConsumerQueue(CMD_MATERIALS_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdMaterialsBinding(Queue verlaCmdMaterialsQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdMaterialsQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_MATERIALS_GENERATE.getCode());
     }
 
     @Bean

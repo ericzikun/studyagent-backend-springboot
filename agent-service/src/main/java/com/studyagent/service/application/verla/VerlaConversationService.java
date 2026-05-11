@@ -2,6 +2,8 @@ package com.studyagent.service.application.verla;
 
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.VerlaConversationListSegment;
+import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
@@ -53,8 +55,22 @@ public class VerlaConversationService {
         return saved;
     }
 
-    public List<VerlaConversation> list(String userId, int page, int size) {
-        return conversationRepository.findByUserPaged(userId, page, size);
+    /**
+     * 会话分页列表（Dashboard 右侧分栏：按 segment / status 过滤 + total）。
+     */
+    public VerlaConversationListSlice listConversations(String userId,
+                                                       int pageNo,
+                                                       int pageSize,
+                                                       VerlaConversationListSegment segment,
+                                                       ConversationStatus statusFilter) {
+        int page = Math.max(pageNo, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        String segmentKey = segment == null ? null : segment.getQueryKey();
+        String statusDb = statusFilter == null ? null : statusFilter.getDbValue();
+        long total = conversationRepository.countByUserFiltered(userId, segmentKey, statusDb);
+        List<VerlaConversation> rows =
+                conversationRepository.findByUserFilteredPaged(userId, segmentKey, statusDb, page, size);
+        return new VerlaConversationListSlice(rows, total, page, size);
     }
 
     public VerlaConversation getOwned(String userId, Long conversationId) {

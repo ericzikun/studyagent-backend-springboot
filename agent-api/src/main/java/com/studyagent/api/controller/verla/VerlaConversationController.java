@@ -9,10 +9,12 @@ import com.studyagent.api.dto.verla.request.SendMessageRequest;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.PlanConfirmResponseVO;
 import com.studyagent.api.dto.verla.response.SendMessageResponseVO;
+import com.studyagent.api.dto.verla.response.VerlaConversationPageVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
@@ -20,6 +22,7 @@ import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.state.ConversationStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
@@ -37,6 +40,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -75,17 +79,20 @@ public class VerlaConversationController {
     }
 
     // ========================================================
-    // 2) GET /v1/verla/conversations  ——  列表
+    // 2) GET /v1/verla/conversations  ——  分页列表（Dashboard 右侧分栏：segment / status）
     // ========================================================
     @GetMapping
-    public Result<List<VerlaConversationVO>> list(
+    public Result<VerlaConversationPageVO> list(
             @RequestAttribute("clerkUserId") String clerkUserId,
             @RequestParam(value = "pageNo", defaultValue = "1") int pageNo,
-            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(value = "segment", required = false) String segment,
+            @RequestParam(value = "status", required = false) String status) {
         ensureLogin(clerkUserId);
-        List<VerlaConversation> conversations = conversationService.list(clerkUserId, pageNo, pageSize);
-        return Result.success(conversations.stream()
-                .map(VerlaConversationVO::from).collect(Collectors.toList()));
+        VerlaConversationListSegment seg = parseSegment(segment);
+        ConversationStatus st = parseConversationStatusFilter(status);
+        return Result.success(VerlaConversationPageVO.fromSlice(
+                conversationService.listConversations(clerkUserId, pageNo, pageSize, seg, st)));
     }
 
     // ========================================================
@@ -262,6 +269,40 @@ public class VerlaConversationController {
     private void ensureLogin(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
+        }
+    }
+
+    /**
+     * @param raw {@code assignment} | {@code learning} | {@code ai_writing}，大小写不敏感；空则不过滤栏目
+     */
+    private static VerlaConversationListSegment parseSegment(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String key = raw.trim().toLowerCase(Locale.ROOT);
+        for (VerlaConversationListSegment s : VerlaConversationListSegment.values()) {
+            if (s.getQueryKey().equals(key)) {
+                return s;
+            }
+        }
+        throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "unknown conversation segment: " + raw);
+    }
+
+    /**
+     * @param raw {@code active} | {@code archived}（与 DB 小写一致）；空则包含两种（仍排除 deleted）
+     */
+    private static ConversationStatus parseConversationStatusFilter(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            ConversationStatus st = ConversationStatus.fromDb(raw.trim());
+            if (st == ConversationStatus.DELETED) {
+                throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "status cannot be deleted");
+            }
+            return st;
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "unknown conversation status: " + raw);
         }
     }
 

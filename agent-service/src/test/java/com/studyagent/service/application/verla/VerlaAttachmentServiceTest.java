@@ -107,8 +107,17 @@ class VerlaAttachmentServiceTest {
         }
 
         @Override
-        public List<VerlaConversation> findByUserPaged(String userId, int page, int size) {
+        public List<VerlaConversation> findByUserFilteredPaged(String userId,
+                                                               String segmentQueryKey,
+                                                               String conversationStatusDb,
+                                                               int page,
+                                                               int size) {
             return List.of();
+        }
+
+        @Override
+        public long countByUserFiltered(String userId, String segmentQueryKey, String conversationStatusDb) {
+            return 0L;
         }
 
         @Override

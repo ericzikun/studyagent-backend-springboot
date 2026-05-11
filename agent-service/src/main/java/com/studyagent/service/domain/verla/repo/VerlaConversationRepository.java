@@ -13,7 +13,19 @@ public interface VerlaConversationRepository {
 
     VerlaConversation findById(Long id);
 
-    List<VerlaConversation> findByUserPaged(String userId, int page, int size);
+    /**
+     * @param segmentQueryKey {@link com.studyagent.common.verla.enums.VerlaConversationListSegment#getQueryKey()}，可为 null
+     * @param conversationStatusDb {@link com.studyagent.service.domain.verla.state.ConversationStatus#getDbValue()}，可为 null
+     */
+    List<VerlaConversation> findByUserFilteredPaged(String userId,
+                                                   String segmentQueryKey,
+                                                   String conversationStatusDb,
+                                                   int page,
+                                                   int size);
+
+    long countByUserFiltered(String userId,
+                             String segmentQueryKey,
+                             String conversationStatusDb);
 
     /**
      * 写新 turn 后调用：自增 version + last_message_at + last_turn_id + turn_count + 1

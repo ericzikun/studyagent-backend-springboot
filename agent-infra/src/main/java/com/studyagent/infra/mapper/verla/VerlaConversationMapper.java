@@ -17,12 +17,46 @@ import java.util.List;
  */
 public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEntity> {
 
-    @Select("SELECT * FROM verla_conversations "
-            + "WHERE user_id = #{userId} AND status <> 'deleted' "
-            + "ORDER BY last_message_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}")
-    List<VerlaConversationEntity> selectByUserPaged(@Param("userId") String userId,
-                                                    @Param("limit") int limit,
-                                                    @Param("offset") int offset);
+    /**
+     * 会话列表（支持 Dashboard segment / status 过滤），与非过滤语义兼容：
+     * {@code segment == null && conversationStatus == null} 时等价于旧「全部未删除」列表。
+     */
+    @Select("<script>"
+            + "SELECT * FROM verla_conversations WHERE user_id = #{userId} AND status &lt;&gt; 'deleted' "
+            + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
+            + "OR primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "</choose>"
+            + "</if>"
+            + " ORDER BY last_message_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<VerlaConversationEntity> selectByUserFilteredPaged(@Param("userId") String userId,
+                                                            @Param("segment") String segment,
+                                                            @Param("conversationStatus") String conversationStatus,
+                                                            @Param("limit") int limit,
+                                                            @Param("offset") int offset);
+
+    @Select("<script>"
+            + "SELECT COUNT(*) FROM verla_conversations WHERE user_id = #{userId} AND status &lt;&gt; 'deleted' "
+            + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
+            + "OR primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "</choose>"
+            + "</if>"
+            + "</script>")
+    long countByUserFiltered(@Param("userId") String userId,
+                             @Param("segment") String segment,
+                             @Param("conversationStatus") String conversationStatus);
 
     /**
      * 自增 version + 同步刷新 last_message_at / last_turn_id / turn_count（按需）

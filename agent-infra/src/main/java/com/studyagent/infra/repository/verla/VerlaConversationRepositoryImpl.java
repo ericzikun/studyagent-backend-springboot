@@ -30,11 +30,23 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
-    public List<VerlaConversation> findByUserPaged(String userId, int page, int size) {
+    public List<VerlaConversation> findByUserFilteredPaged(String userId,
+                                                           String segmentQueryKey,
+                                                           String conversationStatusDb,
+                                                           int page,
+                                                           int size) {
         int p = Math.max(page, 1);
         int s = Math.min(Math.max(size, 1), 100);
-        return this.baseMapper.selectByUserPaged(userId, s, (p - 1) * s)
+        return this.baseMapper.selectByUserFilteredPaged(
+                        userId, segmentQueryKey, conversationStatusDb, s, (p - 1) * s)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countByUserFiltered(String userId,
+                                    String segmentQueryKey,
+                                    String conversationStatusDb) {
+        return this.baseMapper.countByUserFiltered(userId, segmentQueryKey, conversationStatusDb);
     }
 
     @Override

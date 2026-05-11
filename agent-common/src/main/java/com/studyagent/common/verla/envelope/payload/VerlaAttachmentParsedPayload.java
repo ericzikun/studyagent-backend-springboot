@@ -50,4 +50,10 @@ public class VerlaAttachmentParsedPayload {
 
     /** page_count / image_size / ocr 等元信息 */
     private Map<String, Object> meta;
+
+    /** PARSED 时携带的解析全文缓存（SQL 042） */
+    private String markdownContent;
+
+    /** PARSED 时携带的图片元数据 JSON 数组字符串（SQL 042） */
+    private String imagesJson;
 }

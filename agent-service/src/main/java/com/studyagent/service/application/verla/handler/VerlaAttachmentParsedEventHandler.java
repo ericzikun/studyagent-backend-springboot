@@ -71,6 +71,8 @@ public class VerlaAttachmentParsedEventHandler implements VerlaEventHandler {
                 .summary(truncate(p.getSummary(), 1024))
                 .primaryArtifactUid(p.getPrimaryArtifactUid())
                 .metaJson(toJson(p.getMeta()))
+                .markdownContent(p.getMarkdownContent())
+                .imagesJson(p.getImagesJson())
                 .build();
 
         try {

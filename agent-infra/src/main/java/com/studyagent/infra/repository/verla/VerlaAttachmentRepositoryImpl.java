@@ -97,6 +97,8 @@ public class VerlaAttachmentRepositoryImpl
         if (patch.getSummary() != null)            existing.setSummary(patch.getSummary());
         if (patch.getPrimaryArtifactUid() != null) existing.setPrimaryArtifactUid(patch.getPrimaryArtifactUid());
         if (patch.getMetaJson() != null)           existing.setMetaJson(patch.getMetaJson());
+        if (patch.getMarkdownContent() != null)    existing.setMarkdownContent(patch.getMarkdownContent());
+        if (patch.getImagesJson() != null)         existing.setImagesJson(patch.getImagesJson());
         if (patch.getTurnId() != null)             existing.setTurnId(patch.getTurnId());
         existing.setUpdatedAt(LocalDateTime.now());
 
@@ -169,6 +171,8 @@ public class VerlaAttachmentRepositoryImpl
                 .summary(e.getSummary())
                 .primaryArtifactUid(e.getPrimaryArtifactUid())
                 .metaJson(e.getMetaJson())
+                .markdownContent(e.getMarkdownContent())
+                .imagesJson(e.getImagesJson())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
                 .build();
@@ -194,6 +198,8 @@ public class VerlaAttachmentRepositoryImpl
                 .setSummary(d.getSummary())
                 .setPrimaryArtifactUid(d.getPrimaryArtifactUid())
                 .setMetaJson(d.getMetaJson())
+                .setMarkdownContent(d.getMarkdownContent())
+                .setImagesJson(d.getImagesJson())
                 .setCreatedAt(d.getCreatedAt())
                 .setUpdatedAt(d.getUpdatedAt());
     }

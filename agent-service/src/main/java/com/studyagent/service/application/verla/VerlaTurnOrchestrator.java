@@ -1130,8 +1130,6 @@ public class VerlaTurnOrchestrator {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("requirementForm", finalClarifyResult.getOrDefault("requirementForm", Map.of()));
-        payload.put("requirementUnderstanding", finalClarifyResult.get("requirementUnderstanding"));
-        payload.put("clarifyResult", finalClarifyResult);
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));

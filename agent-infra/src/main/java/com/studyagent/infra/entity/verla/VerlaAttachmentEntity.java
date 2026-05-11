@@ -36,6 +36,10 @@ public class VerlaAttachmentEntity {
     private String summary;
     private String primaryArtifactUid;
     private String metaJson;
+    /** Py 解析全文缓存（SQL 042） */
+    private String markdownContent;
+    /** 抽取图片元数据 JSON（SQL 042） */
+    private String imagesJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

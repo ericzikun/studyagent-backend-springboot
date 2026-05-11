@@ -47,6 +47,10 @@ public class VerlaAttachment {
     private String primaryArtifactUid;
     /** JSON 字符串：page_count / image_size / ocr 等 */
     private String metaJson;
+    /** Py 解析全文缓存（SQL 042，对齐 files.markdown_content） */
+    private String markdownContent;
+    /** 抽取图片元数据 JSON 数组字符串（SQL 042，对齐 files.images_json） */
+    private String imagesJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

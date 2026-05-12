@@ -41,12 +41,14 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Verla 单轮交互编排器（PR-7 / PR-12 / PR-13）
@@ -459,12 +461,10 @@ public class VerlaTurnOrchestrator {
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult continueAssignmentClarify(String userId, Long conversationId,
                                                        Long previousSessionId,
-                                                       String stage,
                                                        String userChoice,
+                                                       boolean userUnderstood,
                                                        String text,
-                                                       List<String> objectIds,
-                                                       Map<String, Object> reservedFields,
-                                                       List<Map<String, Object>> appendAskAnswers) {
+                                                       List<String> objectIds) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         VerlaSession previous = previousSessionId == null ? null : sessionRepository.findById(previousSessionId);
         VerlaTurn baseTurn = previous == null
@@ -475,10 +475,61 @@ public class VerlaTurnOrchestrator {
         }
 
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
-        String normalizedStage = normalizeClarifyStage(stage);
         String normalizedChoice = normalizeClarifyChoice(userChoice);
+        VerlaMessage userMessage = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(turn.getId())
+                .role("user")
+                .textContent(text == null ? "" : text)
+                .attachmentsJson(objectIds == null || objectIds.isEmpty()
+                        ? null : serializeJson(objectIds.stream()
+                        .map(objectId -> Map.<String, Object>of("objectId", objectId))
+                        .toList()))
+                .blocksJson(serializeJson(Map.of(
+                        "phase", "assignment_clarify",
+                        "userChoice", normalizedChoice == null ? "" : normalizedChoice,
+                        "userUnderstood", userUnderstood)))
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(userMessage);
+
+        String resolvedIntent = isAssignmentIntent(turn.getResolvedIntent())
+                ? turn.getResolvedIntent() : "ASSIGNMENT";
+        Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
+
+        // Both choices route to Phase 2 (deep_understanding), differing only by userUnderstood.
+        VerlaSession nextSession = spawnAssignmentDeepUnderstandingSession(
+                conv, turn, resolvedIntent, resolvedSlots, userUnderstood);
+        conversationRepository.incrementVersion(conversationId);
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMessage.getId())
+                .planSessionId(turn.getPlanSessionId())
+                .agentSessionId(nextSession.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult finalizeAssignmentClarify(String userId, Long conversationId,
+                                                       Long previousSessionId,
+                                                       Map<String, Object> reservedFields,
+                                                       List<Map<String, Object>> appendAskAnswers,
+                                                       Map<String, Object> requirementForm,
+                                                       List<String> objectIds) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaSession previous = previousSessionId == null ? null : sessionRepository.findById(previousSessionId);
+        VerlaTurn baseTurn = previous == null
+                ? turnRepository.findRecentByConversation(conversationId, 1).stream().findFirst().orElse(null)
+                : turnRepository.findById(previous.getTurnId());
+        if (baseTurn == null || !conversationId.equals(baseTurn.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+
+        List<Map<String, Object>> normalizedAnswers = normalizeAppendAskAnswers(appendAskAnswers);
+        VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
         String messageText = buildClarifyUserMessageText(
-                normalizedStage, normalizedChoice, text, reservedFields, appendAskAnswers);
+                "generation", "", reservedFields, normalizedAnswers);
         VerlaMessage userMessage = VerlaMessage.builder()
                 .conversationId(conversationId)
                 .turnId(turn.getId())
@@ -490,25 +541,22 @@ public class VerlaTurnOrchestrator {
                         .toList()))
                 .blocksJson(serializeJson(Map.of(
                         "phase", "assignment_clarify",
-                        "stage", normalizedStage,
-                        "userChoice", normalizedChoice == null ? "" : normalizedChoice,
+                        "stage", "stage_3",
+                        "userChoice", "generation",
                         "reservedFields", reservedFields == null ? Map.of() : reservedFields,
-                        "appendAskAnswers", appendAskAnswers == null ? List.of() : appendAskAnswers)))
+                        "appendAskAnswers", normalizedAnswers,
+                        "requirementForm", requirementForm == null ? Map.of() : requirementForm)))
                 .createdAt(LocalDateTime.now())
                 .build();
         messageRepository.save(userMessage);
 
+        String resolvedIntent = isAssignmentIntent(turn.getResolvedIntent())
+                ? turn.getResolvedIntent() : "ASSIGNMENT";
+        Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
+
         VerlaSession nextSession = spawnAssignmentClarifySession(
-                conv,
-                turn,
-                isAssignmentIntent(turn.getResolvedIntent()) ? turn.getResolvedIntent() : "ASSIGNMENT",
-                parseSlotsJson(turn.getResolvedSlotsJson()),
-                normalizedStage,
-                normalizedChoice,
-                text,
-                objectIds,
-                reservedFields,
-                appendAskAnswers);
+                conv, turn, resolvedIntent, resolvedSlots,
+                "", objectIds, reservedFields, normalizedAnswers, requirementForm);
         conversationRepository.incrementVersion(conversationId);
 
         return SendMessageResult.builder()
@@ -669,7 +717,89 @@ public class VerlaTurnOrchestrator {
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentDeepUnderstandingCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(result));
+            sessionRepository.save(s);
+        }
+
+        String reply = extractAssistantReply(result);
+        if (reply != null && !reply.isBlank()) {
+            VerlaMessage assistant = VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent(reply)
+                    .blocksJson(serializeJson(result))
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            messageRepository.save(assistant);
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentClarifyCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        boolean justCompleted = !curSess.isTerminal();
+        if (justCompleted) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(result));
+            sessionRepository.save(s);
+        }
+
+        String reply = extractAssistantReply(result);
+        if (reply != null && !reply.isBlank()) {
+            VerlaMessage assistant = VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent(reply)
+                    .blocksJson(serializeJson(result))
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            messageRepository.save(assistant);
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+
+        // Auto-run: clarify signals ready → immediately spawn CMD_ASSIGNMENT_RUN in the same transaction.
+        // justCompleted guard prevents duplicate spawning on event replay.
+        if (justCompleted && Boolean.TRUE.equals(result.get("isReadyForGeneration"))) {
+            VerlaConversation conv = conversationRepository.findById(turn.getConversationId());
+            String intent = isAssignmentIntent(turn.getResolvedIntent())
+                    ? turn.getResolvedIntent() : "ASSIGNMENT";
+            log.info("[Verla] clarify isReadyForGeneration=true, auto-spawn run session turnId={} intent={}",
+                    turn.getId(), intent);
+            spawnAssignmentRunSession(conv, turn, intent, result);
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentInitCompleted(Long agentSessionId, Map<String, Object> result) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
             return;
@@ -842,20 +972,59 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
-                conv, turn, s, intent, resolvedSlots,
-                "stage_0", null, "", List.of(), Map.of(), List.of());
+        VerlaCommandEnvelope env = buildAssignmentInitEnvelope(
+                conv, turn, s, intent, resolvedSlots);
         mqOutboxService.createVerlaCommand(env, commandExchange,
-                VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
+                VerlaCommandAction.CMD_ASSIGNMENT_INIT.getCode());
+        return s;
+    }
+
+    private VerlaSession spawnAssignmentDeepUnderstandingSession(VerlaConversation conv, VerlaTurn turn,
+                                                                  String intent,
+                                                                  Map<String, Object> resolvedSlots,
+                                                                  boolean userUnderstood) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv == null ? turn.getConversationId() : conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .featureCode(intent)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildAssignmentDeepUnderstandingEnvelope(
+                conv, turn, s, intent, resolvedSlots, userUnderstood);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_ASSIGNMENT_DEEP_UNDERSTANDING.getCode());
         return s;
     }
 
     private VerlaSession spawnAssignmentClarifySession(VerlaConversation conv, VerlaTurn turn,
                                                        String intent, Map<String, Object> resolvedSlots,
-                                                       String stage, String userChoice, String userText,
+                                                       String userText,
                                                        List<String> objectIds,
                                                        Map<String, Object> reservedFields,
-                                                       List<Map<String, Object>> appendAskAnswers) {
+                                                       List<Map<String, Object>> appendAskAnswers,
+                                                       Map<String, Object> requirementForm) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -885,8 +1054,8 @@ public class VerlaTurnOrchestrator {
         turnRepository.save(turn);
 
         VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
-                conv, turn, s, intent, resolvedSlots, stage, userChoice, userText,
-                objectIds, reservedFields, appendAskAnswers);
+                conv, turn, s, intent, resolvedSlots, userText,
+                objectIds, reservedFields, appendAskAnswers, requirementForm);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
         return s;
@@ -1073,19 +1242,51 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
+    private VerlaCommandEnvelope buildAssignmentInitEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                             VerlaSession session, String intent,
+                                                             Map<String, Object> slots) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("agentType", intent);
+        payload.put("objectIds", List.of());
+        payload.put("slots", slots == null ? Map.of() : slots);
+        payload.put("userText", resolveTurnUserText(turn));
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_INIT, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildAssignmentDeepUnderstandingEnvelope(
+            VerlaConversation conv, VerlaTurn turn, VerlaSession session,
+            String intent, Map<String, Object> slots, boolean userUnderstood) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("agentType", intent);
+        payload.put("objectIds", List.of());
+        payload.put("slots", slots == null ? Map.of() : slots);
+        payload.put("userText", resolveTurnUserText(turn));
+        payload.put("userUnderstood", userUnderstood);
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_DEEP_UNDERSTANDING, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
     private VerlaCommandEnvelope buildAssignmentClarifyEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                                VerlaSession session, String intent,
                                                                Map<String, Object> slots,
-                                                               String stage,
-                                                               String userChoice,
                                                                String userText,
                                                                List<String> objectIds,
                                                                Map<String, Object> reservedFields,
-                                                               List<Map<String, Object>> appendAskAnswers) {
+                                                               List<Map<String, Object>> appendAskAnswers,
+                                                               Map<String, Object> requirementForm) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
-        payload.put("stage", normalizeClarifyStage(stage));
-        payload.put("userChoice", normalizeClarifyChoice(userChoice));
         payload.put("objectIds", objectIds == null ? List.of() : objectIds);
         payload.put("slots", slots == null ? Map.of() : slots);
         if (userText != null && !userText.isBlank()) {
@@ -1095,6 +1296,9 @@ public class VerlaTurnOrchestrator {
         }
         payload.put("reservedFields", reservedFields == null ? Map.of() : reservedFields);
         payload.put("appendAskAnswers", appendAskAnswers == null ? List.of() : appendAskAnswers);
+        if (requirementForm != null) {
+            payload.put("requirementForm", requirementForm);
+        }
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -1205,8 +1409,7 @@ public class VerlaTurnOrchestrator {
                 continue;
             }
             Map<String, Object> result = parseSlotsJson(session.getResultJson());
-            if ("stage_3".equals(String.valueOf(result.get("stage")))
-                    && Boolean.TRUE.equals(result.get("isReadyForGeneration"))) {
+            if (Boolean.TRUE.equals(result.get("isReadyForGeneration"))) {
                 return result;
             }
         }
@@ -1281,13 +1484,6 @@ public class VerlaTurnOrchestrator {
         return q == null ? null : q.toString();
     }
 
-    private static String normalizeClarifyStage(String stage) {
-        if ("stage_2".equals(stage) || "stage_3".equals(stage)) {
-            return stage;
-        }
-        return "stage_0";
-    }
-
     private static String normalizeClarifyChoice(String userChoice) {
         if (userChoice == null || userChoice.isBlank()) {
             return null;
@@ -1301,35 +1497,57 @@ public class VerlaTurnOrchestrator {
         return null;
     }
 
-    private String buildClarifyUserMessageText(String stage, String userChoice, String text,
+    private String buildClarifyUserMessageText(String userChoice, String text,
                                                Map<String, Object> reservedFields,
                                                List<Map<String, Object>> appendAskAnswers) {
         StringBuilder sb = new StringBuilder();
-        if (text != null && !text.isBlank()) {
-            sb.append(text.trim());
-        }
-        if (userChoice != null && !userChoice.isBlank()) {
-            if (!sb.isEmpty()) {
-                sb.append("\n\n");
-            }
-            sb.append("User choice: ").append(userChoice);
-        }
+
         if (reservedFields != null && !reservedFields.isEmpty()) {
-            if (!sb.isEmpty()) {
-                sb.append("\n\n");
-            }
-            sb.append("Reserved fields:\n").append(serializeJson(reservedFields));
+            sb.append("[Assignment Details]\n");
+            reservedFields.forEach((key, value) -> {
+                String v = (value == null || value.toString().isBlank()) ? "" : value.toString();
+                sb.append(toFieldLabel(key)).append(": ").append(v).append("\n");
+            });
         }
+
         if (appendAskAnswers != null && !appendAskAnswers.isEmpty()) {
-            if (!sb.isEmpty()) {
-                sb.append("\n\n");
+            if (!sb.isEmpty()) sb.append("\n");
+            sb.append("[Follow-up Answers]\n");
+            for (int i = 0; i < appendAskAnswers.size(); i++) {
+                Map<String, Object> qa = appendAskAnswers.get(i);
+                String question = String.valueOf(qa.getOrDefault("question", "")).trim();
+                String answer = String.valueOf(qa.getOrDefault("answer", "")).trim();
+                if (!question.isEmpty() || !answer.isEmpty()) {
+                    sb.append("Q: ").append(question).append("\n");
+                    sb.append("A: ").append(answer.isEmpty() ? "(no answer)" : answer).append("\n");
+                    if (i < appendAskAnswers.size() - 1) sb.append("\n");
+                }
             }
-            sb.append("Append ask answers:\n").append(serializeJson(appendAskAnswers));
         }
+
         if (sb.isEmpty()) {
-            return "Continue assignment clarify: " + stage;
+            return "Continue assignment generation.";
         }
-        return sb.toString();
+        return sb.toString().trim();
+    }
+
+    private static List<Map<String, Object>> normalizeAppendAskAnswers(List<Map<String, Object>> raw) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        return raw.stream().map(qa -> {
+            Map<String, Object> normalized = new HashMap<>(qa);
+            if (!normalized.containsKey("answer") || normalized.get("answer") == null) {
+                normalized.put("answer", "");
+            }
+            return normalized;
+        }).toList();
+    }
+
+    private static String toFieldLabel(String fieldId) {
+        if (fieldId == null || fieldId.isBlank()) return fieldId;
+        return Arrays.stream(fieldId.split("[_\\-]"))
+                .filter(w -> !w.isEmpty())
+                .map(w -> Character.toUpperCase(w.charAt(0)) + w.substring(1).toLowerCase(Locale.ROOT))
+                .collect(Collectors.joining(" "));
     }
 
     private static Map<String, Object> buildContextRef(String endpoint, Long convVersion) {

@@ -201,16 +201,15 @@ public class VerlaConversationController {
             @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
         ensureLogin(clerkUserId);
         AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
+        boolean userUnderstood = Boolean.TRUE.equals(body.getUserUnderstood());
         SendMessageResult result = turnOrchestrator.continueAssignmentClarify(
                 clerkUserId,
                 cid,
                 body.getSessionId(),
-                body.getStage(),
                 body.getUserChoice(),
+                userUnderstood,
                 body.getText(),
-                body.getObjectIds(),
-                body.getReservedFields(),
-                body.getAppendAskAnswers());
+                body.getObjectIds());
         return Result.success(SendMessageResponseVO.from(result));
     }
 
@@ -221,16 +220,14 @@ public class VerlaConversationController {
             @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
         ensureLogin(clerkUserId);
         AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
-        SendMessageResult result = turnOrchestrator.continueAssignmentClarify(
+        SendMessageResult result = turnOrchestrator.finalizeAssignmentClarify(
                 clerkUserId,
                 cid,
                 body.getSessionId(),
-                "stage_3",
-                body.getUserChoice(),
-                body.getText(),
-                body.getObjectIds(),
                 body.getReservedFields(),
-                body.getAppendAskAnswers());
+                body.getAppendAskAnswers(),
+                body.getRequirementForm(),
+                body.getObjectIds());
         return Result.success(SendMessageResponseVO.from(result));
     }
 

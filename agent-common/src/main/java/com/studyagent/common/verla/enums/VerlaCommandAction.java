@@ -13,7 +13,13 @@ public enum VerlaCommandAction {
     /** 意图识别 */
     CMD_PLAN_INTENT("cmd.plan.intent"),
 
-    /** 启动一次 assignment 需求理解 / 澄清 */
+    /** 阶段一：需求理解（流式 thinking + 内容总结） */
+    CMD_ASSIGNMENT_INIT("cmd.assignment.init"),
+
+    /** 阶段二：需求深入解释 */
+    CMD_ASSIGNMENT_DEEP_UNDERSTANDING("cmd.assignment.deep_understanding"),
+
+    /** 阶段三：需求澄清 / 表单构建 */
     CMD_ASSIGNMENT_CLARIFY("cmd.assignment.clarify"),
 
     /** 启动一次 assignment 正式执行 */

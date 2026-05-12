@@ -29,6 +29,12 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.AGENT_COMPLETED,
             VerlaAgentEventType.AGENT_FAILED,
             VerlaAgentEventType.AGENT_CANCELLED,
+            VerlaAgentEventType.ASSIGNMENT_INIT_STARTED,
+            VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
+            VerlaAgentEventType.ASSIGNMENT_INIT_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
+            VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED,
+            VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_FAILED,
@@ -59,10 +65,19 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 ? Map.of() : env.getPayload();
 
         switch (type) {
-            case AGENT_STARTED, ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED,
+            case AGENT_STARTED, ASSIGNMENT_INIT_STARTED, ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
+                    ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED,
                     ASSIGNMENT_AGENT_FLOW_STARTED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentStarted(sessionId);
+            }
+            case ASSIGNMENT_INIT_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentInitCompleted(sessionId, payload);
+            }
+            case ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentDeepUnderstandingCompleted(sessionId, payload);
             }
             case ASSIGNMENT_CLARIFY_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
@@ -73,7 +88,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCompleted(sessionId, payload);
             }
-            case AGENT_FAILED, ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED,
+            case AGENT_FAILED, ASSIGNMENT_INIT_FAILED, ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
+                    ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED,
                     ASSIGNMENT_AGENT_FLOW_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentFailed(sessionId, payload);

@@ -11,8 +11,10 @@ public class AssignmentClarifyContinueRequest {
     private Long sessionId;
     private String stage;
     private String userChoice;
+    private Boolean userUnderstood;
     private String text;
     private List<String> objectIds;
     private Map<String, Object> reservedFields;
     private List<Map<String, Object>> appendAskAnswers;
+    private Map<String, Object> requirementForm;
 }

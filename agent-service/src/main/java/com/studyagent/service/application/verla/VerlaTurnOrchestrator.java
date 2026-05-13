@@ -718,6 +718,7 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentDeepUnderstandingCompleted(Long agentSessionId, Map<String, Object> result) {
+        Map<String, Object> normalizedResult = normalizeDeepUnderstandingResult(result);
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
             return;
@@ -730,11 +731,11 @@ public class VerlaTurnOrchestrator {
             s.setStatus(nextSess.name());
             s.setEndedAt(LocalDateTime.now());
             s.setUpdatedAt(LocalDateTime.now());
-            s.setResultJson(serializeJson(result));
+            s.setResultJson(serializeJson(normalizedResult));
             sessionRepository.save(s);
         }
 
-        String reply = extractAssistantReply(result);
+        String reply = extractAssistantReply(normalizedResult);
         if (reply != null && !reply.isBlank()) {
             VerlaMessage assistant = VerlaMessage.builder()
                     .conversationId(turn.getConversationId())
@@ -742,7 +743,7 @@ public class VerlaTurnOrchestrator {
                     .role("assistant")
                     .sourceSessionId(agentSessionId)
                     .textContent(reply)
-                    .blocksJson(serializeJson(result))
+                    .blocksJson(serializeJson(normalizedResult))
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);
@@ -1459,6 +1460,36 @@ public class VerlaTurnOrchestrator {
             log.warn("[Verla] json serialize failed: {}", e.getMessage());
             throw new BusinessException(ApiCode.INTERNAL_ERROR, "json serialize failed");
         }
+    }
+
+    private static Map<String, Object> normalizeDeepUnderstandingResult(Map<String, Object> result) {
+        if (result == null) {
+            return Map.of();
+        }
+        if (result.get("ready") instanceof Boolean) {
+            return result;
+        }
+        Boolean ready = coerceBoolean(result.get("ready"));
+        if (ready != null) {
+            result.put("ready", ready);
+        }
+        return result;
+    }
+
+    private static Boolean coerceBoolean(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String text) {
+            String normalized = text.trim().toLowerCase(Locale.ROOT);
+            if (List.of("yes", "true", "1").contains(normalized)) {
+                return true;
+            }
+            if (List.of("no", "false", "0").contains(normalized)) {
+                return false;
+            }
+        }
+        return null;
     }
 
     /** Py ASSIGNMENT_COMPLETED / AGENT_COMPLETED 等 payload 中可作为对用户可见回复的字段 */

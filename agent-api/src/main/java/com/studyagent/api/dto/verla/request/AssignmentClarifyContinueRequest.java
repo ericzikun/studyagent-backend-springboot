@@ -9,7 +9,6 @@ import java.util.Map;
 public class AssignmentClarifyContinueRequest {
 
     private Long sessionId;
-    private String stage;
     private String userChoice;
     private Boolean userUnderstood;
     private String text;

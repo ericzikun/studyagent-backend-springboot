@@ -409,7 +409,7 @@ public class VerlaTurnOrchestrator {
                     .success(true)
                     .nextStage("understanding")
                     .redirectUrl("/dashboard/create?type=assignment&stage=understanding"
-                            + "&surface=workspace-preview&stream=verla&cid=" + conversationId)
+                            + "&surface=understanding&stream=verla&cid=" + conversationId)
                     .messageResult(SendMessageResult.builder()
                             .turnId(turn.getId())
                             .userMessageId(turn.getUserMessageId())
@@ -532,7 +532,7 @@ public class VerlaTurnOrchestrator {
         List<Map<String, Object>> normalizedAnswers = normalizeAppendAskAnswers(appendAskAnswers);
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
         String messageText = buildClarifyUserMessageText(
-                "generation", "", reservedFields, normalizedAnswers);
+                "generation", "", reservedFields, normalizedAnswers, requirementForm);
         VerlaMessage userMessage = VerlaMessage.builder()
                 .conversationId(conversationId)
                 .turnId(turn.getId())
@@ -1595,11 +1595,22 @@ public class VerlaTurnOrchestrator {
     private String buildClarifyUserMessageText(String userChoice, String text,
                                                Map<String, Object> reservedFields,
                                                List<Map<String, Object>> appendAskAnswers) {
+        return buildClarifyUserMessageText(userChoice, text, reservedFields, appendAskAnswers, null);
+    }
+
+    private String buildClarifyUserMessageText(String userChoice, String text,
+                                               Map<String, Object> reservedFields,
+                                               List<Map<String, Object>> appendAskAnswers,
+                                               Map<String, Object> requirementForm) {
         StringBuilder sb = new StringBuilder();
 
-        if (reservedFields != null && !reservedFields.isEmpty()) {
+        // requirementForm is the primary form data; fall back to reservedFields when absent
+        Map<String, Object> formFields = (requirementForm != null && !requirementForm.isEmpty())
+                ? requirementForm : reservedFields;
+
+        if (formFields != null && !formFields.isEmpty()) {
             sb.append("[Assignment Details]\n");
-            reservedFields.forEach((key, value) -> {
+            formFields.forEach((key, value) -> {
                 String v = (value == null || value.toString().isBlank()) ? "" : value.toString();
                 sb.append(toFieldLabel(key)).append(": ").append(v).append("\n");
             });

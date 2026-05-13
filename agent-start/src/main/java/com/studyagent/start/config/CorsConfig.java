@@ -1,7 +1,5 @@
 package com.studyagent.start.config;
 
-import com.studyagent.service.config.TaskSubmitConfig;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -17,7 +15,6 @@ import java.util.List;
  * CORS配置
  */
 @Configuration
-@EnableConfigurationProperties(TaskSubmitConfig.class)
 public class CorsConfig {
     
     @Bean

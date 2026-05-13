@@ -70,6 +70,9 @@ public class VerlaTurnOrchestrator {
     private static final String INSTANCE_ID = resolveHostname();
     private static final TypeReference<Map<String, Object>> MAP_STRING_OBJECT =
             new TypeReference<>() {};
+    private static final int MAX_ASSISTANT_TEXT_CONTENT_CHARS = 32000;
+    private static final String GENERATED_ARTIFACT_READY_TEXT =
+            "Assignment output is ready. Open the generated artifact to view the full result.";
     /**
      * 命令 exchange，与 RabbitMQConfig.COMMAND_EXCHANGE / VerlaRabbitConfig.COMMAND_EXCHANGE 保持一致。
      */
@@ -541,7 +544,6 @@ public class VerlaTurnOrchestrator {
                         .toList()))
                 .blocksJson(serializeJson(Map.of(
                         "phase", "assignment_clarify",
-                        "stage", "stage_3",
                         "userChoice", "generation",
                         "reservedFields", reservedFields == null ? Map.of() : reservedFields,
                         "appendAskAnswers", normalizedAnswers,
@@ -704,7 +706,7 @@ public class VerlaTurnOrchestrator {
                         .role("assistant")
                         .sourceSessionId(agentSessionId)
                         .textContent(reply)
-                        .blocksJson(serializeJson(result))
+                        .blocksJson(serializeJson(sanitizeAssistantBlocks(result)))
                         .createdAt(LocalDateTime.now())
                         .build();
                 messageRepository.save(assistant);
@@ -743,7 +745,8 @@ public class VerlaTurnOrchestrator {
                     .role("assistant")
                     .sourceSessionId(agentSessionId)
                     .textContent(reply)
-                    .blocksJson(serializeJson(normalizedResult))
+                    .blocksJson(serializeJson(withEventTypeWithoutStage(
+                            normalizedResult, "ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED")))
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);
@@ -779,7 +782,8 @@ public class VerlaTurnOrchestrator {
                     .role("assistant")
                     .sourceSessionId(agentSessionId)
                     .textContent(reply)
-                    .blocksJson(serializeJson(result))
+                    .blocksJson(serializeJson(withEventTypeWithoutStage(
+                            result, "ASSIGNMENT_CLARIFY_COMPLETED")))
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);
@@ -825,7 +829,8 @@ public class VerlaTurnOrchestrator {
                     .role("assistant")
                     .sourceSessionId(agentSessionId)
                     .textContent(reply)
-                    .blocksJson(serializeJson(result))
+                    .blocksJson(serializeJson(withEventTypeWithoutStage(
+                            result, "ASSIGNMENT_INIT_COMPLETED")))
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);
@@ -1335,6 +1340,10 @@ public class VerlaTurnOrchestrator {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("requirementForm", finalClarifyResult.getOrDefault("requirementForm", Map.of()));
+        payload.put("reservedFields", finalClarifyResult.getOrDefault("reservedFields", Map.of()));
+        payload.put("appendAskAnswers", finalClarifyResult.getOrDefault("appendAskAnswers", List.of()));
+        payload.put("requirementUnderstanding",
+                finalClarifyResult.getOrDefault("requirementUnderstanding", ""));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -1476,6 +1485,23 @@ public class VerlaTurnOrchestrator {
         return result;
     }
 
+    private static Map<String, Object> withoutTopLevelStage(Map<String, Object> result) {
+        if (result == null || result.isEmpty() || !result.containsKey("stage")) {
+            return result;
+        }
+        Map<String, Object> sanitized = new HashMap<>(result);
+        sanitized.remove("stage");
+        return sanitized;
+    }
+
+    private static Map<String, Object> withEventTypeWithoutStage(
+            Map<String, Object> result, String eventType) {
+        Map<String, Object> sanitized = result == null ? new HashMap<>() : new HashMap<>(result);
+        sanitized.remove("stage");
+        sanitized.putIfAbsent("eventType", eventType);
+        return sanitized;
+    }
+
     private static Boolean coerceBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -1501,10 +1527,48 @@ public class VerlaTurnOrchestrator {
         for (String key : keys) {
             Object v = result.get(key);
             if (v instanceof String s && !s.isBlank()) {
-                return s;
+                if ("finalResult".equals(key) && isLargeGeneratedArtifactResult(result, s)) {
+                    return GENERATED_ARTIFACT_READY_TEXT;
+                }
+                return truncateAssistantTextContent(s);
             }
         }
         return null;
+    }
+
+    private static Map<String, Object> sanitizeAssistantBlocks(Map<String, Object> result) {
+        Map<String, Object> sanitized = withoutTopLevelStage(result);
+        if (sanitized == null || sanitized.isEmpty()) {
+            return sanitized;
+        }
+        Object finalResult = sanitized.get("finalResult");
+        if (!(finalResult instanceof String text)
+                || !isLargeGeneratedArtifactResult(sanitized, text)) {
+            return sanitized;
+        }
+
+        sanitized = new HashMap<>(sanitized);
+        sanitized.put("finalResult", GENERATED_ARTIFACT_READY_TEXT);
+        sanitized.put("finalResultTruncated", true);
+        sanitized.put("finalResultLength", text.length());
+        return sanitized;
+    }
+
+    private static boolean isLargeGeneratedArtifactResult(Map<String, Object> result, String value) {
+        if (value == null || value.length() <= MAX_ASSISTANT_TEXT_CONTENT_CHARS) {
+            return false;
+        }
+        return result != null && (result.containsKey("artifactPaths")
+                || result.containsKey("primaryArtifactUid")
+                || result.containsKey("artifactUids"));
+    }
+
+    private static String truncateAssistantTextContent(String value) {
+        if (value == null || value.length() <= MAX_ASSISTANT_TEXT_CONTENT_CHARS) {
+            return value;
+        }
+        return value.substring(0, MAX_ASSISTANT_TEXT_CONTENT_CHARS)
+                + "\n\n[Truncated. View the generated artifact for the full result.]";
     }
 
     private static String extractClarifyText(Map<String, Object> clarifyBlock) {

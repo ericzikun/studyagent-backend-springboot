@@ -33,7 +33,7 @@ public class VerlaMessageVO {
                 .sourceSessionId(m.getSourceSessionId())
                 .text(m.getTextContent())
                 .attachmentsJson(m.getAttachmentsJson())
-                .blocksJson(m.getBlocksJson())
+                .blocksJson(VerlaBlocksJsonSanitizer.withoutTopLevelStage(m.getBlocksJson()))
                 .createdAt(m.getCreatedAt())
                 .build();
     }

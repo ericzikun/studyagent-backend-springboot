@@ -166,7 +166,7 @@ public class VerlaSessionContextVO {
                     .sourceSessionId(m.getSourceSessionId())
                     .role(m.getRole())
                     .text(m.getTextContent())
-                    .blocksJson(m.getBlocksJson())
+                    .blocksJson(VerlaBlocksJsonSanitizer.withoutTopLevelStage(m.getBlocksJson()))
                     .attachmentsJson(m.getAttachmentsJson())
                     .metaJson(m.getMetaJson())
                     .createdAt(m.getCreatedAt())

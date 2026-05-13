@@ -88,9 +88,11 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
                 .eventId("cmd-1001")
                 .action("cmd.assignment.run")
                 .payload("{}")
-                .status(MqOutbox.STATUS_UNSENT)
+                .status(MqOutbox.STATUS_SENDING)
                 .retryCount(0)
                 .maxRetries(3)
+                .workerId("worker-rabbit-test")
+                .leaseUntil(LocalDateTime.now().plusSeconds(60))
                 .correlationId("conv:10:turn:20:sess:30")
                 .orderingKey("session:30")
                 .schemaVersion(1)
@@ -128,7 +130,30 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         }
 
         @Override
+        public List<MqOutbox> claimPendingMessages(
+                int limit,
+                String workerId,
+                LocalDateTime currentTime,
+                LocalDateTime leaseUntil) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public MqOutbox claimMessage(
+                Long id,
+                String workerId,
+                LocalDateTime currentTime,
+                LocalDateTime leaseUntil) {
+            return null;
+        }
+
+        @Override
         public void markAsSent(Long id) {
+            this.sentId = id;
+        }
+
+        @Override
+        public void markAsSent(Long id, String workerId) {
             this.sentId = id;
         }
 
@@ -139,7 +164,17 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         }
 
         @Override
+        public void markForRetry(Long id, String workerId, String errorMessage, LocalDateTime nextRetryAt) {
+            this.retryId = id;
+            this.retryError = errorMessage;
+        }
+
+        @Override
         public void markAsFailed(Long id, String errorMessage) {
+        }
+
+        @Override
+        public void markAsFailed(Long id, String workerId, String errorMessage) {
         }
     }
 }

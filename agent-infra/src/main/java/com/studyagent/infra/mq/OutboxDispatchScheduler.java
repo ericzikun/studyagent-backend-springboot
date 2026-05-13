@@ -14,6 +14,7 @@ import org.springframework.amqp.core.ReturnedMessage;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,15 +38,23 @@ public class OutboxDispatchScheduler {
     private final MqOutboxRepository mqOutboxRepository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final String workerId = "java-outbox-" + UUID.randomUUID();
+
+    @Value("${mq.outbox.claim-lease-seconds:60}")
+    private long claimLeaseSeconds = 60;
 
     /**
-     * 每 5 秒执行一次扫描
-     * 生产环境可以考虑搭配分布式锁避免多实例同时拉取相同记录（假设目前为单实例）
+     * 每 5 秒执行一次扫描。
+     * 多实例通过数据库 claim + lease 避免同时发送同一条 outbox。
      */
     @Scheduled(fixedDelayString = "${mq.outbox.scan-interval:5000}")
     public void dispatchPendingMessages() {
         LocalDateTime now = LocalDateTime.now();
-        List<MqOutbox> pendingMessages = mqOutboxRepository.findPendingMessages(100, now);
+        List<MqOutbox> pendingMessages = mqOutboxRepository.claimPendingMessages(
+                100,
+                workerId,
+                now,
+                now.plusSeconds(claimLeaseSeconds));
 
         if (pendingMessages.isEmpty()) {
             return;
@@ -55,6 +65,20 @@ public class OutboxDispatchScheduler {
         for (MqOutbox message : pendingMessages) {
             sendMessage(message);
         }
+    }
+
+    public void dispatchMessageById(Long messageId) {
+        LocalDateTime now = LocalDateTime.now();
+        MqOutbox message = mqOutboxRepository.claimMessage(
+                messageId,
+                workerId,
+                now,
+                now.plusSeconds(claimLeaseSeconds));
+        if (message == null) {
+            log.debug("outbox message not claimable, skip immediate dispatch: id={}", messageId);
+            return;
+        }
+        sendMessage(message);
     }
 
     /**
@@ -98,7 +122,7 @@ public class OutboxDispatchScheduler {
             }
 
             if (confirm.isAck()) {
-                mqOutboxRepository.markAsSent(message.getId());
+                mqOutboxRepository.markAsSent(message.getId(), message.getWorkerId());
                 log.info("Broker ack: eventId={}, action={}, exchange={}, rk={}",
                         message.getEventId(), message.getAction(), exchange, routingKey);
             } else {
@@ -168,7 +192,7 @@ public class OutboxDispatchScheduler {
 
         if (currentRetryCount + 1 >= message.getMaxRetries()) {
             log.error("消息重试次数已达上限, 标记为最终失败: ID={}, Action={}", message.getId(), message.getAction());
-            mqOutboxRepository.markAsFailed(message.getId(), errorMsg);
+            mqOutboxRepository.markAsFailed(message.getId(), message.getWorkerId(), errorMsg);
             // TODO: 此处可接入告警系统 (如邮件/企业微信/钉钉等)
         } else {
             // 计算指数退避时间: 第1次重试等10秒，第2次等30秒，第三次等90秒...
@@ -176,7 +200,7 @@ public class OutboxDispatchScheduler {
             int delaySeconds = 10 * (int) Math.pow(3, currentRetryCount);
             LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(delaySeconds);
 
-            mqOutboxRepository.markForRetry(message.getId(), errorMsg, nextRetryAt);
+            mqOutboxRepository.markForRetry(message.getId(), message.getWorkerId(), errorMsg, nextRetryAt);
         }
     }
 }

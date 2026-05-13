@@ -10,6 +10,7 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.core.ReturnedMessage;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.MessageConverter;
@@ -89,6 +90,12 @@ public class OutboxDispatchScheduler {
             rabbitTemplate.send(exchange, routingKey, amqpMessage, correlationData);
 
             CorrelationData.Confirm confirm = correlationData.getFuture().get(3, TimeUnit.SECONDS);
+            ReturnedMessage returned = correlationData.getReturned();
+
+            if (returned != null) {
+                handleSendFailure(message, buildReturnedMessageError(returned));
+                return;
+            }
 
             if (confirm.isAck()) {
                 mqOutboxRepository.markAsSent(message.getId());
@@ -146,6 +153,13 @@ public class OutboxDispatchScheduler {
 
     private static String nullToDefault(String s, String def) {
         return (s == null || s.isEmpty()) ? def : s;
+    }
+
+    private String buildReturnedMessageError(ReturnedMessage returned) {
+        return "NO_ROUTE: replyCode=" + returned.getReplyCode()
+                + ", replyText=" + returned.getReplyText()
+                + ", exchange=" + returned.getExchange()
+                + ", routingKey=" + returned.getRoutingKey();
     }
 
     private void handleSendFailure(MqOutbox message, String errorMsg) {

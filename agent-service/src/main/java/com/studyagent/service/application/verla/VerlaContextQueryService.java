@@ -7,6 +7,7 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.dto.VerlaConversationContextView;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
+import com.studyagent.service.config.VerlaContextCacheProperties;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -24,7 +25,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -65,27 +65,7 @@ public class VerlaContextQueryService {
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaToolCallRepository toolCallRepository;
     private final MeterRegistry meterRegistry;
-
-    @Value("${verla.context-cache.conv-summary-ttl-seconds:60}")
-    private long convSummaryTtlSeconds;
-
-    @Value("${verla.context-cache.turn-meta-ttl-seconds:30}")
-    private long turnMetaTtlSeconds;
-
-    @Value("${verla.context-cache.sess-meta-ttl-seconds:10}")
-    private long sessMetaTtlSeconds;
-
-    @Value("${verla.context-cache.recent-message-limit:20}")
-    private int recentMessageLimit;
-
-    @Value("${verla.context-cache.trace-limit-default:50}")
-    private int traceLimitDefault;
-
-    @Value("${verla.context-cache.artifact-limit-default:80}")
-    private int artifactLimitDefault;
-
-    @Value("${verla.context-cache.max-entries-per-layer:5000}")
-    private long maxEntriesPerLayer;
+    private final VerlaContextCacheProperties cacheProperties;
 
     private Cache<String, ConvSummary> convCache;
     private Cache<String, VerlaTurn> turnCache;
@@ -102,19 +82,23 @@ public class VerlaContextQueryService {
 
     @PostConstruct
     void init() {
+        Duration convSummaryTtl = cacheProperties.getConvSummaryTtl();
+        Duration turnMetaTtl = cacheProperties.getTurnMetaTtl();
+        Duration sessMetaTtl = cacheProperties.getSessMetaTtl();
+        long maxEntriesPerLayer = cacheProperties.getMaxEntriesPerLayer();
         convCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(convSummaryTtlSeconds))
+                .expireAfterWrite(convSummaryTtl)
                 .recordStats()
                 .build();
         turnCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(turnMetaTtlSeconds))
+                .expireAfterWrite(turnMetaTtl)
                 .recordStats()
                 .build();
         sessCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(sessMetaTtlSeconds))
+                .expireAfterWrite(sessMetaTtl)
                 .recordStats()
                 .build();
 
@@ -123,7 +107,8 @@ public class VerlaContextQueryService {
         hitTurn = meterRegistry.counter("verla.context.cache.hit.total", "layer", "turn");
         hitConv = meterRegistry.counter("verla.context.cache.hit.total", "layer", "conv");
         log.info("[Verla/ctx] caffeine init: convTTL={}s, turnTTL={}s, sessTTL={}s, maxEntries={}",
-                convSummaryTtlSeconds, turnMetaTtlSeconds, sessMetaTtlSeconds, maxEntriesPerLayer);
+                convSummaryTtl.toSeconds(), turnMetaTtl.toSeconds(),
+                sessMetaTtl.toSeconds(), maxEntriesPerLayer);
     }
 
     /**
@@ -170,8 +155,8 @@ public class VerlaContextQueryService {
         List<VerlaArtifact> artifacts = List.of();
         if (opts.isIncludeArtifacts()) {
             artifacts = artifactRepository.findByConversation(session.getConversationId());
-            if (artifacts.size() > artifactLimitDefault) {
-                artifacts = artifacts.subList(0, artifactLimitDefault);
+            if (artifacts.size() > cacheProperties.getArtifactLimitDefault()) {
+                artifacts = artifacts.subList(0, cacheProperties.getArtifactLimitDefault());
             }
         }
 
@@ -257,8 +242,8 @@ public class VerlaContextQueryService {
         List<VerlaArtifact> artifacts = List.of();
         if (opts.isIncludeArtifacts()) {
             artifacts = artifactRepository.findByConversation(conversationId);
-            if (artifacts.size() > artifactLimitDefault) {
-                artifacts = artifacts.subList(0, artifactLimitDefault);
+            if (artifacts.size() > cacheProperties.getArtifactLimitDefault()) {
+                artifacts = artifacts.subList(0, cacheProperties.getArtifactLimitDefault());
             }
         }
 
@@ -289,17 +274,17 @@ public class VerlaContextQueryService {
 
     /** Conversation context：单页消息上限允许更大（与 {@link VerlaMessageRepositoryImpl#findByCursor} 上限对齐）。 */
     private int clampConversationMessageLimit(Integer req) {
-        int lim = req == null ? recentMessageLimit : req;
+        int lim = req == null ? cacheProperties.getRecentMessageLimit() : req;
         return Math.max(1, Math.min(lim, 200));
     }
 
     private int clampMessageLimit(Integer req) {
-        int lim = req == null ? recentMessageLimit : req;
+        int lim = req == null ? cacheProperties.getRecentMessageLimit() : req;
         return Math.max(1, Math.min(lim, 100));
     }
 
     private int clampTraceLimit(Integer req) {
-        int lim = req == null ? traceLimitDefault : req;
+        int lim = req == null ? cacheProperties.getTraceLimitDefault() : req;
         return Math.max(1, Math.min(lim, 200));
     }
 

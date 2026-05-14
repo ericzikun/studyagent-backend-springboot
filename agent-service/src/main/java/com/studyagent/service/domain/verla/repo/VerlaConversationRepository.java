@@ -36,4 +36,16 @@ public interface VerlaConversationRepository {
      * 仅自增 version（写 message / artifact 后让缓存版本前进）
      */
     int incrementVersion(Long id);
+
+    default Long touchOnNewTurnAndGetVersion(Long id, Long turnId) {
+        touchOnNewTurn(id, turnId);
+        VerlaConversation conversation = findById(id);
+        return conversation == null ? null : conversation.getVersion();
+    }
+
+    default Long incrementVersionAndGet(Long id) {
+        incrementVersion(id);
+        VerlaConversation conversation = findById(id);
+        return conversation == null ? null : conversation.getVersion();
+    }
 }

@@ -11,9 +11,21 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "verla.context-cache")
 public class VerlaContextCacheProperties {
 
+    private boolean redisEnabled = false;
+    private String keyPrefix = "verla:v1";
+
     private Duration convSummaryTtl = Duration.ofSeconds(60);
+    private Duration messagesRecentTtl = Duration.ofSeconds(60);
+    private Duration messagesHistoryTtl = Duration.ofMinutes(10);
     private Duration turnMetaTtl = Duration.ofSeconds(30);
     private Duration sessMetaTtl = Duration.ofSeconds(10);
+    private Duration sessionRunningTtl = Duration.ofSeconds(10);
+    private Duration sessionTerminalTtl = Duration.ofMinutes(5);
+    private Duration upstreamSessionsTtl = Duration.ofSeconds(30);
+    private Duration blockResponsesTtl = Duration.ofSeconds(120);
+    private Duration negativeTtl = Duration.ofSeconds(20);
+    private Duration redisLockTimeout = Duration.ofSeconds(3);
+    private double jitterRatio = 0.15d;
 
     private int recentMessageLimit = 20;
     private int traceLimitDefault = 50;

@@ -310,9 +310,20 @@ verla:
     # Day 1 期间 Controller 用 mock 返回；Day 2 接入真实 Service 后改 false
     mock-data: true
   context-cache:
+    redis-enabled: false
+    key-prefix: verla:v1
     conv-summary-ttl: 60s
+    messages-recent-ttl: 60s
+    messages-history-ttl: 10m
     turn-meta-ttl: 30s
     sess-meta-ttl: 10s
+    session-running-ttl: 10s
+    session-terminal-ttl: 300s
+    upstream-sessions-ttl: 30s
+    block-responses-ttl: 120s
+    negative-ttl: 20s
+    jitter-ratio: 0.15
+    redis-lock-timeout: 3s
   sse:
     emitter-timeout-ms: 0
     heartbeat-interval-ms: 15000

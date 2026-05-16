@@ -250,7 +250,8 @@ public class VerlaInboxService {
                 .sessionId(row.getSessionId())
                 .stepId(row.getStepId())
                 .stepSeq(row.getStepSeq())
-                .payload(env == null ? null : env.getPayload())
+                .payload(env == null ? null
+                        : VerlaFrontendPayloadSanitizer.sanitize(row.getEventType(), env.getPayload()))
                 .build();
     }
 

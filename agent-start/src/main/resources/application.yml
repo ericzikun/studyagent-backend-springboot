@@ -322,5 +322,5 @@ verla:
   attachment:
     max-bytes: ${VERLA_ATTACHMENT_MAX_BYTES:33554432}
     sign-ttl-seconds: ${VERLA_ATTACHMENT_SIGN_TTL_SECONDS:3600}
-    allowed-mimes: ${VERLA_ATTACHMENT_ALLOWED_MIMES:application/pdf,image/png,image/jpeg,image/webp,text/plain,text/markdown}
+    allowed-mimes: ${VERLA_ATTACHMENT_ALLOWED_MIMES:application/pdf,image/png,image/jpeg,image/webp,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword}
     oss-key-prefix: ${VERLA_ATTACHMENT_OSS_KEY_PREFIX:verla/v2/attachments}

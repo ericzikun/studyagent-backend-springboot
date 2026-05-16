@@ -73,6 +73,10 @@ public class VerlaTurnOrchestrator {
     private static final int MAX_ASSISTANT_TEXT_CONTENT_CHARS = 32000;
     private static final String GENERATED_ARTIFACT_READY_TEXT =
             "Assignment output is ready. Open the generated artifact to view the full result.";
+    private static final String PLAN_CONFIRM_YES_TEXT = "Yes, please help me finish it.";
+    private static final String PLAN_CONFIRM_NO_TEXT = "No, let’s keep chatting.";
+    private static final String ASSIGNMENT_START_YES_TEXT = "Yes, let's complete the assignment.";
+    private static final String ASSIGNMENT_START_NO_TEXT = "No，let’s keep chatting.";
     /**
      * 命令 exchange，与 RabbitMQConfig.COMMAND_EXCHANGE / VerlaRabbitConfig.COMMAND_EXCHANGE 保持一致。
      */
@@ -386,7 +390,7 @@ public class VerlaTurnOrchestrator {
         }
 
         if (!confirmed) {
-            recordPlanConfirmationMessage(turn, "rejected", "");
+            recordPlanConfirmationMessage(turn, "rejected", PLAN_CONFIRM_NO_TEXT);
             closePlanTurn(turn);
             clearPrimaryIntent(conv);
             return PlanConfirmResult.builder()
@@ -402,6 +406,8 @@ public class VerlaTurnOrchestrator {
                             .build())
                     .build();
         }
+
+        recordPlanConfirmationMessage(turn, "confirmed", PLAN_CONFIRM_YES_TEXT);
 
         String intent = turn.getResolvedIntent();
         if (isAssignmentIntent(intent)) {
@@ -479,11 +485,12 @@ public class VerlaTurnOrchestrator {
 
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
         String normalizedChoice = normalizeClarifyChoice(userChoice);
+        String messageText = buildContinueClarifyUserMessageText(normalizedChoice, text);
         VerlaMessage userMessage = VerlaMessage.builder()
                 .conversationId(conversationId)
                 .turnId(turn.getId())
                 .role("user")
-                .textContent(text == null ? "" : text)
+                .textContent(messageText)
                 .attachmentsJson(objectIds == null || objectIds.isEmpty()
                         ? null : serializeJson(objectIds.stream()
                         .map(objectId -> Map.<String, Object>of("objectId", objectId))
@@ -745,7 +752,7 @@ public class VerlaTurnOrchestrator {
                     .role("assistant")
                     .sourceSessionId(agentSessionId)
                     .textContent(reply)
-                    .blocksJson(serializeJson(withEventTypeWithoutStage(
+                    .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
                             normalizedResult, "ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED")))
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -1502,6 +1509,11 @@ public class VerlaTurnOrchestrator {
         return sanitized;
     }
 
+    private static Map<String, Object> withEventTypeWithoutStageForFrontend(
+            Map<String, Object> result, String eventType) {
+        return VerlaFrontendPayloadSanitizer.sanitize(eventType, withEventTypeWithoutStage(result, eventType));
+    }
+
     private static Boolean coerceBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -1596,6 +1608,16 @@ public class VerlaTurnOrchestrator {
                                                Map<String, Object> reservedFields,
                                                List<Map<String, Object>> appendAskAnswers) {
         return buildClarifyUserMessageText(userChoice, text, reservedFields, appendAskAnswers, null);
+    }
+
+    private static String buildContinueClarifyUserMessageText(String normalizedChoice, String text) {
+        if ("generation".equals(normalizedChoice)) {
+            return ASSIGNMENT_START_YES_TEXT;
+        }
+        if ("deep_understanding".equals(normalizedChoice) && "no".equalsIgnoreCase(text)) {
+            return ASSIGNMENT_START_NO_TEXT;
+        }
+        return text == null ? "" : text;
     }
 
     private String buildClarifyUserMessageText(String userChoice, String text,

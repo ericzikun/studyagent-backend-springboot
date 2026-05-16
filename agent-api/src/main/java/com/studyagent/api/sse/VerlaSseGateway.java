@@ -2,6 +2,7 @@ package com.studyagent.api.sse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
+import com.studyagent.service.application.verla.VerlaFrontendPayloadSanitizer;
 import com.studyagent.service.application.verla.sse.VerlaSseEventPayload;
 import com.studyagent.service.application.verla.sse.VerlaSsePublisher;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -227,7 +228,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 .sessionId(row.getSessionId())
                 .stepId(row.getStepId())
                 .stepSeq(row.getStepSeq())
-                .payload(payloadMap)
+                .payload(VerlaFrontendPayloadSanitizer.sanitize(row.getEventType(), payloadMap))
                 .build();
     }
 

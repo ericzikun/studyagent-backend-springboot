@@ -58,6 +58,23 @@ import java.util.concurrent.atomic.AtomicLong;
  *                       └── 30% 概率走 clarify 分支：
  *                             (150ms)  AGENT_CLARIFY_FORM_ISSUED { formId, schema }
  *                             (250ms)  PLAN_NEEDS_CLARIFY { question }
+ * cmd.assignment.init  ──► (50ms)   ASSIGNMENT_INIT_STARTED
+ *                          (200ms)  ASSIGNMENT_INIT_STREAM_CHUNK
+ *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=false }
+ *                          (850ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
+ *                          (1000ms) ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
+ *                          (1450ms) ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED { ready=true }
+ * cmd.assignment.deep_understanding
+ *                    ──► (50ms)   ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
+ *                          (200ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
+ *                          (600ms)  ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED { ready / isReadyForGeneration }
+ *                              或 ASSIGNMENT_CLARIFY_FORM_READY { requirementForm }
+ * cmd.assignment.run  ──► (50ms)   ASSIGNMENT_AGENT_FLOW_STARTED
+ *                          (80ms)   ASSIGNMENT_AGENT_NODE_UPDATED plan=RUNNING
+ *                          (500ms)  ASSIGNMENT_AGENT_NODE_UPDATED plan=COMPLETED + queued task nodes
+ *                          (900ms+) ASSIGNMENT_AGENT_NODE_UPDATED each task running/completed
+ *                          (6600ms) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED
+ *                          (9000ms) ASSIGNMENT_AGENT_FLOW_COMPLETED
  * cmd.agent.run        ──► (50ms)   AGENT_STARTED
  *                          (150ms)  AGENT_TOOL_CALL_RECORDED  { tool=web_search, status=RUNNING }
  *                          (200ms)  AGENT_STEP_STREAM_CHUNK   { delta: "片段 1 ..." }
@@ -91,6 +108,8 @@ public class MockPyCommandConsumer {
     private final ScheduledExecutorService scheduler;
     /** 按 sessionId 维护事件 seq，保证同 session 内单调递增 */
     private final ConcurrentHashMap<Long, AtomicLong> sessionSeq = new ConcurrentHashMap<>();
+    /** 按 turn 记录 deep understanding 轮次，用来模拟“多轮后可开始生成”的 composer 按钮信号。 */
+    private final ConcurrentHashMap<Long, AtomicLong> assignmentDeepUnderstandingRounds = new ConcurrentHashMap<>();
     private final String instanceId;
 
     /** plan agent 触发 clarify form 的概率 (0~100)。可通过 verla.mq.mock.clarify-rate 配置。 */
@@ -279,6 +298,22 @@ public class MockPyCommandConsumer {
             scheduleCapabilityMock(cmd, VerlaCommandAction.CMD_HUMANIZER_RUN);
             return;
         }
+        if (VerlaCommandAction.CMD_ASSIGNMENT_INIT.getCode().equals(cmd.getAction())) {
+            scheduleAssignmentInitResponse(cmd);
+            return;
+        }
+        if (VerlaCommandAction.CMD_ASSIGNMENT_DEEP_UNDERSTANDING.getCode().equals(cmd.getAction())) {
+            scheduleAssignmentDeepUnderstandingResponse(cmd);
+            return;
+        }
+        if (VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode().equals(cmd.getAction())) {
+            scheduleAssignmentClarifyResponse(cmd);
+            return;
+        }
+        if (VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode().equals(cmd.getAction())) {
+            scheduleAssignmentRunResponse(cmd);
+            return;
+        }
 
         Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
         String agentType = String.valueOf(payload.getOrDefault("agentType", "qa"));
@@ -316,6 +351,490 @@ public class MockPyCommandConsumer {
         doneBody.put("primaryArtifactUid", artifactUid);
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_COMPLETED, doneBody,
                 300L + chunks.size() * 200L);
+    }
+
+    /**
+     * Assignment stage 0 mock：按前端 V2 mapper 已支持的 ASSIGNMENT_INIT_* 协议发事件。
+     * 这样本地 smoke 能验证 Java SSE 和 assignment understanding 状态，而不是落回通用 AGENT_*。
+     */
+    private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> started = new HashMap<>();
+        started.put("agentType", assignmentAgentType(cmd));
+        started.put("stage", "stage_0");
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STARTED, started, 50);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                List.of(
+                        "Reading the assignment brief and extracting the core requirements...\n",
+                        "I found the topic, expected output, and the constraints that still need confirmation.\n"),
+                null,
+                200);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Assignment requirements understood");
+        done.put("ready", false);
+        done.put("isReadyForGeneration", false);
+        done.put("nextActions", List.of("deep_understanding", "generation"));
+        done.put("requirementUnderstanding", Map.of(
+                "topic", "Causes of World War I",
+                "outputType", "short outline",
+                "nextStep", "confirm requirements before generation"));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done, 650);
+        scheduleInitialDeepUnderstandingReady(cmd, 850);
+    }
+
+    /**
+     * Local MockPy only: Java 当前只会为首轮 assignment clarify 派发 stage_0 命令。
+     * 真实 Py / 后续真实编排应单独产出 deep-understanding ready 信号；本地 mock
+     * 在 init 后追加同一段事件，避免前端按 ready 字段改造后停在 init completed。
+     */
+    private void scheduleInitialDeepUnderstandingReady(VerlaCommandEnvelope cmd, long startedDelayMs) {
+        markAssignmentDeepUnderstandingRound(cmd);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
+                Map.of("agentType", assignmentAgentType(cmd), "userUnderstood", false, "mockAutoPreview", true),
+                startedDelayMs);
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK,
+                List.of(
+                        "Connecting the extracted requirements into a clearer assignment plan...\n",
+                        "The mock brief is ready for you to choose walkthrough or assignment setup.\n"),
+                null,
+                startedDelayMs + 150);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Deep understanding ready");
+        done.put("userUnderstood", false);
+        done.put("ready", true);
+        done.put("isReadyForGeneration", false);
+        done.put("nextActions", List.of("deep_understanding", "generation"));
+        done.put("mockAutoPreview", true);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED, done,
+                startedDelayMs + 600);
+    }
+
+    /**
+     * Assignment stage 2 mock：保留 userUnderstood 分支，方便后续 smoke 覆盖“继续追问/进入表单”。
+     */
+    private void scheduleAssignmentDeepUnderstandingResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        boolean userUnderstood = Boolean.TRUE.equals(payload.get("userUnderstood"));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
+                Map.of("agentType", assignmentAgentType(cmd), "userUnderstood", userUnderstood), 50);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK,
+                List.of(
+                        "Deepening the requirement interpretation and checking for missing rubric details...\n",
+                        "The brief is ready to move into a structured clarification form.\n"),
+                null,
+                200);
+
+        boolean showStartGenerationPrompt = shouldShowStartGenerationPrompt(cmd, payload, userUnderstood);
+        boolean showReadyCard = !userUnderstood && !showStartGenerationPrompt;
+
+        if (userUnderstood) {
+            Map<String, Object> done = new HashMap<>();
+            done.put("summary", "[Mock] Clarifying form ready");
+            done.put("ready", true);
+            done.put("nextActions", assignmentDeepUnderstandingNextActions(true, false));
+            done.put("requirementForm", buildMockRequirementForm());
+            scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY, done, 650);
+            return;
+        }
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Deep understanding completed");
+        done.put("userUnderstood", false);
+        done.put("ready", showReadyCard);
+        done.put("isReadyForGeneration", showStartGenerationPrompt);
+        done.put("nextActions", assignmentDeepUnderstandingNextActions(false, showStartGenerationPrompt));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED, done, 650);
+    }
+
+    /**
+     * 真实 Py 会根据多轮理解质量决定何时展示 composer 上方的开始生成按钮。
+     * MockPy 没有 LLM 判断，所以用同一 turn 内第二次及之后的 deep understanding
+     * 来模拟“聊了多轮但还没进入 setup”的场景；也支持 payload 显式覆盖，方便局部 smoke。
+     */
+    private boolean shouldShowStartGenerationPrompt(VerlaCommandEnvelope cmd,
+                                                    Map<String, Object> payload,
+                                                    boolean userUnderstood) {
+        if (userUnderstood) {
+            return false;
+        }
+        Boolean explicit = boolField(payload, "isReadyForGeneration");
+        if (explicit != null) {
+            return explicit;
+        }
+        Long key = refTurnId(cmd);
+        if (key == null) {
+            key = refSessionId(cmd);
+        }
+        if (key == null) {
+            return false;
+        }
+        long round = assignmentDeepUnderstandingRounds
+                .computeIfAbsent(key, ignored -> new AtomicLong(0L))
+                .incrementAndGet();
+        return round > 1;
+    }
+
+    private void markAssignmentDeepUnderstandingRound(VerlaCommandEnvelope cmd) {
+        Long key = refTurnId(cmd);
+        if (key == null) {
+            key = refSessionId(cmd);
+        }
+        if (key == null) {
+            return;
+        }
+        assignmentDeepUnderstandingRounds
+                .computeIfAbsent(key, ignored -> new AtomicLong(0L))
+                .incrementAndGet();
+    }
+
+    private List<String> assignmentDeepUnderstandingNextActions(boolean userUnderstood,
+                                                                 boolean showStartGenerationPrompt) {
+        if (userUnderstood) {
+            return List.of("finalize");
+        }
+        if (showStartGenerationPrompt) {
+            return List.of("generation");
+        }
+        return List.of("deep_understanding", "generation");
+    }
+
+    /**
+     * Assignment clarify mock：覆盖 finalize happy path。
+     * <p>
+     * 当前 split clarify 契约下，{@code cmd.assignment.clarify} 由前端
+     * {@code /assignment/clarify/finalize} 触发；Java 侧只在
+     * {@code isReadyForGeneration=true} 时自动派发 {@code cmd.assignment.run}。
+     * MockPy 必须给出这个终态信号，才能验证本地 Spring→MQ→MockPy→SSE→前端完成链路。
+     */
+    private void scheduleAssignmentClarifyResponse(VerlaCommandEnvelope cmd) {
+        String stage = "stage_3";
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        Map<String, Object> requirementForm = mapField(payload, "requirementForm");
+        if (requirementForm.isEmpty()) {
+            requirementForm = mapField(payload, "reservedFields");
+        }
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED,
+                Map.of("agentType", assignmentAgentType(cmd), "stage", stage), 50);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_STREAM_CHUNK,
+                List.of(
+                        "Finalizing the confirmed assignment requirements...\n",
+                        "The assignment setup is ready. I am starting the generation workflow.\n"),
+                stage,
+                200);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("stage", stage);
+        done.put("summary", "[Mock] Assignment requirements finalized");
+        done.put("isReadyForGeneration", true);
+        done.put("requirementForm", requirementForm);
+        done.put("appendAskAnswers", payload.getOrDefault("appendAskAnswers", List.of()));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED, done, 650);
+    }
+
+    /**
+     * Assignment 正式生成 mock：发出前端 workflow canvas 所需的 node 快照事件。
+     * <p>
+     * 这些事件只服务本地样式/链路联调；真实 Py 也应按同一 payload 形状发
+     * {@code ASSIGNMENT_AGENT_NODE_UPDATED}，前端不会再补 fallback 任务卡片。
+     */
+    private void scheduleAssignmentRunResponse(VerlaCommandEnvelope cmd) {
+        String agentType = assignmentAgentType(cmd);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                Map.of("agentType", agentType, "stage", "assignment_run"), 50);
+
+        scheduleAssignmentNode(cmd,
+                "assignment-plan",
+                "Make plan",
+                "Planning",
+                "RUNNING",
+                0,
+                "Analyze the confirmed requirements and decompose the work into executable tasks.",
+                "Inputs include the final requirement form, user answers, and uploaded materials.",
+                null,
+                List.of(
+                        workflowStep("parse-requirements", "Parse confirmed requirements", "COMPLETED",
+                                "Read subject, length, format, rubric constraints, and attachment context."),
+                        workflowStep("decompose-tasks", "Decompose task sequence", "RUNNING",
+                                "Create the task chain for research, outline, drafting, citation, and QA.")),
+                80);
+
+        scheduleAssignmentNode(cmd,
+                "assignment-plan",
+                "Make plan",
+                "Planning",
+                "COMPLETED",
+                0,
+                "Analyze the confirmed requirements and decompose the work into executable tasks.",
+                "Inputs include the final requirement form, user answers, and uploaded materials.",
+                "Prepared the ordered execution plan for all downstream task cards.",
+                List.of(
+                        workflowStep("parse-requirements", "Parse confirmed requirements", "COMPLETED",
+                                "Read subject, length, format, rubric constraints, and attachment context."),
+                        workflowStep("decompose-tasks", "Decompose task sequence", "COMPLETED",
+                                "Create the task chain for research, outline, drafting, citation, and QA.")),
+                500);
+
+        scheduleQueuedAssignmentNodes(cmd, 520);
+
+        scheduleAssignmentTaskLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
+                "Problem Solving Expert", 1,
+                "Translate the prompt into a thesis direction and decide what evidence is needed.",
+                "Problem frame, constraints, deliverable type, and user-provided context.",
+                "Locked the argument direction and evidence plan.",
+                List.of(
+                        "Intent Parsing & Query Expansion",
+                        "Constraint Matching",
+                        "Evidence Need Mapping"),
+                900, 1500);
+        scheduleAssignmentTaskLifecycle(cmd, "evidence-researcher", "Evidence Researcher",
+                "Research", 2,
+                "Collect and filter useful facts, references, and source notes for the assignment.",
+                "Evidence plan, uploaded materials, and citation expectations.",
+                "Prepared supporting notes and candidate references for drafting.",
+                List.of(
+                        "Source discovery",
+                        "Evidence filtering",
+                        "Citation note capture"),
+                1600, 2300);
+        scheduleAssignmentTaskLifecycle(cmd, "outline-architect", "Outline Architect",
+                "Outline", 3,
+                "Build the assignment structure before writing the full response.",
+                "Thesis direction, selected evidence, and required length.",
+                "Produced a section-level outline ready for drafting.",
+                List.of(
+                        "Thesis placement",
+                        "Section sequencing",
+                        "Paragraph target sizing"),
+                2400, 3100);
+        scheduleAssignmentTaskLifecycle(cmd, "draft-writer", "Draft Writer",
+                "Writing", 4,
+                "Write the assignment content section by section.",
+                "Outline, evidence notes, and formatting requirements.",
+                "Generated the main assignment draft.",
+                List.of(
+                        "Introduction draft",
+                        "Body sections",
+                        "Conclusion draft"),
+                3200, 4300);
+        scheduleAssignmentTaskLifecycle(cmd, "citation-reviewer", "Citation Reviewer",
+                "Citation", 5,
+                "Review citations and flag unsupported claims.",
+                "Draft text, source notes, and requested citation style.",
+                "Aligned claims with source notes and citation placeholders.",
+                List.of(
+                        "Claim support check",
+                        "Citation style pass",
+                        "Unsupported claim cleanup"),
+                4400, 5400);
+        scheduleAssignmentTaskLifecycle(cmd, "quality-check", "Quality Check",
+                "QA", 6,
+                "Run a final rubric and readability check before returning the artifact.",
+                "Draft package, citation notes, and deliverable requirements.",
+                "Confirmed the generated assignment is ready for review.",
+                List.of(
+                        "Rubric coverage",
+                        "Readability polish",
+                        "Final package check"),
+                5500, 7000);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.AGENT_STEP_STREAM_CHUNK,
+                List.of(
+                        "I am turning the confirmed plan into a connected task workflow now.\n",
+                        "Research, outline, draft, citation, and QA tasks are progressing one by one.\n"),
+                "assignment_run",
+                1200);
+
+        String artifactUid = "assignment_mock_document_" + UUID.randomUUID().toString().substring(0, 8);
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", artifactUid);
+        art.put("kind", "document_markdown");
+        art.put("mime", "text/markdown");
+        art.put("summary", "Generated Assignment.md");
+        art.put("bodyOrRef", "# Mock Generated Assignment\n\n"
+                + "This local MockPy document is emitted after workflow node events so the V2 right rail can be tested against the real SSE path.\n");
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("sizeBytes", 512L);
+        art.put("meta", Map.of("agent", agentType, "source", "mockpy-assignment-run"));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, 6600);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Assignment workflow completed");
+        done.put("artifactCount", 1);
+        done.put("primaryArtifactUid", artifactUid);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done, 9000);
+    }
+
+    private void scheduleQueuedAssignmentNodes(VerlaCommandEnvelope cmd, long firstDelayMs) {
+        List<AssignmentNodeSeed> nodes = List.of(
+                new AssignmentNodeSeed("problem-solving-expert", "Problem Solving Expert", "Problem Solving Expert", 1,
+                        "Translate the prompt into a thesis direction and decide what evidence is needed."),
+                new AssignmentNodeSeed("evidence-researcher", "Evidence Researcher", "Research", 2,
+                        "Collect and filter useful facts, references, and source notes for the assignment."),
+                new AssignmentNodeSeed("outline-architect", "Outline Architect", "Outline", 3,
+                        "Build the assignment structure before writing the full response."),
+                new AssignmentNodeSeed("draft-writer", "Draft Writer", "Writing", 4,
+                        "Write the assignment content section by section."),
+                new AssignmentNodeSeed("citation-reviewer", "Citation Reviewer", "Citation", 5,
+                        "Review citations and flag unsupported claims."),
+                new AssignmentNodeSeed("quality-check", "Quality Check", "QA", 6,
+                        "Run a final rubric and readability check before returning the artifact."));
+
+        for (int i = 0; i < nodes.size(); i++) {
+            AssignmentNodeSeed node = nodes.get(i);
+            scheduleAssignmentNode(cmd,
+                    node.id(),
+                    node.title(),
+                    node.role(),
+                    "QUEUED",
+                    node.order(),
+                    node.summary(),
+                    null,
+                    null,
+                    List.of(workflowStep("queued", "Waiting for previous task", "QUEUED",
+                            "This task will start after the upstream card completes.")),
+                    firstDelayMs + i * 40L);
+        }
+    }
+
+    private void scheduleAssignmentTaskLifecycle(VerlaCommandEnvelope cmd,
+                                                 String id,
+                                                 String title,
+                                                 String role,
+                                                 int order,
+                                                 String summary,
+                                                 String inputSummary,
+                                                 String outputSummary,
+                                                 List<String> stepTitles,
+                                                 long runningDelayMs,
+                                                 long completedDelayMs) {
+        scheduleAssignmentNode(cmd, id, title, role, "RUNNING", order, summary,
+                inputSummary, null,
+                workflowSteps(stepTitles, "RUNNING"),
+                runningDelayMs);
+        scheduleAssignmentNode(cmd, id, title, role, "COMPLETED", order, summary,
+                inputSummary, outputSummary,
+                workflowSteps(stepTitles, "COMPLETED"),
+                completedDelayMs);
+    }
+
+    private void scheduleAssignmentNode(VerlaCommandEnvelope cmd,
+                                        String id,
+                                        String title,
+                                        String role,
+                                        String status,
+                                        int order,
+                                        String summary,
+                                        String inputSummary,
+                                        String outputSummary,
+                                        List<Map<String, Object>> steps,
+                                        long delayMs) {
+        Map<String, Object> node = new HashMap<>();
+        node.put("id", id);
+        node.put("title", title);
+        node.put("role", role);
+        node.put("status", status);
+        node.put("order", order);
+        node.put("summary", summary);
+        node.put("subtitle", order == 0 ? "Start" : "AI Agent: " + role);
+        if (inputSummary != null && !inputSummary.isBlank()) {
+            node.put("inputSummary", inputSummary);
+        }
+        if (outputSummary != null && !outputSummary.isBlank()) {
+            node.put("outputSummary", outputSummary);
+        }
+        if (steps != null && !steps.isEmpty()) {
+            node.put("steps", steps);
+        }
+
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                Map.of("node", node), delayMs);
+    }
+
+    private List<Map<String, Object>> workflowSteps(List<String> titles, String status) {
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (int i = 0; i < titles.size(); i++) {
+            steps.add(workflowStep(
+                    "step-" + (i + 1),
+                    titles.get(i),
+                    status,
+                    statusDescription(status, i, titles.size())));
+        }
+        return steps;
+    }
+
+    private Map<String, Object> workflowStep(String id, String title, String status, String description,
+                                             String... resources) {
+        Map<String, Object> step = new HashMap<>();
+        step.put("id", id);
+        step.put("title", title);
+        step.put("status", status);
+        step.put("description", description);
+        if (resources != null && resources.length > 0) {
+            step.put("resources", List.of(resources));
+        }
+        return step;
+    }
+
+    private String statusDescription(String status, int index, int total) {
+        if ("COMPLETED".equals(status)) {
+            return "Completed step " + (index + 1) + " of " + total + ".";
+        }
+        if ("QUEUED".equals(status)) {
+            return "Waiting to start step " + (index + 1) + " of " + total + ".";
+        }
+        return "Running step " + (index + 1) + " of " + total + ".";
+    }
+
+    private record AssignmentNodeSeed(String id, String title, String role, int order, String summary) {
+    }
+
+    private Map<String, Object> mapField(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        if (!(value instanceof Map<?, ?> raw)) {
+            return Map.of();
+        }
+        Map<String, Object> result = new HashMap<>();
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            if (entry.getKey() != null) {
+                result.put(entry.getKey().toString(), entry.getValue());
+            }
+        }
+        return result;
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs) {
+        for (int i = 0; i < chunks.size(); i++) {
+            Map<String, Object> chunkPayload = new HashMap<>();
+            chunkPayload.put("delta", chunks.get(i));
+            chunkPayload.put("channel", "content");
+            chunkPayload.put("index", i);
+            if (stage != null) {
+                chunkPayload.put("stage", stage);
+            }
+            scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * 200L);
+        }
+    }
+
+    private Map<String, Object> buildMockRequirementForm() {
+        return Map.of(
+                "title", "Assignment requirements",
+                "description", "Confirm the details before generation.",
+                "schema", List.of(
+                        Map.of("key", "subject", "label", "Subject", "type", "text", "required", true),
+                        Map.of("key", "format", "label", "Expected format", "type", "text", "required", true),
+                        Map.of("key", "deadline", "label", "Deadline", "type", "date", "required", false)));
+    }
+
+    private String assignmentAgentType(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String agentType = String.valueOf(payload.getOrDefault("agentType", "assignment"));
+        return agentType.isBlank() ? "assignment" : agentType;
     }
 
     /** Mock：检测 / Humanizer — 简化为 STARTED → ARTIFACT → COMPLETED（与真 Py 事件形状接近）。 */
@@ -376,7 +895,7 @@ public class MockPyCommandConsumer {
     private Map<String, Object> buildArtifactPayload(String artifactUid, String agentType) {
         Map<String, Object> p = new HashMap<>();
         p.put("artifactUid", artifactUid);
-        p.put("kind", "assignment".equals(agentType) ? "assignment_card" : "qa_summary");
+        p.put("kind", "assignment".equalsIgnoreCase(agentType) ? "assignment_card" : "qa_summary");
         p.put("mime", "text/markdown");
         p.put("status", "READY");
         p.put("version", 1);
@@ -625,6 +1144,23 @@ public class MockPyCommandConsumer {
     private static String stringField(Map<String, Object> payload, String key) {
         Object v = payload.get(key);
         return v == null ? null : v.toString();
+    }
+
+    private static Boolean boolField(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String text) {
+            String normalized = text.trim().toLowerCase(Locale.ROOT);
+            if (List.of("true", "1", "yes").contains(normalized)) {
+                return true;
+            }
+            if (List.of("false", "0", "no").contains(normalized)) {
+                return false;
+            }
+        }
+        return null;
     }
 
     private static Long refSessionId(VerlaCommandEnvelope env) {

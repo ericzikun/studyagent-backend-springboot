@@ -51,4 +51,17 @@ class VerlaFrontendPayloadSanitizerTest {
 
         assertSame(payload, sanitized);
     }
+
+    @Test
+    void sanitize_clarifyFormReady_keepsFullFormPayload() {
+        Map<String, Object> payload = Map.of(
+                "requirementForm", Map.of(
+                        "title", "Assignment requirements",
+                        "schema", List.of(Map.of("key", "subject", "label", "Subject"))));
+
+        Map<String, Object> sanitized = VerlaFrontendPayloadSanitizer.sanitize(
+                VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY.name(), payload);
+
+        assertSame(payload, sanitized);
+    }
 }

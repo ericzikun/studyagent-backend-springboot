@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.request;
 
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.util.List;
@@ -20,5 +21,12 @@ public class ClarifyTaskRequest {
     private Integer citationStyle;
     private Integer pageLength;
     private String specialInstructions;
+
+    /**
+     * 输出生成所用语言（标准 locale code，可选）
+     */
+    @Pattern(regexp = "^(en|zh-CN|es|pt|vi|ko|id|tr|fr|ja|hi|de|ru|fil|ms)$",
+            message = "outputLanguage must be a supported locale code")
+    private String outputLanguage;
 }
 

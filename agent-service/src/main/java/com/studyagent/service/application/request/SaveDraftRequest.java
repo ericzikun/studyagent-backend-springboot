@@ -31,5 +31,7 @@ public class SaveDraftRequest {
     private String clarifyingQuestions;
     private String requirementsJson;
     private String token; // Clerk token
+    /** 输出生成所用语言（标准 locale code，可选） */
+    private String outputLanguage;
 }
 

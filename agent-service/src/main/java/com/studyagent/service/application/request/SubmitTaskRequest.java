@@ -31,5 +31,7 @@ public class SubmitTaskRequest {
     private String token; // Clerk token
     private String clarifyingQuestions;
     private String requirementsJson;
+    /** 输出生成所用语言（标准 locale code，可选；写入 requirement_json 供执行端读取） */
+    private String outputLanguage;
 }
 

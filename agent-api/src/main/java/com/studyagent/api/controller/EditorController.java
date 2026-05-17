@@ -34,6 +34,7 @@ import java.util.Set;
 public class EditorController {
 
     private static final String DEFAULT_EDITOR_KIND = "document";
+    private static final int MAX_EDITOR_VERSIONS = 3;
     private static final Set<String> SUPPORTED_EDITOR_KINDS = Set.of(
             "document", "slides", "code"
     );
@@ -174,23 +175,30 @@ public class EditorController {
             taskEditorContentMapper.updateById(editorContent);
         }
 
-        int nextVersionNo = findLatestVersionNo(editorContent.getId()) + 1;
-        TaskEditorContentVersionEntity versionEntity = new TaskEditorContentVersionEntity();
-        versionEntity.setEditorContentId(editorContent.getId());
-        versionEntity.setVersionNo(nextVersionNo);
-        versionEntity.setContentJson(editorContent.getContentJson());
-        versionEntity.setMetaJson(editorContent.getMetaJson());
-        versionEntity.setSaveSource(resolveSaveSource(request.getSaveSource()));
-        versionEntity.setCreatedBy(clerkUserId);
-        versionEntity.setCreatedAt(now);
-        taskEditorContentVersionMapper.insert(versionEntity);
+        String saveSource = resolveSaveSource(request.getSaveSource());
+        Integer latestVersionNo = findLatestVersionNo(editorContent.getId());
+        int responseVersionNo = latestVersionNo;
+        if (!"autosave".equals(saveSource)) {
+            int nextVersionNo = latestVersionNo + 1;
+            TaskEditorContentVersionEntity versionEntity = new TaskEditorContentVersionEntity();
+            versionEntity.setEditorContentId(editorContent.getId());
+            versionEntity.setVersionNo(nextVersionNo);
+            versionEntity.setContentJson(editorContent.getContentJson());
+            versionEntity.setMetaJson(editorContent.getMetaJson());
+            versionEntity.setSaveSource(saveSource);
+            versionEntity.setCreatedBy(clerkUserId);
+            versionEntity.setCreatedAt(now);
+            taskEditorContentVersionMapper.insert(versionEntity);
+            pruneOldVersions(editorContent.getId());
+            responseVersionNo = nextVersionNo;
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("task_id", taskId);
         response.put("kind", editorKind);
         response.put("id", editorContent.getId());
         response.put("title", editorContent.getTitle());
-        response.put("versionNo", nextVersionNo);
+        response.put("versionNo", responseVersionNo);
         response.put("updatedAt", now);
         response.put("saved", true);
         response.put("created", created);
@@ -213,6 +221,25 @@ public class EditorController {
                         .last("LIMIT 1")
         );
         return latest != null && latest.getVersionNo() != null ? latest.getVersionNo() : 0;
+    }
+
+    private void pruneOldVersions(Long editorContentId) {
+        if (editorContentId == null) {
+            return;
+        }
+        java.util.List<TaskEditorContentVersionEntity> versions = taskEditorContentVersionMapper.selectList(
+                new LambdaQueryWrapper<TaskEditorContentVersionEntity>()
+                        .eq(TaskEditorContentVersionEntity::getEditorContentId, editorContentId)
+                        .orderByDesc(TaskEditorContentVersionEntity::getVersionNo)
+        );
+        if (versions.size() <= MAX_EDITOR_VERSIONS) {
+            return;
+        }
+        versions.stream()
+                .skip(MAX_EDITOR_VERSIONS)
+                .map(TaskEditorContentVersionEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .forEach(taskEditorContentVersionMapper::deleteById);
     }
 
     private Integer resolveContentSchemaVersion(Integer version) {

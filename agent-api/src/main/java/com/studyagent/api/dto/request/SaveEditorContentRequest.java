@@ -12,7 +12,16 @@ import java.util.Map;
 public class SaveEditorContentRequest {
     @NotNull(message = "内容不能为空")
     private Map<String, Object> content;
-    
-    private String title;
-}
 
+    private String title;
+
+    private Map<String, Object> meta;
+
+    private String sourceArtifactUid;
+
+    private String sourceObjectId;
+
+    private String saveSource;
+
+    private Integer contentSchemaVersion;
+}

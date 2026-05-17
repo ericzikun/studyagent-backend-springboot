@@ -436,6 +436,7 @@ public class MockPyCommandConsumer {
             done.put("ready", true);
             done.put("nextActions", assignmentDeepUnderstandingNextActions(true, false));
             done.put("requirementForm", buildMockRequirementForm());
+            done.put("appendAsk", buildMockAppendAsk());
             scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY, done, 650);
             return;
         }
@@ -829,6 +830,38 @@ public class MockPyCommandConsumer {
                         Map.of("key", "subject", "label", "Subject", "type", "text", "required", true),
                         Map.of("key", "format", "label", "Expected format", "type", "text", "required", true),
                         Map.of("key", "deadline", "label", "Deadline", "type", "date", "required", false)));
+    }
+
+    private Map<String, Object> buildMockAppendAsk() {
+        return Map.of(
+                "questions", List.of(
+                        Map.of(
+                                "id", "mockpy_target_audience",
+                                "index", 1,
+                                "question", "Who should this assignment be written for?",
+                                "placeholder", "Example: first-year business students, course instructor, or general readers",
+                                "required", true,
+                                "requires_file_upload", false,
+                                "allowExpandedEditor", true,
+                                "order", 1),
+                        Map.of(
+                                "id", "mockpy_rubric_focus",
+                                "index", 2,
+                                "question", "Paste any rubric details or grading priorities that should shape the response.",
+                                "placeholder", "Example: prioritize primary sources, compare two viewpoints, include citations",
+                                "required", false,
+                                "requires_file_upload", true,
+                                "allowExpandedEditor", true,
+                                "order", 2),
+                        Map.of(
+                                "id", "mockpy_constraints",
+                                "index", 3,
+                                "question", "Any constraints I should avoid or respect?",
+                                "placeholder", "Example: avoid first person, use APA, no bullet points",
+                                "required", false,
+                                "requires_file_upload", false,
+                                "allowExpandedEditor", true,
+                                "order", 3)));
     }
 
     private String assignmentAgentType(VerlaCommandEnvelope cmd) {

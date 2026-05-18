@@ -48,8 +48,24 @@ public class AuthInterceptor implements HandlerInterceptor {
      */
     @Value("${clerk.enable-sdk-verification:false}")
     private boolean enableSdkVerification;
-    
-    
+
+    /**
+     * 本地开发用 dev-bypass：跳过 Clerk 校验，从 header X-Dev-User 或 query dev_user 取 userId。
+     * <ul>
+     *   <li>默认关闭（生产/Docker baseline 不会启用）；</li>
+     *   <li>仅 application-local.yml / application-dev.yml 显式置为 true；</li>
+     *   <li>开启后日志会以 WARN 提示，避免误生产配置。</li>
+     * </ul>
+     * 详见 docs/verla-端到端调用链路-做作业示例.md §四。
+     */
+    @Value("${auth.dev-bypass.enabled:false}")
+    private boolean devBypassEnabled;
+
+    /** 当 dev-bypass 开启但调用方完全没传 dev_user/X-Dev-User 时使用的兜底用户 */
+    @Value("${auth.dev-bypass.default-user:dev-user-001}")
+    private String devBypassDefaultUser;
+
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         // 允许 OPTIONS 预检请求（CORS）
@@ -64,6 +80,35 @@ public class AuthInterceptor implements HandlerInterceptor {
         
         // 获取 Authorization header
         String authHeader = request.getHeader("Authorization");
+        // SSE 兼容：EventSource 不支持自定义 header，仅 verla SSE 路径允许从 query string 取 access_token
+        // 详见 docs/verla-Java侧MVP技术方案.md §13.1
+        if ((authHeader == null || !authHeader.startsWith("Bearer ")) && isVerlaSseRequest(request)) {
+            String qsToken = request.getParameter("access_token");
+            if (qsToken != null && !qsToken.isEmpty()) {
+                authHeader = "Bearer " + qsToken;
+            }
+        }
+
+        // 本地开发兜底：dev-bypass 仅在 application-{local,dev}.yml 显式打开时生效。
+        if ((authHeader == null || !authHeader.startsWith("Bearer ")) && devBypassEnabled) {
+            String devUser = request.getHeader("X-Dev-User");
+            if (devUser == null || devUser.isBlank()) {
+                devUser = request.getParameter("dev_user");
+            }
+            if (devUser == null || devUser.isBlank()) {
+                devUser = devBypassDefaultUser;
+            }
+            log.warn("[AuthInterceptor] dev-bypass active, clerkUserId={} for {} {} (do NOT enable in prod)",
+                    devUser, request.getMethod(), request.getRequestURI());
+            ClerkClient.UserInfo info = new ClerkClient.UserInfo();
+            info.clerkUserId = devUser;
+            info.displayName = devUser;
+            info.email = devUser + "@local.dev";
+            request.setAttribute("clerkUserId", devUser);
+            request.setAttribute("userInfo", info);
+            return true;
+        }
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                 "MISSING_TOKEN", "Authorization header is missing or invalid");
@@ -86,10 +131,15 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 根据配置选择验证方式
             if (enableSdkVerification && clerkSecretKey != null && !clerkSecretKey.isEmpty()
                     && !clerkSecretKey.equals("sk_test_xxx")) {
-                // 方式 1: 使用 Clerk 官方 SDK 验证（验证 JWT 签名，更安全）
-                userInfo = verifyWithClerkSdk(request, token);
+                // Verla SSE：JWT 仅能通过 ?access_token= 传递；Clerk AuthenticateRequest 常报 SESSION_TOKEN_MISSING，
+                // 与 EventSource 限制不符。此处与其它降级路径一致，使用 JWT 解析（校验 exp / sub）。
+                if (isVerlaSseRequest(request)) {
+                    log.debug("[AuthInterceptor] Verla SSE 跳过 Clerk AuthenticateRequest，使用 JWT 解析");
+                    userInfo = clerkClient.verifyToken(token);
+                } else {
+                    userInfo = verifyWithClerkSdk(request, token);
+                }
             } else {
-                // 方式 2: 使用本地 JWT 解析（更快，但不验证签名）
                 userInfo = clerkClient.verifyToken(token);
             }
             
@@ -166,7 +216,11 @@ public class AuthInterceptor implements HandlerInterceptor {
                 List<String> headerValues = Collections.list(servletRequest.getHeaders(headerName));
                 headersMap.put(headerName.toLowerCase(), headerValues);
             }
-            
+
+            // Clerk AuthenticateRequest 只认 HTTP headers；Verla SSE 的 JWT 在 query access_token，
+            // preHandle 已解析为 token，必须显式注入 Authorization，否则会报 SESSION_TOKEN_MISSING。
+            headersMap.put("authorization", Collections.singletonList("Bearer " + token));
+
             // 构建验证选项
             AuthenticateRequestOptions options = AuthenticateRequestOptions
                 .secretKey(clerkSecretKey)
@@ -228,6 +282,22 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
     }
     
+    /**
+     * 判断是否是 verla SSE 订阅请求（GET /v1/verla/conversations/{cid}/events）。
+     * 仅在该路径上允许通过 ?access_token= 兜底鉴权，其它路径仍强制 Authorization header。
+     */
+    private boolean isVerlaSseRequest(HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        if (uri == null) {
+            return false;
+        }
+        // /v1/verla/conversations/{digits}/events
+        return uri.matches(".*/v1/verla/conversations/\\d+/events");
+    }
+
     /**
      * 发送 JSON 格式的错误响应
      */

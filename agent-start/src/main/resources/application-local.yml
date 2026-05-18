@@ -12,12 +12,50 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
+  # RabbitMQ：本地跑 Java、队列在 Docker 且把 5672 映射到宿主机时，无需改 host。
+  # 与 curve-master/docker-cp/docker-compose.yml 默认账号一致（可按需设环境变量覆盖）。
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:studyagent}
+    password: ${RABBITMQ_PASSWORD:studyagent2024}
+    virtual-host: ${RABBITMQ_VHOST:/}
+
 # Clerk 配置（本地环境）
 clerk:
   secret-key: ${CLERK_SECRET_KEY:sk_test_xxx}
   publishable-key: ${CLERK_PUBLISHABLE_KEY:pk_test_xxx}
   api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
   frontend-api-url: ${CLERK_FRONTEND_API_URL:}
+
+# 本地开发：跳过 Clerk 鉴权，header X-Dev-User / query dev_user 决定 clerkUserId
+# ⚠️ 仅本地有效，生产/Docker 环境（application-prod.yml / application-docker.yml）默认不开。
+# 详见 docs/verla-端到端调用链路-做作业示例.md §四
+auth:
+  dev-bypass:
+    enabled: ${AUTH_DEV_BYPASS:true}
+    default-user: ${AUTH_DEV_DEFAULT_USER:dev-user-001}
+
+# 本地开发：MockPyCommandConsumer 异步回事件的基础延迟（ms）
+verla:
+  mq:
+    # 本地 Docker / 旧拓扑里的 verla.* 队列往往未声明 x-dead-letter-exchange / x-single-active-consumer；
+    # 仍为 true 时会 PRECONDITION_FAILED 导致启动失败。对齐生产时请删队列改 true，见 VerlaRabbitConfig。
+    dead-letter-enabled: ${VERLA_MQ_DEAD_LETTER_ENABLED:false}
+    single-active-consumer-enabled: ${VERLA_MQ_SINGLE_ACTIVE_CONSUMER_ENABLED:false}
+    mock:
+      # 默认关闭：与真实 verla_agent 共用 verla.cmd.* 时，MockPy 会抢先消费导致 Py 永远收不到命令。
+      # 仅在不启动 Py、只靠 Java 自测 MQ 全链路时设为 true，或设置环境变量 VERLA_MQ_MOCK_ENABLED=true。
+      enabled: ${VERLA_MQ_MOCK_ENABLED:false}
+      delay-base-ms: ${VERLA_MOCK_DELAY_MS:50}
+  # V2 附件：仅 OSS；须配置 aliyun.oss.enabled=true
+  attachment:
+    max-bytes: ${VERLA_ATTACHMENT_MAX_BYTES:33554432}
+    sign-ttl-seconds: ${VERLA_ATTACHMENT_SIGN_TTL_SECONDS:3600}
+    allowed-mimes: ${VERLA_ATTACHMENT_ALLOWED_MIMES:application/pdf,image/png,image/jpeg,image/webp,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword}
+    oss-key-prefix: ${VERLA_ATTACHMENT_OSS_KEY_PREFIX:verla/v2/attachments}
+    local-fallback-enabled: ${VERLA_ATTACHMENT_LOCAL_FALLBACK_ENABLED:true}
+    local-root: ${VERLA_ATTACHMENT_LOCAL_ROOT:../storage}
 
 # Python 后端配置（本地环境）
 python-backend:

@@ -762,6 +762,47 @@ public class VerlaTurnOrchestrator {
         conversationRepository.incrementVersion(turn.getConversationId());
     }
 
+    /**
+     * Persists the dedicated clarify-form-ready checkpoint.
+     *
+     * This event is intentionally separate from deep-understanding completion:
+     * deep understanding may keep the user in chat, while this checkpoint is the
+     * first moment the frontend should hydrate and render the follow-up form.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentClarifyFormReady(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(result));
+            sessionRepository.save(s);
+        }
+
+        String reply = extractAssistantReply(result);
+        VerlaMessage assistant = VerlaMessage.builder()
+                .conversationId(turn.getConversationId())
+                .turnId(turn.getId())
+                .role("assistant")
+                .sourceSessionId(agentSessionId)
+                .textContent(reply == null ? "" : reply)
+                .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
+                        result, "ASSIGNMENT_CLARIFY_FORM_READY")))
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(assistant);
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentClarifyCompleted(Long agentSessionId, Map<String, Object> result) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);

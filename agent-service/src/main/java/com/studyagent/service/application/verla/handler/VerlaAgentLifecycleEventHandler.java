@@ -35,6 +35,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_FAILED,
@@ -78,6 +79,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             case ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAssignmentDeepUnderstandingCompleted(sessionId, payload);
+            }
+            case ASSIGNMENT_CLARIFY_FORM_READY -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentClarifyFormReady(sessionId, payload);
             }
             case ASSIGNMENT_CLARIFY_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);

@@ -25,12 +25,24 @@ public final class VerlaFrontendPayloadSanitizer {
         if (payload == null || payload.isEmpty()) {
             return payload;
         }
-        if (!VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED.name().equals(eventType)) {
+        if (!shouldFilterRequirementForm(eventType)) {
+            return payload;
+        }
+        if (isSchemaBackedRequirementForm(payload.get("requirementForm"))) {
             return payload;
         }
         Map<String, Object> sanitized = new LinkedHashMap<>(payload);
         sanitized.put("requirementForm", filterRequirementForm(payload.get("requirementForm")));
         return sanitized;
+    }
+
+    private static boolean shouldFilterRequirementForm(String eventType) {
+        return VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED.name().equals(eventType)
+                || VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY.name().equals(eventType);
+    }
+
+    private static boolean isSchemaBackedRequirementForm(Object rawRequirementForm) {
+        return rawRequirementForm instanceof Map<?, ?> rawMap && rawMap.containsKey("schema");
     }
 
     @SuppressWarnings("unchecked")

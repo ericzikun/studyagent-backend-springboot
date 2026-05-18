@@ -391,6 +391,28 @@ public class VerlaTurnOrchestrator {
 
         if (!confirmed) {
             recordPlanConfirmationMessage(turn, "rejected", PLAN_CONFIRM_NO_TEXT);
+            String intent = turn.getResolvedIntent();
+            if (isAssignmentIntent(intent)) {
+                VerlaSession agentSession = spawnAssignmentDeepUnderstandingSession(
+                        conv,
+                        turn,
+                        intent,
+                        parseSlotsJson(turn.getResolvedSlotsJson()),
+                        false);
+                conversationRepository.incrementVersion(conversationId);
+                return PlanConfirmResult.builder()
+                        .success(true)
+                        .nextStage("deep_understanding")
+                        .redirectUrl("/dashboard/create?type=assignment&surface=understanding"
+                                + "&stream=verla&cid=" + conversationId)
+                        .messageResult(SendMessageResult.builder()
+                                .turnId(turn.getId())
+                                .userMessageId(turn.getUserMessageId())
+                                .planSessionId(turn.getPlanSessionId())
+                                .agentSessionId(agentSession.getId())
+                                .build())
+                        .build();
+            }
             closePlanTurn(turn);
             clearPrimaryIntent(conv);
             return PlanConfirmResult.builder()
@@ -1059,6 +1081,11 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (curTurn == TurnStatus.DISPATCHING) {
+            TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
+            turn.setStatus(next.name());
+        }
         turn.setActiveSessionId(s.getId());
         turn.setAgentSessionId(s.getId());
         turn.setUpdatedAt(LocalDateTime.now());

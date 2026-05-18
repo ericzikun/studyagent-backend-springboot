@@ -2,6 +2,7 @@ package com.studyagent.service.application.verla.cache;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.studyagent.service.config.VerlaContextCacheProperties;
+import com.studyagent.service.domain.verla.state.SessionStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -44,6 +45,16 @@ public class VerlaRedisContextCache {
         });
     }
 
+    public Optional<VerlaCacheJsonCodec.CacheEnvelope<SessionMetaCacheValue>> getSessionMeta(String key) {
+        return get(key, new TypeReference<>() {
+        });
+    }
+
+    public Optional<VerlaCacheJsonCodec.CacheEnvelope<TurnMetaCacheValue>> getTurnMeta(String key) {
+        return get(key, new TypeReference<>() {
+        });
+    }
+
     public void put(String key, Duration ttl, Long version, Object data) {
         ops().set(key, codec.encode(version, data), applyJitter(ttl));
     }
@@ -68,6 +79,18 @@ public class VerlaRedisContextCache {
                                             ConversationMessagesPageCacheValue value,
                                             Duration ttl) {
         put(key, ttl, version, value);
+    }
+
+    public void putSessionMeta(String key,
+                               Long version,
+                               SessionMetaCacheValue value) {
+        put(key, resolveSessionMetaTtl(value), version, value);
+    }
+
+    public void putTurnMeta(String key,
+                            Long version,
+                            TurnMetaCacheValue value) {
+        put(key, properties.getTurnMetaTtl(), version, value);
     }
 
     public void putRaw(String key, String value, Duration ttl) {
@@ -99,5 +122,17 @@ public class VerlaRedisContextCache {
 
     private ValueOperations<String, String> ops() {
         return redisTemplate.opsForValue();
+    }
+
+    private Duration resolveSessionMetaTtl(SessionMetaCacheValue value) {
+        if (value == null || value.session() == null || value.session().getStatus() == null) {
+            return properties.getSessMetaTtl();
+        }
+        try {
+            SessionStatus status = SessionStatus.valueOf(value.session().getStatus());
+            return status.isTerminal() ? properties.getSessionTerminalTtl() : properties.getSessionRunningTtl();
+        } catch (IllegalArgumentException ex) {
+            return properties.getSessMetaTtl();
+        }
     }
 }

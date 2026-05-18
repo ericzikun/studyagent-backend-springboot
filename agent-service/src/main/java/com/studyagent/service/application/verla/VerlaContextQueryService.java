@@ -6,6 +6,8 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.cache.ConversationSummaryCacheValue;
 import com.studyagent.service.application.verla.cache.ConversationMessagesPageCacheValue;
+import com.studyagent.service.application.verla.cache.SessionMetaCacheValue;
+import com.studyagent.service.application.verla.cache.TurnMetaCacheValue;
 import com.studyagent.service.application.verla.cache.VerlaCacheKeyFactory;
 import com.studyagent.service.application.verla.cache.VerlaRedisContextCache;
 import com.studyagent.service.application.verla.dto.VerlaConversationContextView;
@@ -30,6 +32,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
 import java.util.List;
@@ -74,11 +78,11 @@ public class VerlaContextQueryService {
     private final Optional<VerlaRedisContextCache> redisContextCache;
 
     private Cache<String, ConvSummary> convCache;
-    private Cache<String, VerlaTurn> turnCache;
+    private Cache<Long, VerlaTurn> turnCache;
     private Cache<Long, VerlaSession> sessCache;
 
     private final ConcurrentMap<String, CompletableFuture<ConvSummary>> convInFlight = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, CompletableFuture<VerlaTurn>> turnInFlight = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, CompletableFuture<VerlaTurn>> turnInFlight = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, CompletableFuture<VerlaSession>> sessInFlight = new ConcurrentHashMap<>();
 
     private Counter hitL1;
@@ -312,10 +316,23 @@ public class VerlaContextQueryService {
         if (cached != null) {
             return cached;
         }
+        if (cacheProperties.isRedisEnabled()) {
+            Optional<VerlaSession> redisHit = redisContextCache.flatMap(cache ->
+                    cache.getSessionMeta(redisKeyFactory().sessMetaKey(sessionId))
+                            .map(envelope -> envelope.getData().session()));
+            if (redisHit.isPresent()) {
+                sessCache.put(sessionId, redisHit.get());
+                return redisHit.get();
+            }
+        }
         return singleFlight(sessInFlight, sessionId, () -> {
             VerlaSession s = sessionRepository.findById(sessionId);
             if (s != null) {
                 sessCache.put(sessionId, s);
+                redisContextCache.ifPresent(cache -> cache.putSessionMeta(
+                        redisKeyFactory().sessMetaKey(sessionId),
+                        sessionId,
+                        new SessionMetaCacheValue(s)));
             }
             return s;
         });
@@ -328,21 +345,36 @@ public class VerlaContextQueryService {
         }
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onSessionCacheSync(VerlaSessionCacheSyncEvent event) {
+        refreshSessionCache(event.sessionId());
+    }
+
     // ====================================================================
     // turn 层
     // ====================================================================
     private VerlaTurn loadTurn(Long turnId, Long turnVersion) {
-        // turn 表暂未加 version 列，先用 turnId+lastProgressAt 拼 key 做版本近似
-        // PR-12 落地 verla_turns.version 后切换为 turnId:v{ver}
-        String key = turnId + ":hint:" + (turnVersion == null ? "0" : turnVersion);
-        VerlaTurn cached = turnCache.getIfPresent(key);
+        VerlaTurn cached = turnCache.getIfPresent(turnId);
         if (cached != null) {
             return cached;
         }
-        return singleFlight(turnInFlight, key, () -> {
+        if (cacheProperties.isRedisEnabled()) {
+            Optional<VerlaTurn> redisHit = redisContextCache.flatMap(cache ->
+                    cache.getTurnMeta(redisKeyFactory().turnMetaKey(turnId))
+                            .map(envelope -> envelope.getData().turn()));
+            if (redisHit.isPresent()) {
+                turnCache.put(turnId, redisHit.get());
+                return redisHit.get();
+            }
+        }
+        return singleFlight(turnInFlight, turnId, () -> {
             VerlaTurn t = turnRepository.findById(turnId);
             if (t != null) {
-                turnCache.put(key, t);
+                turnCache.put(turnId, t);
+                redisContextCache.ifPresent(cache -> cache.putTurnMeta(
+                        redisKeyFactory().turnMetaKey(turnId),
+                        turnId,
+                        new TurnMetaCacheValue(t)));
             }
             return t;
         });
@@ -352,7 +384,12 @@ public class VerlaContextQueryService {
         if (turnId == null) {
             return;
         }
-        turnCache.asMap().keySet().removeIf(k -> k.startsWith(turnId + ":"));
+        turnCache.invalidate(turnId);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onTurnCacheSync(VerlaTurnCacheSyncEvent event) {
+        refreshTurnCache(event.turnId());
     }
 
     // ====================================================================
@@ -449,6 +486,11 @@ public class VerlaContextQueryService {
         convCache.asMap().keySet().removeIf(k -> k.startsWith(convId + ":"));
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onConversationCacheSync(VerlaConversationCacheSyncEvent event) {
+        refreshConversationCache(event.conversationId());
+    }
+
     // ====================================================================
     // SingleFlight: 同 key 并发合并为 1 次 DB load
     // ====================================================================
@@ -469,6 +511,59 @@ public class VerlaContextQueryService {
         } finally {
             inflight.remove(key, mine);
         }
+    }
+
+    void refreshSessionCache(Long sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+        VerlaSession session = sessionRepository.findById(sessionId);
+        if (session == null) {
+            invalidateSession(sessionId);
+            redisContextCache.ifPresent(cache -> cache.delete(redisKeyFactory().sessMetaKey(sessionId)));
+            return;
+        }
+        sessCache.put(sessionId, session);
+        redisContextCache.ifPresent(cache -> cache.putSessionMeta(
+                redisKeyFactory().sessMetaKey(sessionId),
+                sessionId,
+                new SessionMetaCacheValue(session)));
+    }
+
+    void refreshTurnCache(Long turnId) {
+        if (turnId == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findById(turnId);
+        if (turn == null) {
+            invalidateTurn(turnId);
+            redisContextCache.ifPresent(cache -> cache.delete(redisKeyFactory().turnMetaKey(turnId)));
+            return;
+        }
+        turnCache.put(turnId, turn);
+        redisContextCache.ifPresent(cache -> cache.putTurnMeta(
+                redisKeyFactory().turnMetaKey(turnId),
+                turnId,
+                new TurnMetaCacheValue(turn)));
+    }
+
+    void refreshConversationCache(Long convId) {
+        if (convId == null) {
+            return;
+        }
+        invalidateConv(convId);
+        if (!cacheProperties.isRedisEnabled()) {
+            return;
+        }
+        VerlaConversation conversation = conversationRepository.findById(convId);
+        redisContextCache.ifPresent(cache -> {
+            String latestVersionKey = redisKeyFactory().convLatestVersionKey(convId);
+            if (conversation == null || conversation.getVersion() == null) {
+                cache.delete(latestVersionKey);
+                return;
+            }
+            cache.putConversationLatestVersion(latestVersionKey, conversation.getVersion());
+        });
     }
 
     // ====================================================================

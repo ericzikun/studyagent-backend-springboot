@@ -2,14 +2,18 @@ package com.studyagent.service.application.verla;
 
 import com.studyagent.service.application.verla.cache.ConversationMessagesPageCacheValue;
 import com.studyagent.service.application.verla.cache.ConversationSummaryCacheValue;
+import com.studyagent.service.application.verla.cache.SessionMetaCacheValue;
+import com.studyagent.service.application.verla.cache.TurnMetaCacheValue;
 import com.studyagent.service.application.verla.cache.VerlaCacheJsonCodec;
 import com.studyagent.service.application.verla.cache.VerlaCacheKeyFactory;
 import com.studyagent.service.application.verla.cache.VerlaRedisContextCache;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.config.VerlaContextCacheProperties;
 import com.studyagent.service.domain.verla.VerlaConversation;
+import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.VerlaToolCall;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
@@ -32,6 +36,330 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VerlaContextQueryServiceRedisTest {
+
+    @Test
+    void loadSessionAndLoadTurn_shouldUseRedisBeforeDb() {
+        VerlaConversationRepository conversationRepository = mock(VerlaConversationRepository.class);
+        VerlaTurnRepository turnRepository = mock(VerlaTurnRepository.class);
+        VerlaSessionRepository sessionRepository = mock(VerlaSessionRepository.class);
+        VerlaMessageRepository messageRepository = mock(VerlaMessageRepository.class);
+        VerlaArtifactRepository artifactRepository = mock(VerlaArtifactRepository.class);
+        VerlaToolCallRepository toolCallRepository = mock(VerlaToolCallRepository.class);
+        VerlaRedisContextCache redisContextCache = mock(VerlaRedisContextCache.class);
+
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setRedisEnabled(true);
+        VerlaCacheKeyFactory keyFactory = new VerlaCacheKeyFactory(properties);
+
+        VerlaSession session = VerlaSession.builder()
+                .id(301L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("PLAN")
+                .status("RUNNING")
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaTurn turn = VerlaTurn.builder()
+                .id(201L)
+                .conversationId(101L)
+                .status("RUNNING_AGENT")
+                .resolvedIntent("assignment.run")
+                .activeSessionId(301L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(101L)
+                .userId("user_1")
+                .title("题目讲解")
+                .version(7L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaMessage recentMessage = VerlaMessage.builder()
+                .id(9001L)
+                .conversationId(101L)
+                .role("user")
+                .textContent("帮我解释一下")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(sessionRepository.findById(301L))
+                .thenThrow(new AssertionError("session should come from redis"));
+        when(turnRepository.findById(201L))
+                .thenThrow(new AssertionError("turn should come from redis"));
+        when(sessionRepository.findCompletedSiblings(201L, 301L)).thenReturn(List.of());
+        when(artifactRepository.findByConversation(101L)).thenReturn(List.of());
+        when(toolCallRepository.listBySession(301L, 50)).thenReturn(List.of());
+        when(toolCallRepository.listVisibleByConversation(101L, 50)).thenReturn(List.of());
+
+        when(redisContextCache.getSessionMeta(keyFactory.sessMetaKey(301L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<SessionMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(301L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new SessionMetaCacheValue(session))
+                        .build()));
+        when(redisContextCache.getTurnMeta(keyFactory.turnMetaKey(201L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<TurnMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(201L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new TurnMetaCacheValue(turn))
+                        .build()));
+        when(redisContextCache.getConversationSummary(keyFactory.convSummaryKey(101L, 7L, 20))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<ConversationSummaryCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(7L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new ConversationSummaryCacheValue(conversation, List.of(recentMessage)))
+                        .build()));
+
+        VerlaContextQueryService service = new VerlaContextQueryService(
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                artifactRepository,
+                toolCallRepository,
+                new SimpleMeterRegistry(),
+                properties,
+                Optional.of(redisContextCache));
+        service.init();
+
+        var view = service.getSessionContext(301L, 7L, null);
+
+        assertThat(view.getSession().getId()).isEqualTo(301L);
+        assertThat(view.getTurn().getId()).isEqualTo(201L);
+        assertThat(view.getConversation().getVersion()).isEqualTo(7L);
+        verify(redisContextCache).getSessionMeta(keyFactory.sessMetaKey(301L));
+        verify(redisContextCache).getTurnMeta(keyFactory.turnMetaKey(201L));
+        verify(sessionRepository, never()).findById(301L);
+        verify(turnRepository, never()).findById(201L);
+    }
+
+    @Test
+    void sessionContext_shouldKeepAggregatingSessionTurnConversationSeparately() {
+        VerlaConversationRepository conversationRepository = mock(VerlaConversationRepository.class);
+        VerlaTurnRepository turnRepository = mock(VerlaTurnRepository.class);
+        VerlaSessionRepository sessionRepository = mock(VerlaSessionRepository.class);
+        VerlaMessageRepository messageRepository = mock(VerlaMessageRepository.class);
+        VerlaArtifactRepository artifactRepository = mock(VerlaArtifactRepository.class);
+        VerlaToolCallRepository toolCallRepository = mock(VerlaToolCallRepository.class);
+        VerlaRedisContextCache redisContextCache = mock(VerlaRedisContextCache.class);
+
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setRedisEnabled(true);
+        VerlaCacheKeyFactory keyFactory = new VerlaCacheKeyFactory(properties);
+
+        VerlaSession session = VerlaSession.builder()
+                .id(301L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("PLAN")
+                .status("RUNNING")
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaTurn turn = VerlaTurn.builder()
+                .id(201L)
+                .conversationId(101L)
+                .status("RUNNING_AGENT")
+                .activeSessionId(301L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(101L)
+                .userId("user_1")
+                .title("题目讲解")
+                .version(7L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaMessage recentMessage = VerlaMessage.builder()
+                .id(9001L)
+                .conversationId(101L)
+                .role("assistant")
+                .textContent("这里是解释")
+                .createdAt(LocalDateTime.now())
+                .build();
+        VerlaArtifact artifact = VerlaArtifact.builder()
+                .id(501L)
+                .conversationId(101L)
+                .artifactUid("art_1")
+                .build();
+        VerlaToolCall toolCall = VerlaToolCall.builder()
+                .toolCallId("call_1")
+                .conversationId(101L)
+                .sessionId(301L)
+                .toolName("solve")
+                .summary("summarized")
+                .visibility("USER_VISIBLE")
+                .status("SUCCEEDED")
+                .build();
+
+        when(sessionRepository.findCompletedSiblings(201L, 301L)).thenReturn(List.of());
+        when(artifactRepository.findByConversation(101L)).thenReturn(List.of(artifact));
+        when(toolCallRepository.listBySession(301L, 50)).thenReturn(List.of(toolCall));
+        when(toolCallRepository.listVisibleByConversation(101L, 50)).thenReturn(List.of(toolCall));
+
+        when(redisContextCache.getSessionMeta(keyFactory.sessMetaKey(301L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<SessionMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(301L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new SessionMetaCacheValue(session))
+                        .build()));
+        when(redisContextCache.getTurnMeta(keyFactory.turnMetaKey(201L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<TurnMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(201L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new TurnMetaCacheValue(turn))
+                        .build()));
+        when(redisContextCache.getConversationSummary(keyFactory.convSummaryKey(101L, 7L, 20))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<ConversationSummaryCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(7L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new ConversationSummaryCacheValue(conversation, List.of(recentMessage)))
+                        .build()));
+
+        VerlaContextQueryService service = new VerlaContextQueryService(
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                artifactRepository,
+                toolCallRepository,
+                new SimpleMeterRegistry(),
+                properties,
+                Optional.of(redisContextCache));
+        service.init();
+
+        var view = service.getSessionContext(
+                301L,
+                7L,
+                null,
+                VerlaSessionContextQueryOptions.builder()
+                        .includeArtifacts(true)
+                        .includeTrace(true)
+                        .build());
+
+        assertThat(view.getSession().getId()).isEqualTo(301L);
+        assertThat(view.getTurn().getId()).isEqualTo(201L);
+        assertThat(view.getConversation().getId()).isEqualTo(101L);
+        assertThat(view.getRecentMessages()).extracting(VerlaMessage::getId).containsExactly(9001L);
+        assertThat(view.getArtifacts()).extracting(VerlaArtifact::getId).containsExactly(501L);
+        assertThat(view.getRecentToolCalls()).extracting(VerlaToolCall::getToolCallId).containsExactly("call_1");
+        verify(redisContextCache).getSessionMeta(keyFactory.sessMetaKey(301L));
+        verify(redisContextCache).getTurnMeta(keyFactory.turnMetaKey(201L));
+        verify(redisContextCache).getConversationSummary(keyFactory.convSummaryKey(101L, 7L, 20));
+        verify(artifactRepository).findByConversation(101L);
+        verify(toolCallRepository).listBySession(301L, 50);
+    }
+
+    @Test
+    void sessionContext_shouldStillLoadUpstreamSessionsFromDb() {
+        VerlaConversationRepository conversationRepository = mock(VerlaConversationRepository.class);
+        VerlaTurnRepository turnRepository = mock(VerlaTurnRepository.class);
+        VerlaSessionRepository sessionRepository = mock(VerlaSessionRepository.class);
+        VerlaMessageRepository messageRepository = mock(VerlaMessageRepository.class);
+        VerlaArtifactRepository artifactRepository = mock(VerlaArtifactRepository.class);
+        VerlaToolCallRepository toolCallRepository = mock(VerlaToolCallRepository.class);
+        VerlaRedisContextCache redisContextCache = mock(VerlaRedisContextCache.class);
+
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setRedisEnabled(true);
+        VerlaCacheKeyFactory keyFactory = new VerlaCacheKeyFactory(properties);
+
+        VerlaSession session = VerlaSession.builder()
+                .id(301L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("PLAN")
+                .status("RUNNING")
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaSession upstream = VerlaSession.builder()
+                .id(302L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("AGENT")
+                .status("SUCCEEDED")
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaTurn turn = VerlaTurn.builder()
+                .id(201L)
+                .conversationId(101L)
+                .status("RUNNING_AGENT")
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(101L)
+                .userId("user_1")
+                .title("题目讲解")
+                .version(7L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        VerlaMessage recentMessage = VerlaMessage.builder()
+                .id(9001L)
+                .conversationId(101L)
+                .role("assistant")
+                .textContent("这里是解释")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(sessionRepository.findCompletedSiblings(201L, 301L)).thenReturn(List.of(upstream));
+        when(artifactRepository.findByConversation(101L)).thenReturn(List.of());
+        when(toolCallRepository.listVisibleByConversation(101L, 50)).thenReturn(List.of());
+
+        when(redisContextCache.getSessionMeta(keyFactory.sessMetaKey(301L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<SessionMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(301L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new SessionMetaCacheValue(session))
+                        .build()));
+        when(redisContextCache.getTurnMeta(keyFactory.turnMetaKey(201L))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<TurnMetaCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(201L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new TurnMetaCacheValue(turn))
+                        .build()));
+        when(redisContextCache.getConversationSummary(keyFactory.convSummaryKey(101L, 7L, 20))).thenReturn(Optional.of(
+                VerlaCacheJsonCodec.CacheEnvelope.<ConversationSummaryCacheValue>builder()
+                        .schemaVersion(1)
+                        .version(7L)
+                        .cachedAt(java.time.OffsetDateTime.now())
+                        .data(new ConversationSummaryCacheValue(conversation, List.of(recentMessage)))
+                        .build()));
+
+        VerlaContextQueryService service = new VerlaContextQueryService(
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                artifactRepository,
+                toolCallRepository,
+                new SimpleMeterRegistry(),
+                properties,
+                Optional.of(redisContextCache));
+        service.init();
+
+        var view = service.getSessionContext(301L, 7L, null);
+
+        assertThat(view.getUpstreamSessions()).extracting(VerlaSession::getId).containsExactly(302L);
+        verify(sessionRepository).findCompletedSiblings(201L, 301L);
+        verify(redisContextCache, never()).delete(anyString());
+    }
 
     @Test
     void getSessionContext_shouldUseRedisSummaryWhenConvVersionProvided() {

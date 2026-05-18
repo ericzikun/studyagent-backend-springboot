@@ -6,6 +6,8 @@ import com.studyagent.service.config.VerlaContextCacheProperties;
 import com.studyagent.service.config.VerlaRedisCacheConfig;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.VerlaTurn;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -21,6 +23,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -229,6 +232,112 @@ class VerlaRedisContextCacheTest {
         assertThat(actualEnvelope.getVersion()).isEqualTo(7L);
         assertThat(actualEnvelope.getData().messages()).extracting(VerlaMessage::getId)
                 .containsExactly(9100L);
+    }
+
+    @Test
+    void shouldReadAndWriteSessionMeta() {
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setJitterRatio(0.0d);
+        properties.setSessionRunningTtl(Duration.ofSeconds(10));
+        properties.setSessionTerminalTtl(Duration.ofMinutes(5));
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        VerlaSession session = VerlaSession.builder()
+                .id(301L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("PLAN")
+                .status("RUNNING")
+                .contextRefJson("{\"convVersion\":7}")
+                .createdAt(LocalDateTime.of(2026, 5, 18, 15, 0))
+                .updatedAt(LocalDateTime.of(2026, 5, 18, 15, 1))
+                .build();
+        VerlaSession succeededSession = VerlaSession.builder()
+                .id(302L)
+                .conversationId(101L)
+                .turnId(201L)
+                .kind("PLAN")
+                .status("SUCCEEDED")
+                .createdAt(LocalDateTime.of(2026, 5, 18, 15, 2))
+                .updatedAt(LocalDateTime.of(2026, 5, 18, 15, 3))
+                .build();
+        VerlaCacheKeyFactory keyFactory = new VerlaCacheKeyFactory(properties);
+        String runningKey = keyFactory.sessMetaKey(301L);
+        String terminalKey = keyFactory.sessMetaKey(302L);
+
+        VerlaRedisContextCache writeCache = new VerlaRedisContextCache(
+                redisTemplate,
+                new VerlaCacheJsonCodec(new ObjectMapper()),
+                properties);
+        writeCache.putSessionMeta(runningKey, 301L, new SessionMetaCacheValue(session));
+        writeCache.putSessionMeta(terminalKey, 302L, new SessionMetaCacheValue(succeededSession));
+
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Duration> ttlCaptor = ArgumentCaptor.forClass(Duration.class);
+        verify(valueOperations, times(2)).set(anyString(), jsonCaptor.capture(), ttlCaptor.capture());
+        assertThat(ttlCaptor.getAllValues()).containsExactly(Duration.ofSeconds(10), Duration.ofMinutes(5));
+        when(valueOperations.get(runningKey)).thenReturn(jsonCaptor.getAllValues().get(0));
+
+        VerlaRedisContextCache readCache = new VerlaRedisContextCache(
+                redisTemplate,
+                new VerlaCacheJsonCodec(new ObjectMapper()),
+                properties);
+        VerlaCacheJsonCodec.CacheEnvelope<SessionMetaCacheValue> actualEnvelope = readCache
+                .getSessionMeta(runningKey)
+                .orElseThrow();
+
+        assertThat(actualEnvelope.getVersion()).isEqualTo(301L);
+        assertThat(actualEnvelope.getData().session().getStatus()).isEqualTo("RUNNING");
+        assertThat(actualEnvelope.getData().session().getConversationId()).isEqualTo(101L);
+    }
+
+    @Test
+    void shouldReadAndWriteTurnMeta() {
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setJitterRatio(0.0d);
+        properties.setTurnMetaTtl(Duration.ofSeconds(30));
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        VerlaTurn turn = VerlaTurn.builder()
+                .id(201L)
+                .conversationId(101L)
+                .status("RUNNING_AGENT")
+                .resolvedIntent("assignment.run")
+                .resolvedSlotsJson("{\"course\":\"math\"}")
+                .activeSessionId(301L)
+                .createdAt(LocalDateTime.of(2026, 5, 18, 16, 0))
+                .updatedAt(LocalDateTime.of(2026, 5, 18, 16, 1))
+                .build();
+        VerlaCacheKeyFactory keyFactory = new VerlaCacheKeyFactory(properties);
+        String key = keyFactory.turnMetaKey(201L);
+
+        VerlaRedisContextCache writeCache = new VerlaRedisContextCache(
+                redisTemplate,
+                new VerlaCacheJsonCodec(new ObjectMapper()),
+                properties);
+        writeCache.putTurnMeta(key, 201L, new TurnMetaCacheValue(turn));
+
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOperations).set(eq(key), jsonCaptor.capture(), eq(Duration.ofSeconds(30)));
+        when(valueOperations.get(key)).thenReturn(jsonCaptor.getValue());
+
+        VerlaRedisContextCache readCache = new VerlaRedisContextCache(
+                redisTemplate,
+                new VerlaCacheJsonCodec(new ObjectMapper()),
+                properties);
+        VerlaCacheJsonCodec.CacheEnvelope<TurnMetaCacheValue> actualEnvelope = readCache
+                .getTurnMeta(key)
+                .orElseThrow();
+
+        assertThat(actualEnvelope.getVersion()).isEqualTo(201L);
+        assertThat(actualEnvelope.getData().turn().getResolvedIntent()).isEqualTo("assignment.run");
+        assertThat(actualEnvelope.getData().turn().getActiveSessionId()).isEqualTo(301L);
     }
 
     @Test

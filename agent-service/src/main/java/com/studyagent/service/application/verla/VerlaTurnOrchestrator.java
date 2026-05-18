@@ -30,6 +30,7 @@ import com.studyagent.service.domain.verla.state.SessionStatus;
 import com.studyagent.service.domain.verla.state.TurnEvent;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
+import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -163,8 +164,11 @@ public class VerlaTurnOrchestrator {
         userMsg.setTurnId(turn.getId());
         messageRepository.save(userMsg);
 
-        if (intent != null && !intent.isBlank() && !intent.equals(conv.getPrimaryIntent())) {
-            conv.setPrimaryIntent(intent);
+        if (intent != null && !intent.isBlank()) {
+            if (!intent.equals(conv.getPrimaryIntent())) {
+                conv.setPrimaryIntent(intent);
+            }
+            conv.setIntentLifecycle(IntentLifecycle.COMMITTED.getDbValue());
             conv.setUpdatedAt(LocalDateTime.now());
             conversationRepository.save(conv);
         }
@@ -280,10 +284,12 @@ public class VerlaTurnOrchestrator {
             messageRepository.save(assistant);
         }
 
-        // 3) 在 conversation 上沉淀 primaryIntent + bump version
-        if (conv != null && intent != null && !intent.isBlank()
-                && !intent.equals(conv.getPrimaryIntent())) {
-            conv.setPrimaryIntent(intent);
+        // 3) 在 conversation 上沉淀 primaryIntent + intentLifecycle（待 Dashboard 确认）+ bump version
+        if (conv != null && intent != null && !intent.isBlank()) {
+            if (!intent.equals(conv.getPrimaryIntent())) {
+                conv.setPrimaryIntent(intent);
+            }
+            conv.setIntentLifecycle(IntentLifecycle.AWAITING_USER_CONFIRMATION.getDbValue());
             conv.setUpdatedAt(LocalDateTime.now());
             conversationRepository.save(conv);
         }
@@ -430,6 +436,7 @@ public class VerlaTurnOrchestrator {
         }
 
         recordPlanConfirmationMessage(turn, "confirmed", PLAN_CONFIRM_YES_TEXT);
+        markIntentCommittedOnConversation(conv);
 
         String intent = turn.getResolvedIntent();
         if (isAssignmentIntent(intent)) {
@@ -1304,6 +1311,17 @@ public class VerlaTurnOrchestrator {
             return;
         }
         conv.setPrimaryIntent(null);
+        conv.setIntentLifecycle(IntentLifecycle.NONE.getDbValue());
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationRepository.save(conv);
+        conversationRepository.incrementVersion(conv.getId());
+    }
+
+    private void markIntentCommittedOnConversation(VerlaConversation conv) {
+        if (conv == null) {
+            return;
+        }
+        conv.setIntentLifecycle(IntentLifecycle.COMMITTED.getDbValue());
         conv.setUpdatedAt(LocalDateTime.now());
         conversationRepository.save(conv);
         conversationRepository.incrementVersion(conv.getId());

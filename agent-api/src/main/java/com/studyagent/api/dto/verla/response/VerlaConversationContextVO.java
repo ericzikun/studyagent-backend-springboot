@@ -1,6 +1,8 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.studyagent.service.application.verla.dto.VerlaConversationContextView;
+import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,6 +25,9 @@ public class VerlaConversationContextVO {
     private Long conversationId;
     private String conversationTitle;
     private String primaryIntent;
+    /** true = 意图待用户在 Dashboard 上确认 */
+    @JsonProperty("isDraft")
+    private boolean draft;
     private String workspaceJson;
     private Long convVersion;
 
@@ -51,6 +56,7 @@ public class VerlaConversationContextVO {
                 .conversationId(v.getConversation().getId())
                 .conversationTitle(v.getConversation().getTitle())
                 .primaryIntent(v.getConversation().getPrimaryIntent())
+                .draft(IntentLifecycle.conversationIsDraft(v.getConversation().getIntentLifecycle()))
                 .workspaceJson(v.getConversation().getWorkspaceJson())
                 .convVersion(v.getConversation().getVersion())
                 .latestTurn(LatestTurnVO.from(v.getLatestTurn()))

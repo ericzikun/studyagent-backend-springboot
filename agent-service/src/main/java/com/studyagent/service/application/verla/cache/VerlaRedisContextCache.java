@@ -26,8 +26,48 @@ public class VerlaRedisContextCache {
         return Optional.of(codec.decode(json, typeReference));
     }
 
+    public Optional<Long> getConversationLatestVersion(String key) {
+        String value = ops().get(key);
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(Long.parseLong(value));
+    }
+
+    public Optional<VerlaCacheJsonCodec.CacheEnvelope<ConversationSummaryCacheValue>> getConversationSummary(String key) {
+        return get(key, new TypeReference<>() {
+        });
+    }
+
+    public Optional<VerlaCacheJsonCodec.CacheEnvelope<ConversationMessagesPageCacheValue>> getConversationMessagesPage(String key) {
+        return get(key, new TypeReference<>() {
+        });
+    }
+
     public void put(String key, Duration ttl, Long version, Object data) {
         ops().set(key, codec.encode(version, data), applyJitter(ttl));
+    }
+
+    public void putConversationLatestVersion(String key, Long version) {
+        if (version == null) {
+            delete(key);
+            return;
+        }
+        ops().set(key, String.valueOf(version));
+    }
+
+    public void putConversationSummary(String key,
+                                       Long version,
+                                       ConversationSummaryCacheValue value,
+                                       Duration ttl) {
+        put(key, ttl, version, value);
+    }
+
+    public void putConversationMessagesPage(String key,
+                                            Long version,
+                                            ConversationMessagesPageCacheValue value,
+                                            Duration ttl) {
+        put(key, ttl, version, value);
     }
 
     public void putRaw(String key, String value, Duration ttl) {

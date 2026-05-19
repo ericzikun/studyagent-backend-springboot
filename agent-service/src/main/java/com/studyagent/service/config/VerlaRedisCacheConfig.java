@@ -51,7 +51,7 @@ public class VerlaRedisCacheConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "verla.context-cache", name = "redis-enabled", havingValue = "true")
-    @ConditionalOnBean(StringRedisTemplate.class)
+    @ConditionalOnBean({StringRedisTemplate.class, VerlaContextQueryService.class})
     @ConditionalOnMissingBean
     VerlaRedisCacheInvalidationSubscriber verlaRedisCacheInvalidationSubscriber(ObjectMapper objectMapper,
                                                                                 VerlaContextQueryService queryService) {

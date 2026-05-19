@@ -123,7 +123,8 @@ public class VerlaTurnOrchestrator {
         turn.setUpdatedAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaSession planSession = spawnPlanSession(conv, turn, cmd.getText());
+        VerlaSession planSession = spawnPlanSession(
+                conv, turn, cmd.getText(), cmd.isPlanConfirmRejected());
 
         turn.setPlanSessionId(planSession.getId());
         turn.setActiveSessionId(planSession.getId());
@@ -377,14 +378,17 @@ public class VerlaTurnOrchestrator {
         VerlaTurn turn = turnRepository.findByIdForUpdate(latest.getId());
         String text = somethingElseText == null ? "" : somethingElseText.trim();
 
-        if (!confirmed && !text.isBlank()) {
-            recordPlanConfirmationMessage(turn, "something_else", text);
+        if (!confirmed) {
+            log.info("[Verla] start ");
+
+            String rejectedText = text.isBlank() ? PLAN_CONFIRM_NO_TEXT : text;
+            recordPlanConfirmationMessage(turn, "rejected", rejectedText);
             closePlanTurn(turn);
-            clearPrimaryIntent(conv);
             SendMessageResult nextPlan = onUserMessage(SendMessageCommand.builder()
                     .conversationId(conversationId)
                     .userId(userId)
-                    .text(text)
+                    .text(rejectedText)
+                    .planConfirmRejected(true)
                     .skipPlanIfPossible(false)
                     .build());
             return PlanConfirmResult.builder()
@@ -392,46 +396,6 @@ public class VerlaTurnOrchestrator {
                     .nextStage("planning")
                     .redirectUrl(null)
                     .messageResult(nextPlan)
-                    .build();
-        }
-
-        if (!confirmed) {
-            recordPlanConfirmationMessage(turn, "rejected", PLAN_CONFIRM_NO_TEXT);
-            String intent = turn.getResolvedIntent();
-            if (isAssignmentIntent(intent)) {
-                VerlaSession agentSession = spawnAssignmentDeepUnderstandingSession(
-                        conv,
-                        turn,
-                        intent,
-                        parseSlotsJson(turn.getResolvedSlotsJson()),
-                        false);
-                conversationRepository.incrementVersion(conversationId);
-                return PlanConfirmResult.builder()
-                        .success(true)
-                        .nextStage("deep_understanding")
-                        .redirectUrl("/dashboard/create?type=assignment&surface=understanding"
-                                + "&stream=verla&cid=" + conversationId)
-                        .messageResult(SendMessageResult.builder()
-                                .turnId(turn.getId())
-                                .userMessageId(turn.getUserMessageId())
-                                .planSessionId(turn.getPlanSessionId())
-                                .agentSessionId(agentSession.getId())
-                                .build())
-                        .build();
-            }
-            closePlanTurn(turn);
-            clearPrimaryIntent(conv);
-            return PlanConfirmResult.builder()
-                    .success(true)
-                    .nextStage("dashboard")
-                    .redirectUrl("/dashboard")
-                    .messageResult(SendMessageResult.builder()
-                            .turnId(turn.getId())
-                            .userMessageId(turn.getUserMessageId())
-                            .planSessionId(turn.getPlanSessionId())
-                            .agentSessionId(turn.getAgentSessionId())
-                            .skipPlanReason("plan_rejected")
-                            .build())
                     .build();
         }
 
@@ -985,7 +949,8 @@ public class VerlaTurnOrchestrator {
     /**
      * 创建 plan session 并写 outbox 命令（同事务）
      */
-    private VerlaSession spawnPlanSession(VerlaConversation conv, VerlaTurn turn, String userText) {
+    private VerlaSession spawnPlanSession(
+            VerlaConversation conv, VerlaTurn turn, String userText, boolean planConfirmRejected) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv.getId())
@@ -1008,7 +973,8 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
-        VerlaCommandEnvelope env = buildPlanIntentEnvelope(conv, turn, s, userText);
+        VerlaCommandEnvelope env = buildPlanIntentEnvelope(
+                conv, turn, s, userText, planConfirmRejected);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_PLAN_INTENT.getCode());
         return s;
@@ -1328,10 +1294,14 @@ public class VerlaTurnOrchestrator {
     }
 
     private VerlaCommandEnvelope buildPlanIntentEnvelope(VerlaConversation conv, VerlaTurn turn,
-                                                         VerlaSession session, String userText) {
+                                                         VerlaSession session, String userText,
+                                                         boolean planConfirmRejected) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userText", userText);
         payload.put("primaryIntentHint", conv.getPrimaryIntent());
+        if (planConfirmRejected) {
+            payload.put("planConfirmRejected", true);
+        }
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/conversations/" + conv.getId() + "/context",
                 conv.getVersion()));

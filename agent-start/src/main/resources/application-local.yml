@@ -34,7 +34,7 @@ clerk:
 auth:
   dev-bypass:
     enabled: ${AUTH_DEV_BYPASS:true}
-    default-user: ${AUTH_DEV_DEFAULT_USER:dev-user-001}
+    default-user: ${AUTH_DEV_DEFAULT_USER:user_383iGTQNPatOVrPCUJRt3dS2q7x}
 
 # 本地开发：MockPyCommandConsumer 异步回事件的基础延迟（ms）
 verla:

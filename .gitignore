@@ -51,3 +51,4 @@ test_*.sh
 humanizer_aidetect/
 
 application-local.yml
+agent-start/src/main/resources/application-local.yml

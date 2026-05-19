@@ -18,11 +18,13 @@ import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -195,7 +197,10 @@ class VerlaInternalControllerTest {
         private VerlaConversationContextView conversationView;
 
         StubVerlaContextQueryService() {
-            super(null, null, null, null, null, null, null, new VerlaContextCacheProperties());
+            super(null, null, null, null, null, null,
+                    new SimpleMeterRegistry(),
+                    new VerlaContextCacheProperties(),
+                    Optional.empty());
         }
 
         @Override

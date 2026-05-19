@@ -83,7 +83,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void confirmLatestPlan_when_assignment_rejected_continues_deep_understanding() {
+    void confirmLatestPlan_when_assignment_rejected_triggers_new_plan_intent() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -128,25 +128,31 @@ class VerlaTurnOrchestratorTest {
                 "user_1",
                 99L,
                 false,
-                null);
+                "No, let’s keep chatting.");
 
         assertTrue(result.isSuccess());
-        assertEquals("deep_understanding", result.getNextStage());
-        assertEquals("/dashboard/create?type=assignment&surface=understanding&stream=verla&cid=99",
-                result.getRedirectUrl());
+        assertEquals("planning", result.getNextStage());
+        assertNull(result.getRedirectUrl());
         assertNull(result.getMessageResult().getSkipPlanReason());
-        assertEquals(1001L, result.getMessageResult().getAgentSessionId());
+        assertNull(result.getMessageResult().getAgentSessionId());
+        assertEquals(1001L, result.getMessageResult().getPlanSessionId());
         assertEquals("ASSIGNMENT", conversationRepository.conversation.getPrimaryIntent());
-        assertEquals(TurnStatus.RUNNING_AGENT.name(), turnRepository.saved.getStatus());
-        assertEquals(1, messageRepository.savedMessages.size());
+        assertEquals(TurnStatus.COMPLETED.name(), turnRepository.savedTurns.get(0).getStatus());
+        assertEquals(TurnStatus.PLANNING.name(), turnRepository.saved.getStatus());
+        assertEquals(2, messageRepository.savedMessages.size());
         assertEquals("user", messageRepository.savedMessages.get(0).getRole());
         assertEquals("No, let’s keep chatting.", messageRepository.savedMessages.get(0).getTextContent());
-        assertTrue(conversationRepository.incrementVersionCount >= 1);
+        assertTrue(messageRepository.savedMessages.get(0).getBlocksJson().contains("\"choice\":\"rejected\""));
+        assertEquals("user", messageRepository.savedMessages.get(1).getRole());
+        assertEquals("No, let’s keep chatting.", messageRepository.savedMessages.get(1).getTextContent());
+        assertEquals(0, conversationRepository.incrementVersionCount);
         assertEquals(SessionStatus.DISPATCHING.name(), sessionRepository.saved.getStatus());
         assertNotNull(mqOutboxRepository.saved);
-        assertEquals("cmd.assignment.deep_understanding", mqOutboxRepository.saved.getAction());
-        assertEquals("cmd.assignment.deep_understanding", mqOutboxRepository.saved.getRoutingKey());
-        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"userUnderstood\":false"));
+        assertEquals("cmd.plan.intent", mqOutboxRepository.saved.getAction());
+        assertEquals("cmd.plan.intent", mqOutboxRepository.saved.getRoutingKey());
+        assertTrue(mqOutboxRepository.saved.getPayload().contains("No, let’s keep chatting."));
+        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"planConfirmRejected\":true"));
+        assertFalse(mqOutboxRepository.saved.getPayload().contains("cmd.assignment.deep_understanding"));
     }
 
     private static final class FakeSessionRepository implements VerlaSessionRepository {
@@ -191,10 +197,17 @@ class VerlaTurnOrchestratorTest {
     private static final class FakeTurnRepository implements VerlaTurnRepository {
         VerlaTurn turn;
         VerlaTurn saved;
+        List<VerlaTurn> savedTurns = new ArrayList<>();
+        long nextId = 100L;
 
         @Override
         public VerlaTurn save(VerlaTurn turn) {
+            if (turn.getId() == null) {
+                turn.setId(nextId++);
+            }
             this.saved = turn;
+            this.savedTurns.add(turn);
+            this.turn = turn;
             return turn;
         }
 
@@ -220,11 +233,21 @@ class VerlaTurnOrchestratorTest {
     private static final class FakeMessageRepository implements VerlaMessageRepository {
         VerlaMessage saved;
         List<VerlaMessage> savedMessages = new ArrayList<>();
+        long nextId = 200L;
 
         @Override
         public VerlaMessage save(VerlaMessage message) {
+            if (message.getId() == null) {
+                message.setId(nextId++);
+            }
             this.saved = message;
-            this.savedMessages.add(message);
+            for (int i = 0; i < savedMessages.size(); i++) {
+                if (message.getId().equals(savedMessages.get(i).getId())) {
+                    savedMessages.set(i, message);
+                    return message;
+                }
+            }
+            savedMessages.add(message);
             return message;
         }
 

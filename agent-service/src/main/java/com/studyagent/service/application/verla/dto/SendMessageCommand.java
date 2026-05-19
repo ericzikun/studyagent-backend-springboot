@@ -35,6 +35,10 @@ public class SendMessageCommand {
     @Builder.Default
     private boolean skipPlanIfPossible = true;
 
+    /** 本次消息是否来自 plan 确认卡的 No/reject 选择。 */
+    @Builder.Default
+    private boolean planConfirmRejected = false;
+
     /**
      * 若设为 {@code AI_DETECTION} / {@code AI_HUMANIZER}，则<strong>跳过意图识别 Plan</strong>，
      * 直接进入对应 capability（派发 {@code cmd.detection.run} / {@code cmd.humanizer.run}）。

@@ -41,6 +41,7 @@ config/dingtalk-webhook-config.yml
 docker-compose.override.yml
 
 # Docs & scripts (local only)
+AGENTS.md
 api.md
 humanizer-frontend-guide.md
 studyagentprd.md
@@ -49,3 +50,5 @@ temp_insert.sql
 test_*.sh
 humanizer_aidetect/
 
+application-local.yml
+agent-start/src/main/resources/application-local.yml

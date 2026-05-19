@@ -170,7 +170,8 @@ public class TaskApplicationService {
         String mergedRequirementJson = mergeRequirementJson(
                 existing != null ? existing.getRequirementJson() : null,
                 request.getRequirementsJson(),
-                request.getClarifyingQuestions());
+                request.getClarifyingQuestions(),
+                request.getOutputLanguage());
 
         Task task = Task.builder()
                 .id(existing != null ? existing.getId() : null)
@@ -412,7 +413,8 @@ public class TaskApplicationService {
         String mergedRequirementJson = mergeRequirementJson(
                 existing != null ? existing.getRequirementJson() : null,
                 request.getRequirementsJson(),
-                request.getClarifyingQuestions());
+                request.getClarifyingQuestions(),
+                request.getOutputLanguage());
 
         if (existing == null) {
             int ttlSec = taskSubmitConfig.getSaveDraftIdempotencyTtlSeconds();
@@ -547,6 +549,7 @@ public class TaskApplicationService {
         fp.put("taskDesc", request.getTaskDesc());
         fp.put("taskTitle", request.getTaskTitle());
         fp.put("mergedRequirementJson", mergedRequirementJson != null ? mergedRequirementJson : "");
+        fp.put("outputLanguage", request.getOutputLanguage());
         String payload = gson.toJson(fp);
         return clerkUserId + "#" + sha256Hex(payload);
     }
@@ -594,10 +597,12 @@ public class TaskApplicationService {
                 .isPresent();
     }
 
-    private String mergeRequirementJson(String existingJson, String requirementsJson, String clarifyingQuestions) {
+    private String mergeRequirementJson(String existingJson, String requirementsJson, String clarifyingQuestions,
+            String outputLanguage) {
         boolean hasRequirements = requirementsJson != null && !requirementsJson.trim().isEmpty();
         boolean hasClarifying = clarifyingQuestions != null && !clarifyingQuestions.trim().isEmpty();
-        if (!hasRequirements && !hasClarifying) {
+        boolean hasOutputLang = outputLanguage != null && !outputLanguage.trim().isEmpty();
+        if (!hasRequirements && !hasClarifying && !hasOutputLang) {
             return existingJson;
         }
 
@@ -617,6 +622,9 @@ public class TaskApplicationService {
         }
         if (hasClarifying) {
             merged.put("clarifyingQuestions", clarifyingQuestions); // 原样存储传入的 JSON 字符串，不解析
+        }
+        if (hasOutputLang) {
+            merged.put("outputLanguage", outputLanguage.trim());
         }
 
         return gson.toJson(merged);

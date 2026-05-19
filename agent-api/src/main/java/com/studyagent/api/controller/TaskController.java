@@ -115,6 +115,7 @@ public class TaskController {
                 .objectIds(request.getObjectIds())
                 .clarifyingQuestions(request.getClarifyingQuestions())
                 .requirementsJson(request.getRequirementsJson())
+                .outputLanguage(request.getOutputLanguage())
                 .token(token)
                 .build();
         
@@ -140,7 +141,7 @@ public class TaskController {
 
     @PostMapping("/save-draft")
     public Result<SaveDraftResponse> saveDraft(
-            @RequestBody SaveDraftRequest request,
+            @Valid @RequestBody SaveDraftRequest request,
             @RequestHeader("Authorization") String token) {
         Long internalDraftId = (request.getDraftId() != null && !request.getDraftId().isBlank())
                 ? TaskIdEncoder.decode(request.getDraftId()) : null;
@@ -161,6 +162,7 @@ public class TaskController {
                 .specialInstructions(request.getSpecialInstructions())
                 .clarifyingQuestions(request.getClarifyingQuestions())
                 .requirementsJson(request.getRequirementsJson())
+                .outputLanguage(request.getOutputLanguage())
                 .token(token)
                 .build();
 
@@ -382,7 +384,7 @@ public class TaskController {
     
     @PostMapping("/clarify")
     public Result<ClarifyTaskResponse> clarifyTask(
-            @RequestBody ClarifyTaskRequest request,
+            @Valid @RequestBody ClarifyTaskRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isEmpty()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
@@ -425,6 +427,9 @@ public class TaskController {
             }
             if (request.getSpecialInstructions() != null) {
                 pythonRequest.put("specialInstructions", request.getSpecialInstructions());
+            }
+            if (request.getOutputLanguage() != null) {
+                pythonRequest.put("outputLanguage", request.getOutputLanguage());
             }
             
             log.info("转发请求到 Python 后端: {}", pythonRequest);

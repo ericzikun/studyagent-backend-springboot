@@ -34,6 +34,9 @@ public class VerlaConversationEntity {
     /** 沉淀的主意图（下一轮可跳 plan） */
     private String primaryIntent;
 
+    /** none / awaiting_user_confirmation / committed */
+    private String intentLifecycle;
+
     /** 全局偏好/工具开关 */
     private String workspaceJson;
 

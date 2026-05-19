@@ -43,11 +43,50 @@ class VerlaFrontendPayloadSanitizerTest {
     }
 
     @Test
+    void sanitize_clarifyFormReady_keepsOnlyVisibleRequirementFieldsForFrontend() {
+        Map<String, Object> payload = Map.of(
+                "requirementForm", Map.of(
+                        "task_title", "Literature Review",
+                        "requirement_understanding", "Write a literature review.",
+                        "subject", "Chemistry",
+                        "academic_level", "Undergraduate",
+                        "citationStyle", "APA",
+                        "estimatedLength", "6 pages",
+                        "rubric", "Not specified"),
+                "appendAsk", Map.of("questions", List.of()));
+
+        Map<String, Object> sanitized = VerlaFrontendPayloadSanitizer.sanitize(
+                VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY.name(), payload);
+
+        assertEquals(Map.of(
+                "subject", "Chemistry",
+                "academic_level", "Undergraduate",
+                "citation_style", "APA",
+                "estimated_length", "6 pages"), sanitized.get("requirementForm"));
+        assertEquals(Map.of("questions", List.of()), sanitized.get("appendAsk"));
+        assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("task_title"));
+        assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("rubric"));
+    }
+
+    @Test
     void sanitize_nonDeepUnderstandingEvent_returnsOriginalPayload() {
         Map<String, Object> payload = Map.of("requirementForm", Map.of("rubric", "full"));
 
         Map<String, Object> sanitized = VerlaFrontendPayloadSanitizer.sanitize(
                 VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED.name(), payload);
+
+        assertSame(payload, sanitized);
+    }
+
+    @Test
+    void sanitize_clarifyFormReady_keepsFullFormPayload() {
+        Map<String, Object> payload = Map.of(
+                "requirementForm", Map.of(
+                        "title", "Assignment requirements",
+                        "schema", List.of(Map.of("key", "subject", "label", "Subject"))));
+
+        Map<String, Object> sanitized = VerlaFrontendPayloadSanitizer.sanitize(
+                VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY.name(), payload);
 
         assertSame(payload, sanitized);
     }

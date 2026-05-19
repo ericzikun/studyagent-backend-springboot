@@ -6,6 +6,7 @@ import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.state.ConversationStateMachine;
@@ -39,11 +40,15 @@ public class VerlaConversationService {
         }
         LocalDateTime now = LocalDateTime.now();
         String intent = primaryIntent == null || primaryIntent.isBlank() ? null : primaryIntent.trim();
+        String lifecycle = intent == null
+                ? IntentLifecycle.NONE.getDbValue()
+                : IntentLifecycle.COMMITTED.getDbValue();
         VerlaConversation c = VerlaConversation.builder()
                 .userId(userId)
                 .title(title == null || title.isBlank() ? "新对话" : title)
                 .status(ConversationStatus.ACTIVE.getDbValue())
                 .primaryIntent(intent)
+                .intentLifecycle(lifecycle)
                 .workspaceJson(workspaceJson)
                 .turnCount(0)
                 .version(1L)

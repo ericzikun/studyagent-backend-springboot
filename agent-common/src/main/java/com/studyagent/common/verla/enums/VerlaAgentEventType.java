@@ -28,10 +28,11 @@ public enum VerlaAgentEventType {
     /** Assignment 域 —— 阶段二：需求深入（Py assignment_deep_understanding_service） */
     ASSIGNMENT_DEEP_UNDERSTANDING_STARTED(false),
     ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK(false),
+    ASSIGNMENT_CLARIFY_FORM_READY(false),
     ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED(true),
     ASSIGNMENT_DEEP_UNDERSTANDING_FAILED(true),
 
-    /** Assignment 域 —— 阶段三：需求澄清 / 表单构建（Py assignment_clarify_service） */
+    /** Assignment 域 —— 阶段三：需求澄清 / 表单构建 */
     ASSIGNMENT_CLARIFY_STARTED(false),
     ASSIGNMENT_CLARIFY_STREAM_CHUNK(false),
     ASSIGNMENT_CLARIFY_COMPLETED(true),
@@ -54,6 +55,10 @@ public enum VerlaAgentEventType {
 
     /** Assignment AgentFlow 域（Py assignment_flow_service 新事件体系） */
     ASSIGNMENT_AGENT_FLOW_STARTED(false),
+    /** Assignment workflow canvas 节点快照更新，payload.node 直接透传给前端右栏任务卡片。 */
+    ASSIGNMENT_AGENT_NODE_UPDATED(false),
+    /** Assignment workflow canvas 节点快照更新的兼容命名。 */
+    ASSIGNMENT_WORKFLOW_NODE_UPDATED(false),
     ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED(false),
     ASSIGNMENT_AGENT_FLOW_COMPLETED(true),
     ASSIGNMENT_AGENT_FLOW_FAILED(true),

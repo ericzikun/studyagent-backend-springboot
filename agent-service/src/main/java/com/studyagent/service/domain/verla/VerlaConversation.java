@@ -24,6 +24,8 @@ public class VerlaConversation {
     /** active / archived / deleted（与 SQL 字面量一致） */
     private String status;
     private String primaryIntent;
+    /** none / awaiting_user_confirmation / committed */
+    private String intentLifecycle;
     private String workspaceJson;
     private Integer turnCount;
     private Long lastTurnId;

@@ -30,6 +30,7 @@ import com.studyagent.service.domain.verla.state.SessionStatus;
 import com.studyagent.service.domain.verla.state.TurnEvent;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
+import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -163,8 +164,11 @@ public class VerlaTurnOrchestrator {
         userMsg.setTurnId(turn.getId());
         messageRepository.save(userMsg);
 
-        if (intent != null && !intent.isBlank() && !intent.equals(conv.getPrimaryIntent())) {
-            conv.setPrimaryIntent(intent);
+        if (intent != null && !intent.isBlank()) {
+            if (!intent.equals(conv.getPrimaryIntent())) {
+                conv.setPrimaryIntent(intent);
+            }
+            conv.setIntentLifecycle(IntentLifecycle.COMMITTED.getDbValue());
             conv.setUpdatedAt(LocalDateTime.now());
             conversationRepository.save(conv);
         }
@@ -280,10 +284,12 @@ public class VerlaTurnOrchestrator {
             messageRepository.save(assistant);
         }
 
-        // 3) 在 conversation 上沉淀 primaryIntent + bump version
-        if (conv != null && intent != null && !intent.isBlank()
-                && !intent.equals(conv.getPrimaryIntent())) {
-            conv.setPrimaryIntent(intent);
+        // 3) 在 conversation 上沉淀 primaryIntent + intentLifecycle（待 Dashboard 确认）+ bump version
+        if (conv != null && intent != null && !intent.isBlank()) {
+            if (!intent.equals(conv.getPrimaryIntent())) {
+                conv.setPrimaryIntent(intent);
+            }
+            conv.setIntentLifecycle(IntentLifecycle.AWAITING_USER_CONFIRMATION.getDbValue());
             conv.setUpdatedAt(LocalDateTime.now());
             conversationRepository.save(conv);
         }
@@ -391,6 +397,28 @@ public class VerlaTurnOrchestrator {
 
         if (!confirmed) {
             recordPlanConfirmationMessage(turn, "rejected", PLAN_CONFIRM_NO_TEXT);
+            String intent = turn.getResolvedIntent();
+            if (isAssignmentIntent(intent)) {
+                VerlaSession agentSession = spawnAssignmentDeepUnderstandingSession(
+                        conv,
+                        turn,
+                        intent,
+                        parseSlotsJson(turn.getResolvedSlotsJson()),
+                        false);
+                conversationRepository.incrementVersion(conversationId);
+                return PlanConfirmResult.builder()
+                        .success(true)
+                        .nextStage("deep_understanding")
+                        .redirectUrl("/dashboard/create?type=assignment&surface=understanding"
+                                + "&stream=verla&cid=" + conversationId)
+                        .messageResult(SendMessageResult.builder()
+                                .turnId(turn.getId())
+                                .userMessageId(turn.getUserMessageId())
+                                .planSessionId(turn.getPlanSessionId())
+                                .agentSessionId(agentSession.getId())
+                                .build())
+                        .build();
+            }
             closePlanTurn(turn);
             clearPrimaryIntent(conv);
             return PlanConfirmResult.builder()
@@ -408,6 +436,7 @@ public class VerlaTurnOrchestrator {
         }
 
         recordPlanConfirmationMessage(turn, "confirmed", PLAN_CONFIRM_YES_TEXT);
+        markIntentCommittedOnConversation(conv);
 
         String intent = turn.getResolvedIntent();
         if (isAssignmentIntent(intent)) {
@@ -762,6 +791,47 @@ public class VerlaTurnOrchestrator {
         conversationRepository.incrementVersion(turn.getConversationId());
     }
 
+    /**
+     * Persists the dedicated clarify-form-ready checkpoint.
+     *
+     * This event is intentionally separate from deep-understanding completion:
+     * deep understanding may keep the user in chat, while this checkpoint is the
+     * first moment the frontend should hydrate and render the follow-up form.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentClarifyFormReady(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(result));
+            sessionRepository.save(s);
+        }
+
+        String reply = extractAssistantReply(result);
+        VerlaMessage assistant = VerlaMessage.builder()
+                .conversationId(turn.getConversationId())
+                .turnId(turn.getId())
+                .role("assistant")
+                .sourceSessionId(agentSessionId)
+                .textContent(reply == null ? "" : reply)
+                .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
+                        result, "ASSIGNMENT_CLARIFY_FORM_READY")))
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(assistant);
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentClarifyCompleted(Long agentSessionId, Map<String, Object> result) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
@@ -1018,6 +1088,11 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (curTurn == TurnStatus.DISPATCHING) {
+            TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
+            turn.setStatus(next.name());
+        }
         turn.setActiveSessionId(s.getId());
         turn.setAgentSessionId(s.getId());
         turn.setUpdatedAt(LocalDateTime.now());
@@ -1236,6 +1311,17 @@ public class VerlaTurnOrchestrator {
             return;
         }
         conv.setPrimaryIntent(null);
+        conv.setIntentLifecycle(IntentLifecycle.NONE.getDbValue());
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationRepository.save(conv);
+        conversationRepository.incrementVersion(conv.getId());
+    }
+
+    private void markIntentCommittedOnConversation(VerlaConversation conv) {
+        if (conv == null) {
+            return;
+        }
+        conv.setIntentLifecycle(IntentLifecycle.COMMITTED.getDbValue());
         conv.setUpdatedAt(LocalDateTime.now());
         conversationRepository.save(conv);
         conversationRepository.incrementVersion(conv.getId());

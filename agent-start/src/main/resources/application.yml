@@ -324,6 +324,10 @@ verla:
     negative-ttl: 20s
     jitter-ratio: 0.15
     redis-lock-timeout: 3s
+    redis-lock-retry-delay: 30ms
+    redis-lock-retry-max-attempts: 2
+    redis-circuit-failure-threshold: 3
+    redis-circuit-open-duration: 5s
   sse:
     emitter-timeout-ms: 0
     heartbeat-interval-ms: 15000

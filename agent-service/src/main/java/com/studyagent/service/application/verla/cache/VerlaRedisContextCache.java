@@ -35,6 +35,10 @@ public class VerlaRedisContextCache {
         return Optional.of(Long.parseLong(value));
     }
 
+    public Optional<String> getRaw(String key) {
+        return Optional.ofNullable(ops().get(key));
+    }
+
     public Optional<VerlaCacheJsonCodec.CacheEnvelope<ConversationSummaryCacheValue>> getConversationSummary(String key) {
         return get(key, new TypeReference<>() {
         });
@@ -95,6 +99,10 @@ public class VerlaRedisContextCache {
 
     public void putRaw(String key, String value, Duration ttl) {
         ops().set(key, value, applyJitter(ttl));
+    }
+
+    public void publish(String channel, String payload) {
+        redisTemplate.convertAndSend(channel, payload);
     }
 
     public void delete(String key) {

@@ -25,6 +25,10 @@ public class VerlaContextCacheProperties {
     private Duration blockResponsesTtl = Duration.ofSeconds(120);
     private Duration negativeTtl = Duration.ofSeconds(20);
     private Duration redisLockTimeout = Duration.ofSeconds(3);
+    private Duration redisLockRetryDelay = Duration.ofMillis(30);
+    private int redisLockRetryMaxAttempts = 2;
+    private int redisCircuitFailureThreshold = 3;
+    private Duration redisCircuitOpenDuration = Duration.ofSeconds(5);
     private double jitterRatio = 0.15d;
 
     private int recentMessageLimit = 20;

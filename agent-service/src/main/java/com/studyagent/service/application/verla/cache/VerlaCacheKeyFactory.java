@@ -38,6 +38,22 @@ public class VerlaCacheKeyFactory {
         return basePrefix() + ":lock:conv:{" + conversationId + "}:summary:v" + convVersion + ":ml:" + messageLimit;
     }
 
+    public String convNegativeKey(Long conversationId) {
+        return basePrefix() + ":neg:conv:{" + conversationId + "}";
+    }
+
+    public String turnNegativeKey(Long turnId) {
+        return basePrefix() + ":neg:turn:{" + turnId + "}";
+    }
+
+    public String sessNegativeKey(Long sessionId) {
+        return basePrefix() + ":neg:sess:{" + sessionId + "}";
+    }
+
+    public String invalidationChannel() {
+        return basePrefix() + ":cache:invalidate";
+    }
+
     private String basePrefix() {
         return properties.getKeyPrefix();
     }

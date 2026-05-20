@@ -6,6 +6,7 @@ import com.studyagent.api.dto.verla.request.CreateConversationRequest;
 import com.studyagent.api.dto.verla.request.PatchConversationRequest;
 import com.studyagent.api.dto.verla.request.PlanConfirmRequest;
 import com.studyagent.api.dto.verla.request.SendMessageRequest;
+import com.studyagent.api.dto.verla.response.AssignmentRuntimeSnapshotVO;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.PlanConfirmResponseVO;
 import com.studyagent.api.dto.verla.response.SendMessageResponseVO;
@@ -15,6 +16,7 @@ import com.studyagent.api.dto.verla.response.VerlaMessageVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
+import com.studyagent.service.application.verla.AssignmentRuntimeSnapshotService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
@@ -60,6 +62,7 @@ public class VerlaConversationController {
 
     private final VerlaConversationService conversationService;
     private final VerlaConversationDashboardStatusService dashboardStatusService;
+    private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final ObjectMapper objectMapper;
 
@@ -244,6 +247,20 @@ public class VerlaConversationController {
         ensureLogin(clerkUserId);
         SendMessageResult result = turnOrchestrator.startAssignmentRunFromFinalClarify(clerkUserId, cid);
         return Result.success(SendMessageResponseVO.from(result));
+    }
+
+    // ========================================================
+    // 6.5) GET /v1/verla/conversations/{cid}/assignment/runtime-snapshot
+    //      —— Assignment refresh/reopen recovery snapshot
+    // ========================================================
+    @GetMapping("/{cid}/assignment/runtime-snapshot")
+    public Result<AssignmentRuntimeSnapshotVO> getAssignmentRuntimeSnapshot(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        conversationService.getOwned(clerkUserId, cid);
+        return Result.success(AssignmentRuntimeSnapshotVO.from(
+                assignmentRuntimeSnapshotService.getSnapshot(cid)));
     }
 
     // ========================================================

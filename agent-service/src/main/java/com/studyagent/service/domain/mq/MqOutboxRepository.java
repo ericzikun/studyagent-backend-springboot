@@ -35,9 +35,38 @@ public interface MqOutboxRepository {
     List<MqOutbox> findPendingMessages(int limit, LocalDateTime currentTime);
 
     /**
+     * 原子 claim 一批待发送消息。多实例同时执行时，同一行只能被一个 worker claim。
+     * <p>
+     * 可 claim 范围：
+     * <ul>
+     *   <li>UNSENT 且到达 nextRetryAt</li>
+     *   <li>SENDING 且 leaseUntil 已过期</li>
+     * </ul>
+     */
+    List<MqOutbox> claimPendingMessages(
+            int limit,
+            String workerId,
+            LocalDateTime currentTime,
+            LocalDateTime leaseUntil);
+
+    /**
+     * 原子 claim 指定消息，供事务提交后的即时投递路径使用。
+     */
+    MqOutbox claimMessage(
+            Long id,
+            String workerId,
+            LocalDateTime currentTime,
+            LocalDateTime leaseUntil);
+
+    /**
      * 标记消息已成功发送
      */
     void markAsSent(Long id);
+
+    /**
+     * 仅当前 claim worker 可以标记发送成功。
+     */
+    void markAsSent(Long id, String workerId);
 
     /**
      * 更新重试状态并设置下次重试时间
@@ -49,10 +78,20 @@ public interface MqOutboxRepository {
     void markForRetry(Long id, String errorMessage, LocalDateTime nextRetryAt);
 
     /**
+     * 仅当前 claim worker 可以释放为待重试。
+     */
+    void markForRetry(Long id, String workerId, String errorMessage, LocalDateTime nextRetryAt);
+
+    /**
      * 标记消息彻底发送失败（重试次数耗尽）
      * 
      * @param id           消息ID
      * @param errorMessage 错误信息
      */
     void markAsFailed(Long id, String errorMessage);
+
+    /**
+     * 仅当前 claim worker 可以标记最终失败。
+     */
+    void markAsFailed(Long id, String workerId, String errorMessage);
 }

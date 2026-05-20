@@ -54,10 +54,82 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
     }
 
     @Override
+    public List<MqOutbox> claimPendingMessages(
+            int limit,
+            String workerId,
+            LocalDateTime currentTime,
+            LocalDateTime leaseUntil) {
+        List<Long> candidateIds = this.list(claimableQuery(currentTime)
+                        .orderByAsc(MqOutboxEntity::getCreatedAt)
+                        .last("LIMIT " + limit))
+                .stream()
+                .map(MqOutboxEntity::getId)
+                .collect(Collectors.toList());
+
+        return candidateIds.stream()
+                .map(id -> claimMessage(id, workerId, currentTime, leaseUntil))
+                .filter(message -> message != null)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public MqOutbox claimMessage(
+            Long id,
+            String workerId,
+            LocalDateTime currentTime,
+            LocalDateTime leaseUntil) {
+        boolean claimed = this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .and(wrapper -> wrapper
+                        .and(w -> w.eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                                .and(retry -> retry.isNull(MqOutboxEntity::getNextRetryAt)
+                                        .or().le(MqOutboxEntity::getNextRetryAt, currentTime)))
+                        .or(w -> w.eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                                .isNotNull(MqOutboxEntity::getLeaseUntil)
+                                .le(MqOutboxEntity::getLeaseUntil, currentTime)))
+                .apply("retry_count < max_retries")
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                .set(MqOutboxEntity::getWorkerId, workerId)
+                .set(MqOutboxEntity::getLeaseUntil, leaseUntil)
+                .set(MqOutboxEntity::getLastClaimedAt, currentTime)
+                .set(MqOutboxEntity::getErrorMessage, null));
+        if (!claimed) {
+            return null;
+        }
+
+        MqOutboxEntity entity = this.getById(id);
+        return entity != null ? toDomain(entity) : null;
+    }
+
+    private LambdaQueryWrapper<MqOutboxEntity> claimableQuery(LocalDateTime currentTime) {
+        return new LambdaQueryWrapper<MqOutboxEntity>()
+                .and(wrapper -> wrapper
+                        .and(w -> w.eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                                .and(retry -> retry.isNull(MqOutboxEntity::getNextRetryAt)
+                                        .or().le(MqOutboxEntity::getNextRetryAt, currentTime)))
+                        .or(w -> w.eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                                .isNotNull(MqOutboxEntity::getLeaseUntil)
+                                .le(MqOutboxEntity::getLeaseUntil, currentTime)))
+                .apply("retry_count < max_retries");
+    }
+
+    @Override
     public void markAsSent(Long id) {
         this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
                 .eq(MqOutboxEntity::getId, id)
                 .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENT));
+    }
+
+    @Override
+    public void markAsSent(Long id, String workerId) {
+        this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                .eq(MqOutboxEntity::getWorkerId, workerId)
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENT)
+                .set(MqOutboxEntity::getLeaseUntil, null)
+                .set(MqOutboxEntity::getNextRetryAt, null)
+                .set(MqOutboxEntity::getErrorMessage, null));
     }
 
     @Override
@@ -73,6 +145,20 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
     }
 
     @Override
+    public void markForRetry(Long id, String workerId, String errorMessage, LocalDateTime nextRetryAt) {
+        this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                .eq(MqOutboxEntity::getWorkerId, workerId)
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                .setSql("retry_count = retry_count + 1")
+                .set(MqOutboxEntity::getWorkerId, null)
+                .set(MqOutboxEntity::getLeaseUntil, null)
+                .set(MqOutboxEntity::getErrorMessage, truncateError(errorMessage))
+                .set(MqOutboxEntity::getNextRetryAt, nextRetryAt));
+    }
+
+    @Override
     public void markAsFailed(Long id, String errorMessage) {
         this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
                 .eq(MqOutboxEntity::getId, id)
@@ -81,6 +167,23 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
                 .set(MqOutboxEntity::getErrorMessage,
                         errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
                                 : errorMessage));
+    }
+
+    @Override
+    public void markAsFailed(Long id, String workerId, String errorMessage) {
+        this.update(new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                .eq(MqOutboxEntity::getWorkerId, workerId)
+                .setSql("retry_count = retry_count + 1")
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_FAILED)
+                .set(MqOutboxEntity::getLeaseUntil, null)
+                .set(MqOutboxEntity::getErrorMessage, truncateError(errorMessage)));
+    }
+
+    private String truncateError(String errorMessage) {
+        return errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
+                : errorMessage;
     }
 
     // --- Converter Methods ---
@@ -100,6 +203,9 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
                 .maxRetries(entity.getMaxRetries())
                 .nextRetryAt(entity.getNextRetryAt())
                 .errorMessage(entity.getErrorMessage())
+                .workerId(entity.getWorkerId())
+                .leaseUntil(entity.getLeaseUntil())
+                .lastClaimedAt(entity.getLastClaimedAt())
                 .correlationId(entity.getCorrelationId())
                 .orderingKey(entity.getOrderingKey())
                 .schemaVersion(entity.getSchemaVersion())
@@ -128,6 +234,9 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
                 .setMaxRetries(domain.getMaxRetries())
                 .setNextRetryAt(domain.getNextRetryAt())
                 .setErrorMessage(domain.getErrorMessage())
+                .setWorkerId(domain.getWorkerId())
+                .setLeaseUntil(domain.getLeaseUntil())
+                .setLastClaimedAt(domain.getLastClaimedAt())
                 .setCorrelationId(domain.getCorrelationId())
                 .setOrderingKey(domain.getOrderingKey())
                 .setSchemaVersion(domain.getSchemaVersion())

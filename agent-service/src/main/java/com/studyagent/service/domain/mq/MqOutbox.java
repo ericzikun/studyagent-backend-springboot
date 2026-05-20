@@ -15,6 +15,7 @@ public class MqOutbox {
     public static final int STATUS_UNSENT = 0;
     public static final int STATUS_SENT = 1;
     public static final int STATUS_FAILED = 2;
+    public static final int STATUS_SENDING = 3;
 
     private Long id;
 
@@ -39,7 +40,7 @@ public class MqOutbox {
     private String payload;
 
     /**
-     * 状态：0=UNSENT, 1=SENT, 2=FAILED
+     * 状态：0=UNSENT, 1=SENT, 2=FAILED, 3=SENDING
      */
     private Integer status;
 
@@ -50,6 +51,21 @@ public class MqOutbox {
     private LocalDateTime nextRetryAt;
 
     private String errorMessage;
+
+    /**
+     * 当前 claim / sending worker，用于多实例下避免重复发送和状态覆盖。
+     */
+    private String workerId;
+
+    /**
+     * 当前 claim lease 截止时间。超过该时间的 SENDING 可被重新 claim。
+     */
+    private LocalDateTime leaseUntil;
+
+    /**
+     * 最近一次 claim 时间。
+     */
+    private LocalDateTime lastClaimedAt;
 
     // ========== Verla 扩展字段（迁移 027_V2） ==========
 

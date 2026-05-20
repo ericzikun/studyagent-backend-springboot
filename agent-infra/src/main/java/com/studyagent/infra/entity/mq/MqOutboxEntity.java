@@ -42,7 +42,7 @@ public class MqOutboxEntity {
     private String payload;
 
     /**
-     * 状态：0=UNSENT, 1=SENT, 2=FAILED
+     * 状态：0=UNSENT, 1=SENT, 2=FAILED, 3=SENDING
      */
     private Integer status;
 
@@ -65,6 +65,21 @@ public class MqOutboxEntity {
      * 错误信息
      */
     private String errorMessage;
+
+    /**
+     * 当前 claim / sending worker
+     */
+    private String workerId;
+
+    /**
+     * 当前 claim lease 截止时间
+     */
+    private LocalDateTime leaseUntil;
+
+    /**
+     * 最近一次 claim 时间
+     */
+    private LocalDateTime lastClaimedAt;
 
     // ========== Verla 扩展字段（迁移 027_V2，老链路全部为 NULL） ==========
 

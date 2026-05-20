@@ -4,9 +4,16 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.verla.cache.ConversationSummaryCacheValue;
+import com.studyagent.service.application.verla.cache.ConversationMessagesPageCacheValue;
+import com.studyagent.service.application.verla.cache.SessionMetaCacheValue;
+import com.studyagent.service.application.verla.cache.TurnMetaCacheValue;
+import com.studyagent.service.application.verla.cache.VerlaCacheKeyFactory;
+import com.studyagent.service.application.verla.cache.VerlaRedisContextCache;
 import com.studyagent.service.application.verla.dto.VerlaConversationContextView;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
+import com.studyagent.service.config.VerlaContextCacheProperties;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -21,18 +28,24 @@ import com.studyagent.service.domain.verla.repo.VerlaToolCallRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 /**
  * Verla 内部接口的核心查询服务（PR-10）
@@ -65,65 +78,67 @@ public class VerlaContextQueryService {
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaToolCallRepository toolCallRepository;
     private final MeterRegistry meterRegistry;
-
-    @Value("${verla.context-cache.conv-summary-ttl-seconds:60}")
-    private long convSummaryTtlSeconds;
-
-    @Value("${verla.context-cache.turn-meta-ttl-seconds:30}")
-    private long turnMetaTtlSeconds;
-
-    @Value("${verla.context-cache.sess-meta-ttl-seconds:10}")
-    private long sessMetaTtlSeconds;
-
-    @Value("${verla.context-cache.recent-message-limit:20}")
-    private int recentMessageLimit;
-
-    @Value("${verla.context-cache.trace-limit-default:50}")
-    private int traceLimitDefault;
-
-    @Value("${verla.context-cache.artifact-limit-default:80}")
-    private int artifactLimitDefault;
-
-    @Value("${verla.context-cache.max-entries-per-layer:5000}")
-    private long maxEntriesPerLayer;
+    private final VerlaContextCacheProperties cacheProperties;
+    private final Optional<VerlaRedisContextCache> redisContextCache;
 
     private Cache<String, ConvSummary> convCache;
-    private Cache<String, VerlaTurn> turnCache;
+    private Cache<Long, VerlaTurn> turnCache;
     private Cache<Long, VerlaSession> sessCache;
 
-    private final ConcurrentMap<String, CompletableFuture<ConvSummary>> convInFlight = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, CompletableFuture<VerlaTurn>> turnInFlight = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<LoadedConvSummary>> convInFlight = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, CompletableFuture<VerlaTurn>> turnInFlight = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, CompletableFuture<VerlaSession>> sessInFlight = new ConcurrentHashMap<>();
 
-    private Counter hitNone;
-    private Counter hitSess;
-    private Counter hitTurn;
-    private Counter hitConv;
+    private Counter hitL1;
+    private Counter hitRedis;
+    private Counter hitDb;
+    private Counter cacheError;
+    private Counter requestTotal;
+    private Counter dbFallback;
+    private Counter redisReadError;
+    private Counter redisWriteError;
+    private Counter lockContention;
+    private Counter redisCircuitSkip;
+    private Timer lockWaitTimer;
+    private final AtomicInteger consecutiveRedisFailures = new AtomicInteger();
+    private volatile long redisCircuitOpenUntilMillis;
 
     @PostConstruct
     void init() {
+        Duration convSummaryTtl = cacheProperties.getConvSummaryTtl();
+        Duration turnMetaTtl = cacheProperties.getTurnMetaTtl();
+        Duration sessMetaTtl = cacheProperties.getSessMetaTtl();
+        long maxEntriesPerLayer = cacheProperties.getMaxEntriesPerLayer();
         convCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(convSummaryTtlSeconds))
+                .expireAfterWrite(convSummaryTtl)
                 .recordStats()
                 .build();
         turnCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(turnMetaTtlSeconds))
+                .expireAfterWrite(turnMetaTtl)
                 .recordStats()
                 .build();
         sessCache = Caffeine.newBuilder()
                 .maximumSize(maxEntriesPerLayer)
-                .expireAfterWrite(Duration.ofSeconds(sessMetaTtlSeconds))
+                .expireAfterWrite(sessMetaTtl)
                 .recordStats()
                 .build();
 
-        hitNone = meterRegistry.counter("verla.context.cache.hit.total", "layer", "none");
-        hitSess = meterRegistry.counter("verla.context.cache.hit.total", "layer", "sess");
-        hitTurn = meterRegistry.counter("verla.context.cache.hit.total", "layer", "turn");
-        hitConv = meterRegistry.counter("verla.context.cache.hit.total", "layer", "conv");
+        hitL1 = meterRegistry.counter("verla.context.cache.hit.total", "layer", "l1");
+        hitRedis = meterRegistry.counter("verla.context.cache.hit.total", "layer", "redis");
+        hitDb = meterRegistry.counter("verla.context.cache.hit.total", "layer", "db");
+        cacheError = meterRegistry.counter("verla.cache.error.total");
+        requestTotal = meterRegistry.counter("verla.context.cache.request.total");
+        dbFallback = meterRegistry.counter("verla.context.cache.db.fallback.total");
+        redisReadError = meterRegistry.counter("verla.cache.redis.read.error.total");
+        redisWriteError = meterRegistry.counter("verla.cache.redis.write.error.total");
+        lockContention = meterRegistry.counter("verla.cache.lock.contention.total");
+        redisCircuitSkip = meterRegistry.counter("verla.cache.redis.circuit.skip.total");
+        lockWaitTimer = meterRegistry.timer("verla.cache.lock.wait");
         log.info("[Verla/ctx] caffeine init: convTTL={}s, turnTTL={}s, sessTTL={}s, maxEntries={}",
-                convSummaryTtlSeconds, turnMetaTtlSeconds, sessMetaTtlSeconds, maxEntriesPerLayer);
+                convSummaryTtl.toSeconds(), turnMetaTtl.toSeconds(),
+                sessMetaTtl.toSeconds(), maxEntriesPerLayer);
     }
 
     /**
@@ -142,6 +157,7 @@ public class VerlaContextQueryService {
      */
     public VerlaSessionContextView getSessionContext(Long sessionId, Long convVersion, Long turnVersion,
                                                      VerlaSessionContextQueryOptions options) {
+        requestTotal.increment();
         if (sessionId == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId");
         }
@@ -158,10 +174,11 @@ public class VerlaContextQueryService {
         }
 
         int msgLimit = clampMessageLimit(opts.getMessageLimit());
-        ConvSummary convSummary = loadConvSummary(session.getConversationId(), convVersion, msgLimit);
-        if (convSummary == null) {
+        LoadedConvSummary convLoad = loadConvSummary(session.getConversationId(), convVersion, msgLimit);
+        if (convLoad == null || convLoad.summary() == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conv=" + session.getConversationId());
         }
+        ConvSummary convSummary = convLoad.summary();
 
         List<VerlaSession> siblings = sessionRepository.findCompletedSiblings(turn.getId(), session.getId());
 
@@ -170,8 +187,8 @@ public class VerlaContextQueryService {
         List<VerlaArtifact> artifacts = List.of();
         if (opts.isIncludeArtifacts()) {
             artifacts = artifactRepository.findByConversation(session.getConversationId());
-            if (artifacts.size() > artifactLimitDefault) {
-                artifacts = artifacts.subList(0, artifactLimitDefault);
+            if (artifacts.size() > cacheProperties.getArtifactLimitDefault()) {
+                artifacts = artifacts.subList(0, cacheProperties.getArtifactLimitDefault());
             }
         }
 
@@ -188,7 +205,8 @@ public class VerlaContextQueryService {
                     .toList();
         }
 
-        String hitLayer = computeHitLayer(session, turn, convSummary, convVersion, turnVersion);
+        String hitLayer = recordHitLayer(convLoad.layer());
+        logCacheOutcome("sessionContext", sessionId, convSummary.conversation.getVersion(), hitLayer);
         return VerlaSessionContextView.builder()
                 .conversation(convSummary.conversation)
                 .turn(turn)
@@ -213,35 +231,36 @@ public class VerlaContextQueryService {
                                                              Long convVersion,
                                                              Long beforeMessageId,
                                                              VerlaSessionContextQueryOptions options) {
+        requestTotal.increment();
         if (conversationId == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId");
         }
         VerlaSessionContextQueryOptions opts =
                 options == null ? VerlaSessionContextQueryOptions.defaults() : options;
 
-        VerlaConversation convHead = conversationRepository.findById(conversationId);
-        if (convHead == null) {
-            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conversation=" + conversationId);
-        }
-
         int msgLimit = clampConversationMessageLimit(opts.getMessageLimit());
         List<VerlaMessage> messages;
-        VerlaConversation convForResponse = convHead;
+        VerlaConversation convForResponse;
         String hitLayer;
 
         if (beforeMessageId == null) {
-            ConvSummary cs = loadConvSummary(conversationId, convVersion, msgLimit);
-            if (cs == null) {
+            LoadedConvSummary convLoad = loadConvSummary(conversationId, convVersion, msgLimit);
+            if (convLoad == null || convLoad.summary() == null) {
                 throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conversation=" + conversationId);
             }
+            ConvSummary cs = convLoad.summary();
             convForResponse = cs.conversation;
             messages = cs.recentMessages;
-            boolean verMatch = convVersion != null && cs.conversation.getVersion() != null
-                    && convVersion.equals(cs.conversation.getVersion());
-            hitLayer = verMatch ? "conv" : "none";
+            hitLayer = recordHitLayer(convLoad.layer());
         } else {
-            messages = messageRepository.findByCursor(conversationId, beforeMessageId, msgLimit);
-            hitLayer = "none";
+            VerlaConversation convHead = loadConversationEntity(conversationId);
+            if (convHead == null) {
+                throw new BusinessException(ApiCode.TASK_NOT_FOUND, "conversation=" + conversationId);
+            }
+            convForResponse = convHead;
+            LoadedMessagesPage pageLoad = loadConversationMessagesPage(conversationId, convVersion, beforeMessageId, msgLimit);
+            messages = pageLoad.messages();
+            hitLayer = recordHitLayer(pageLoad.layer());
         }
 
         Long nextCursor = null;
@@ -257,8 +276,8 @@ public class VerlaContextQueryService {
         List<VerlaArtifact> artifacts = List.of();
         if (opts.isIncludeArtifacts()) {
             artifacts = artifactRepository.findByConversation(conversationId);
-            if (artifacts.size() > artifactLimitDefault) {
-                artifacts = artifacts.subList(0, artifactLimitDefault);
+            if (artifacts.size() > cacheProperties.getArtifactLimitDefault()) {
+                artifacts = artifacts.subList(0, cacheProperties.getArtifactLimitDefault());
             }
         }
 
@@ -274,6 +293,7 @@ public class VerlaContextQueryService {
                     .toList();
         }
 
+        logCacheOutcome("conversationContext", conversationId, convForResponse.getVersion(), hitLayer);
         return VerlaConversationContextView.builder()
                 .conversation(convForResponse)
                 .latestTurn(latestTurn)
@@ -289,17 +309,17 @@ public class VerlaContextQueryService {
 
     /** Conversation context：单页消息上限允许更大（与 {@link VerlaMessageRepositoryImpl#findByCursor} 上限对齐）。 */
     private int clampConversationMessageLimit(Integer req) {
-        int lim = req == null ? recentMessageLimit : req;
+        int lim = req == null ? cacheProperties.getRecentMessageLimit() : req;
         return Math.max(1, Math.min(lim, 200));
     }
 
     private int clampMessageLimit(Integer req) {
-        int lim = req == null ? recentMessageLimit : req;
+        int lim = req == null ? cacheProperties.getRecentMessageLimit() : req;
         return Math.max(1, Math.min(lim, 100));
     }
 
     private int clampTraceLimit(Integer req) {
-        int lim = req == null ? traceLimitDefault : req;
+        int lim = req == null ? cacheProperties.getTraceLimitDefault() : req;
         return Math.max(1, Math.min(lim, 200));
     }
 
@@ -322,11 +342,33 @@ public class VerlaContextQueryService {
         if (cached != null) {
             return cached;
         }
+        if (cacheProperties.isRedisEnabled() && isNegativeCached(redisKeyFactory().sessNegativeKey(sessionId))) {
+            return null;
+        }
+        if (cacheProperties.isRedisEnabled()) {
+            String redisKey = redisKeyFactory().sessMetaKey(sessionId);
+            Optional<VerlaSession> redisHit = safeRedisRead("getSessionMeta", redisKey, () ->
+                    redisContextCache.flatMap(cache ->
+                            cache.getSessionMeta(redisKey)
+                                    .map(envelope -> envelope.getData().session())));
+            if (redisHit.isPresent()) {
+                sessCache.put(sessionId, redisHit.get());
+                return redisHit.get();
+            }
+        }
         return singleFlight(sessInFlight, sessionId, () -> {
             VerlaSession s = sessionRepository.findById(sessionId);
-            if (s != null) {
-                sessCache.put(sessionId, s);
+            String negativeKey = redisKeyFactory().sessNegativeKey(sessionId);
+            if (s == null) {
+                writeNegativeCache(negativeKey);
+                return null;
             }
+            clearNegativeCache(negativeKey);
+            sessCache.put(sessionId, s);
+            String redisKey = redisKeyFactory().sessMetaKey(sessionId);
+            safeRedisWrite("putSessionMeta", redisKey, () ->
+                    redisContextCache.ifPresent(cache ->
+                            cache.putSessionMeta(redisKey, sessionId, new SessionMetaCacheValue(s))));
             return s;
         });
     }
@@ -338,22 +380,46 @@ public class VerlaContextQueryService {
         }
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onSessionCacheSync(VerlaSessionCacheSyncEvent event) {
+        refreshSessionCache(event.sessionId());
+    }
+
     // ====================================================================
     // turn 层
     // ====================================================================
     private VerlaTurn loadTurn(Long turnId, Long turnVersion) {
-        // turn 表暂未加 version 列，先用 turnId+lastProgressAt 拼 key 做版本近似
-        // PR-12 落地 verla_turns.version 后切换为 turnId:v{ver}
-        String key = turnId + ":hint:" + (turnVersion == null ? "0" : turnVersion);
-        VerlaTurn cached = turnCache.getIfPresent(key);
+        VerlaTurn cached = turnCache.getIfPresent(turnId);
         if (cached != null) {
             return cached;
         }
-        return singleFlight(turnInFlight, key, () -> {
-            VerlaTurn t = turnRepository.findById(turnId);
-            if (t != null) {
-                turnCache.put(key, t);
+        if (cacheProperties.isRedisEnabled() && isNegativeCached(redisKeyFactory().turnNegativeKey(turnId))) {
+            return null;
+        }
+        if (cacheProperties.isRedisEnabled()) {
+            String redisKey = redisKeyFactory().turnMetaKey(turnId);
+            Optional<VerlaTurn> redisHit = safeRedisRead("getTurnMeta", redisKey, () ->
+                    redisContextCache.flatMap(cache ->
+                            cache.getTurnMeta(redisKey)
+                                    .map(envelope -> envelope.getData().turn())));
+            if (redisHit.isPresent()) {
+                turnCache.put(turnId, redisHit.get());
+                return redisHit.get();
             }
+        }
+        return singleFlight(turnInFlight, turnId, () -> {
+            VerlaTurn t = turnRepository.findById(turnId);
+            String negativeKey = redisKeyFactory().turnNegativeKey(turnId);
+            if (t == null) {
+                writeNegativeCache(negativeKey);
+                return null;
+            }
+            clearNegativeCache(negativeKey);
+            turnCache.put(turnId, t);
+            String redisKey = redisKeyFactory().turnMetaKey(turnId);
+            safeRedisWrite("putTurnMeta", redisKey, () ->
+                    redisContextCache.ifPresent(cache ->
+                            cache.putTurnMeta(redisKey, turnId, new TurnMetaCacheValue(t))));
             return t;
         });
     }
@@ -362,37 +428,70 @@ public class VerlaContextQueryService {
         if (turnId == null) {
             return;
         }
-        turnCache.asMap().keySet().removeIf(k -> k.startsWith(turnId + ":"));
+        turnCache.invalidate(turnId);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onTurnCacheSync(VerlaTurnCacheSyncEvent event) {
+        refreshTurnCache(event.turnId());
     }
 
     // ====================================================================
     // conv 层（含最近消息聚合）
     // ====================================================================
-    private ConvSummary loadConvSummary(Long convId, Long convVersion, int messageLimit) {
-        VerlaConversation peek = conversationRepository.findById(convId);
+    private LoadedConvSummary loadConvSummary(Long convId, Long convVersion, int messageLimit) {
+        if (cacheProperties.isRedisEnabled() && isNegativeCached(redisKeyFactory().convNegativeKey(convId))) {
+            return null;
+        }
+        if (convVersion != null) {
+            String key = convSummaryLocalKey(convId, convVersion, messageLimit);
+            ConvSummary cached = convCache.getIfPresent(key);
+            if (cached != null) {
+                return new LoadedConvSummary(cached, "l1");
+            }
+
+            Optional<LoadedConvSummary> redisHit = loadConvSummaryFromRedis(convId, convVersion, messageLimit, key);
+            if (redisHit.isPresent()) {
+                return redisHit.get();
+            }
+
+            return singleFlight(convInFlight, key, () ->
+                    loadConvSummaryWithRedisLock(convId, convVersion, messageLimit, key));
+        }
+
+        if (cacheProperties.isRedisEnabled()) {
+            String latestVersionKey = redisKeyFactory().convLatestVersionKey(convId);
+            Optional<Long> latestVersion = safeRedisRead("getConversationLatestVersion", latestVersionKey, () ->
+                    redisContextCache.flatMap(cache ->
+                            cache.getConversationLatestVersion(latestVersionKey)));
+            if (latestVersion.isPresent()) {
+                String key = convSummaryLocalKey(convId, latestVersion.get(), messageLimit);
+                ConvSummary cached = convCache.getIfPresent(key);
+                if (cached != null) {
+                    return new LoadedConvSummary(cached, "l1");
+                }
+                Optional<LoadedConvSummary> redisHit = loadConvSummaryFromRedis(convId, latestVersion.get(), messageLimit, key);
+                if (redisHit.isPresent()) {
+                    return redisHit.get();
+                }
+            }
+        }
+
+        VerlaConversation peek = loadConversationEntity(convId);
         if (peek == null) {
             return null;
         }
         Long realVer = peek.getVersion() == null ? 0L : peek.getVersion();
         long usedVer = (convVersion == null) ? realVer : convVersion;
 
-        String key = convId + ":v" + usedVer + ":ml" + messageLimit;
+        String key = convSummaryLocalKey(convId, usedVer, messageLimit);
         ConvSummary cached = convCache.getIfPresent(key);
         if (cached != null && Objects.equals(cached.conversation.getVersion(), realVer)) {
-            return cached;
+            return new LoadedConvSummary(cached, "l1");
         }
 
-        return singleFlight(convInFlight, key, () -> {
-            VerlaConversation conv = conversationRepository.findById(convId);
-            if (conv == null) {
-                return null;
-            }
-            List<VerlaMessage> recent = messageRepository.findByCursor(convId, null, messageLimit);
-            ConvSummary s = new ConvSummary(conv, recent);
-            convCache.put(convId + ":v" + (conv.getVersion() == null ? 0L : conv.getVersion())
-                    + ":ml" + messageLimit, s);
-            return s;
-        });
+        return singleFlight(convInFlight, key, () ->
+                loadConvSummaryWithRedisLock(convId, usedVer, messageLimit, key));
     }
 
     public void invalidateConv(Long convId) {
@@ -400,6 +499,11 @@ public class VerlaContextQueryService {
             return;
         }
         convCache.asMap().keySet().removeIf(k -> k.startsWith(convId + ":"));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onConversationCacheSync(VerlaConversationCacheSyncEvent event) {
+        refreshConversationCache(event.conversationId());
     }
 
     // ====================================================================
@@ -424,33 +528,367 @@ public class VerlaContextQueryService {
         }
     }
 
+    void refreshSessionCache(Long sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+        VerlaSession session = sessionRepository.findById(sessionId);
+        if (session == null) {
+            invalidateSession(sessionId);
+            String redisKey = redisKeyFactory().sessMetaKey(sessionId);
+            safeRedisWrite("deleteSessionMeta", redisKey, () ->
+                    redisContextCache.ifPresent(cache -> cache.delete(redisKey)));
+            writeNegativeCache(redisKeyFactory().sessNegativeKey(sessionId));
+            publishInvalidation("session", sessionId);
+            return;
+        }
+        clearNegativeCache(redisKeyFactory().sessNegativeKey(sessionId));
+        sessCache.put(sessionId, session);
+        String redisKey = redisKeyFactory().sessMetaKey(sessionId);
+        safeRedisWrite("putSessionMeta", redisKey, () ->
+                redisContextCache.ifPresent(cache ->
+                        cache.putSessionMeta(redisKey, sessionId, new SessionMetaCacheValue(session))));
+        publishInvalidation("session", sessionId);
+    }
+
+    void refreshTurnCache(Long turnId) {
+        if (turnId == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findById(turnId);
+        if (turn == null) {
+            invalidateTurn(turnId);
+            String redisKey = redisKeyFactory().turnMetaKey(turnId);
+            safeRedisWrite("deleteTurnMeta", redisKey, () ->
+                    redisContextCache.ifPresent(cache -> cache.delete(redisKey)));
+            writeNegativeCache(redisKeyFactory().turnNegativeKey(turnId));
+            publishInvalidation("turn", turnId);
+            return;
+        }
+        clearNegativeCache(redisKeyFactory().turnNegativeKey(turnId));
+        turnCache.put(turnId, turn);
+        String redisKey = redisKeyFactory().turnMetaKey(turnId);
+        safeRedisWrite("putTurnMeta", redisKey, () ->
+                redisContextCache.ifPresent(cache ->
+                        cache.putTurnMeta(redisKey, turnId, new TurnMetaCacheValue(turn))));
+        publishInvalidation("turn", turnId);
+    }
+
+    void refreshConversationCache(Long convId) {
+        if (convId == null) {
+            return;
+        }
+        invalidateConv(convId);
+        if (!cacheProperties.isRedisEnabled()) {
+            return;
+        }
+        VerlaConversation conversation = conversationRepository.findById(convId);
+        String latestVersionKey = redisKeyFactory().convLatestVersionKey(convId);
+        if (conversation == null || conversation.getVersion() == null) {
+            safeRedisWrite("deleteConversationLatestVersion", latestVersionKey, () ->
+                    redisContextCache.ifPresent(cache -> cache.delete(latestVersionKey)));
+            writeNegativeCache(redisKeyFactory().convNegativeKey(convId));
+            publishInvalidation("conversation", convId);
+            return;
+        }
+        clearNegativeCache(redisKeyFactory().convNegativeKey(convId));
+        safeRedisWrite("putConversationLatestVersion", latestVersionKey, () ->
+                redisContextCache.ifPresent(cache ->
+                        cache.putConversationLatestVersion(latestVersionKey, conversation.getVersion())));
+        publishInvalidation("conversation", convId);
+    }
+
+    public void handleRemoteInvalidation(VerlaCacheInvalidationMessage invalidation) {
+        if (invalidation == null || invalidation.id() == null || invalidation.type() == null) {
+            return;
+        }
+        switch (invalidation.type()) {
+            case "session" -> invalidateSession(invalidation.id());
+            case "turn" -> invalidateTurn(invalidation.id());
+            case "conversation" -> invalidateConv(invalidation.id());
+            default -> log.debug("[Verla/ctx] ignore unknown invalidation type={}", invalidation.type());
+        }
+    }
+
     // ====================================================================
     // helpers
     // ====================================================================
-    private String computeHitLayer(VerlaSession s, VerlaTurn t, ConvSummary c,
-                                   Long requestConvVersion, Long requestTurnVersion) {
-        // 简化策略：以"是否走过 cache + 版本是否匹配"近似命中状态
-        boolean convHit = requestConvVersion != null
-                && c != null
-                && c.conversation.getVersion() != null
-                && requestConvVersion.equals(c.conversation.getVersion());
-        boolean turnHit = requestTurnVersion != null;
-        boolean sessHit = sessCache.getIfPresent(s.getId()) != null;
+    private String recordHitLayer(String layer) {
+        if ("l1".equals(layer)) {
+            hitL1.increment();
+            return "l1";
+        }
+        if ("redis".equals(layer)) {
+            hitRedis.increment();
+            return "redis";
+        }
+        hitDb.increment();
+        dbFallback.increment();
+        return "db";
+    }
 
-        if (convHit) {
-            hitConv.increment();
-            return "conv";
+    private Optional<LoadedConvSummary> loadConvSummaryFromRedis(Long convId,
+                                                                 Long convVersion,
+                                                                 int messageLimit,
+                                                                 String localKey) {
+        if (!cacheProperties.isRedisEnabled()) {
+            return Optional.empty();
         }
-        if (turnHit) {
-            hitTurn.increment();
-            return "turn";
+        String redisKey = redisKeyFactory().convSummaryKey(convId, convVersion, messageLimit);
+        return safeRedisRead("getConversationSummary", redisKey, () ->
+                redisContextCache.flatMap(cache -> cache.getConversationSummary(redisKey)))
+                .map(envelope -> {
+                    ConvSummary summary = new ConvSummary(
+                            envelope.getData().conversation(),
+                            envelope.getData().recentMessages());
+                    convCache.put(localKey, summary);
+                    return new LoadedConvSummary(summary, "redis");
+                });
+    }
+
+    private LoadedConvSummary loadConvSummaryWithRedisLock(Long convId,
+                                                           Long convVersion,
+                                                           int messageLimit,
+                                                           String localKey) {
+        String redisKey = redisKeyFactory().convSummaryKey(convId, convVersion, messageLimit);
+        String lockKey = redisKeyFactory().convSummaryLockKey(convId, convVersion, messageLimit);
+
+        if (isRedisCircuitOpen()) {
+            return loadConvSummaryFromDb(convId, convVersion, messageLimit, localKey);
         }
-        if (sessHit) {
-            hitSess.increment();
-            return "sess";
+
+        if (cacheProperties.isRedisEnabled()) {
+            Optional<VerlaRedisContextCache> cacheOpt = redisContextCache;
+            if (cacheOpt.isPresent()) {
+                String token = UUID.randomUUID().toString();
+                boolean locked = safeRedisTryLock(lockKey, token);
+                if (!locked) {
+                    lockContention.increment();
+                    Optional<LoadedConvSummary> retryHit = retryConversationSummaryAfterLockLoss(
+                            convId, convVersion, messageLimit, localKey);
+                    if (retryHit.isPresent()) {
+                        return retryHit.get();
+                    }
+                    return loadConvSummaryFromDb(convId, convVersion, messageLimit, localKey);
+                }
+            }
         }
-        hitNone.increment();
-        return "none";
+        return loadConvSummaryFromDb(convId, convVersion, messageLimit, localKey);
+    }
+
+    private LoadedConvSummary loadConvSummaryFromDb(Long convId,
+                                                    Long convVersion,
+                                                    int messageLimit,
+                                                    String localKey) {
+        VerlaConversation conv = loadConversationEntity(convId);
+        if (conv == null) {
+            return null;
+        }
+        List<VerlaMessage> recent = messageRepository.findByCursor(convId, null, messageLimit);
+        ConvSummary summary = new ConvSummary(conv, recent);
+        Long latestVersion = conv.getVersion() == null ? 0L : conv.getVersion();
+        convCache.put(localKey == null ? convSummaryLocalKey(convId, latestVersion, messageLimit) : localKey, summary);
+        if (cacheProperties.isRedisEnabled()) {
+            String latestVersionKey = redisKeyFactory().convLatestVersionKey(convId);
+            safeRedisWrite("putConversationLatestVersion", latestVersionKey, () ->
+                    redisContextCache.ifPresent(cache ->
+                            cache.putConversationLatestVersion(latestVersionKey, latestVersion)));
+            String summaryKey = redisKeyFactory().convSummaryKey(convId, latestVersion, messageLimit);
+            safeRedisWrite("putConversationSummary", summaryKey, () ->
+                    redisContextCache.ifPresent(cache -> cache.putConversationSummary(
+                            summaryKey,
+                            latestVersion,
+                            new ConversationSummaryCacheValue(conv, recent),
+                            cacheProperties.getConvSummaryTtl())));
+        }
+        return new LoadedConvSummary(summary, "db");
+    }
+
+    private VerlaConversation loadConversationEntity(Long convId) {
+        String negativeKey = redisKeyFactory().convNegativeKey(convId);
+        if (cacheProperties.isRedisEnabled() && isNegativeCached(negativeKey)) {
+            return null;
+        }
+        VerlaConversation conversation = conversationRepository.findById(convId);
+        if (conversation == null) {
+            writeNegativeCache(negativeKey);
+            return null;
+        }
+        clearNegativeCache(negativeKey);
+        return conversation;
+    }
+
+    private Optional<LoadedConvSummary> retryConversationSummaryAfterLockLoss(Long convId,
+                                                                              Long convVersion,
+                                                                              int messageLimit,
+                                                                              String localKey) {
+        long startedAtNanos = System.nanoTime();
+        int attempts = Math.max(1, cacheProperties.getRedisLockRetryMaxAttempts());
+        Duration delay = cacheProperties.getRedisLockRetryDelay();
+        try {
+            for (int i = 0; i < attempts; i++) {
+                sleepQuietly(delay);
+                Optional<LoadedConvSummary> redisHit = loadConvSummaryFromRedis(convId, convVersion, messageLimit, localKey);
+                if (redisHit.isPresent()) {
+                    return redisHit;
+                }
+            }
+            return Optional.empty();
+        } finally {
+            lockWaitTimer.record(System.nanoTime() - startedAtNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+        }
+    }
+
+    private void sleepQuietly(Duration duration) {
+        if (duration == null || duration.isZero() || duration.isNegative()) {
+            return;
+        }
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private LoadedMessagesPage loadConversationMessagesPage(Long conversationId,
+                                                            Long convVersion,
+                                                            Long beforeMessageId,
+                                                            int limit) {
+        if (convVersion != null && cacheProperties.isRedisEnabled()) {
+            String redisKey = redisKeyFactory().convMessagesKey(conversationId, convVersion, beforeMessageId, limit);
+            Optional<List<VerlaMessage>> redisHit = safeRedisRead("getConversationMessagesPage", redisKey, () ->
+                    redisContextCache.flatMap(cache -> cache.getConversationMessagesPage(redisKey))
+                            .map(envelope -> envelope.getData().messages()));
+            if (redisHit.isPresent()) {
+                return new LoadedMessagesPage(redisHit.get(), "redis");
+            }
+            List<VerlaMessage> messages = messageRepository.findByCursor(conversationId, beforeMessageId, limit);
+            safeRedisWrite("putConversationMessagesPage", redisKey, () ->
+                    redisContextCache.ifPresent(cache -> cache.putConversationMessagesPage(
+                            redisKey,
+                            convVersion,
+                            new ConversationMessagesPageCacheValue(messages),
+                            beforeMessageId == null ? cacheProperties.getMessagesRecentTtl() : cacheProperties.getMessagesHistoryTtl())));
+            return new LoadedMessagesPage(messages, "db");
+        }
+        return new LoadedMessagesPage(messageRepository.findByCursor(conversationId, beforeMessageId, limit), "db");
+    }
+
+    private <T> Optional<T> safeRedisRead(String operation, String key, Supplier<Optional<T>> action) {
+        if (!cacheProperties.isRedisEnabled()) {
+            return Optional.empty();
+        }
+        if (isRedisCircuitOpen()) {
+            redisCircuitSkip.increment();
+            return Optional.empty();
+        }
+        try {
+            Optional<T> result = action.get();
+            onRedisSuccess();
+            return result;
+        } catch (RuntimeException ex) {
+            cacheError.increment();
+            redisReadError.increment();
+            onRedisFailure();
+            log.warn("[Verla/ctx] redis read fallback: op={}, key={}, reason={}", operation, key, ex.toString());
+            return Optional.empty();
+        }
+    }
+
+    private boolean safeRedisTryLock(String key, String token) {
+        if (!cacheProperties.isRedisEnabled()) {
+            return false;
+        }
+        if (isRedisCircuitOpen()) {
+            redisCircuitSkip.increment();
+            return false;
+        }
+        try {
+            boolean locked = redisContextCache.map(cache -> cache.tryLock(key, token)).orElse(false);
+            onRedisSuccess();
+            return locked;
+        } catch (RuntimeException ex) {
+            cacheError.increment();
+            redisWriteError.increment();
+            onRedisFailure();
+            log.warn("[Verla/ctx] redis lock fallback: key={}, reason={}", key, ex.toString());
+            return false;
+        }
+    }
+
+    private void safeRedisWrite(String operation, String key, Runnable action) {
+        if (!cacheProperties.isRedisEnabled()) {
+            return;
+        }
+        if (isRedisCircuitOpen()) {
+            redisCircuitSkip.increment();
+            return;
+        }
+        try {
+            action.run();
+            onRedisSuccess();
+        } catch (RuntimeException ex) {
+            cacheError.increment();
+            redisWriteError.increment();
+            onRedisFailure();
+            log.warn("[Verla/ctx] redis write skipped: op={}, key={}, reason={}", operation, key, ex.toString());
+        }
+    }
+
+    private boolean isRedisCircuitOpen() {
+        return System.currentTimeMillis() < redisCircuitOpenUntilMillis;
+    }
+
+    private void onRedisSuccess() {
+        consecutiveRedisFailures.set(0);
+    }
+
+    private void onRedisFailure() {
+        int failures = consecutiveRedisFailures.incrementAndGet();
+        if (failures >= Math.max(1, cacheProperties.getRedisCircuitFailureThreshold())) {
+            Duration openDuration = cacheProperties.getRedisCircuitOpenDuration();
+            redisCircuitOpenUntilMillis = System.currentTimeMillis()
+                    + (openDuration == null ? 0L : Math.max(1L, openDuration.toMillis()));
+        }
+    }
+
+    private void logCacheOutcome(String scope, Long entityId, Long version, String hitLayer) {
+        log.debug("[Verla/ctx] cache outcome: scope={}, id={}, version={}, hitLayer={}",
+                scope, entityId, version, hitLayer);
+    }
+
+    private boolean isNegativeCached(String key) {
+        return safeRedisRead("getNegativeCache", key, () ->
+                redisContextCache.flatMap(cache -> cache.getRaw(key))).isPresent();
+    }
+
+    private void writeNegativeCache(String key) {
+        safeRedisWrite("putNegativeCache", key, () ->
+                redisContextCache.ifPresent(cache ->
+                        cache.putRaw(key, "1", cacheProperties.getNegativeTtl())));
+    }
+
+    private void clearNegativeCache(String key) {
+        safeRedisWrite("deleteNegativeCache", key, () ->
+                redisContextCache.ifPresent(cache -> cache.delete(key)));
+    }
+
+    private void publishInvalidation(String type, Long id) {
+        if (id == null || !cacheProperties.isRedisEnabled()) {
+            return;
+        }
+        String channel = redisKeyFactory().invalidationChannel();
+        String payload = "{\"type\":\"" + type + "\",\"id\":" + id + "}";
+        safeRedisWrite("publishInvalidation", channel, () ->
+                redisContextCache.ifPresent(cache -> cache.publish(channel, payload)));
+    }
+
+    private String convSummaryLocalKey(Long convId, Long convVersion, int messageLimit) {
+        return convId + ":v" + convVersion + ":ml" + messageLimit;
+    }
+
+    private VerlaCacheKeyFactory redisKeyFactory() {
+        return new VerlaCacheKeyFactory(cacheProperties);
     }
 
     /** 内部聚合容器：conversation 头 + 最近 N 条消息（命中后整体复用） */
@@ -462,5 +900,11 @@ public class VerlaContextQueryService {
             this.conversation = conversation;
             this.recentMessages = recentMessages;
         }
+    }
+
+    private record LoadedConvSummary(ConvSummary summary, String layer) {
+    }
+
+    private record LoadedMessagesPage(List<VerlaMessage> messages, String layer) {
     }
 }

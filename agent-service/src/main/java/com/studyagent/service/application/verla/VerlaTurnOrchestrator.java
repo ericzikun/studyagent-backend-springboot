@@ -123,6 +123,12 @@ public class VerlaTurnOrchestrator {
         turn.setUpdatedAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
         VerlaSession planSession = spawnPlanSession(
                 conv, turn, cmd.getText(), cmd.isPlanConfirmRejected());
 
@@ -130,11 +136,6 @@ public class VerlaTurnOrchestrator {
         turn.setActiveSessionId(planSession.getId());
         turn.setUpdatedAt(LocalDateTime.now());
         turnRepository.save(turn);
-
-        userMsg.setTurnId(turn.getId());
-        messageRepository.save(userMsg);
-
-        conversationRepository.touchOnNewTurn(conv.getId(), turn.getId());
 
         log.info("[Verla] onUserMessage 完成: convId={}, turnId={}, planSessionId={}",
                 conv.getId(), turn.getId(), planSession.getId());
@@ -174,8 +175,10 @@ public class VerlaTurnOrchestrator {
             conversationRepository.save(conv);
         }
 
-        conversationRepository.touchOnNewTurn(conv.getId(), turn.getId());
-        conversationRepository.incrementVersion(conv.getId());
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+        refreshConversationVersion(conv,
+                conversationRepository.incrementVersionAndGet(conv.getId()));
 
         VerlaSession agentSession;
         if (isAssignmentIntent(intent)) {
@@ -501,9 +504,10 @@ public class VerlaTurnOrchestrator {
         Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
 
         // Both choices route to Phase 2 (deep_understanding), differing only by userUnderstood.
+        refreshConversationVersion(conv,
+                conversationRepository.incrementVersionAndGet(conversationId));
         VerlaSession nextSession = spawnAssignmentDeepUnderstandingSession(
                 conv, turn, resolvedIntent, resolvedSlots, userUnderstood);
-        conversationRepository.incrementVersion(conversationId);
 
         return SendMessageResult.builder()
                 .turnId(turn.getId())
@@ -556,10 +560,11 @@ public class VerlaTurnOrchestrator {
                 ? turn.getResolvedIntent() : "ASSIGNMENT";
         Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
 
+        refreshConversationVersion(conv,
+                conversationRepository.incrementVersionAndGet(conversationId));
         VerlaSession nextSession = spawnAssignmentClarifySession(
                 conv, turn, resolvedIntent, resolvedSlots,
                 "", objectIds, reservedFields, normalizedAnswers, requirementForm);
-        conversationRepository.incrementVersion(conversationId);
 
         return SendMessageResult.builder()
                 .turnId(turn.getId())
@@ -1742,6 +1747,12 @@ public class VerlaTurnOrchestrator {
             ref.put("convVersion", convVersion);
         }
         return ref;
+    }
+
+    private static void refreshConversationVersion(VerlaConversation conv, Long latestVersion) {
+        if (conv != null && latestVersion != null) {
+            conv.setVersion(latestVersion);
+        }
     }
 
     private static String resolveHostname() {

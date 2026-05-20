@@ -1,5 +1,6 @@
 package com.studyagent.infra.mq;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -14,6 +15,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * RabbitMQ 队列和交换机配置
  */
+@Slf4j
 @Configuration
 public class RabbitMQConfig {
 
@@ -36,6 +38,12 @@ public class RabbitMQConfig {
         template.setMessageConverter(jsonMessageConverter());
         // 开启 Mandatory 后，消息无法路由到队列时会触发 ReturnCallback
         template.setMandatory(true);
+        template.setReturnsCallback(returned -> log.warn(
+                "RabbitMQ returned unroutable message: replyCode={}, replyText={}, exchange={}, routingKey={}",
+                returned.getReplyCode(),
+                returned.getReplyText(),
+                returned.getExchange(),
+                returned.getRoutingKey()));
         return template;
     }
 

@@ -1,8 +1,6 @@
 package com.studyagent.infra.mq;
 
-import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxCreatedEvent;
-import com.studyagent.service.domain.mq.MqOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,7 +16,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class OutboxImmediateDispatcher {
 
-    private final MqOutboxRepository mqOutboxRepository;
     private final OutboxDispatchScheduler outboxDispatchScheduler;
 
     /**
@@ -29,10 +26,7 @@ public class OutboxImmediateDispatcher {
         Long messageId = event.getMessageId();
         log.debug("收到发件箱创建事件，准备即时投递: messageId={}", messageId);
         try {
-            MqOutbox message = mqOutboxRepository.findById(messageId);
-            if (message != null && message.getStatus() == MqOutbox.STATUS_UNSENT) {
-                outboxDispatchScheduler.sendMessage(message);
-            }
+            outboxDispatchScheduler.dispatchMessageById(messageId);
         } catch (Exception e) {
             log.error("即时投递消息失败，将由定时任务兜底: messageId={}", messageId, e);
         }

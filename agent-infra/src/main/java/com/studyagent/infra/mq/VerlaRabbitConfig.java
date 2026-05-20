@@ -7,6 +7,7 @@ import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
@@ -36,10 +37,10 @@ import java.util.List;
  * 事件侧（新增 studyagent.events Topic）：
  *   verla.event.s00 ~ s03 ← verla.event.s{shard}.#
  *
- * DLX：studyagent.dlx Direct
+ * DLX：studyagent.dlx Topic
  *   verla.dlq             ← #
  *
- * Alternate Exchange：studyagent.unroutable Direct（events 落不下来时兜底）
+ * Alternate Exchange：studyagent.unroutable Fanout（events 落不下来时兜底）
  *   verla.unroutable.q
  * </pre>
  */
@@ -127,13 +128,13 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
-    public DirectExchange verlaDlxExchange() {
-        return new DirectExchange(DLX_EXCHANGE, true, false);
+    public TopicExchange verlaDlxExchange() {
+        return new TopicExchange(DLX_EXCHANGE, true, false);
     }
 
     @Bean
-    public DirectExchange verlaUnroutableExchange() {
-        return new DirectExchange(UNROUTABLE_EXCHANGE, true, false);
+    public FanoutExchange verlaUnroutableExchange() {
+        return new FanoutExchange(UNROUTABLE_EXCHANGE, true, false);
     }
 
     // ===================== Command Queues =====================
@@ -280,11 +281,8 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
-    public Binding verlaDlqBindingAll(Queue verlaDlqQueue, DirectExchange verlaDlxExchange) {
-        // DirectExchange 用空 routing key + 通配符替代不支持，这里用 # 也行不通；
-        // MVP 简化：消费者 nack-no-requeue 后 RabbitMQ 自动按原 routing key 投递到 DLX，
-        // 因此 dlq 用空 routing key（与 publish 时 originalRoutingKey 等价）做兜底匹配。
-        return BindingBuilder.bind(verlaDlqQueue).to(verlaDlxExchange).with("");
+    public Binding verlaDlqBindingAll(Queue verlaDlqQueue, TopicExchange verlaDlxExchange) {
+        return BindingBuilder.bind(verlaDlqQueue).to(verlaDlxExchange).with("#");
     }
 
     @Bean
@@ -293,8 +291,8 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
-    public Binding verlaUnroutableBinding(Queue verlaUnroutableQueue, DirectExchange verlaUnroutableExchange) {
-        return BindingBuilder.bind(verlaUnroutableQueue).to(verlaUnroutableExchange).with("");
+    public Binding verlaUnroutableBinding(Queue verlaUnroutableQueue, FanoutExchange verlaUnroutableExchange) {
+        return BindingBuilder.bind(verlaUnroutableQueue).to(verlaUnroutableExchange);
     }
 
     // ===================== ListenerContainerFactory =====================

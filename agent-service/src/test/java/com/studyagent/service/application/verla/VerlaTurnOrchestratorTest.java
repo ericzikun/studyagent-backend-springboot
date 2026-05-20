@@ -330,7 +330,29 @@ class VerlaTurnOrchestratorTest {
         }
 
         @Override
+        public List<MqOutbox> claimPendingMessages(
+                int limit,
+                String workerId,
+                LocalDateTime currentTime,
+                LocalDateTime leaseUntil) {
+            return findPendingMessages(limit, currentTime);
+        }
+
+        @Override
+        public MqOutbox claimMessage(
+                Long id,
+                String workerId,
+                LocalDateTime currentTime,
+                LocalDateTime leaseUntil) {
+            return saved != null && saved.getId() != null && saved.getId().equals(id) ? saved : null;
+        }
+
+        @Override
         public void markAsSent(Long id) {
+        }
+
+        @Override
+        public void markAsSent(Long id, String workerId) {
         }
 
         @Override
@@ -338,7 +360,15 @@ class VerlaTurnOrchestratorTest {
         }
 
         @Override
+        public void markForRetry(Long id, String workerId, String errorMessage, LocalDateTime nextRetryAt) {
+        }
+
+        @Override
         public void markAsFailed(Long id, String errorMessage) {
+        }
+
+        @Override
+        public void markAsFailed(Long id, String workerId, String errorMessage) {
         }
     }
 }

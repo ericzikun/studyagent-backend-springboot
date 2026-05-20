@@ -60,6 +60,12 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
+        <!-- Redis: Verla 内部查询 L2 缓存 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Micrometer：暴露缓存命中率等业务指标 -->
         <dependency>
             <groupId>io.micrometer</groupId>

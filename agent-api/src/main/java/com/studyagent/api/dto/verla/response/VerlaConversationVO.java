@@ -20,6 +20,8 @@ public class VerlaConversationVO {
     private String userId;
     private String title;
     private String status;
+    /** Dashboard 历史卡片任务展示状态：progressing / needs-choice / completed / failed。 */
+    private String dashboardStatus;
     private String primaryIntent;
     /** true = 意图已识别、尚待在 Dashboard 确认卡上提交 */
     @JsonProperty("isDraft")
@@ -30,11 +32,16 @@ public class VerlaConversationVO {
     private LocalDateTime createdAt;
 
     public static VerlaConversationVO from(VerlaConversation c) {
+        return from(c, null);
+    }
+
+    public static VerlaConversationVO from(VerlaConversation c, String dashboardStatus) {
         return VerlaConversationVO.builder()
                 .conversationId(c.getId())
                 .userId(c.getUserId())
                 .title(c.getTitle())
                 .status(c.getStatus())
+                .dashboardStatus(dashboardStatus)
                 .primaryIntent(c.getPrimaryIntent())
                 .draft(IntentLifecycle.conversationIsDraft(c.getIntentLifecycle()))
                 .turnCount(c.getTurnCount())

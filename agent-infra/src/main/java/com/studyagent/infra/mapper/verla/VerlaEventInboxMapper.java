@@ -51,4 +51,10 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
     List<VerlaEventInboxEntity> selectReplay(@Param("cid") Long conversationId,
                                              @Param("afterId") Long afterId,
                                              @Param("limit") int limit);
+
+    @Select("SELECT * FROM verla_event_inbox "
+            + "WHERE conversation_id = #{cid} AND status = 'PROCESSED' "
+            + "ORDER BY id DESC LIMIT #{limit}")
+    List<VerlaEventInboxEntity> selectRecentProcessed(@Param("cid") Long conversationId,
+                                                      @Param("limit") int limit);
 }

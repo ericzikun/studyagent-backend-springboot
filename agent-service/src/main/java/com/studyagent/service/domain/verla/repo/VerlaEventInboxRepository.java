@@ -40,4 +40,9 @@ public interface VerlaEventInboxRepository {
      * 详见 docs/verla-Java侧MVP技术方案.md §13.3。
      */
     List<VerlaEventInbox> findReplayByConversation(Long conversationId, Long afterId, int limit);
+
+    /**
+     * Dashboard 状态快照：取某个 conversation 最近处理完成的 Py/SSE 事件，按 id 倒序。
+     */
+    List<VerlaEventInbox> findRecentProcessedByConversation(Long conversationId, int limit);
 }

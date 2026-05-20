@@ -70,6 +70,13 @@ public class VerlaEventInboxRepositoryImpl
                 .stream().map(this::toDomain).toList();
     }
 
+    @Override
+    public List<VerlaEventInbox> findRecentProcessedByConversation(Long conversationId, int limit) {
+        int safe = Math.max(1, Math.min(limit, 100));
+        return this.baseMapper.selectRecentProcessed(conversationId, safe)
+                .stream().map(this::toDomain).toList();
+    }
+
     private VerlaEventInbox toDomain(VerlaEventInboxEntity e) {
         if (e == null) {
             return null;

@@ -16,10 +16,12 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.service.application.verla.VerlaConversationService;
+import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
+import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.state.ConversationStatus;
@@ -57,6 +59,7 @@ import java.util.stream.Collectors;
 public class VerlaConversationController {
 
     private final VerlaConversationService conversationService;
+    private final VerlaConversationDashboardStatusService dashboardStatusService;
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final ObjectMapper objectMapper;
 
@@ -91,8 +94,11 @@ public class VerlaConversationController {
         ensureLogin(clerkUserId);
         VerlaConversationListSegment seg = parseSegment(segment);
         ConversationStatus st = parseConversationStatusFilter(status);
+        VerlaConversationListSlice slice =
+                conversationService.listConversations(clerkUserId, pageNo, pageSize, seg, st);
         return Result.success(VerlaConversationPageVO.fromSlice(
-                conversationService.listConversations(clerkUserId, pageNo, pageSize, seg, st)));
+                slice,
+                dashboardStatusService.resolveAll(slice.records())));
     }
 
     // ========================================================
@@ -104,7 +110,7 @@ public class VerlaConversationController {
             @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         VerlaConversation c = conversationService.getOwned(clerkUserId, cid);
-        return Result.success(VerlaConversationVO.from(c));
+        return Result.success(VerlaConversationVO.from(c, dashboardStatusService.resolve(c)));
     }
 
     // ========================================================

@@ -432,7 +432,6 @@ public class VerlaTurnOrchestrator {
             log.info("[Verla] start ");
 
             String rejectedText = text.isBlank() ? PLAN_CONFIRM_NO_TEXT : text;
-            recordPlanConfirmationMessage(turn, "rejected", rejectedText);
             closePlanTurn(turn);
             SendMessageResult nextPlan = onUserMessage(SendMessageCommand.builder()
                     .conversationId(conversationId)

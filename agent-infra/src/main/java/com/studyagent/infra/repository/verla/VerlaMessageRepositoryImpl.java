@@ -35,6 +35,13 @@ public class VerlaMessageRepositoryImpl
                 .stream().map(this::toDomain).collect(Collectors.toList());
     }
 
+    @Override
+    public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
+        return this.baseMapper.selectFileChatByCursor(conversationId, objectId, cursor, safeLimit)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
     private VerlaMessage toDomain(VerlaMessageEntity e) {
         if (e == null) {
             return null;

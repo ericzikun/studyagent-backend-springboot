@@ -124,6 +124,9 @@ public class VerlaConversationDashboardStatusService {
             return null;
         }
         for (VerlaEventInbox event : events) {
+            if (isFileChatEvent(event)) {
+                continue;
+            }
             String status = mapEventStatus(event);
             if (status != null) {
                 return status;
@@ -166,6 +169,8 @@ public class VerlaConversationDashboardStatusService {
                     AGENT_STEP_STREAM_CHUNK, AGENT_STEP_PROGRESS, AGENT_STEP_COMPLETED,
                     AGENT_BLOCK_ISSUED, AGENT_PROGRESS, AGENT_ARTIFACT_UPDATED,
                     AGENT_TOOL_CALL_RECORDED, ATTACHMENT_PARSED -> STATUS_PROGRESSING;
+            case FILE_CHAT_STARTED, FILE_CHAT_STREAM_CHUNK, FILE_CHAT_COMPLETED,
+                    FILE_CHAT_FAILED, FILE_CHAT_CANCELLED -> null;
             case PLAN_INTENT_RESOLVED -> null;
         };
     }
@@ -195,15 +200,23 @@ public class VerlaConversationDashboardStatusService {
     private VerlaTurn findLatestTurn(VerlaConversation conversation) {
         if (conversation.getLastTurnId() != null) {
             VerlaTurn turn = turnRepository.findById(conversation.getLastTurnId());
-            if (turn != null) {
+            if (turn != null && !isFileChatTurn(turn)) {
                 return turn;
             }
         }
         if (conversation.getId() == null) {
             return null;
         }
-        List<VerlaTurn> turns = turnRepository.findRecentByConversation(conversation.getId(), 1);
-        return turns == null || turns.isEmpty() ? null : turns.get(0);
+        List<VerlaTurn> turns = turnRepository.findRecentByConversation(conversation.getId(), 20);
+        if (turns == null || turns.isEmpty()) {
+            return null;
+        }
+        for (VerlaTurn turn : turns) {
+            if (!isFileChatTurn(turn)) {
+                return turn;
+            }
+        }
+        return turns.get(0);
     }
 
     private VerlaSession findRelevantSession(VerlaTurn turn) {
@@ -237,6 +250,19 @@ public class VerlaConversationDashboardStatusService {
         } catch (IllegalArgumentException ex) {
             return null;
         }
+    }
+
+    private boolean isFileChatEvent(VerlaEventInbox event) {
+        VerlaAgentEventType type = parseEventType(event == null ? null : event.getEventType());
+        return type == VerlaAgentEventType.FILE_CHAT_STARTED
+                || type == VerlaAgentEventType.FILE_CHAT_STREAM_CHUNK
+                || type == VerlaAgentEventType.FILE_CHAT_COMPLETED
+                || type == VerlaAgentEventType.FILE_CHAT_FAILED
+                || type == VerlaAgentEventType.FILE_CHAT_CANCELLED;
+    }
+
+    private boolean isFileChatTurn(VerlaTurn turn) {
+        return turn != null && "FILE_CHAT".equals(turn.getResolvedIntent());
     }
 
     private SessionStatus parseSessionStatus(String raw) {

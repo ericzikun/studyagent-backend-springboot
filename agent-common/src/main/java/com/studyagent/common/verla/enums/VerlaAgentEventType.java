@@ -68,6 +68,13 @@ public enum VerlaAgentEventType {
     MATERIALS_STARTED(false),
     MATERIALS_COMPLETED(true),
 
+    /** File chat 域 */
+    FILE_CHAT_STARTED(false),
+    FILE_CHAT_STREAM_CHUNK(false),
+    FILE_CHAT_COMPLETED(true),
+    FILE_CHAT_FAILED(true),
+    FILE_CHAT_CANCELLED(true),
+
     AGENT_STARTED(false),
     AGENT_PLAN_DECOMPOSED(false),
     AGENT_STEP_STARTED(false),
@@ -115,6 +122,9 @@ public enum VerlaAgentEventType {
             ASSIGNMENT_AGENT_FLOW_COMPLETED,
             ASSIGNMENT_AGENT_FLOW_FAILED,
             ASSIGNMENT_AGENT_FLOW_CANCELLED,
+            FILE_CHAT_COMPLETED,
+            FILE_CHAT_FAILED,
+            FILE_CHAT_CANCELLED,
             MATERIALS_COMPLETED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {

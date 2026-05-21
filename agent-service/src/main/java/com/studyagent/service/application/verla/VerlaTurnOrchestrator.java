@@ -16,10 +16,16 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
+import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
+import com.studyagent.service.application.verla.dto.FileChatAnalysisStatus;
+import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
+import com.studyagent.service.application.verla.dto.FileChatPanelState;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import com.studyagent.service.domain.verla.VerlaAttachment;
+import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -91,6 +97,7 @@ public class VerlaTurnOrchestrator {
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaMessageRepository messageRepository;
+    private final VerlaAttachmentRepository attachmentRepository;
     private final TurnStateMachine turnStateMachine;
     private final SessionStateMachine sessionStateMachine;
     private final MqOutboxService mqOutboxService;
@@ -144,6 +151,46 @@ public class VerlaTurnOrchestrator {
                 .turnId(turn.getId())
                 .userMessageId(userMsg.getId())
                 .planSessionId(planSession.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startFileChat(String userId, Long conversationId, String objectId, String message) {
+        if (objectId == null || objectId.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "objectId required");
+        }
+        if (message == null || message.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "message required");
+        }
+
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaAttachment attachment = attachmentRepository.findByObjectId(objectId);
+        if (attachment == null || !conversationId.equals(attachment.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
+        }
+
+        VerlaMessage userMsg = insertFileChatUserMessagePlaceholder(conv.getId(), objectId, message);
+        VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
+
+        TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
+        turn.setStatus(afterSkip.name());
+        turn.setResolvedIntent("FILE_CHAT");
+        turn.setResolvedSlotsJson(serializeJson(Map.of("objectId", objectId)));
+        turn.setUpdatedAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
+        VerlaSession session = spawnFileChatSession(conv, turn, objectId, message);
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .agentSessionId(session.getId())
                 .build();
     }
 
@@ -670,6 +717,11 @@ public class VerlaTurnOrchestrator {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onFileChatStarted(Long agentSessionId) {
+        onAgentStarted(agentSessionId);
+    }
+
     /**
      * AGENT_COMPLETED：agent session SUCCEEDED + turn COMPLETED。
      */
@@ -721,6 +773,62 @@ public class VerlaTurnOrchestrator {
         if (turn != null) {
             conversationRepository.incrementVersion(turn.getConversationId());
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onFileChatCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        Map<String, Object> safeResult = result == null ? Map.of() : result;
+        String objectId = resolveFileChatObjectId(turn, safeResult);
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(safeResult));
+            sessionRepository.save(s);
+        }
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        boolean justCompleted = (curTurn == TurnStatus.RUNNING_AGENT);
+        if (curTurn == TurnStatus.RUNNING_AGENT) {
+            TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.AGENT_OK);
+            turn.setStatus(nextTurn.name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turn.setLastProgressAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        if (justCompleted) {
+            String reply = extractFileChatAssistantReply(safeResult);
+            if (reply != null && !reply.isBlank()) {
+                VerlaMessage assistant = VerlaMessage.builder()
+                        .conversationId(turn.getConversationId())
+                        .turnId(turn.getId())
+                        .role("assistant")
+                        .sourceSessionId(agentSessionId)
+                        .textContent(reply)
+                        .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
+                                safeResult, "FILE_CHAT_COMPLETED")))
+                        .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
+                                FileChatMessageMeta.builder()
+                                        .scene(FileChatMessageMeta.SCENE_FILE_CHAT)
+                                        .objectId(objectId)
+                                        .build()))
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                messageRepository.save(assistant);
+            }
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -917,6 +1025,11 @@ public class VerlaTurnOrchestrator {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onFileChatFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+        onAgentFailed(agentSessionId, errorBlock);
+    }
+
     /**
      * AGENT_CANCELLED：agent session CANCELLED + turn CANCELLED。
      */
@@ -945,6 +1058,11 @@ public class VerlaTurnOrchestrator {
             turn.setUpdatedAt(LocalDateTime.now());
             turnRepository.save(turn);
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onFileChatCancelled(Long agentSessionId) {
+        onAgentCancelled(agentSessionId);
     }
 
     // ==========================================================
@@ -1213,6 +1331,42 @@ public class VerlaTurnOrchestrator {
         return s;
     }
 
+    private VerlaSession spawnFileChatSession(VerlaConversation conv, VerlaTurn turn,
+                                              String objectId, String message) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.FILE_CHAT.name())
+                .featureCode("FILE_CHAT")
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setStatus(TurnStatus.RUNNING_AGENT.name());
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildFileChatEnvelope(conv, turn, s, objectId, message);
+        mqOutboxService.createVerlaCommand(env, commandExchange, VerlaCommandAction.CMD_FILE_CHAT.getCode());
+        return s;
+    }
+
     // ==========================================================
     // helpers
     // ==========================================================
@@ -1224,6 +1378,22 @@ public class VerlaTurnOrchestrator {
                 .role("user")
                 .textContent(cmd.getText())
                 .attachmentsJson(cmd.getAttachmentsJson())
+                .createdAt(LocalDateTime.now())
+                .build();
+        return messageRepository.save(m);
+    }
+
+    private VerlaMessage insertFileChatUserMessagePlaceholder(Long conversationId, String objectId, String text) {
+        VerlaMessage m = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(0L)
+                .role("user")
+                .textContent(text)
+                .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
+                        com.studyagent.service.application.verla.dto.FileChatMessageMeta.builder()
+                                .scene(com.studyagent.service.application.verla.dto.FileChatMessageMeta.SCENE_FILE_CHAT)
+                                .objectId(objectId)
+                                .build()))
                 .createdAt(LocalDateTime.now())
                 .build();
         return messageRepository.save(m);
@@ -1398,6 +1568,20 @@ public class VerlaTurnOrchestrator {
                 conv == null ? null : conv.getVersion()));
 
         return baseEnvelope(action, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildFileChatEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                       VerlaSession session, String objectId, String message) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("objectId", objectId);
+        payload.put("message", message);
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(VerlaCommandAction.CMD_FILE_CHAT, conv, turn, session)
                 .payload(payload)
                 .build();
     }
@@ -1607,6 +1791,43 @@ public class VerlaTurnOrchestrator {
             }
         }
         return null;
+    }
+
+    private static String extractFileChatAssistantReply(Map<String, Object> result) {
+        if (result != null) {
+            Object finalText = result.get("finalText");
+            if (finalText instanceof String text && !text.isBlank()) {
+                return truncateAssistantTextContent(text);
+            }
+        }
+        return extractAssistantReply(result);
+    }
+
+    private String resolveFileChatObjectId(VerlaTurn turn, Map<String, Object> result) {
+        String fromPayload = stringValue(result == null ? null : result.get("objectId"));
+        if (fromPayload != null && !fromPayload.isBlank()) {
+            return fromPayload;
+        }
+        if (turn != null && turn.getUserMessageId() != null) {
+            VerlaMessage userMessage = messageRepository.findById(turn.getUserMessageId());
+            FileChatMessageMeta meta = userMessage == null ? null
+                    : VerlaFileChatMetadataHelper.readMessageMeta(userMessage.getMetaJson());
+            if (meta != null && meta.getObjectId() != null && !meta.getObjectId().isBlank()) {
+                return meta.getObjectId();
+            }
+        }
+        if (turn == null) {
+            return null;
+        }
+        return stringValue(parseSlotsJson(turn.getResolvedSlotsJson()).get("objectId"));
+    }
+
+    private static String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
     }
 
     private static Map<String, Object> sanitizeAssistantBlocks(Map<String, Object> result) {

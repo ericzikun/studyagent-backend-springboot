@@ -13,6 +13,9 @@ public enum VerlaSessionKind {
     /** 作业/Assignment 执行 */
     ASSIGNMENT,
 
+    /** 文件对话 */
+    FILE_CHAT,
+
     /** 学习材料生成 */
     MATERIALS
 }

@@ -39,6 +39,9 @@ public class VerlaAttachmentParsedPayload {
     /** PARSED 时短摘要 */
     private String summary;
 
+    /** PARSED 时文件对话面板首屏推荐问题 */
+    private List<String> suggestedQuestions;
+
     /** PARSED 时主产物（markdown 全文）的 artifact_uid */
     private String primaryArtifactUid;
 

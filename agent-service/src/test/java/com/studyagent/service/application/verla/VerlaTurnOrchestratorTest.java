@@ -47,6 +47,7 @@ class VerlaTurnOrchestratorTest {
                 turnRepository,
                 sessionRepository,
                 messageRepository,
+                new NoopAttachmentRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -104,6 +105,7 @@ class VerlaTurnOrchestratorTest {
                 turnRepository,
                 sessionRepository,
                 messageRepository,
+                new NoopAttachmentRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -260,6 +262,11 @@ class VerlaTurnOrchestratorTest {
         public List<VerlaMessage> findByCursor(Long conversationId, Long cursor, int limit) {
             return List.of();
         }
+
+        @Override
+        public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
+            return List.of();
+        }
     }
 
     private static final class FakeConversationRepository implements VerlaConversationRepository {
@@ -302,6 +309,48 @@ class VerlaTurnOrchestratorTest {
             this.incrementedConversationId = id;
             this.incrementVersionCount += 1;
             return 1;
+        }
+    }
+
+    private static final class NoopAttachmentRepository implements com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository {
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment save(com.studyagent.service.domain.verla.VerlaAttachment attachment) {
+            return attachment;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment findByObjectId(String objectId) {
+            return null;
+        }
+
+        @Override
+        public java.util.List<com.studyagent.service.domain.verla.VerlaAttachment> findByObjectIds(java.util.List<String> objectIds) {
+            return java.util.List.of();
+        }
+
+        @Override
+        public java.util.List<com.studyagent.service.domain.verla.VerlaAttachment> listByConversation(Long conversationId, int limit) {
+            return java.util.List.of();
+        }
+
+        @Override
+        public java.util.List<com.studyagent.service.domain.verla.VerlaAttachment> listByTurn(Long turnId) {
+            return java.util.List.of();
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment updateParseProgress(com.studyagent.service.domain.verla.VerlaAttachment patch) {
+            return patch;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment updateByObjectIdSelective(com.studyagent.service.domain.verla.VerlaAttachment patch) {
+            return patch;
         }
     }
 

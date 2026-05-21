@@ -21,4 +21,17 @@ public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
     List<VerlaMessageEntity> selectByCursor(@Param("conversationId") Long conversationId,
                                             @Param("cursor") Long cursor,
                                             @Param("limit") int limit);
+
+    @Select("<script>"
+            + "SELECT * FROM verla_messages "
+            + "WHERE conversation_id = #{conversationId} "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')) = 'FILE_CHAT' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.objectId')) = #{objectId} "
+            + "<if test='cursor != null'> AND id &lt; #{cursor} </if> "
+            + "ORDER BY id DESC LIMIT #{limit}"
+            + "</script>")
+    List<VerlaMessageEntity> selectFileChatByCursor(@Param("conversationId") Long conversationId,
+                                                    @Param("objectId") String objectId,
+                                                    @Param("cursor") Long cursor,
+                                                    @Param("limit") int limit);
 }

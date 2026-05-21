@@ -476,6 +476,11 @@ class VerlaContextCacheSyncIntegrationTest {
         public List<VerlaMessage> findByCursor(Long conversationId, Long beforeMessageId, int limit) {
             return List.of();
         }
+
+        @Override
+        public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
+            return List.of();
+        }
     }
 
     private static class NoopArtifactRepository implements VerlaArtifactRepository {

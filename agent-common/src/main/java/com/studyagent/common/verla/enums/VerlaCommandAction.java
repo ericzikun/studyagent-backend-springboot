@@ -37,6 +37,9 @@ public enum VerlaCommandAction {
     /** V2: 触发附件解析（finalize 上传时下发） */
     CMD_ATTACHMENT_PARSE("cmd.attachment.parse"),
 
+    /** V2: 文件对话 */
+    CMD_FILE_CHAT("cmd.file.chat"),
+
     /** V2: 学习材料生成（Flashcard / Quiz / Study Guide 等） */
     CMD_MATERIALS_GENERATE("cmd.materials.generate"),
 

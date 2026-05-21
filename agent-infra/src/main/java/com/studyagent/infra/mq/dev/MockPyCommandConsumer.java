@@ -310,6 +310,10 @@ public class MockPyCommandConsumer {
             scheduleAssignmentClarifyResponse(cmd);
             return;
         }
+        if (VerlaCommandAction.CMD_FILE_CHAT.getCode().equals(cmd.getAction())) {
+            scheduleFileChatResponse(cmd);
+            return;
+        }
         if (VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode().equals(cmd.getAction())) {
             scheduleAssignmentRunResponse(cmd);
             return;
@@ -351,6 +355,31 @@ public class MockPyCommandConsumer {
         doneBody.put("primaryArtifactUid", artifactUid);
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_COMPLETED, doneBody,
                 300L + chunks.size() * 200L);
+    }
+
+    private void scheduleFileChatResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String objectId = stringField(payload, "objectId");
+        String message = stringField(payload, "message");
+        if (objectId == null || objectId.isBlank()) {
+            objectId = "att_mock_file";
+        }
+        if (message == null || message.isBlank()) {
+            message = "请帮我理解这个文件。";
+        }
+
+        String finalText = "我先帮你结合当前作业上下文理解这个文件。这是一次本地 mock 返回，正式内容会由 Python 文件对话 agent 生成。";
+        scheduleEvent(cmd, VerlaAgentEventType.FILE_CHAT_STARTED, Map.of("objectId", objectId), 50);
+        scheduleEvent(cmd, VerlaAgentEventType.FILE_CHAT_STREAM_CHUNK,
+                Map.of("objectId", objectId, "delta", "我先帮你结合当前作业上下文理解这个文件。"), 180);
+        scheduleEvent(cmd, VerlaAgentEventType.FILE_CHAT_STREAM_CHUNK,
+                Map.of("objectId", objectId, "delta", " 这是一次本地 mock 返回，正式内容会由 Python 文件对话 agent 生成。"), 320);
+        scheduleEvent(cmd, VerlaAgentEventType.FILE_CHAT_COMPLETED,
+                Map.of(
+                        "objectId", objectId,
+                        "finalText", finalText,
+                        "echoMessage", message
+                ), 520);
     }
 
     /**
@@ -1024,7 +1053,11 @@ public class MockPyCommandConsumer {
         Map<String, Object> p3 = new HashMap<>();
         p3.put("objectId", objectId);
         p3.put("status", "PARSED");
-        p3.put("summary", "[Mock] " + filename + " 解析完成");
+        p3.put("summary", "[Mock] 这是与当前作业直接相关的上传文件，适合先提取格式要求并理解题目结构。");
+        p3.put("suggestedQuestions", List.of(
+                "帮我提取这个文件里的格式要求",
+                "这个文件和当前作业的关系是什么",
+                "基于这个文件我应该先做什么"));
         p3.put("primaryArtifactUid", artifactUid);
         p3.put("artifactUids", List.of(artifactUid));
         p3.put("meta", Map.of("page_count", 3, "char_count", 1024));

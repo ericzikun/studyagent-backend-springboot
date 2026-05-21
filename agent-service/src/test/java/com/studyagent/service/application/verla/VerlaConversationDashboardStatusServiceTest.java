@@ -181,6 +181,44 @@ class VerlaConversationDashboardStatusServiceTest {
     }
 
     @Test
+    void resolve_ignoresFileChatFailureForConversationDashboardStatus() {
+        VerlaConversation conversation = conversation(13L, 131L).build();
+        VerlaTurn assignmentTurn = VerlaTurn.builder()
+                .id(130L)
+                .conversationId(13L)
+                .status(TurnStatus.COMPLETED.name())
+                .activeSessionId(1300L)
+                .resolvedIntent("ASSIGNMENT")
+                .build();
+        VerlaTurn fileChatTurn = VerlaTurn.builder()
+                .id(131L)
+                .conversationId(13L)
+                .status(TurnStatus.FAILED.name())
+                .activeSessionId(1310L)
+                .resolvedIntent("FILE_CHAT")
+                .build();
+        turnRepository.byId.put(130L, assignmentTurn);
+        turnRepository.byId.put(131L, fileChatTurn);
+        turnRepository.byConversation.put(13L, List.of(fileChatTurn, assignmentTurn));
+        sessionRepository.byId.put(1300L, session(1300L, 130L, SessionStatus.SUCCEEDED));
+        sessionRepository.byId.put(1310L, session(1310L, 131L, SessionStatus.FAILED));
+        eventInboxRepository.add(13L, event(
+                2L,
+                13L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED,
+                "{}"));
+        eventInboxRepository.add(13L, event(
+                3L,
+                13L,
+                VerlaAgentEventType.FILE_CHAT_FAILED,
+                "{}"));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_COMPLETED,
+                service.resolve(conversation));
+    }
+
+    @Test
     void resolveAll_returnsStatusesByConversationId() {
         VerlaConversation completed = conversation(6L, 60L).build();
         VerlaConversation needsChoice = conversation(7L, 70L).build();

@@ -4,6 +4,7 @@ import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.VerlaUploadFinalizeRequest;
 import com.studyagent.api.dto.verla.request.VerlaUploadSignRequest;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
+import com.studyagent.api.dto.verla.response.VerlaArtifactVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationContextVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;

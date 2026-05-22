@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class AssignmentRuntimeSnapshotServiceTest {
 
@@ -155,6 +156,82 @@ class AssignmentRuntimeSnapshotServiceTest {
         assertEquals("failed", node.get("status"));
         assertEquals("Task execution failed.", node.get("content"));
         assertEquals(1, snapshot.payload().artifacts().size());
+    }
+
+    @Test
+    void getSnapshot_restoresLatestProgressEtaAcrossNodeUpdates() {
+        eventInboxRepository.add(90L, event(
+                2000L,
+                90L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                """
+                        {"payload":{
+                          "stage":"assignment_run",
+                          "progress":{"label":"Planning assignment","estimatedRemainingSeconds":960}
+                        }}
+                        """));
+        eventInboxRepository.add(90L, event(
+                2001L,
+                90L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"status\":\"RUNNING\"}}}"));
+
+        AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(90L);
+
+        assertEquals(2001L, snapshot.resumeAfterEventId());
+        assertEquals("Planning assignment", snapshot.payload().progress().get("label"));
+        assertEquals(960, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+    }
+
+    @Test
+    void getSnapshot_normalizesEquivalentEtaPayloadFields() {
+        eventInboxRepository.add(91L, event(
+                2100L,
+                91L,
+                VerlaAgentEventType.AGENT_PROGRESS,
+                "{\"payload\":{\"label\":\"Drafting\",\"estRemainingTimeSeconds\":\"645\"}}"));
+
+        AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(91L);
+
+        assertEquals("Drafting", snapshot.payload().progress().get("label"));
+        assertEquals(645, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+    }
+
+    @Test
+    void getSnapshot_clearsPositiveProgressEtaOnTerminalEvent() {
+        eventInboxRepository.add(92L, event(
+                2200L,
+                92L,
+                VerlaAgentEventType.AGENT_PROGRESS,
+                "{\"payload\":{\"progress\":{\"label\":\"QA\",\"estimatedRemainingSeconds\":120}}}"));
+        eventInboxRepository.add(92L, event(
+                2201L,
+                92L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED,
+                "{\"payload\":{\"summary\":\"done\"}}"));
+
+        AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(92L);
+
+        assertEquals("Assignment ready", snapshot.payload().progress().get("label"));
+        assertEquals(0, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+    }
+
+    @Test
+    void getSnapshot_leavesProgressNullWhenEtaFieldsAreMissing() {
+        eventInboxRepository.add(93L, event(
+                2300L,
+                93L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+        eventInboxRepository.add(93L, event(
+                2301L,
+                93L,
+                VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"status\":\"RUNNING\"}}}"));
+
+        AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(93L);
+
+        assertNull(snapshot.payload().progress());
     }
 
     private static VerlaMessage message(Long id, Long conversationId, String role, String text) {

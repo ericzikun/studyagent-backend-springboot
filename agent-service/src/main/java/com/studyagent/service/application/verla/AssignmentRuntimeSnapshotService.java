@@ -25,8 +25,8 @@ import java.util.Map;
  * Builds the Assignment runtime recovery snapshot from existing Verla tables.
  *
  * This service is intentionally read-only and does not persist frontend concepts
- * such as activeTurn, phase, phaseStatus, or progress. The frontend restores UI
- * state from one real backend event type plus current payload data.
+ * such as activeTurn, phase, or phaseStatus. Runtime progress is folded from
+ * backend event payloads so refresh/reopen can recover the same ETA shown by SSE.
  */
 @Service
 @RequiredArgsConstructor
@@ -62,6 +62,7 @@ public class AssignmentRuntimeSnapshotService {
                 .payload(AssignmentRuntimeSnapshotPayloadView.builder()
                         .messages(messages)
                         .stateEventPayload(stateEvent == null ? null : stateEvent.payload())
+                        .progress(resolveProgress(recentEvents))
                         .agentNodes(resolveAgentNodes(recentEvents))
                         .artifacts(artifacts == null ? List.of() : artifacts)
                         .build())
@@ -92,6 +93,92 @@ public class AssignmentRuntimeSnapshotService {
             }
         }
         return null;
+    }
+
+    /**
+     * Folds the latest backend-owned Assignment progress payload for REST recovery.
+     *
+     * SSE already forwards progress payloads as-is; snapshot must reconstruct the
+     * same current value from event inbox so a refreshed client does not wait for
+     * the next event before clearing the old placeholder ETA.
+     */
+    private Map<String, Object> resolveProgress(List<VerlaEventInbox> recentEvents) {
+        if (recentEvents == null || recentEvents.isEmpty()) {
+            return null;
+        }
+        for (VerlaEventInbox event : recentEvents) {
+            VerlaAgentEventType type = parseEventType(event.getEventType());
+            if (type == null) {
+                continue;
+            }
+            Map<String, Object> terminalProgress = terminalProgress(type);
+            if (terminalProgress != null) {
+                return terminalProgress;
+            }
+
+            Map<String, Object> progress = normalizeProgressPayload(sanitizedPayload(event));
+            if (progress != null) {
+                return progress;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> terminalProgress(VerlaAgentEventType type) {
+        return switch (type) {
+            case ASSIGNMENT_AGENT_FLOW_COMPLETED, ASSIGNMENT_COMPLETED, AGENT_COMPLETED ->
+                    Map.of("label", "Assignment ready", "estimatedRemainingSeconds", 0);
+            case ASSIGNMENT_AGENT_FLOW_FAILED, ASSIGNMENT_AGENT_FLOW_CANCELLED,
+                    ASSIGNMENT_FAILED, ASSIGNMENT_CANCELLED, AGENT_FAILED, AGENT_CANCELLED -> {
+                Map<String, Object> progress = new LinkedHashMap<>();
+                progress.put("estimatedRemainingSeconds", null);
+                yield progress;
+            }
+            default -> null;
+        };
+    }
+
+    private Map<String, Object> normalizeProgressPayload(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return null;
+        }
+
+        Map<String, Object> progressSource = asMap(payload.get("progress"));
+        boolean hasProgressObject = progressSource != null;
+        if (progressSource == null) {
+            progressSource = payload;
+        }
+
+        boolean hasEtaKey = containsAny(progressSource,
+                "estimatedRemainingSeconds",
+                "estRemainingTimeSeconds",
+                "estimated_remaining_seconds",
+                "est_remaining_time",
+                "estimatedTimeRemainingSeconds");
+        if (!hasProgressObject && !hasEtaKey) {
+            return null;
+        }
+
+        Map<String, Object> progress = new LinkedHashMap<>();
+        Object label = firstPresent(progressSource, "label");
+        if (label instanceof String text && !text.isBlank()) {
+            progress.put("label", text);
+        }
+
+        Object eta = firstPresent(progressSource,
+                "estimatedRemainingSeconds",
+                "estRemainingTimeSeconds",
+                "estimated_remaining_seconds",
+                "est_remaining_time",
+                "estimatedTimeRemainingSeconds");
+        Integer seconds = normalizeSeconds(eta);
+        if (seconds != null) {
+            progress.put("estimatedRemainingSeconds", seconds);
+        } else if (eta == null && hasEtaKey) {
+            progress.put("estimatedRemainingSeconds", null);
+        }
+
+        return progress.isEmpty() ? null : progress;
     }
 
     private String mapStateEventType(VerlaAgentEventType type) {
@@ -168,6 +255,37 @@ public class AssignmentRuntimeSnapshotService {
         for (String key : keys) {
             if (source.containsKey(key)) {
                 return source.get(key);
+            }
+        }
+        return null;
+    }
+
+    private boolean containsAny(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            if (source.containsKey(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Integer normalizeSeconds(Object value) {
+        if (value instanceof Number number) {
+            double seconds = number.doubleValue();
+            if (!Double.isFinite(seconds) || seconds < 0 || seconds > Integer.MAX_VALUE) {
+                return null;
+            }
+            return (int) Math.round(seconds);
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                double seconds = Double.parseDouble(text.trim());
+                if (!Double.isFinite(seconds) || seconds < 0 || seconds > Integer.MAX_VALUE) {
+                    return null;
+                }
+                return (int) Math.round(seconds);
+            } catch (NumberFormatException ignored) {
+                return null;
             }
         }
         return null;

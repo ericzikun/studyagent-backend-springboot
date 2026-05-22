@@ -46,6 +46,8 @@ public class AssignmentRuntimeSnapshotVO {
         private List<VerlaMessageVO> messages;
         /** Sanitized payload of the processed Verla event represented by stateEventType. */
         private Map<String, Object> stateEventPayload;
+        /** Latest backend-owned runtime progress, including Assignment generation ETA when available. */
+        private Map<String, Object> progress;
         /** Latest folded Assignment workflow canvas nodes. */
         private List<Map<String, Object>> agentNodes;
         /** Latest persisted output artifacts for this conversation. */
@@ -64,6 +66,7 @@ public class AssignmentRuntimeSnapshotVO {
                             ? List.of()
                             : view.messages().stream().map(VerlaMessageVO::from).toList())
                     .stateEventPayload(view.stateEventPayload())
+                    .progress(view.progress())
                     .agentNodes(view.agentNodes() == null ? List.of() : view.agentNodes())
                     .artifacts(view.artifacts() == null
                             ? List.of()

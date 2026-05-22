@@ -13,12 +13,13 @@ import java.util.Map;
  * The payload deliberately keeps frontend UI state out of persistence. Messages
  * and artifacts come from their existing tables; state event payload is the
  * current phase checkpoint payload; agent nodes are folded from processed
- * Verla events for the current conversation.
+ * Verla events; progress is folded from the latest backend ETA event.
  */
 @Builder
 public record AssignmentRuntimeSnapshotPayloadView(
         List<VerlaMessage> messages,
         Map<String, Object> stateEventPayload,
+        Map<String, Object> progress,
         List<Map<String, Object>> agentNodes,
         List<VerlaArtifact> artifacts
 ) {

@@ -21,6 +21,7 @@ import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -58,6 +59,7 @@ public class VerlaInternalController {
 
     private final VerlaContextQueryService contextQueryService;
     private final VerlaAttachmentService attachmentService;
+    private final VerlaArtifactRepository artifactRepository;
     private final VerlaConversationRepository conversationRepository;
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
@@ -188,6 +190,20 @@ public class VerlaInternalController {
     public Result<VerlaAttachmentVO> getAttachment(@PathVariable String objectId) {
         log.info("[verla-internal] getAttachment objectId={}", objectId);
         return Result.success(VerlaAttachmentVO.fromInternal(attachmentService.getForInternal(objectId)));
+    }
+
+    // ====================================================================
+    // 6b) GET /v1/internal/verla/artifacts/by-uid/{artifactUid}
+    //     Py 按 artifactUid 拉取源正文 / contentRef
+    // ====================================================================
+    @GetMapping("/artifacts/by-uid/{artifactUid}")
+    public Result<VerlaArtifactVO> getArtifactByUid(@PathVariable String artifactUid) {
+        log.info("[verla-internal] getArtifactByUid uid={}", artifactUid);
+        var artifact = artifactRepository.findByUid(artifactUid);
+        if (artifact == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "artifact");
+        }
+        return Result.success(VerlaArtifactVO.from(artifact));
     }
 
     // ====================================================================

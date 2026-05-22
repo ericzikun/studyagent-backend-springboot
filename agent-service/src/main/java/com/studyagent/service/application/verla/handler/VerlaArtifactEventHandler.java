@@ -174,7 +174,7 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         }
 
         try {
-            slidesConvertCommandService.triggerIfNeeded(saved, payload.getBodyOrRef());
+            slidesConvertCommandService.triggerIfNeeded(saved);
         } catch (Exception e) {
             log.error("[Verla/slides-convert] queue failed sourceUid={}: {}",
                     saved.getArtifactUid(), e.getMessage(), e);

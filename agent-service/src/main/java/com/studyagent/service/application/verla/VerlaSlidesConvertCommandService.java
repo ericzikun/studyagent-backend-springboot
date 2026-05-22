@@ -41,8 +41,8 @@ public class VerlaSlidesConvertCommandService {
     @Value("${verla.mq.command-exchange:" + DEFAULT_COMMAND_EXCHANGE + "}")
     private String commandExchange;
 
-    public void triggerIfNeeded(VerlaArtifact sourceArtifact, String sourceBody) {
-        if (!isEligibleSource(sourceArtifact, sourceBody)) {
+    public void triggerIfNeeded(VerlaArtifact sourceArtifact) {
+        if (!isEligibleSource(sourceArtifact)) {
             return;
         }
 
@@ -69,7 +69,6 @@ public class VerlaSlidesConvertCommandService {
         payload.put("sourceFilename", deriveSourceFilename(sourceArtifact));
         payload.put("targetKind", TARGET_KIND);
         payload.put("targetSummary", TARGET_SUMMARY_FALLBACK);
-        payload.put("sourceBody", sourceBody);
 
         VerlaCommandEnvelope env = VerlaCommandEnvelope.builder()
                 .schemaVersion(1)
@@ -110,7 +109,7 @@ public class VerlaSlidesConvertCommandService {
         return buildTargetArtifactUid(sourceArtifact);
     }
 
-    private boolean isEligibleSource(VerlaArtifact sourceArtifact, String sourceBody) {
+    private boolean isEligibleSource(VerlaArtifact sourceArtifact) {
         if (sourceArtifact == null) {
             return false;
         }
@@ -120,11 +119,6 @@ public class VerlaSlidesConvertCommandService {
         if (sourceArtifact.getConversationId() == null
                 || sourceArtifact.getTurnId() == null
                 || sourceArtifact.getSessionId() == null) {
-            return false;
-        }
-        if (sourceBody == null || sourceBody.isBlank()) {
-            log.warn("[Verla/slides-convert] source body empty, skip uid={}",
-                    sourceArtifact.getArtifactUid());
             return false;
         }
         return true;

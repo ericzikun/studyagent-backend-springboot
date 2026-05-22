@@ -49,14 +49,15 @@ class VerlaSlidesConvertCommandServiceTest {
                 .status("READY")
                 .build();
 
-        service.triggerIfNeeded(source, "const pptx = new pptxgen();");
+        service.triggerIfNeeded(source);
 
         assertNotNull(mqOutboxRepository.saved);
         assertEquals("cmd.slides.convert_to_editor_json", mqOutboxRepository.saved.getAction());
         assertEquals("cmd.slides.convert_to_editor_json", mqOutboxRepository.saved.getRoutingKey());
         assertTrue(mqOutboxRepository.saved.getPayload().contains("\"sourceArtifactUid\":\"artifact_11_22_33_assignment_slides_pptxgenjs\""));
         assertTrue(mqOutboxRepository.saved.getPayload().contains("\"targetArtifactUid\":\"artifact_11_22_33_assignment_slides_editor_json\""));
-        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"sourceBody\":\"const pptx = new pptxgen();\""));
+        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"sourceKind\":\"assignment_slides_pptxgenjs\""));
+        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"sourceFilename\":\"deck.js\""));
     }
 
     @Test
@@ -74,7 +75,7 @@ class VerlaSlidesConvertCommandServiceTest {
                 .kind("assignment_slides_editor_json")
                 .build();
 
-        service.triggerIfNeeded(source, "const pptx = new pptxgen();");
+        service.triggerIfNeeded(source);
 
         assertNull(mqOutboxRepository.saved);
     }

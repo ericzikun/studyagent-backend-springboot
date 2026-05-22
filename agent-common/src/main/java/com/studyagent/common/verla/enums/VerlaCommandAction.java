@@ -44,7 +44,10 @@ public enum VerlaCommandAction {
     CMD_DETECTION_RUN("cmd.detection.run"),
 
     /** V2: 文本 Humanizer 改写 */
-    CMD_HUMANIZER_RUN("cmd.humanizer.run");
+    CMD_HUMANIZER_RUN("cmd.humanizer.run"),
+
+    /** V2: slides source artifact -> editor json seed */
+    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json");
 
     private final String code;
 

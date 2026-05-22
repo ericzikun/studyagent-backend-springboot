@@ -314,6 +314,10 @@ public class MockPyCommandConsumer {
             scheduleAssignmentRunResponse(cmd);
             return;
         }
+        if (VerlaCommandAction.CMD_SLIDES_CONVERT_TO_EDITOR_JSON.getCode().equals(cmd.getAction())) {
+            scheduleSlidesConvertResponse(cmd);
+            return;
+        }
 
         Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
         String agentType = String.valueOf(payload.getOrDefault("agentType", "qa"));
@@ -937,6 +941,29 @@ public class MockPyCommandConsumer {
         p.put("sizeBytes", 256L);
         p.put("meta", Map.of("agent", agentType, "model", "mock-llm-1"));
         return p;
+    }
+
+    private void scheduleSlidesConvertResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String targetArtifactUid = stringField(payload, "targetArtifactUid");
+        String sourceArtifactUid = stringField(payload, "sourceArtifactUid");
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", targetArtifactUid == null || targetArtifactUid.isBlank()
+                ? "artifact_mock_" + UUID.randomUUID().toString().substring(0, 8)
+                : targetArtifactUid);
+        art.put("kind", "assignment_slides_editor_json");
+        art.put("mime", "application/json");
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("summary", "deck.editor.json");
+        art.put("bodyOrRef", "{\"title\":\"Mock Slides\",\"slides\":[{\"id\":\"slide-1\",\"elements\":[]}]}");
+        art.put("sizeBytes", 78L);
+        art.put("meta", Map.of(
+                "role", "editor_seed",
+                "derivedFromArtifactUid", sourceArtifactUid,
+                "converter", "mock_pptxgenjs_to_editor_json",
+                "schemaVersion", 1));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, 150);
     }
 
     private void scheduleControlResponse(VerlaCommandEnvelope cmd) {

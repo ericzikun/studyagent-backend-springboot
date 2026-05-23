@@ -37,6 +37,11 @@ public interface VerlaConversationRepository {
      */
     int incrementVersion(Long id);
 
+    /**
+     * 更新 AI 生成的对话标题。
+     */
+    int updateTitle(Long id, String title);
+
     default Long touchOnNewTurnAndGetVersion(Long id, Long turnId) {
         touchOnNewTurn(id, turnId);
         VerlaConversation conversation = findById(id);

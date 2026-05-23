@@ -17,5 +17,8 @@ public enum VerlaSessionKind {
     FILE_CHAT,
 
     /** 学习材料生成 */
-    MATERIALS
+    MATERIALS,
+
+    /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
+    TASK_NAME
 }

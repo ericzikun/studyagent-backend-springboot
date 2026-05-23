@@ -456,6 +456,11 @@ class VerlaContextCacheSyncIntegrationTest {
             return 1;
         }
 
+        @Override
+        public int updateTitle(Long id, String title) {
+            return 0;
+        }
+
         private Long turnIdFallback() {
             return 0L;
         }

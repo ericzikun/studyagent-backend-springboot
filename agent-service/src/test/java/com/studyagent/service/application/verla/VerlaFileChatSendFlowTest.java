@@ -520,6 +520,11 @@ class VerlaFileChatSendFlowTest {
             stored.setUpdatedAt(LocalDateTime.now());
             return 1;
         }
+
+        @Override
+        public int updateTitle(Long id, String title) {
+            return 0;
+        }
     }
 
     private static final class FakeTurnRepository implements VerlaTurnRepository {

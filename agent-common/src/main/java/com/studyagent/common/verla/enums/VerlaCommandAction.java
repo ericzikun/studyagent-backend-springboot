@@ -13,6 +13,9 @@ public enum VerlaCommandAction {
     /** 意图识别 */
     CMD_PLAN_INTENT("cmd.plan.intent"),
 
+    /** 对话标题生成（与 intent 识别并行，Java 单独分流） */
+    CMD_PLAN_TASK_NAME("cmd.plan.task_name"),
+
     /** 阶段一：需求理解（流式 thinking + 内容总结） */
     CMD_ASSIGNMENT_INIT("cmd.assignment.init"),
 

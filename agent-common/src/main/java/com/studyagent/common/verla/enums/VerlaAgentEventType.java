@@ -18,6 +18,8 @@ public enum VerlaAgentEventType {
     PLAN_INTENT_STARTED(false),
     /** Py plan runner：意图解析对话流式增量 */
     PLAN_INTENT_STREAM_CHUNK(false),
+    /** Py task_name runner：对话标题生成完成（cmd.plan.task_name session 的终态事件） */
+    PLAN_TASK_NAME_RESOLVED(true),
 
     /** Assignment 域 —— 阶段一：需求理解（Py assignment_init_service） */
     ASSIGNMENT_INIT_STARTED(false),
@@ -125,7 +127,8 @@ public enum VerlaAgentEventType {
             FILE_CHAT_COMPLETED,
             FILE_CHAT_FAILED,
             FILE_CHAT_CANCELLED,
-            MATERIALS_COMPLETED);
+            MATERIALS_COMPLETED,
+            PLAN_TASK_NAME_RESOLVED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

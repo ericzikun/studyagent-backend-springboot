@@ -77,6 +77,12 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
     int incrementVersion(@Param("id") Long id);
 
     /**
+     * 更新 AI 生成的对话标题（title）。
+     */
+    @Update("UPDATE verla_conversations SET title = #{title}, updated_at = NOW() WHERE id = #{id}")
+    int updateTitle(@Param("id") Long id, @Param("title") String title);
+
+    /**
      * 把当前 version 当作期望值乐观更新
      */
     default int updateStatusOptimistic(Long id, String newStatus, Long expectedVersion) {

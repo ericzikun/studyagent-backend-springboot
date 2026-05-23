@@ -142,6 +142,11 @@ public class VerlaContextCacheRepositoryConfig {
                 }
                 return updated;
             }
+
+            @Override
+            public int updateTitle(Long id, String title) {
+                return delegate.updateTitle(id, title);
+            }
         };
     }
 }

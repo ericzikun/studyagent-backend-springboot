@@ -161,6 +161,12 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
+    public Binding verlaCmdPlanTaskNameBinding(Queue verlaCmdPlanQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdPlanQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_PLAN_TASK_NAME.getCode());
+    }
+
+    @Bean
     public Binding verlaCmdAgentBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());

@@ -59,6 +59,11 @@ public class VerlaConversationRepositoryImpl
         return this.baseMapper.incrementVersion(id);
     }
 
+    @Override
+    public int updateTitle(Long id, String title) {
+        return this.baseMapper.updateTitle(id, title);
+    }
+
     private VerlaConversation toDomain(VerlaConversationEntity e) {
         if (e == null) {
             return null;

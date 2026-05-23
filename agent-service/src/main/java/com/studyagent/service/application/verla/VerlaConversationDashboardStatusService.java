@@ -171,7 +171,7 @@ public class VerlaConversationDashboardStatusService {
                     AGENT_TOOL_CALL_RECORDED, ATTACHMENT_PARSED -> STATUS_PROGRESSING;
             case FILE_CHAT_STARTED, FILE_CHAT_STREAM_CHUNK, FILE_CHAT_COMPLETED,
                     FILE_CHAT_FAILED, FILE_CHAT_CANCELLED -> null;
-            case PLAN_INTENT_RESOLVED -> null;
+            case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED -> null;
         };
     }
 

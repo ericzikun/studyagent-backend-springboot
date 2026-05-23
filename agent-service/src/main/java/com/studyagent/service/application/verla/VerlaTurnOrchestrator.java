@@ -1074,6 +1074,8 @@ public class VerlaTurnOrchestrator {
     private VerlaSession spawnPlanSession(
             VerlaConversation conv, VerlaTurn turn, String userText, boolean planConfirmRejected) {
         LocalDateTime now = LocalDateTime.now();
+
+        // ── PLAN session：意图识别（主流程）────────────────────────────────────
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv.getId())
                 .turnId(turn.getId())
@@ -1095,11 +1097,54 @@ public class VerlaTurnOrchestrator {
         s.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(s);
 
-        VerlaCommandEnvelope env = buildPlanIntentEnvelope(
+        VerlaCommandEnvelope intentEnv = buildPlanIntentEnvelope(
                 conv, turn, s, userText, planConfirmRejected);
-        mqOutboxService.createVerlaCommand(env, commandExchange,
+        mqOutboxService.createVerlaCommand(intentEnv, commandExchange,
                 VerlaCommandAction.CMD_PLAN_INTENT.getCode());
+
+        // ── TASK_NAME session：仅第一轮对话触发，后续轮次跳过 ──────────────────
+        // touchOnNewTurnAndGetVersion 已在 DB 将 turn_count +1，但内存中 conv.turnCount 仍是
+        // 旧值（refreshConversationVersion 只刷 version 字段），故第一轮时旧值为 0。
+        if (conv.getTurnCount() == null || conv.getTurnCount() == 0) {
+            spawnTaskNameSession(conv, turn, userText);
+        }
+
         return s;
+    }
+
+    /**
+     * 为对话标题生成创建独立的轻量 session，并写入 MQ outbox。
+     * <p>
+     * 该 session 的生命周期与 PLAN session 完全独立：
+     * Python 收到 cmd.plan.task_name 后直接调用 ConversationTitleService 并 emit PLAN_TASK_NAME_RESOLVED，
+     * Java VerlaConversationTitleEventHandler 接收后更新 verla_conversation.title。
+     */
+    private void spawnTaskNameSession(VerlaConversation conv, VerlaTurn turn, String userText) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession ts = VerlaSession.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.TASK_NAME.name())
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(ts);
+
+        ts.setCorrelationId(VerlaCorrelationId.of(conv.getId(), turn.getId(), ts.getId()));
+        SessionStatus afterDispatch = sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH);
+        ts.setStatus(afterDispatch.name());
+        ts.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(ts);
+
+        VerlaCommandEnvelope taskNameEnv = buildPlanTaskNameEnvelope(conv, turn, ts, userText);
+        mqOutboxService.createVerlaCommand(taskNameEnv, commandExchange,
+                VerlaCommandAction.CMD_PLAN_TASK_NAME.getCode());
     }
 
     /**
@@ -1481,6 +1526,15 @@ public class VerlaTurnOrchestrator {
                 conv.getVersion()));
 
         return baseEnvelope(VerlaCommandAction.CMD_PLAN_INTENT, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildPlanTaskNameEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                           VerlaSession session, String userText) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userText", userText);
+        return baseEnvelope(VerlaCommandAction.CMD_PLAN_TASK_NAME, conv, turn, session)
                 .payload(payload)
                 .build();
     }

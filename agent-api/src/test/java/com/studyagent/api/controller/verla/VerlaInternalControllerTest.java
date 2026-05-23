@@ -261,6 +261,11 @@ class VerlaInternalControllerTest {
         public int incrementVersion(Long id) {
             return 0;
         }
+
+        @Override
+        public int updateTitle(Long id, String title) {
+            return 0;
+        }
     }
 
     private static class FakeMessageRepository implements VerlaMessageRepository {

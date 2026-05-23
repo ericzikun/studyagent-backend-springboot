@@ -203,5 +203,10 @@ class VerlaAttachmentParsedEventHandlerTest {
                     .build();
             return 1;
         }
+
+        @Override
+        public int updateTitle(Long id, String title) {
+            return 0;
+        }
     }
 }

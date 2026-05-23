@@ -10,11 +10,12 @@ import java.util.List;
 public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
 
     /**
-     * 游标分页（id < cursor，倒序）
+     * 主对话消息分页。文件对话消息写入同表，但用 meta_json.scene=FILE_CHAT 隔离。
      */
     @Select("<script>"
             + "SELECT * FROM verla_messages "
             + "WHERE conversation_id = #{conversationId} "
+            + "AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')), '') != 'FILE_CHAT' "
             + "<if test='cursor != null'> AND id &lt; #{cursor} </if> "
             + "ORDER BY id DESC LIMIT #{limit}"
             + "</script>")

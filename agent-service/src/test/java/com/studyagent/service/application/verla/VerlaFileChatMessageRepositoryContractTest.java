@@ -42,6 +42,20 @@ class VerlaFileChatMessageRepositoryContractTest {
         assertThat(messages).extracting(VerlaMessage::getId).containsExactly(22L);
     }
 
+    @Test
+    void findByCursor_shouldExcludeFileChatMessagesFromMainConversationHistory() {
+        InMemoryMessageRepository repository = new InMemoryMessageRepository();
+        repository.save(mainMessage(31L, 1001L, "user", "main-1"));
+        repository.save(fileChatMessage(32L, 1001L, "obj_a", "user", "file-chat-1"));
+        repository.save(mainMessage(33L, 1001L, "assistant", "main-2"));
+        repository.save(mainMessage(34L, 1002L, "assistant", "other-conversation"));
+
+        List<VerlaMessage> messages = repository.findByCursor(1001L, null, 20);
+
+        assertThat(messages).extracting(VerlaMessage::getId).containsExactly(33L, 31L);
+        assertThat(messages).extracting(VerlaMessage::getTextContent).containsExactly("main-2", "main-1");
+    }
+
     private static VerlaMessage fileChatMessage(Long id,
                                                 Long conversationId,
                                                 String objectId,
@@ -56,6 +70,19 @@ class VerlaFileChatMessageRepositoryContractTest {
                         .scene(FileChatMessageMeta.SCENE_FILE_CHAT)
                         .objectId(objectId)
                         .build()))
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private static VerlaMessage mainMessage(Long id,
+                                            Long conversationId,
+                                            String role,
+                                            String text) {
+        return VerlaMessage.builder()
+                .id(id)
+                .conversationId(conversationId)
+                .role(role)
+                .textContent(text)
                 .createdAt(LocalDateTime.now())
                 .build();
     }
@@ -76,7 +103,17 @@ class VerlaFileChatMessageRepositoryContractTest {
 
         @Override
         public List<VerlaMessage> findByCursor(Long conversationId, Long cursor, int limit) {
-            return List.of();
+            List<VerlaMessage> rows = new ArrayList<>(store.values());
+            rows.removeIf(message -> !conversationId.equals(message.getConversationId()));
+            rows.removeIf(message -> {
+                FileChatMessageMeta meta = VerlaFileChatMetadataHelper.readMessageMeta(message.getMetaJson());
+                return meta != null && FileChatMessageMeta.SCENE_FILE_CHAT.equals(meta.getScene());
+            });
+            rows.sort(Comparator.comparing(VerlaMessage::getId).reversed());
+            return rows.stream()
+                    .filter(message -> cursor == null || message.getId() < cursor)
+                    .limit(limit)
+                    .toList();
         }
 
         @Override

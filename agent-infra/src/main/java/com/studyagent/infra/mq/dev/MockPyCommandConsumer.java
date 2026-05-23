@@ -318,6 +318,10 @@ public class MockPyCommandConsumer {
             scheduleAssignmentRunResponse(cmd);
             return;
         }
+        if (VerlaCommandAction.CMD_SLIDES_CONVERT_TO_EDITOR_JSON.getCode().equals(cmd.getAction())) {
+            scheduleSlidesConvertResponse(cmd);
+            return;
+        }
 
         Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
         String agentType = String.valueOf(payload.getOrDefault("agentType", "qa"));
@@ -573,8 +577,11 @@ public class MockPyCommandConsumer {
      */
     private void scheduleAssignmentRunResponse(VerlaCommandEnvelope cmd) {
         String agentType = assignmentAgentType(cmd);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
-                Map.of("agentType", agentType, "stage", "assignment_run"), 50);
+        Map<String, Object> started = new HashMap<>();
+        started.put("agentType", agentType);
+        started.put("stage", "assignment_run");
+        started.put("progress", assignmentEtaProgress("Planning assignment", 20 * 60));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED, started, 50);
 
         scheduleAssignmentNode(cmd,
                 "assignment-plan",
@@ -609,6 +616,14 @@ public class MockPyCommandConsumer {
                 500);
 
         scheduleQueuedAssignmentNodes(cmd, 520);
+        scheduleAssignmentProgress(cmd, "Planning assignment", 20 * 60, 120);
+        scheduleAssignmentProgress(cmd, "Framing the solution", 16 * 60, 900);
+        scheduleAssignmentProgress(cmd, "Collecting evidence", 13 * 60, 1600);
+        scheduleAssignmentProgress(cmd, "Building outline", 10 * 60, 2400);
+        scheduleAssignmentProgress(cmd, "Drafting assignment", 7 * 60, 3200);
+        scheduleAssignmentProgress(cmd, "Reviewing citations", 4 * 60, 4400);
+        scheduleAssignmentProgress(cmd, "Final quality check", 2 * 60, 5500);
+        scheduleAssignmentProgress(cmd, "Preparing artifact", 30, 7200);
 
         scheduleAssignmentTaskLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
                 "Problem Solving Expert", 1,
@@ -696,7 +711,24 @@ public class MockPyCommandConsumer {
         done.put("summary", "[Mock] Assignment workflow completed");
         done.put("artifactCount", 1);
         done.put("primaryArtifactUid", artifactUid);
+        done.put("progress", assignmentEtaProgress("Assignment ready", 0));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done, 9000);
+    }
+
+    private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
+                                            int estimatedRemainingSeconds, long delayMs) {
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_PROGRESS,
+                Map.of(
+                        "stage", "assignment_run",
+                        "progress", assignmentEtaProgress(label, estimatedRemainingSeconds)),
+                delayMs);
+    }
+
+    private Map<String, Object> assignmentEtaProgress(String label, int estimatedRemainingSeconds) {
+        Map<String, Object> progress = new HashMap<>();
+        progress.put("label", label);
+        progress.put("estimatedRemainingSeconds", Math.max(0, estimatedRemainingSeconds));
+        return progress;
     }
 
     private void scheduleQueuedAssignmentNodes(VerlaCommandEnvelope cmd, long firstDelayMs) {
@@ -966,6 +998,29 @@ public class MockPyCommandConsumer {
         p.put("sizeBytes", 256L);
         p.put("meta", Map.of("agent", agentType, "model", "mock-llm-1"));
         return p;
+    }
+
+    private void scheduleSlidesConvertResponse(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String targetArtifactUid = stringField(payload, "targetArtifactUid");
+        String sourceArtifactUid = stringField(payload, "sourceArtifactUid");
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", targetArtifactUid == null || targetArtifactUid.isBlank()
+                ? "artifact_mock_" + UUID.randomUUID().toString().substring(0, 8)
+                : targetArtifactUid);
+        art.put("kind", "assignment_slides_editor_json");
+        art.put("mime", "application/json");
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("summary", "deck.editor.json");
+        art.put("bodyOrRef", "{\"title\":\"Mock Slides\",\"slides\":[{\"id\":\"slide-1\",\"elements\":[]}]}");
+        art.put("sizeBytes", 78L);
+        art.put("meta", Map.of(
+                "role", "editor_seed",
+                "derivedFromArtifactUid", sourceArtifactUid,
+                "converter", "mock_pptxgenjs_to_editor_json",
+                "schemaVersion", 1));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, 150);
     }
 
     private void scheduleControlResponse(VerlaCommandEnvelope cmd) {

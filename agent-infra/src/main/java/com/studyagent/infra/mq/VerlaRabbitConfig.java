@@ -244,6 +244,12 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
+    public Binding verlaCmdSlidesConvertBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_SLIDES_CONVERT_TO_EDITOR_JSON.getCode());
+    }
+
+    @Bean
     public Binding verlaCmdAgentHumanizerBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_HUMANIZER_RUN.getCode());

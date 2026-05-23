@@ -14,6 +14,7 @@ import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaToolCall;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -43,6 +44,7 @@ class VerlaInternalControllerTest {
         controller = new VerlaInternalController(
                 contextQueryService,
                 null,
+                new NoopArtifactRepository(),
                 conversationRepository,
                 new NoopTurnRepository(),
                 new NoopSessionRepository(),
@@ -342,6 +344,39 @@ class VerlaInternalControllerTest {
         @Override
         public VerlaSession findByCorrelationId(String correlationId) {
             return null;
+        }
+    }
+
+    private static class NoopArtifactRepository implements VerlaArtifactRepository {
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact findByUid(String artifactUid) {
+            return null;
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findByConversation(Long conversationId) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findBySession(Long sessionId) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findByUids(List<String> artifactUids) {
+            return List.of();
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact upsertByUid(
+                com.studyagent.service.domain.verla.VerlaArtifact artifact) {
+            return artifact;
         }
     }
 }

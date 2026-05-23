@@ -72,7 +72,7 @@ public class VerlaEventInboxRepositoryImpl
 
     @Override
     public List<VerlaEventInbox> findRecentProcessedByConversation(Long conversationId, int limit) {
-        int safe = Math.max(1, Math.min(limit, 100));
+        int safe = Math.max(1, Math.min(limit, 500));
         return this.baseMapper.selectRecentProcessed(conversationId, safe)
                 .stream().map(this::toDomain).toList();
     }

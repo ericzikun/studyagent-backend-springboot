@@ -13,6 +13,7 @@ public interface VerlaAttachmentMapper extends BaseMapper<VerlaAttachmentEntity>
     VerlaAttachmentEntity selectByObjectId(@Param("oid") String objectId);
 
     @Select("SELECT * FROM verla_attachments WHERE conversation_id = #{cid} "
+            + "AND (attachment_origin IS NULL OR attachment_origin <> 'AGENT_OUTPUT') "
             + "ORDER BY created_at DESC, id DESC LIMIT #{limit}")
     List<VerlaAttachmentEntity> selectByConversation(@Param("cid") Long conversationId,
                                                      @Param("limit") int limit);

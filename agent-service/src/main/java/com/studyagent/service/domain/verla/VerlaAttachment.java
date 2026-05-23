@@ -19,6 +19,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class VerlaAttachment {
 
+    public static final String ORIGIN_USER_UPLOAD = "USER_UPLOAD";
+    public static final String ORIGIN_AGENT_OUTPUT = "AGENT_OUTPUT";
+
     private Long id;
     /** 业务唯一 ID（att_*），前端引用用 */
     private String objectId;
@@ -47,6 +50,8 @@ public class VerlaAttachment {
     private String primaryArtifactUid;
     /** JSON 字符串：page_count / image_size / ocr 等 */
     private String metaJson;
+    /** USER_UPLOAD / AGENT_OUTPUT */
+    private String attachmentOrigin;
     /** Py 解析全文缓存（SQL 042，对齐 files.markdown_content） */
     private String markdownContent;
     /** 抽取图片元数据 JSON 数组字符串（SQL 042，对齐 files.images_json） */

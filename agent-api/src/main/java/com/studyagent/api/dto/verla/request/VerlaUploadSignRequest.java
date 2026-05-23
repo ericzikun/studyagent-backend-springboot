@@ -24,4 +24,8 @@ public class VerlaUploadSignRequest {
     private Long turnId;
     /** 预留：关联 verla_sessions.id */
     private Long sessionId;
+    /** Internal upload source marker, e.g. USER_UPLOAD / AGENT_OUTPUT. */
+    private String attachmentOrigin;
+    /** Optional attachment metadata JSON supplied by the caller. */
+    private String metaJson;
 }

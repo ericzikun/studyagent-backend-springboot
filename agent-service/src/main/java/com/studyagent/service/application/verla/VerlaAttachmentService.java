@@ -145,22 +145,42 @@ public class VerlaAttachmentService {
                                              String mime, long sizeBytes, Long turnId, Long sessionId) {
         requireOssConfigured();
         ensureUser(clerkUserId);
-        return requestSignForUser(clerkUserId, conversationId, filename, mime, sizeBytes, turnId, sessionId);
+        return requestSignForUser(
+                clerkUserId,
+                conversationId,
+                filename,
+                mime,
+                sizeBytes,
+                turnId,
+                sessionId,
+                VerlaAttachment.ORIGIN_USER_UPLOAD,
+                null);
     }
 
     @Transactional
     public VerlaUploadSignResult requestSignForInternal(String clerkUserId, long conversationId, String filename,
                                                         String mime, long sizeBytes,
-                                                        Long turnId, Long sessionId) {
+                                                        Long turnId, Long sessionId,
+                                                        String attachmentOrigin, String metaJson) {
         requireOssConfigured();
         if (!StringUtils.hasText(clerkUserId)) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "clerkUserId required");
         }
-        return requestSignForUser(clerkUserId, conversationId, filename, mime, sizeBytes, turnId, sessionId);
+        return requestSignForUser(
+                clerkUserId,
+                conversationId,
+                filename,
+                mime,
+                sizeBytes,
+                turnId,
+                sessionId,
+                normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_AGENT_OUTPUT),
+                metaJson);
     }
 
     private VerlaUploadSignResult requestSignForUser(String clerkUserId, long conversationId, String filename,
-                                                     String mime, long sizeBytes, Long turnId, Long sessionId) {
+                                                     String mime, long sizeBytes, Long turnId, Long sessionId,
+                                                     String attachmentOrigin, String metaJson) {
         if (!StringUtils.hasText(filename)) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "filename required");
         }
@@ -175,7 +195,7 @@ public class VerlaAttachmentService {
             throw new BusinessException(ApiCode.PARAM_ERROR, "mime not allowed: " + mime);
         }
 
-        VerlaConversation conv = conversationService.getOwned(clerkUserId, conversationId);
+        conversationService.getOwned(clerkUserId, conversationId);
 
         String objectId = "att_" + UUID.randomUUID().toString().replace("-", "");
         String uploadToken = UUID.randomUUID().toString().replace("-", "");
@@ -194,6 +214,8 @@ public class VerlaAttachmentService {
                 .ossKey(ossKey)
                 .storageUri("pending://" + objectId)
                 .status(VerlaAttachmentStatus.UPLOADED.name())
+                .attachmentOrigin(normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_USER_UPLOAD))
+                .metaJson(StringUtils.hasText(metaJson) ? metaJson.trim() : null)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -391,7 +413,9 @@ public class VerlaAttachmentService {
     public List<VerlaAttachment> listByConversation(String clerkUserId, long conversationId, int limit) {
         ensureUser(clerkUserId);
         conversationService.getOwned(clerkUserId, conversationId);
-        return attachmentRepository.listByConversation(conversationId, limit);
+        return attachmentRepository.listByConversation(conversationId, limit).stream()
+                .filter(this::isVisibleToUserAttachmentList)
+                .collect(Collectors.toList());
     }
 
     public VerlaAttachment getOwned(String clerkUserId, String objectId) {
@@ -471,6 +495,29 @@ public class VerlaAttachmentService {
         if (!ossStorageService.isEnabled() && !localFallbackEnabled) {
             throw storageNotConfigured();
         }
+    }
+
+    private boolean isVisibleToUserAttachmentList(VerlaAttachment attachment) {
+        return attachment != null
+                && !VerlaAttachment.ORIGIN_AGENT_OUTPUT.equalsIgnoreCase(
+                normalizeAttachmentOrigin(attachment.getAttachmentOrigin(), VerlaAttachment.ORIGIN_USER_UPLOAD));
+    }
+
+    private String normalizeAttachmentOrigin(String attachmentOrigin, String fallback) {
+        String effectiveFallback = StringUtils.hasText(fallback)
+                ? fallback.trim().toUpperCase(Locale.ROOT)
+                : VerlaAttachment.ORIGIN_USER_UPLOAD;
+        if (!StringUtils.hasText(attachmentOrigin)) {
+            return effectiveFallback;
+        }
+        String normalized = attachmentOrigin.trim().toUpperCase(Locale.ROOT);
+        if (VerlaAttachment.ORIGIN_AGENT_OUTPUT.equals(normalized)) {
+            return VerlaAttachment.ORIGIN_AGENT_OUTPUT;
+        }
+        if (VerlaAttachment.ORIGIN_USER_UPLOAD.equals(normalized)) {
+            return VerlaAttachment.ORIGIN_USER_UPLOAD;
+        }
+        return effectiveFallback;
     }
 
     private BusinessException storageNotConfigured() {

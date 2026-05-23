@@ -140,6 +140,9 @@ public class VerlaAttachmentRepositoryImpl
         if (patch.getMetaJson() != null) {
             existing.setMetaJson(patch.getMetaJson());
         }
+        if (patch.getAttachmentOrigin() != null) {
+            existing.setAttachmentOrigin(patch.getAttachmentOrigin());
+        }
         existing.setUpdatedAt(LocalDateTime.now());
         this.baseMapper.updateById(existing);
         return toDomain(existing);
@@ -171,6 +174,7 @@ public class VerlaAttachmentRepositoryImpl
                 .summary(e.getSummary())
                 .primaryArtifactUid(e.getPrimaryArtifactUid())
                 .metaJson(e.getMetaJson())
+                .attachmentOrigin(e.getAttachmentOrigin())
                 .markdownContent(e.getMarkdownContent())
                 .imagesJson(e.getImagesJson())
                 .createdAt(e.getCreatedAt())
@@ -198,6 +202,7 @@ public class VerlaAttachmentRepositoryImpl
                 .setSummary(d.getSummary())
                 .setPrimaryArtifactUid(d.getPrimaryArtifactUid())
                 .setMetaJson(d.getMetaJson())
+                .setAttachmentOrigin(d.getAttachmentOrigin())
                 .setMarkdownContent(d.getMarkdownContent())
                 .setImagesJson(d.getImagesJson())
                 .setCreatedAt(d.getCreatedAt())

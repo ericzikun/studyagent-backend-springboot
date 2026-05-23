@@ -223,7 +223,9 @@ public class VerlaInternalController {
                 req.getMime(),
                 req.getSizeBytes() == null ? 0L : req.getSizeBytes(),
                 req.getTurnId(),
-                req.getSessionId());
+                req.getSessionId(),
+                req.getAttachmentOrigin(),
+                req.getMetaJson());
         return Result.success(VerlaUploadSignResponseVO.builder()
                 .objectId(r.getObjectId())
                 .uploadPath("/v1/internal/verla/v2/uploads/" + r.getObjectId() + "/content")

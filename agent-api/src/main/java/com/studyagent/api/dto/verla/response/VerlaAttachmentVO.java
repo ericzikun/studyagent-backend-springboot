@@ -34,6 +34,7 @@ public class VerlaAttachmentVO {
     private String extractedTextRef;
     private String summary;
     private String thumbnailUrl;
+    private String attachmentOrigin;
     private LocalDateTime createdAt;
 
     public static VerlaAttachmentVO fromUser(VerlaAttachment a) {
@@ -68,6 +69,7 @@ public class VerlaAttachmentVO {
                 .extractedTextRef(a.getPrimaryArtifactUid())
                 .summary(a.getSummary())
                 .thumbnailUrl(null)
+                .attachmentOrigin(a.getAttachmentOrigin())
                 .createdAt(a.getCreatedAt())
                 .build();
     }

@@ -325,6 +325,7 @@ CREATE TABLE IF NOT EXISTS verla_attachments (
     parse_error       VARCHAR(1024) DEFAULT NULL,
     summary           VARCHAR(1024) DEFAULT NULL                  COMMENT '解析后的短摘要，hydrate 用',
     primary_artifact_uid VARCHAR(96) DEFAULT NULL                 COMMENT '主产物（如 markdown 全文）的 verla_artifacts.artifact_uid',
+    attachment_origin VARCHAR(32)  NOT NULL DEFAULT 'USER_UPLOAD' COMMENT 'USER_UPLOAD / AGENT_OUTPUT',
     meta_json         JSON         DEFAULT NULL                   COMMENT 'page_count / image_size / ocr 等',
     created_at        DATETIME     NOT NULL,
     updated_at        DATETIME     NOT NULL,

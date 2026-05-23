@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
@@ -42,6 +44,7 @@ import static org.mockito.Mockito.*;
  * 详见 docs/verla-Java侧MVP技术方案.md §8.3 / §11.4。
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class VerlaInboxServiceTest {
 
     @Mock
@@ -55,6 +58,9 @@ class VerlaInboxServiceTest {
     @Mock
     VerlaSsePublisher ssePublisher;
 
+    @Mock
+    AssignmentRuntimeProgressEstimator progressEstimator;
+
     final MeterRegistry meterRegistry = new SimpleMeterRegistry();
     final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
@@ -62,8 +68,11 @@ class VerlaInboxServiceTest {
 
     @BeforeEach
     void setup() {
+        when(progressEstimator.enrichAssignmentRunPayload(any(), any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
         service = new VerlaInboxService(
-                inboxRepo, cursorRepo, dispatcher, meterRegistry, objectMapper, ssePublisherProvider);
+                inboxRepo, cursorRepo, dispatcher, meterRegistry, objectMapper,
+                ssePublisherProvider, progressEstimator);
         service.init();
     }
 

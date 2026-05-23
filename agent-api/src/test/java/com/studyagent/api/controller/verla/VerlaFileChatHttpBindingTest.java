@@ -56,6 +56,7 @@ class VerlaFileChatHttpBindingTest {
                 .mime("application/pdf")
                 .sizeBytes(15820L)
                 .status("PARSED")
+                .attachmentOrigin("USER_UPLOAD")
                 .createdAt(LocalDateTime.of(2026, 5, 20, 9, 0))
                 .build());
 
@@ -65,7 +66,8 @@ class VerlaFileChatHttpBindingTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.meta.statusCode").value(0))
                 .andExpect(jsonPath("$.data[0].objectId").value("obj_123"))
-                .andExpect(jsonPath("$.data[0].name").value("calculus homework.pdf"));
+                .andExpect(jsonPath("$.data[0].name").value("calculus homework.pdf"))
+                .andExpect(jsonPath("$.data[0].attachmentOrigin").value("USER_UPLOAD"));
 
         assertThat(attachmentService.lastUserId).isEqualTo("user_1");
         assertThat(attachmentService.lastConversationId).isEqualTo(24L);

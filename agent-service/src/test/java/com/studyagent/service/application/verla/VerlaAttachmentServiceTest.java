@@ -63,7 +63,58 @@ class VerlaAttachmentServiceTest {
         VerlaAttachment saved = attachmentRepository.saved.get(0);
         assertEquals(74L, saved.getConversationId());
         assertEquals("pending://" + result.getObjectId(), saved.getStorageUri());
+        assertEquals("USER_UPLOAD", saved.getAttachmentOrigin());
         assertNotNull(saved.getOssKey());
+    }
+
+    @Test
+    void internal_sign_marks_agent_output_and_preserves_meta_json() {
+        VerlaUploadSignResult result = service.requestSignForInternal(
+                USER_ID,
+                74L,
+                "summary.txt",
+                "text/plain",
+                12L,
+                101L,
+                202L,
+                "AGENT_OUTPUT",
+                "{\"artifactUid\":\"artifact_123\"}");
+
+        assertNotNull(result.getObjectId());
+
+        VerlaAttachment saved = attachmentRepository.saved.get(0);
+        assertEquals("AGENT_OUTPUT", saved.getAttachmentOrigin());
+        assertEquals("{\"artifactUid\":\"artifact_123\"}", saved.getMetaJson());
+    }
+
+    @Test
+    void listByConversation_hides_agent_output_attachments_from_user_views() {
+        attachmentRepository.conversationAttachments = List.of(
+                VerlaAttachment.builder()
+                        .objectId("att_user")
+                        .conversationId(74L)
+                        .userId(USER_ID)
+                        .filename("assignment.pdf")
+                        .mime("application/pdf")
+                        .sizeBytes(8L)
+                        .status("PARSED")
+                        .attachmentOrigin("USER_UPLOAD")
+                        .build(),
+                VerlaAttachment.builder()
+                        .objectId("att_agent")
+                        .conversationId(74L)
+                        .userId(USER_ID)
+                        .filename("summary.txt")
+                        .mime("text/plain")
+                        .sizeBytes(12L)
+                        .status("PARSED")
+                        .attachmentOrigin("AGENT_OUTPUT")
+                        .build());
+
+        List<VerlaAttachment> attachments = service.listByConversation(USER_ID, 74L, 50);
+
+        assertEquals(1, attachments.size());
+        assertEquals("att_user", attachments.get(0).getObjectId());
     }
 
     @Test
@@ -140,6 +191,7 @@ class VerlaAttachmentServiceTest {
         final List<VerlaAttachment> saved = new ArrayList<>();
         VerlaAttachment byObjectId;
         VerlaAttachment lastPatch;
+        List<VerlaAttachment> conversationAttachments = List.of();
 
         @Override
         public VerlaAttachment save(VerlaAttachment attachment) {
@@ -165,7 +217,7 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public List<VerlaAttachment> listByConversation(Long conversationId, int limit) {
-            return List.of();
+            return conversationAttachments;
         }
 
         @Override

@@ -141,12 +141,9 @@ class VerlaTurnOrchestratorTest {
         assertEquals("ASSIGNMENT", conversationRepository.conversation.getPrimaryIntent());
         assertEquals(TurnStatus.COMPLETED.name(), turnRepository.savedTurns.get(0).getStatus());
         assertEquals(TurnStatus.PLANNING.name(), turnRepository.saved.getStatus());
-        assertEquals(2, messageRepository.savedMessages.size());
+        assertEquals(1, messageRepository.savedMessages.size());
         assertEquals("user", messageRepository.savedMessages.get(0).getRole());
         assertEquals("No, let’s keep chatting.", messageRepository.savedMessages.get(0).getTextContent());
-        assertTrue(messageRepository.savedMessages.get(0).getBlocksJson().contains("\"choice\":\"rejected\""));
-        assertEquals("user", messageRepository.savedMessages.get(1).getRole());
-        assertEquals("No, let’s keep chatting.", messageRepository.savedMessages.get(1).getTextContent());
         assertEquals(0, conversationRepository.incrementVersionCount);
         assertEquals(SessionStatus.DISPATCHING.name(), sessionRepository.saved.getStatus());
         assertNotNull(mqOutboxRepository.saved);

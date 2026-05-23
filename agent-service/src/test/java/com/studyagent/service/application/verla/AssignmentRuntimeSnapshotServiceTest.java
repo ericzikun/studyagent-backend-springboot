@@ -32,10 +32,13 @@ class AssignmentRuntimeSnapshotServiceTest {
         messageRepository = new FakeMessageRepository();
         artifactRepository = new FakeArtifactRepository();
         eventInboxRepository = new FakeEventInboxRepository();
+        AssignmentRuntimeProgressEstimator progressEstimator =
+                new AssignmentRuntimeProgressEstimator(new ObjectMapper(), eventInboxRepository);
         service = new AssignmentRuntimeSnapshotService(
                 messageRepository,
                 artifactRepository,
                 eventInboxRepository,
+                progressEstimator,
                 new ObjectMapper());
     }
 
@@ -217,7 +220,7 @@ class AssignmentRuntimeSnapshotServiceTest {
     }
 
     @Test
-    void getSnapshot_leavesProgressNullWhenEtaFieldsAreMissing() {
+    void getSnapshot_computesProgressWhenEtaFieldsAreMissing() {
         eventInboxRepository.add(93L, event(
                 2300L,
                 93L,
@@ -227,11 +230,12 @@ class AssignmentRuntimeSnapshotServiceTest {
                 2301L,
                 93L,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
-                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"status\":\"RUNNING\"}}}"));
+                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"));
 
         AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(93L);
 
-        assertNull(snapshot.payload().progress());
+        assertEquals("Make plan", snapshot.payload().progress().get("label"));
+        assertEquals(600, snapshot.payload().progress().get("estimatedRemainingSeconds"));
     }
 
     private static VerlaMessage message(Long id, Long conversationId, String role, String text) {

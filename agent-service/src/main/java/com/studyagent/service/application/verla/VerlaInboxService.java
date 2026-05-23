@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla 事件入站保序处理服务（PR-12）
@@ -46,6 +47,7 @@ public class VerlaInboxService {
     private final ObjectMapper objectMapper;
     /** 可选：在 unit test / mock-only profile 下可能不存在 */
     private final ObjectProvider<VerlaSsePublisher> ssePublisherProvider;
+    private final AssignmentRuntimeProgressEstimator progressEstimator;
 
     private Counter dupCounter;
     private Counter skippedCounter;
@@ -59,13 +61,15 @@ public class VerlaInboxService {
                              VerlaEventHandlerDispatcher handlerDispatcher,
                              MeterRegistry meterRegistry,
                              ObjectMapper objectMapper,
-                             ObjectProvider<VerlaSsePublisher> ssePublisherProvider) {
+                             ObjectProvider<VerlaSsePublisher> ssePublisherProvider,
+                             AssignmentRuntimeProgressEstimator progressEstimator) {
         this.inboxRepository = inboxRepository;
         this.cursorRepository = cursorRepository;
         this.handlerDispatcher = handlerDispatcher;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
         this.ssePublisherProvider = ssePublisherProvider;
+        this.progressEstimator = progressEstimator;
     }
 
     @PostConstruct
@@ -242,6 +246,10 @@ public class VerlaInboxService {
     }
 
     private VerlaSseEventPayload toSsePayload(VerlaEventInbox row, VerlaEventEnvelope env) {
+        Map<String, Object> payload = env == null ? null
+                : VerlaFrontendPayloadSanitizer.sanitize(row.getEventType(), env.getPayload());
+        payload = progressEstimator.enrichAssignmentRunPayload(
+                row.getEventType(), payload, row.getConversationId(), row);
         return VerlaSseEventPayload.builder()
                 .id(row.getId())
                 .type(row.getEventType())
@@ -250,8 +258,7 @@ public class VerlaInboxService {
                 .sessionId(row.getSessionId())
                 .stepId(row.getStepId())
                 .stepSeq(row.getStepSeq())
-                .payload(env == null ? null
-                        : VerlaFrontendPayloadSanitizer.sanitize(row.getEventType(), env.getPayload()))
+                .payload(payload)
                 .build();
     }
 

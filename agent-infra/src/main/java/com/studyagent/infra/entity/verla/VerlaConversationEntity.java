@@ -31,9 +31,6 @@ public class VerlaConversationEntity {
     /** active / archived / deleted */
     private String status;
 
-    /** AI 生成的对话标题（由 PLAN_TASK_NAME_RESOLVED 事件写入） */
-    private String taskName;
-
     /** 沉淀的主意图（下一轮可跳 plan） */
     private String primaryIntent;
 

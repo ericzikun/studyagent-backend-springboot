@@ -5,6 +5,10 @@ import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaAttachmentStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.payload.VerlaAttachmentParsedPayload;
+import com.studyagent.service.application.verla.VerlaFileChatMetadataHelper;
+import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
+import com.studyagent.service.application.verla.dto.FileChatAnalysisStatus;
+import com.studyagent.service.application.verla.dto.FileChatPanelState;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
@@ -13,7 +17,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -62,6 +69,7 @@ public class VerlaAttachmentParsedEventHandler implements VerlaEventHandler {
 
         String status = p.getStatus() != null ? p.getStatus() : VerlaAttachmentStatus.PARSING.name();
 
+        VerlaAttachment existing = attachmentRepository.findByObjectId(p.getObjectId());
         VerlaAttachment patch = VerlaAttachment.builder()
                 .objectId(p.getObjectId())
                 .turnId(row.getTurnId())
@@ -70,7 +78,7 @@ public class VerlaAttachmentParsedEventHandler implements VerlaEventHandler {
                 .parseError(truncate(p.getErrorMessage(), 1024))
                 .summary(truncate(p.getSummary(), 1024))
                 .primaryArtifactUid(p.getPrimaryArtifactUid())
-                .metaJson(toJson(p.getMeta()))
+                .metaJson(buildAttachmentMetaJson(existing, status, p))
                 .markdownContent(p.getMarkdownContent())
                 .imagesJson(p.getImagesJson())
                 .build();
@@ -114,6 +122,82 @@ public class VerlaAttachmentParsedEventHandler implements VerlaEventHandler {
             log.warn("[Verla/attachment] meta serialize failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private String buildAttachmentMetaJson(VerlaAttachment existing,
+                                           String status,
+                                           VerlaAttachmentParsedPayload payload) {
+        String mergedRoot = mergeRootMetaJson(existing == null ? null : existing.getMetaJson(),
+                payload == null ? null : payload.getMeta());
+        FileChatPanelState current = VerlaFileChatMetadataHelper.readAttachmentState(existing);
+        FileChatPanelState next = nextFileChatState(status, payload, current);
+        return VerlaFileChatMetadataHelper.writeAttachmentState(mergedRoot, next);
+    }
+
+    private String mergeRootMetaJson(String currentMetaJson, Map<String, Object> meta) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode root;
+            if (currentMetaJson == null || currentMetaJson.isBlank()) {
+                root = objectMapper.createObjectNode();
+            } else {
+                com.fasterxml.jackson.databind.JsonNode current = objectMapper.readTree(currentMetaJson);
+                root = current instanceof com.fasterxml.jackson.databind.node.ObjectNode objectNode
+                        ? objectNode.deepCopy()
+                        : objectMapper.createObjectNode();
+            }
+            if (meta != null) {
+                for (Map.Entry<String, Object> entry : meta.entrySet()) {
+                    if (entry.getKey() == null || entry.getKey().isBlank() || "fileChat".equals(entry.getKey())) {
+                        continue;
+                    }
+                    root.set(entry.getKey(), objectMapper.valueToTree(entry.getValue()));
+                }
+            }
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            log.warn("[Verla/attachment] merge meta failed: {}", e.getMessage());
+            return toJson(meta);
+        }
+    }
+
+    private FileChatPanelState nextFileChatState(String rawStatus,
+                                                 VerlaAttachmentParsedPayload payload,
+                                                 FileChatPanelState current) {
+        FileChatPanelState safeCurrent = current == null ? FileChatPanelState.builder()
+                .analysis(FileChatAnalysisState.pending())
+                .suggestedQuestions(List.of())
+                .build() : current;
+        VerlaAttachmentStatus status = safeStatus(rawStatus);
+        if (status == VerlaAttachmentStatus.PARSED) {
+            return FileChatPanelState.builder()
+                    .analysis(FileChatAnalysisState.builder()
+                            .status(FileChatAnalysisStatus.READY)
+                            .text(truncate(payload == null ? null : payload.getSummary(), 1024) == null
+                                    ? "" : truncate(payload.getSummary(), 1024))
+                            .build())
+                    .suggestedQuestions(payload == null || payload.getSuggestedQuestions() == null
+                            ? List.of() : payload.getSuggestedQuestions())
+                    .updatedAt(LocalDateTime.now().toString())
+                    .build();
+        }
+        if (status == VerlaAttachmentStatus.FAILED) {
+            return FileChatPanelState.builder()
+                    .analysis(FileChatAnalysisState.builder()
+                            .status(FileChatAnalysisStatus.FAILED)
+                            .text("")
+                            .build())
+                    .suggestedQuestions(List.of())
+                    .updatedAt(LocalDateTime.now().toString())
+                    .build();
+        }
+        return FileChatPanelState.builder()
+                .analysis(FileChatAnalysisState.builder()
+                        .status(FileChatAnalysisStatus.PENDING)
+                        .text("")
+                        .build())
+                .suggestedQuestions(List.of())
+                .updatedAt(safeCurrent.getUpdatedAt())
+                .build();
     }
 
     private static String truncate(String s, int max) {

@@ -57,6 +57,7 @@ class VerlaTurnOrchestratorContextRefTest {
                 turnRepository,
                 sessionRepository,
                 messageRepository,
+                new NoopAttachmentRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -290,6 +291,48 @@ class VerlaTurnOrchestratorContextRefTest {
         }
     }
 
+    private static class NoopAttachmentRepository implements com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository {
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment save(com.studyagent.service.domain.verla.VerlaAttachment attachment) {
+            return attachment;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment findByObjectId(String objectId) {
+            return null;
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaAttachment> findByObjectIds(List<String> objectIds) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaAttachment> listByConversation(Long conversationId, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaAttachment> listByTurn(Long turnId) {
+            return List.of();
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment updateParseProgress(com.studyagent.service.domain.verla.VerlaAttachment patch) {
+            return patch;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment updateByObjectIdSelective(com.studyagent.service.domain.verla.VerlaAttachment patch) {
+            return patch;
+        }
+    }
+
     private static class FakeTurnRepository implements VerlaTurnRepository {
         private final Map<Long, VerlaTurn> store = new HashMap<>();
         private long nextId = 1L;
@@ -398,6 +441,11 @@ class VerlaTurnOrchestratorContextRefTest {
                     .limit(limit)
                     .map(VerlaTurnOrchestratorContextRefTest::copyMessage)
                     .toList();
+        }
+
+        @Override
+        public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
+            return List.of();
         }
     }
 

@@ -17,4 +17,9 @@ public interface VerlaMessageRepository {
      * 游标分页（id < cursor 倒序，cursor 为 null 时取最新）
      */
     List<VerlaMessage> findByCursor(Long conversationId, Long cursor, int limit);
+
+    /**
+     * 文件对话历史分页（按 conversation + objectId 隔离）
+     */
+    List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit);
 }

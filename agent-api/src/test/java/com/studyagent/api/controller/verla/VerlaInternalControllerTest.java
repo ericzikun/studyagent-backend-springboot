@@ -286,6 +286,11 @@ class VerlaInternalControllerTest {
             this.lastLimit = limit;
             return page;
         }
+
+        @Override
+        public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
+            return List.of();
+        }
     }
 
     private static class NoopTurnRepository implements VerlaTurnRepository {

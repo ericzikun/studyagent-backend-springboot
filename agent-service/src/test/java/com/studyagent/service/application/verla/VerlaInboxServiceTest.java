@@ -1,6 +1,7 @@
 package com.studyagent.service.application.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.studyagent.common.verla.envelope.VerlaConversationRef;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.VerlaSessionRef;
@@ -27,6 +28,7 @@ import java.time.LocalDateTime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
@@ -50,9 +52,11 @@ class VerlaInboxServiceTest {
     VerlaEventHandlerDispatcher dispatcher;
     @Mock
     ObjectProvider<VerlaSsePublisher> ssePublisherProvider;
+    @Mock
+    VerlaSsePublisher ssePublisher;
 
     final MeterRegistry meterRegistry = new SimpleMeterRegistry();
-    final ObjectMapper objectMapper = new ObjectMapper();
+    final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     VerlaInboxService service;
 
@@ -128,6 +132,114 @@ class VerlaInboxServiceTest {
         verify(dispatcher, times(1)).dispatch(eq(readyRow), any());
         verify(inboxRepo).markProcessed(3L);
         verify(cursorRepo).advance(eq(9001L), eq(8L), eq(7L));
+    }
+
+    @Test
+    void on_time_fileChatStreamChunk_publishesRawSsePayload() throws Exception {
+        when(ssePublisherProvider.getIfAvailable()).thenReturn(ssePublisher);
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox r = inv.getArgument(0);
+            r.setId(4L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9001L), any(), any()))
+                .thenReturn(cursor(9001L, 3L, 2L));
+
+        VerlaEventEnvelope env = VerlaEventEnvelope.builder()
+                .messageId("evt_9001_3")
+                .correlationId("conv:1:turn:1:sess:9001")
+                .orderingKey("session:9001")
+                .eventType("FILE_CHAT_STREAM_CHUNK")
+                .eventSeq(3L)
+                .timestamp(Instant.now())
+                .conversation(VerlaConversationRef.builder().conversationId(1L).build())
+                .turn(VerlaTurnRef.builder().turnId(1L).build())
+                .session(VerlaSessionRef.builder().sessionId(9001L).kind(VerlaSessionKind.FILE_CHAT).build())
+                .payload(java.util.Map.of("objectId", "obj_123", "delta", "第一段文件回答"))
+                .build();
+        VerlaEventInbox readyRow = sampleInboxRow(4L, 9001L, 3L, "FILE_CHAT_STREAM_CHUNK");
+        readyRow.setPayloadJson("""
+                {
+                  "messageId": "evt_9001_3",
+                  "correlationId": "conv:1:turn:1:sess:9001",
+                  "orderingKey": "session:9001",
+                  "eventType": "FILE_CHAT_STREAM_CHUNK",
+                  "eventSeq": 3,
+                  "timestamp": "2026-05-21T00:00:00Z",
+                  "conversation": { "conversationId": 1 },
+                  "turn": { "turnId": 1 },
+                  "session": { "sessionId": 9001, "kind": "FILE_CHAT" },
+                  "payload": {
+                    "objectId": "obj_123",
+                    "delta": "第一段文件回答"
+                  }
+                }
+                """);
+        when(inboxRepo.findReady(9001L, 3L)).thenReturn(readyRow);
+        when(inboxRepo.findReady(9001L, 4L)).thenReturn(null);
+
+        service.ingest(env);
+
+        verify(ssePublisher).publish(eq(1L), argThat(payload ->
+                payload != null
+                        && "FILE_CHAT_STREAM_CHUNK".equals(payload.getType())
+                        && payload.getPayload() != null
+                        && "obj_123".equals(payload.getPayload().get("objectId"))
+                        && "第一段文件回答".equals(payload.getPayload().get("delta"))));
+    }
+
+    @Test
+    void on_time_fileChatCompleted_publishesSsePayload() throws Exception {
+        when(ssePublisherProvider.getIfAvailable()).thenReturn(ssePublisher);
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox r = inv.getArgument(0);
+            r.setId(5L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9002L), any(), any()))
+                .thenReturn(cursor(9002L, 1L, 0L));
+
+        VerlaEventEnvelope env = VerlaEventEnvelope.builder()
+                .messageId("evt_9002_1")
+                .correlationId("conv:1:turn:1:sess:9002")
+                .orderingKey("session:9002")
+                .eventType("FILE_CHAT_COMPLETED")
+                .eventSeq(1L)
+                .timestamp(Instant.now())
+                .conversation(VerlaConversationRef.builder().conversationId(1L).build())
+                .turn(VerlaTurnRef.builder().turnId(1L).build())
+                .session(VerlaSessionRef.builder().sessionId(9002L).kind(VerlaSessionKind.FILE_CHAT).build())
+                .payload(java.util.Map.of("objectId", "obj_123", "finalText", "最终回答"))
+                .build();
+        VerlaEventInbox readyRow = sampleInboxRow(5L, 9002L, 1L, "FILE_CHAT_COMPLETED");
+        readyRow.setPayloadJson("""
+                {
+                  "messageId": "evt_9002_1",
+                  "correlationId": "conv:1:turn:1:sess:9002",
+                  "orderingKey": "session:9002",
+                  "eventType": "FILE_CHAT_COMPLETED",
+                  "eventSeq": 1,
+                  "timestamp": "2026-05-21T00:00:00Z",
+                  "conversation": { "conversationId": 1 },
+                  "turn": { "turnId": 1 },
+                  "session": { "sessionId": 9002, "kind": "FILE_CHAT" },
+                  "payload": {
+                    "objectId": "obj_123",
+                    "finalText": "最终回答"
+                  }
+                }
+                """);
+        when(inboxRepo.findReady(9002L, 1L)).thenReturn(readyRow);
+        when(inboxRepo.findReady(9002L, 2L)).thenReturn(null);
+
+        service.ingest(env);
+
+        verify(ssePublisher).publish(eq(1L), argThat(payload ->
+                payload != null
+                        && "FILE_CHAT_COMPLETED".equals(payload.getType())
+                        && payload.getPayload() != null
+                        && "obj_123".equals(payload.getPayload().get("objectId"))
+                        && "最终回答".equals(payload.getPayload().get("finalText"))));
     }
 
     // -----------------------------------------------------------

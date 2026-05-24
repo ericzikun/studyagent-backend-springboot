@@ -5,8 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeProgressEstimate;
+import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
+import com.studyagent.service.domain.verla.VerlaWorkforceTask;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
+import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,9 +25,11 @@ import java.util.Set;
 /**
  * Computes V2 Assignment generation ETA on the Java side when Python does not emit one.
  * <p>
- * Mirrors the V1 detail/list formula ({@code 20min × (1 - progress%)}), but derives
- * progress from folded {@code ASSIGNMENT_AGENT_NODE_UPDATED} workflow nodes plus an
- * early simulated floor while the run is warming up.
+ * Primary source: {@code verla_workforce_tasks} session aggregate (see
+ * docs/V2/算法侧提供的耗时统计思路.md). Progress follows the V1 two-phase model:
+ * workforce subtasks contribute the first 50%, compose rounds the second 50%.
+ * Falls back to folded {@code ASSIGNMENT_AGENT_NODE_UPDATED} nodes when workforce
+ * rows are not yet available.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,6 +39,10 @@ public class AssignmentRuntimeProgressEstimator {
     static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
     static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
     static final double RUNNING_NODE_PARTIAL_WEIGHT = 0.5;
+    static final double WORKFORCE_PHASE_WEIGHT_PERCENT = 50.0;
+
+    private static final java.util.regex.Pattern COMPOSE_PART_TITLE =
+            java.util.regex.Pattern.compile("Composing part (\\d+)/(\\d+)", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static final Set<String> ASSIGNMENT_RUN_EVENT_TYPES = Set.of(
             VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED.name(),
@@ -57,6 +66,7 @@ public class AssignmentRuntimeProgressEstimator {
 
     private final ObjectMapper objectMapper;
     private final VerlaEventInboxRepository eventInboxRepository;
+    private final VerlaWorkforceTaskRepository workforceTaskRepository;
 
     /**
      * Resolves the latest backend-owned progress map for snapshot recovery.
@@ -88,6 +98,8 @@ public class AssignmentRuntimeProgressEstimator {
         Map<String, Object> merged = explicit == null ? new LinkedHashMap<>() : new LinkedHashMap<>(explicit);
         merged.putIfAbsent("label", computed.label());
         merged.put("estimatedRemainingSeconds", computed.estimatedRemainingSeconds());
+        merged.put("completePercent", roundPercent(computed.completePercent()));
+        applyWorkforceMetadata(merged, computed);
         return merged.isEmpty() ? null : merged;
     }
 
@@ -125,6 +137,8 @@ public class AssignmentRuntimeProgressEstimator {
         }
         progress.putIfAbsent("label", computed.label());
         progress.put("estimatedRemainingSeconds", computed.estimatedRemainingSeconds());
+        progress.put("completePercent", roundPercent(computed.completePercent()));
+        applyWorkforceMetadata(progress, computed);
         enriched.put("progress", progress);
         return enriched;
     }
@@ -162,9 +176,75 @@ public class AssignmentRuntimeProgressEstimator {
     }
 
     AssignmentRuntimeProgressEstimate estimateFromEvents(List<VerlaEventInbox> recentEvents) {
-        List<Map<String, Object>> agentNodes = foldAgentNodes(recentEvents);
         LocalDateTime flowStartedAt = resolveFlowStartedAt(recentEvents);
+        Long sessionId = resolveActiveSessionId(recentEvents);
+        if (sessionId != null) {
+            WorkforceTaskProgressSnapshot workforce =
+                    workforceTaskRepository.aggregateProgressBySession(sessionId);
+            if (workforce.hasTaskData() || workforce.composeTotalRounds() != null) {
+                AssignmentRuntimeProgressEstimate workforceEstimate = estimateFromWorkforceSnapshot(
+                        workforce,
+                        recentEvents,
+                        flowStartedAt,
+                        sessionId);
+                if (workforceEstimate != null) {
+                    return workforceEstimate;
+                }
+            }
+        }
+
+        List<Map<String, Object>> agentNodes = foldAgentNodes(recentEvents);
         return estimateFromAgentNodes(agentNodes, flowStartedAt);
+    }
+
+    AssignmentRuntimeProgressEstimate estimateFromWorkforceSnapshot(
+            WorkforceTaskProgressSnapshot workforce,
+            List<VerlaEventInbox> recentEvents,
+            LocalDateTime flowStartedAt,
+            Long sessionId) {
+        if (workforce == null) {
+            return null;
+        }
+
+        int total = workforce.totalTaskCount();
+        int completed = workforce.completedTaskCount();
+        int running = workforce.activeTaskCount();
+        Integer composeTotalRounds = workforce.composeTotalRounds();
+        Integer composeCurrentRound = null;
+        double percent;
+
+        if (total <= 0) {
+            percent = computeSimulatedPercent(flowStartedAt);
+        } else if (completed < total || running > 0) {
+            double weighted = completed + (running > 0 ? RUNNING_NODE_PARTIAL_WEIGHT : 0.0);
+            percent = Math.min(WORKFORCE_PHASE_WEIGHT_PERCENT, (weighted / total) * WORKFORCE_PHASE_WEIGHT_PERCENT);
+        } else {
+            int composeTotal = composeTotalRounds != null && composeTotalRounds > 0
+                    ? composeTotalRounds
+                    : resolveComposeTotalRounds(recentEvents, composeTotalRounds);
+            composeCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
+            if (composeTotal > 0) {
+                percent = WORKFORCE_PHASE_WEIGHT_PERCENT
+                        + ((double) composeCurrentRound / composeTotal) * WORKFORCE_PHASE_WEIGHT_PERCENT;
+            } else {
+                percent = WORKFORCE_PHASE_WEIGHT_PERCENT;
+            }
+        }
+
+        percent = Math.max(computeSimulatedPercent(flowStartedAt), percent);
+        percent = Math.max(0.0, Math.min(100.0, percent));
+
+        int remainingSeconds = computeRemainingSeconds(percent);
+        boolean inComposePhase = total > 0 && completed >= total && running == 0;
+        String label = resolveWorkforceLabel(sessionId, recentEvents, running > 0, inComposePhase);
+        return new AssignmentRuntimeProgressEstimate(
+                label,
+                remainingSeconds,
+                percent,
+                completed,
+                total,
+                composeCurrentRound,
+                composeTotalRounds);
     }
 
     AssignmentRuntimeProgressEstimate estimateFromAgentNodes(
@@ -177,7 +257,131 @@ public class AssignmentRuntimeProgressEstimator {
 
         int remainingSeconds = computeRemainingSeconds(effectivePercent);
         String label = resolveRunningLabel(agentNodes);
-        return new AssignmentRuntimeProgressEstimate(label, remainingSeconds, effectivePercent);
+        return new AssignmentRuntimeProgressEstimate(
+                label, remainingSeconds, effectivePercent, null, null, null, null);
+    }
+
+    private Long resolveActiveSessionId(List<VerlaEventInbox> recentEvents) {
+        if (recentEvents == null) {
+            return null;
+        }
+        for (VerlaEventInbox event : recentEvents) {
+            if (event == null || event.getSessionId() == null) {
+                continue;
+            }
+            String type = event.getEventType();
+            if (type != null && ASSIGNMENT_RUN_EVENT_TYPES.contains(type)) {
+                return event.getSessionId();
+            }
+        }
+        return null;
+    }
+
+    private int resolveComposeTotalRounds(
+            List<VerlaEventInbox> recentEvents,
+            Integer workforceComposeTotalRounds) {
+        if (workforceComposeTotalRounds != null && workforceComposeTotalRounds > 0) {
+            return workforceComposeTotalRounds;
+        }
+        for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+            Integer parsed = parseComposePartTitle(node).map(ComposePartProgress::total).orElse(null);
+            if (parsed != null && parsed > 0) {
+                return parsed;
+            }
+        }
+        return 0;
+    }
+
+    private int resolveComposeCurrentRound(List<VerlaEventInbox> recentEvents, int composeTotalRounds) {
+        if (composeTotalRounds <= 0) {
+            return 0;
+        }
+        int maxCurrent = 0;
+        for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+            java.util.Optional<ComposePartProgress> parsed = parseComposePartTitle(node);
+            if (parsed.isPresent()) {
+                maxCurrent = Math.max(maxCurrent, Math.min(parsed.get().current(), composeTotalRounds));
+            }
+        }
+        return maxCurrent;
+    }
+
+    private java.util.Optional<ComposePartProgress> parseComposePartTitle(Map<String, Object> node) {
+        if (node == null) {
+            return java.util.Optional.empty();
+        }
+        Object raw = firstPresent(node, "title", "taskName", "summary", "subtitle");
+        if (!(raw instanceof String text) || text.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        java.util.regex.Matcher matcher = COMPOSE_PART_TITLE.matcher(text.trim());
+        if (!matcher.find()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            int current = Integer.parseInt(matcher.group(1));
+            int total = Integer.parseInt(matcher.group(2));
+            if (current <= 0 || total <= 0) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(new ComposePartProgress(current, total));
+        } catch (NumberFormatException ignored) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private String resolveWorkforceLabel(
+            Long sessionId,
+            List<VerlaEventInbox> recentEvents,
+            boolean hasRunningTask,
+            boolean inComposePhase) {
+        if (sessionId != null && hasRunningTask) {
+            for (VerlaWorkforceTask task : workforceTaskRepository.listBySession(sessionId)) {
+                if (task == null || !"task".equalsIgnoreCase(task.getNodeKind())) {
+                    continue;
+                }
+                if ("running".equals(normalizeNodeStatus(task.getStatus()))
+                        && task.getTaskName() != null
+                        && !task.getTaskName().isBlank()) {
+                    return task.getTaskName().trim();
+                }
+            }
+        }
+        if (inComposePhase) {
+            for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+                java.util.Optional<ComposePartProgress> parsed = parseComposePartTitle(node);
+                if (parsed.isPresent()) {
+                    return "Composing part " + parsed.get().current() + "/" + parsed.get().total();
+                }
+            }
+            return "Composing assignment";
+        }
+        return resolveRunningLabel(foldAgentNodes(recentEvents));
+    }
+
+    private void applyWorkforceMetadata(Map<String, Object> progress, AssignmentRuntimeProgressEstimate computed) {
+        if (progress == null || computed == null) {
+            return;
+        }
+        if (computed.completedTaskCount() != null) {
+            progress.put("completedTaskCount", computed.completedTaskCount());
+        }
+        if (computed.totalTaskCount() != null) {
+            progress.put("totalTaskCount", computed.totalTaskCount());
+        }
+        if (computed.composeCurrentRound() != null) {
+            progress.put("composeCurrentRound", computed.composeCurrentRound());
+        }
+        if (computed.composeTotalRounds() != null) {
+            progress.put("composeTotalRounds", computed.composeTotalRounds());
+        }
+    }
+
+    private double roundPercent(double percent) {
+        return Math.round(percent * 10.0) / 10.0;
+    }
+
+    private record ComposePartProgress(int current, int total) {
     }
 
     private List<VerlaEventInbox> mergeRecentEvents(Long conversationId, VerlaEventInbox currentEvent) {

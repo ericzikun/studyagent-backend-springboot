@@ -6,6 +6,10 @@ package com.studyagent.service.application.verla.dto;
 public record AssignmentRuntimeProgressEstimate(
         String label,
         int estimatedRemainingSeconds,
-        double completePercent
+        double completePercent,
+        Integer completedTaskCount,
+        Integer totalTaskCount,
+        Integer composeCurrentRound,
+        Integer composeTotalRounds
 ) {
 }

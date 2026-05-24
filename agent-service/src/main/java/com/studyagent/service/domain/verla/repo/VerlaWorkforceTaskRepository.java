@@ -1,5 +1,6 @@
 package com.studyagent.service.domain.verla.repo;
 
+import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
 import com.studyagent.service.domain.verla.VerlaWorkforceTask;
 
 import java.util.List;
@@ -28,4 +29,10 @@ public interface VerlaWorkforceTaskRepository {
      * </ul>
      */
     VerlaWorkforceTask upsertBySessionNode(VerlaWorkforceTask patch);
+
+    /**
+     * Session 维度进度聚合，替代 V1 {@code tasks.task_completed_size} /
+     * {@code active_agent_size} / {@code compose_total_rounds} 读法。
+     */
+    WorkforceTaskProgressSnapshot aggregateProgressBySession(Long sessionId);
 }

@@ -2,8 +2,11 @@ package com.studyagent.service.application.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
+import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
+import com.studyagent.service.domain.verla.VerlaWorkforceTask;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
+import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -20,12 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class AssignmentRuntimeProgressEstimatorTest {
 
     private FakeEventInboxRepository eventInboxRepository;
+    private FakeWorkforceTaskRepository workforceTaskRepository;
     private AssignmentRuntimeProgressEstimator estimator;
 
     @BeforeEach
     void setUp() {
         eventInboxRepository = new FakeEventInboxRepository();
-        estimator = new AssignmentRuntimeProgressEstimator(new ObjectMapper(), eventInboxRepository);
+        workforceTaskRepository = new FakeWorkforceTaskRepository();
+        estimator = new AssignmentRuntimeProgressEstimator(
+                new ObjectMapper(), eventInboxRepository, workforceTaskRepository);
     }
 
     @Test
@@ -43,11 +50,64 @@ class AssignmentRuntimeProgressEstimatorTest {
     }
 
     @Test
+    void estimateFromWorkforceSnapshot_usesV1TwoPhaseFormulaForSubtasks() {
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 2, 1, 10);
+
+        var estimate = estimator.estimateFromWorkforceSnapshot(
+                workforce,
+                List.of(),
+                LocalDateTime.now().minusMinutes(5),
+                100L);
+
+        assertEquals(25.0, estimate.completePercent(), 0.01);
+        assertEquals(900, estimate.estimatedRemainingSeconds());
+        assertEquals(2, estimate.completedTaskCount());
+        assertEquals(5, estimate.totalTaskCount());
+    }
+
+    @Test
+    void estimateFromWorkforceSnapshot_usesComposeRoundForSecondPhase() {
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 10);
+        List<VerlaEventInbox> events = List.of(
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"compose\",\"title\":\"Composing part 3/10\",\"status\":\"RUNNING\"}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        var estimate = estimator.estimateFromWorkforceSnapshot(
+                workforce, events, LocalDateTime.now().minusMinutes(5), 100L);
+
+        assertEquals(65.0, estimate.completePercent(), 0.01);
+        assertEquals(420, estimate.estimatedRemainingSeconds());
+        assertEquals("Composing part 3/10", estimate.label());
+        assertEquals(3, estimate.composeCurrentRound());
+        assertEquals(10, estimate.composeTotalRounds());
+    }
+
+    @Test
+    void resolveProgress_prefersWorkforceAggregateOverAgentNodes() {
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
+        List<VerlaEventInbox> events = List.of(
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        Map<String, Object> progress = estimator.resolveProgress(events);
+
+        assertNotNull(progress);
+        assertEquals(25.0, progress.get("completePercent"));
+        assertEquals(900, progress.get("estimatedRemainingSeconds"));
+        assertEquals(2, progress.get("completedTaskCount"));
+        assertEquals(5, progress.get("totalTaskCount"));
+    }
+
+    @Test
     void resolveProgress_prefersExplicitPythonEtaOverComputedValue() {
         List<VerlaEventInbox> events = List.of(
-                event(2L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                event(2L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"task-1\",\"status\":\"running\"}}}"),
-                event(1L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                event(1L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
                         "{\"payload\":{\"progress\":{\"label\":\"Planning\",\"estimatedRemainingSeconds\":960}}}"));
 
         Map<String, Object> progress = estimator.resolveProgress(events);
@@ -59,9 +119,9 @@ class AssignmentRuntimeProgressEstimatorTest {
     @Test
     void resolveProgress_computesEtaWhenPythonOmitsIt() {
         List<VerlaEventInbox> events = List.of(
-                event(2L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                event(2L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"),
-                event(1L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                event(1L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
                         "{\"payload\":{\"stage\":\"assignment_run\"}}"));
 
         Map<String, Object> progress = estimator.resolveProgress(events);
@@ -74,9 +134,9 @@ class AssignmentRuntimeProgressEstimatorTest {
     @Test
     void resolveProgress_clearsEtaOnTerminalCompletion() {
         List<VerlaEventInbox> events = List.of(
-                event(2L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED,
+                event(2L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED,
                         "{\"payload\":{\"summary\":\"done\"}}"),
-                event(1L, VerlaAgentEventType.AGENT_PROGRESS,
+                event(1L, null, VerlaAgentEventType.AGENT_PROGRESS,
                         "{\"payload\":{\"progress\":{\"label\":\"QA\",\"estimatedRemainingSeconds\":120}}}"));
 
         Map<String, Object> progress = estimator.resolveProgress(events);
@@ -89,6 +149,7 @@ class AssignmentRuntimeProgressEstimatorTest {
     void enrichAssignmentRunPayload_addsComputedProgressForSse() {
         eventInboxRepository.add(10L, event(
                 1L,
+                null,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
                 "{\"payload\":{\"stage\":\"assignment_run\"}}"));
 
@@ -96,6 +157,7 @@ class AssignmentRuntimeProgressEstimatorTest {
                 "node", Map.of("id", "assignment-plan", "title", "Make plan", "status", "RUNNING"));
         VerlaEventInbox current = event(
                 2L,
+                null,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                 "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}");
 
@@ -112,7 +174,7 @@ class AssignmentRuntimeProgressEstimatorTest {
     @Test
     void resolveProgress_returnsNullWhenRunHasNotStarted() {
         assertNull(estimator.resolveProgress(List.of(
-                event(1L, VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED,
+                event(1L, null, VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED,
                         "{\"payload\":{\"isReadyForGeneration\":true}}"))));
     }
 
@@ -124,10 +186,11 @@ class AssignmentRuntimeProgressEstimatorTest {
         return node;
     }
 
-    private static VerlaEventInbox event(Long id, VerlaAgentEventType type, String payloadJson) {
+    private static VerlaEventInbox event(Long id, Long sessionId, VerlaAgentEventType type, String payloadJson) {
         return VerlaEventInbox.builder()
                 .id(id)
                 .conversationId(10L)
+                .sessionId(sessionId)
                 .eventType(type.name())
                 .payloadJson(payloadJson)
                 .receivedAt(LocalDateTime.now().minusMinutes(5))
@@ -189,6 +252,36 @@ class AssignmentRuntimeProgressEstimatorTest {
                     .sorted((a, b) -> Long.compare(b.getId(), a.getId()))
                     .limit(limit)
                     .toList();
+        }
+    }
+
+    private static class FakeWorkforceTaskRepository implements VerlaWorkforceTaskRepository {
+        private final Map<Long, WorkforceTaskProgressSnapshot> snapshotBySession = new HashMap<>();
+        private final Map<Long, List<VerlaWorkforceTask>> tasksBySession = new HashMap<>();
+
+        @Override
+        public Optional<VerlaWorkforceTask> findBySessionAndNode(Long sessionId, String nodeId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<VerlaWorkforceTask> listBySession(Long sessionId) {
+            return tasksBySession.getOrDefault(sessionId, List.of());
+        }
+
+        @Override
+        public List<VerlaWorkforceTask> listByConversation(Long conversationId) {
+            return List.of();
+        }
+
+        @Override
+        public WorkforceTaskProgressSnapshot aggregateProgressBySession(Long sessionId) {
+            return snapshotBySession.getOrDefault(sessionId, WorkforceTaskProgressSnapshot.empty());
+        }
+
+        @Override
+        public VerlaWorkforceTask upsertBySessionNode(VerlaWorkforceTask patch) {
+            return patch;
         }
     }
 }

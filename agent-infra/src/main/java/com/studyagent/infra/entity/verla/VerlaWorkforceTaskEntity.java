@@ -9,38 +9,41 @@ import lombok.experimental.Accessors;
 import java.time.LocalDateTime;
 
 /**
- * verla_tool_calls 表实体（V2）。
- * <p>
- * 详见 docs/V2/5.1 Java后端 + 数据库 V2 升级技术方案.md §3。
+ * verla_workforce_tasks 表实体。
  */
 @Data
 @Accessors(chain = true)
-@TableName("verla_tool_calls")
-public class VerlaToolCallEntity {
+@TableName("verla_workforce_tasks")
+public class VerlaWorkforceTaskEntity {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String toolCallId;
     private Long conversationId;
     private Long turnId;
     private Long sessionId;
-    private String stepId;
+
     private String nodeId;
-    private String parentCallId;
-    private String agentName;
-    private String toolName;
+    private String camelTaskId;
+    private String nodeKind;
+
+    private String taskName;
+    private String taskType;
+    private String description;
+    private String taskAgent;
+
     private String status;
-    private String visibility;
-    private String toolInputJson;
-    private String toolOutputJson;
-    private String summary;
-    private String errorCode;
-    private String errorMessage;
+    private String content;
+
+    private String planStepsJson;
+    private Integer planTaskCount;
+
+    private Integer sortOrder;
+
     private LocalDateTime startedAt;
-    private LocalDateTime finishedAt;
-    private Integer durationMs;
-    private String metaJson;
+    private LocalDateTime endedAt;
+    private Integer processingTimeMs;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

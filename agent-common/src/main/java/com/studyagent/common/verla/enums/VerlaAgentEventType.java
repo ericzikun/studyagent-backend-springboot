@@ -61,6 +61,8 @@ public enum VerlaAgentEventType {
     ASSIGNMENT_AGENT_NODE_UPDATED(false),
     /** Assignment workflow canvas 节点快照更新的兼容命名。 */
     ASSIGNMENT_WORKFLOW_NODE_UPDATED(false),
+    /** Assignment workforce 任务节点流式 detail（产出文本 + detailChunk 累积）。 */
+    ASSIGNMENT_AGENT_NODE_DETAILED(false),
     ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED(false),
     ASSIGNMENT_AGENT_FLOW_COMPLETED(true),
     ASSIGNMENT_AGENT_FLOW_FAILED(true),

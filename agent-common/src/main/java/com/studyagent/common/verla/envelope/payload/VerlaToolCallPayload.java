@@ -48,6 +48,9 @@ public class VerlaToolCallPayload {
     /** 工具出参摘要（脱敏后） */
     private Map<String, Object> toolOutput;
 
+    /** Workforce 任务节点 ID（"task-{camel_task_id}"），非 workforce 场景为 null */
+    private String nodeId;
+
     /** 1 句话总结，给 trace 列表展示 */
     private String summary;
 

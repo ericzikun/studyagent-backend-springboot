@@ -75,6 +75,7 @@ public class VerlaToolCallEventHandler implements VerlaEventHandler {
                 .turnId(row.getTurnId())
                 .sessionId(row.getSessionId())
                 .stepId(row.getStepId())
+                .nodeId(p.getNodeId())
                 .parentCallId(p.getParentCallId())
                 .agentName(p.getAgentName())
                 .toolName(p.getToolName())

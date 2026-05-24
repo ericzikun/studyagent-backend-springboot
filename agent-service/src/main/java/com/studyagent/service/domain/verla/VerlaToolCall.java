@@ -27,6 +27,8 @@ public class VerlaToolCall {
     private Long sessionId;
     /** Py 层 step UUID（与 verla_event_inbox.step_id 对齐，可空） */
     private String stepId;
+    /** Workforce 任务节点 ID，对应 verla_workforce_tasks.node_id；非 workforce 场景为 null */
+    private String nodeId;
     /** 嵌套调用父引用，可空 */
     private String parentCallId;
     private String agentName;

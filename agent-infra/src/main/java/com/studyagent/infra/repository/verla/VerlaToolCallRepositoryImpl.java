@@ -64,6 +64,7 @@ public class VerlaToolCallRepositoryImpl
                     .setTurnId(patch.getTurnId())
                     .setSessionId(patch.getSessionId())
                     .setStepId(patch.getStepId())
+                    .setNodeId(patch.getNodeId())
                     .setParentCallId(patch.getParentCallId())
                     .setAgentName(patch.getAgentName())
                     .setToolName(patch.getToolName())
@@ -96,6 +97,7 @@ public class VerlaToolCallRepositoryImpl
         if (patch.getStatus() != null)         existing.setStatus(patch.getStatus());
         if (patch.getVisibility() != null)     existing.setVisibility(patch.getVisibility());
         if (patch.getStepId() != null)         existing.setStepId(patch.getStepId());
+        if (patch.getNodeId() != null)         existing.setNodeId(patch.getNodeId());
         if (patch.getParentCallId() != null)   existing.setParentCallId(patch.getParentCallId());
         if (patch.getAgentName() != null)      existing.setAgentName(patch.getAgentName());
         if (patch.getToolName() != null)       existing.setToolName(patch.getToolName());
@@ -136,6 +138,7 @@ public class VerlaToolCallRepositoryImpl
                 .turnId(e.getTurnId())
                 .sessionId(e.getSessionId())
                 .stepId(e.getStepId())
+                .nodeId(e.getNodeId())
                 .parentCallId(e.getParentCallId())
                 .agentName(e.getAgentName())
                 .toolName(e.getToolName())

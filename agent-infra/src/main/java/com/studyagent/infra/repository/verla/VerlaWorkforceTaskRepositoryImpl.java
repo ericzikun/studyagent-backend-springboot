@@ -3,6 +3,7 @@ package com.studyagent.infra.repository.verla;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.studyagent.infra.entity.verla.VerlaWorkforceTaskEntity;
 import com.studyagent.infra.mapper.verla.VerlaWorkforceTaskMapper;
+import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
 import com.studyagent.service.domain.verla.VerlaWorkforceTask;
 import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskRepository;
 import org.springframework.stereotype.Repository;
@@ -37,6 +38,52 @@ public class VerlaWorkforceTaskRepositoryImpl
     public List<VerlaWorkforceTask> listByConversation(Long conversationId) {
         return this.baseMapper.selectByConversation(conversationId)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public WorkforceTaskProgressSnapshot aggregateProgressBySession(Long sessionId) {
+        if (sessionId == null) {
+            return WorkforceTaskProgressSnapshot.empty();
+        }
+        List<VerlaWorkforceTaskEntity> rows = this.baseMapper.selectBySession(sessionId);
+        if (rows == null || rows.isEmpty()) {
+            return WorkforceTaskProgressSnapshot.empty();
+        }
+
+        int totalTaskCount = 0;
+        int completedTaskCount = 0;
+        int activeTaskCount = 0;
+        Integer composeTotalRounds = null;
+
+        for (VerlaWorkforceTaskEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if ("plan".equalsIgnoreCase(row.getNodeKind())) {
+                if (row.getPlanTaskCount() != null) {
+                    composeTotalRounds = composeTotalRounds == null
+                            ? row.getPlanTaskCount()
+                            : Math.max(composeTotalRounds, row.getPlanTaskCount());
+                }
+                continue;
+            }
+            if (!"task".equalsIgnoreCase(row.getNodeKind())) {
+                continue;
+            }
+            totalTaskCount++;
+            String status = row.getStatus() == null ? "" : row.getStatus().trim().toLowerCase();
+            if ("completed".equals(status)) {
+                completedTaskCount++;
+            } else if ("running".equals(status)) {
+                activeTaskCount++;
+            }
+        }
+
+        return new WorkforceTaskProgressSnapshot(
+                totalTaskCount,
+                completedTaskCount,
+                activeTaskCount,
+                composeTotalRounds);
     }
 
     @Override

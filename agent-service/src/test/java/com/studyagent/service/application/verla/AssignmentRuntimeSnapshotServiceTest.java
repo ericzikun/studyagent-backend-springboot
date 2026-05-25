@@ -8,6 +8,9 @@ import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
+import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
+import com.studyagent.service.domain.verla.VerlaWorkforceTask;
+import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -33,7 +37,10 @@ class AssignmentRuntimeSnapshotServiceTest {
         artifactRepository = new FakeArtifactRepository();
         eventInboxRepository = new FakeEventInboxRepository();
         AssignmentRuntimeProgressEstimator progressEstimator =
-                new AssignmentRuntimeProgressEstimator(new ObjectMapper(), eventInboxRepository);
+                new AssignmentRuntimeProgressEstimator(
+                        new ObjectMapper(),
+                        eventInboxRepository,
+                        new EmptyWorkforceTaskRepository());
         service = new AssignmentRuntimeSnapshotService(
                 messageRepository,
                 artifactRepository,
@@ -376,6 +383,33 @@ class AssignmentRuntimeSnapshotServiceTest {
                     .sorted((a, b) -> Long.compare(b.getId(), a.getId()))
                     .limit(limit)
                     .toList();
+        }
+    }
+
+    private static class EmptyWorkforceTaskRepository implements VerlaWorkforceTaskRepository {
+        @Override
+        public Optional<VerlaWorkforceTask> findBySessionAndNode(Long sessionId, String nodeId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<VerlaWorkforceTask> listBySession(Long sessionId) {
+            return List.of();
+        }
+
+        @Override
+        public List<VerlaWorkforceTask> listByConversation(Long conversationId) {
+            return List.of();
+        }
+
+        @Override
+        public WorkforceTaskProgressSnapshot aggregateProgressBySession(Long sessionId) {
+            return WorkforceTaskProgressSnapshot.empty();
+        }
+
+        @Override
+        public VerlaWorkforceTask upsertBySessionNode(VerlaWorkforceTask patch) {
+            return patch;
         }
     }
 }

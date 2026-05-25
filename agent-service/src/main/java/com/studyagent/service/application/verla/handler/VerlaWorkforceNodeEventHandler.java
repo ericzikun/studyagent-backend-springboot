@@ -43,6 +43,10 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
             VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED);
 
+    /** task_agent / task_name 截断上限：对应 DB 列已扩至 TEXT，此处保留软上限防止异常大值 */
+    private static final int MAX_TASK_AGENT_LEN = 2000;
+    private static final int MAX_TASK_NAME_LEN  = 512;
+
     private final VerlaWorkforceTaskRepository taskRepository;
     private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
     private final ObjectMapper objectMapper;
@@ -103,8 +107,8 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
                 .sessionId(row.getSessionId())
                 .nodeId(node.getId())
                 .nodeKind(isPlan ? NODE_KIND_PLAN : NODE_KIND_TASK)
-                .taskName(node.getTaskName())
-                .taskAgent(node.getTaskAgent())
+                .taskName(truncate(node.getTaskName(), MAX_TASK_NAME_LEN))
+                .taskAgent(truncate(node.getTaskAgent(), MAX_TASK_AGENT_LEN))
                 .status(node.getStatus())
                 .content(node.getContent());
 
@@ -182,5 +186,11 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             log.warn("[Verla/workforce] JSON serialize failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null || s.length() <= maxLen) return s;
+        log.warn("[Verla/workforce] field truncated from {} to {} chars", s.length(), maxLen);
+        return s.substring(0, maxLen);
     }
 }

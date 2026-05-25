@@ -4,6 +4,7 @@ import com.clerk.backend_api.helpers.security.AuthenticateRequest;
 import com.clerk.backend_api.helpers.security.models.AuthenticateRequestOptions;
 import com.clerk.backend_api.helpers.security.models.RequestState;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.log.util.TraceIdUtil;
 import com.studyagent.service.domain.user.ClerkClient;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -106,6 +107,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             info.email = devUser + "@local.dev";
             request.setAttribute("clerkUserId", devUser);
             request.setAttribute("userInfo", info);
+            TraceIdUtil.setUserId(devUser);
             return true;
         }
 
@@ -160,8 +162,10 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 将用户信息存储到 request 属性中
             request.setAttribute("clerkUserId", userInfo.clerkUserId);
             request.setAttribute("userInfo", userInfo);
-            
-            log.debug("[AuthInterceptor] 用户 {} 请求 {} {}", 
+            // 注入 userId 到 MDC，供日志框架自动携带（配合 TraceIdFilter 清理）
+            TraceIdUtil.setUserId(userInfo.clerkUserId);
+
+            log.debug("[AuthInterceptor] 用户 {} 请求 {} {}",
                 userInfo.clerkUserId, request.getMethod(), request.getRequestURI());
             
             return true;

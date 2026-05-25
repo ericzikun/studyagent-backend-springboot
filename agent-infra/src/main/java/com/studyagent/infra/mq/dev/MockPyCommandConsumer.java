@@ -101,6 +101,18 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MockPyCommandConsumer {
 
     private static final String PRODUCER_SERVICE = "py-mock";
+    private static final long ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS = 1200L;
+    private static final long ASSIGNMENT_RUN_STREAM_INTERVAL_MS = 650L;
+    private static final long ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS = 1000L;
+    private static final long ASSIGNMENT_RUN_COMPLETION_SETTLE_MS = 1600L;
+    private static final String ASSIGNMENT_STREAM_SCENARIO_DEFAULT = "default";
+    private static final String ASSIGNMENT_STREAM_SCENARIO_FAST = "fast";
+    private static final String ASSIGNMENT_STREAM_SCENARIO_MIXED = "mixed";
+    private static final long ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS = 120L;
+    private static final long ASSIGNMENT_INIT_FAST_INTERVAL_MS = 25L;
+    private static final long ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS = 220L;
+    private static final long ASSIGNMENT_INIT_MIXED_INTERVAL_MS = 260L;
+    private static final long ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS = 320L;
 
     private final ObjectMapper objectMapper;
     private final RabbitTemplate rabbitTemplate;
@@ -225,7 +237,7 @@ public class MockPyCommandConsumer {
         String userText = String.valueOf(payload.getOrDefault("userText", ""));
         String hint = stringField(payload, "primaryIntentHint");
 
-        String intent = hint != null && !hint.isBlank() ? hint : inferIntent(userText);
+        String intent = resolvePlanIntent(userText, hint);
         Map<String, Object> slots = inferSlots(userText, intent);
 
         // V2: 30% 概率走 clarify 分支（关键词触发可强制开/关）
@@ -391,6 +403,21 @@ public class MockPyCommandConsumer {
      * 这样本地 smoke 能验证 Java SSE 和 assignment understanding 状态，而不是落回通用 AGENT_*。
      */
     private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
+        String scenario = resolveAssignmentStreamScenario(assignmentUserText(cmd));
+        if (ASSIGNMENT_STREAM_SCENARIO_FAST.equals(scenario)) {
+            scheduleAssignmentInitScenarioResponse(cmd, scenario,
+                    assignmentFastTextChunks(),
+                    ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS,
+                    ASSIGNMENT_INIT_FAST_INTERVAL_MS,
+                    ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS);
+            return;
+        }
+        if (ASSIGNMENT_STREAM_SCENARIO_MIXED.equals(scenario)) {
+            scheduleAssignmentInitScenarioResponse(cmd, scenario, assignmentRunVisibleChunks(),
+                    160L, ASSIGNMENT_INIT_MIXED_INTERVAL_MS, ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS);
+            return;
+        }
+
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", assignmentAgentType(cmd));
         started.put("stage", "stage_0");
@@ -414,6 +441,43 @@ public class MockPyCommandConsumer {
                 "nextStep", "confirm requirements before generation"));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done, 650);
         scheduleInitialDeepUnderstandingReady(cmd, 850);
+    }
+
+    private void scheduleAssignmentInitScenarioResponse(VerlaCommandEnvelope cmd,
+                                                        String scenario,
+                                                        List<String> chunks,
+                                                        long firstChunkDelayMs,
+                                                        long chunkIntervalMs,
+                                                        long completionSettleMs) {
+        Map<String, Object> started = new HashMap<>();
+        started.put("agentType", assignmentAgentType(cmd));
+        started.put("stage", "stage_0");
+        started.put("mockScenario", scenario);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STARTED, started, 50);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                chunks,
+                "stage_0",
+                firstChunkDelayMs,
+                chunkIntervalMs,
+                scenario);
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Assignment stream scenario completed: " + scenario);
+        done.put("ready", true);
+        done.put("isReadyForGeneration", false);
+        done.put("nextActions", List.of("deep_understanding", "generation"));
+        done.put("mockScenario", scenario);
+        done.put("requirementUnderstanding", Map.of(
+                "topic", "Stream smoothing scenario",
+                "outputType", scenario,
+                "nextStep", "inspect visible stream pacing and card reveal"));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done,
+                assignmentInitScenarioCompletionDelay(
+                        chunks.size(),
+                        firstChunkDelayMs,
+                        chunkIntervalMs,
+                        completionSettleMs));
     }
 
     /**
@@ -686,33 +750,37 @@ public class MockPyCommandConsumer {
                         "Final package check"),
                 5500, 7000);
 
+        List<String> visibleChunks = assignmentRunVisibleChunks();
         scheduleAssignmentChunks(cmd, VerlaAgentEventType.AGENT_STEP_STREAM_CHUNK,
-                List.of(
-                        "I am turning the confirmed plan into a connected task workflow now.\n",
-                        "Research, outline, draft, citation, and QA tasks are progressing one by one.\n"),
+                visibleChunks,
                 "assignment_run",
-                1200);
+                ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
+                ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
 
         String artifactUid = "assignment_mock_document_" + UUID.randomUUID().toString().substring(0, 8);
+        String artifactBody = assignmentGeneratedArtifactBody();
         Map<String, Object> art = new HashMap<>();
         art.put("artifactUid", artifactUid);
         art.put("kind", "document_markdown");
         art.put("mime", "text/markdown");
         art.put("summary", "Generated Assignment.md");
-        art.put("bodyOrRef", "# Mock Generated Assignment\n\n"
-                + "This local MockPy document is emitted after workflow node events so the V2 right rail can be tested against the real SSE path.\n");
+        art.put("bodyOrRef", artifactBody);
         art.put("status", "READY");
         art.put("version", 1);
-        art.put("sizeBytes", 512L);
+        art.put("sizeBytes", (long) artifactBody.getBytes(StandardCharsets.UTF_8).length);
         art.put("meta", Map.of("agent", agentType, "source", "mockpy-assignment-run"));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, 6600);
+        long lastVisibleChunkDelayMs = assignmentRunStreamDelayMs(visibleChunks.size() - 1);
+        long artifactDelayMs = Math.max(6600L,
+                lastVisibleChunkDelayMs + ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, artifactDelayMs);
 
         Map<String, Object> done = new HashMap<>();
         done.put("summary", "[Mock] Assignment workflow completed");
         done.put("artifactCount", 1);
         done.put("primaryArtifactUid", artifactUid);
         done.put("progress", assignmentEtaProgress("Assignment ready", 0));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done, 9000);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done,
+                Math.max(9000L, artifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
     }
 
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
@@ -871,6 +939,19 @@ public class MockPyCommandConsumer {
 
     private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
                                           List<String> chunks, String stage, long firstDelayMs) {
+        scheduleAssignmentChunks(cmd, eventType, chunks, stage, firstDelayMs, 200L);
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs,
+                                          long chunkIntervalMs) {
+        scheduleAssignmentChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs, null);
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs,
+                                          long chunkIntervalMs,
+                                          String mockScenario) {
         for (int i = 0; i < chunks.size(); i++) {
             Map<String, Object> chunkPayload = new HashMap<>();
             chunkPayload.put("delta", chunks.get(i));
@@ -879,7 +960,12 @@ public class MockPyCommandConsumer {
             if (stage != null) {
                 chunkPayload.put("stage", stage);
             }
-            scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * 200L);
+            if (mockScenario != null) {
+                chunkPayload.put("mockScenario", mockScenario);
+                chunkPayload.put("chunkCount", chunks.size());
+                chunkPayload.put("mockChunkIntervalMs", chunkIntervalMs);
+            }
+            scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * chunkIntervalMs);
         }
     }
 
@@ -1183,13 +1269,42 @@ public class MockPyCommandConsumer {
     // 业务模拟
     // ============================================================
 
+    /**
+     * Resolve the plan intent for local MockPy.
+     *
+     * Dashboard conversations can enter plan with a generic {@code router} hint because
+     * the real planner is expected to classify the draft. MockPy must not treat that
+     * placeholder as a final intent; it falls back to text matching so local Spring
+     * backend tests can continue into the assignment flow.
+     */
+    static String resolvePlanIntent(String userText, String primaryIntentHint) {
+        if (primaryIntentHint != null && !primaryIntentHint.isBlank()
+                && !isRouterPlaceholder(primaryIntentHint)) {
+            return primaryIntentHint;
+        }
+        return inferIntent(userText);
+    }
+
+    private static boolean isRouterPlaceholder(String primaryIntentHint) {
+        String normalized = primaryIntentHint.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "router".equals(normalized) || "route".equals(normalized);
+    }
+
     /** 极简意图判定：仅做关键词匹配，目的是让本地 demo 走通；真 Py 用 LLM。 */
     private static String inferIntent(String userText) {
         if (userText == null || userText.isBlank()) {
             return "qa";
         }
+        if (!ASSIGNMENT_STREAM_SCENARIO_DEFAULT.equals(resolveAssignmentStreamScenario(userText))) {
+            return "assignment";
+        }
         String t = userText.toLowerCase(Locale.ROOT);
-        if (containsAny(t, "作业", "习题", "题目", "做题", "解题", "homework", "assignment")) {
+        if (containsAny(t,
+                "作业", "习题", "题目", "做题", "解题", "论文", "作文", "报告", "课程设计", "读后感", "观后感",
+                "homework", "assignment", "essay", "paper", "coursework")) {
             return "assignment";
         }
         if (containsAny(t, "翻译", "翻成", "translate")) {
@@ -1221,18 +1336,164 @@ public class MockPyCommandConsumer {
         return slots;
     }
 
+    private static String assignmentUserText(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String userText = stringField(payload, "userText");
+        return userText == null ? "" : userText;
+    }
+
+    /**
+     * Local MockPy scenario switch. Only a leading command word is accepted so
+     * ordinary text such as "fasting" or "mixed-media" keeps the default path.
+     */
+    static String resolveAssignmentStreamScenario(String userText) {
+        String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(Locale.ROOT);
+        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_FAST)) {
+            return ASSIGNMENT_STREAM_SCENARIO_FAST;
+        }
+        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_MIXED)) {
+            return ASSIGNMENT_STREAM_SCENARIO_MIXED;
+        }
+        return ASSIGNMENT_STREAM_SCENARIO_DEFAULT;
+    }
+
+    private static boolean hasMockScenarioPrefix(String normalizedText, String prefix) {
+        if (!normalizedText.startsWith(prefix)) {
+            return false;
+        }
+        if (normalizedText.length() == prefix.length()) {
+            return true;
+        }
+        char next = normalizedText.charAt(prefix.length());
+        return Character.isWhitespace(next)
+                || next == ':' || next == '：'
+                || next == ',' || next == '，';
+    }
+
     private static List<String> mockChunks(String agentType) {
         List<String> out = new ArrayList<>();
         if ("assignment".equals(agentType)) {
-            out.add("# 物理作业（Mock）\n\n");
-            out.add("## 第 1 题\n这是模拟的解题过程……\n");
-            out.add("## 总结\n以上即为模拟回答，完整解答请等真实 Py 服务接入。\n");
+            out.addAll(assignmentRunVisibleChunks());
         } else {
             out.add("[Mock] 这是 ");
             out.add(agentType);
             out.add(" agent 的模拟流式输出。\n");
         }
         return out;
+    }
+
+    /**
+     * Pure prose, high-frequency provider chunks used to validate that frontend
+     * visible streaming is paced by its scheduler, not by backend flush cadence.
+     */
+    static List<String> assignmentFastTextChunks() {
+        String text = "I reviewed your assignment brief, rubric notes, and uploaded context. "
+                + "The first useful move is to restate the task in plain language, then separate the audience, the format, the evidence expectations, and the constraints. "
+                + "After that, I would build a short working thesis and test whether each planned paragraph has one job. "
+                + "If a paragraph only repeats background, it should either support the thesis with evidence or be removed. "
+                + "For the mock stream, the important part is not the academic quality of this answer. "
+                + "The important part is that these backend chunks arrive faster than a person can comfortably read them, while the visible message should still appear with a steady rhythm. "
+                + "This lets us check that raw provider events are buffered, segmented, and paced by the frontend instead of being appended directly to the page. "
+                + "A good result should show words appearing continuously while the network is still busy, without a long blank pause and without one sudden jump after the final event. "
+                + "The text is intentionally long enough to wrap across many lines, push the left rail toward the bottom, and exercise scroll following during the same run. "
+                + "When this scenario completes, the choice moment should appear only after the content has been committed, so the user moves from reading mode into decision mode without the composer leaving a visual gap. "
+                + "That gives us one focused test for high frequency text streaming before we inspect markdown blocks, tables, cards, and file chat in separate scenarios.";
+        return splitFastTextIntoProviderChunks(text);
+    }
+
+    private static List<String> splitFastTextIntoProviderChunks(String text) {
+        int[] chunkWidths = {5, 9, 4, 12, 7, 3, 15, 6, 10, 8, 5, 14, 4, 11, 7, 6};
+        List<String> chunks = new ArrayList<>();
+        int index = 0;
+        int widthIndex = 0;
+        while (index < text.length()) {
+            int width = chunkWidths[widthIndex % chunkWidths.length];
+            int end = Math.min(text.length(), index + width);
+            chunks.add(text.substring(index, end));
+            index = end;
+            widthIndex++;
+        }
+        return chunks;
+    }
+
+    static long assignmentInitScenarioCompletionDelay(int chunkCount,
+                                                      long firstChunkDelayMs,
+                                                      long chunkIntervalMs,
+                                                      long completionSettleMs) {
+        return firstChunkDelayMs
+                + Math.max(0, chunkCount - 1L) * chunkIntervalMs
+                + completionSettleMs;
+    }
+
+    /**
+     * Rich visible chunks for local MockPy assignment output.
+     *
+     * The real provider stream is usually not shaped like a finished paragraph; this
+     * mock intentionally mixes prose, markdown blocks, and punctuation so frontend
+     * stream smoothing can be checked through the Spring SSE path, not only the
+     * in-browser mock stream.
+     */
+    static List<String> assignmentRunVisibleChunks() {
+        return List.of(
+                "I’m turning the confirmed plan into a connected assignment workflow now. ",
+                "I’ll keep the visible stream close to a real answer: short phrases, punctuation pauses, and structure that should not jump while it renders.\n\n",
+                "## What I’m checking\n",
+                "- Whether the draft answers the exact task, not just the broad topic.\n"
+                        + "- Whether each paragraph has a claim, evidence, and explanation.\n"
+                        + "- Whether citation placeholders are clear enough for a final pass.\n\n",
+                "| Area | What I will verify |\n",
+                "| --- | --- |\n"
+                        + "| Rubric fit | The response addresses criteria, word count, and required format. |\n"
+                        + "| Evidence | Claims are tied to course material or source notes. |\n"
+                        + "| Flow | The introduction, body sections, and conclusion read as one argument. |\n\n",
+                "```text\n"
+                        + "Draft order: context -> thesis -> evidence map -> body sections -> citation pass -> final QA\n"
+                        + "```\n\n",
+                "The workflow cards are now moving through research, outline, drafting, citation, and QA. ",
+                "When the final artifact arrives, it should be long enough to test markdown preview, artifact switching, and the left-rail stream ending state.\n");
+    }
+
+    /** Delay schedule for rich assignment chunks in Java MockPy. */
+    static long assignmentRunStreamDelayMs(int chunkIndex) {
+        return ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS
+                + Math.max(0, chunkIndex) * ASSIGNMENT_RUN_STREAM_INTERVAL_MS;
+    }
+
+    /**
+     * Final document emitted by Java MockPy after workflow completion.
+     *
+     * Keep this content aligned with {@link #assignmentRunVisibleChunks()} so the
+     * chat stream and artifact preview feel like the same generated assignment.
+     */
+    static String assignmentGeneratedArtifactBody() {
+        return """
+                # Revise Case Study on Indigenous Australian Business Protocols
+
+                ## Working Thesis
+                A strong revision should explain that effective business practice with Indigenous Australian communities depends on protocol, relationship-building, and local consultation. The final paper should avoid treating protocol as a checklist; instead, it should show how respect, consent, and accountability shape each business decision.
+
+                ## Suggested Structure
+                1. Introduce the case context and identify the main business decision.
+                2. Explain why cultural protocol matters before negotiation or delivery.
+                3. Compare the current draft against the rubric expectations.
+                4. Revise the argument so evidence appears before recommendations.
+                5. Close with practical next steps and citation checks.
+
+                | Section | Revision Goal | Evidence Needed |
+                | --- | --- | --- |
+                | Introduction | Clarify the case and stakeholder relationship | Course brief, case facts |
+                | Protocol analysis | Explain consent, consultation, and respect | Lecture notes, source excerpts |
+                | Recommendation | Connect action to protocol obligations | Rubric criteria, examples |
+
+                ## Sample Revision Paragraph
+                The case should frame protocol as part of business competence rather than an optional cultural addition. Before proposing a partnership model, the organization needs to identify the relevant community representatives, confirm expectations for consultation, and document how feedback changes the plan. This makes the recommendation more credible because it links commercial action to respectful process.
+
+                ## Checklist Before Submission
+                - Confirm the required citation style and replace placeholders.
+                - Check that every recommendation refers back to a case detail.
+                - Remove broad claims that are not supported by the supplied materials.
+                - Keep the final conclusion focused on protocol-informed decision making.
+                """;
     }
 
     private static boolean containsAny(String text, String... keywords) {

@@ -2,6 +2,9 @@ package com.studyagent.infra.mq.dev;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MockPyCommandConsumerTest {
@@ -98,6 +101,30 @@ class MockPyCommandConsumerTest {
         assertThat(body).contains("# Revise Case Study on Indigenous Australian Business Protocols");
         assertThat(body).contains("| Section | Revision Goal | Evidence Needed |");
         assertThat(body).contains("## Checklist Before Submission");
+    }
+
+    @Test
+    void assignmentNodeDetailPayload_matchesWorkflowDetailContract() {
+        Map<String, Object> payload = MockPyCommandConsumer.assignmentNodeDetailPayload(
+                "draft-writer",
+                "Draft Writer",
+                "Writing",
+                "COMPLETED",
+                List.of(Map.of(
+                        "type", "search_serper",
+                        "detailed", List.of(Map.of("name", "Mock source scan")))),
+                "Draft Writer completed. Generated the main assignment draft.\n");
+
+        assertThat(payload).containsEntry("id", "draft-writer");
+        assertThat(payload).containsEntry("status", "COMPLETED");
+        assertThat(payload).containsEntry("taskName", "Draft Writer");
+        assertThat(payload).containsEntry("taskAgent", "Writing");
+        assertThat(payload.get("startStamp")).isInstanceOf(String.class);
+        assertThat(payload.get("contentChunk"))
+                .isEqualTo("Draft Writer completed. Generated the main assignment draft.\n");
+        assertThat(payload.get("detailChunk")).isEqualTo(List.of(Map.of(
+                "type", "search_serper",
+                "detailed", List.of(Map.of("name", "Mock source scan")))));
     }
 
 }

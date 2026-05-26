@@ -73,6 +73,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *                          (80ms)   ASSIGNMENT_AGENT_NODE_UPDATED plan=RUNNING
  *                          (500ms)  ASSIGNMENT_AGENT_NODE_UPDATED plan=COMPLETED + queued task nodes
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_UPDATED each task running/completed
+ *                          (900ms+) ASSIGNMENT_AGENT_NODE_DETAILED each task process/content detail
  *                          (6600ms) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED
  *                          (9000ms) ASSIGNMENT_AGENT_FLOW_COMPLETED
  * cmd.agent.run        ──► (50ms)   AGENT_STARTED
@@ -846,10 +847,18 @@ public class MockPyCommandConsumer {
                 inputSummary, null,
                 workflowSteps(stepTitles, "RUNNING"),
                 runningDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "RUNNING",
+                mockDetailItems(stepTitles),
+                mockRunningDetailContent(title, summary),
+                runningDelayMs + 120L);
         scheduleAssignmentNode(cmd, id, title, role, "COMPLETED", order, summary,
                 inputSummary, outputSummary,
                 workflowSteps(stepTitles, "COMPLETED"),
                 completedDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "COMPLETED",
+                List.of(),
+                mockCompletedDetailContent(title, outputSummary),
+                completedDelayMs + 80L);
     }
 
     private void scheduleAssignmentNode(VerlaCommandEnvelope cmd,
@@ -883,6 +892,75 @@ public class MockPyCommandConsumer {
 
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                 Map.of("node", node), delayMs);
+    }
+
+    private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
+                                              String id,
+                                              String title,
+                                              String role,
+                                              String status,
+                                              List<Map<String, Object>> detailChunk,
+                                              String contentChunk,
+                                              long delayMs) {
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED,
+                assignmentNodeDetailPayload(id, title, role, status, detailChunk, contentChunk),
+                delayMs);
+    }
+
+    static Map<String, Object> assignmentNodeDetailPayload(String id,
+                                                           String title,
+                                                           String role,
+                                                           String status,
+                                                           List<Map<String, Object>> detailChunk,
+                                                           String contentChunk) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", id);
+        payload.put("status", status);
+        payload.put("taskName", title);
+        payload.put("taskAgent", role);
+        payload.put("startStamp", Instant.now().toString());
+        if (detailChunk != null && !detailChunk.isEmpty()) {
+            payload.put("detailChunk", detailChunk);
+        }
+        if (contentChunk != null && !contentChunk.isBlank()) {
+            payload.put("contentChunk", contentChunk);
+        }
+        return payload;
+    }
+
+    private List<Map<String, Object>> mockDetailItems(List<String> stepTitles) {
+        if (stepTitles == null || stepTitles.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int i = 0; i < stepTitles.size(); i++) {
+            String stepTitle = stepTitles.get(i);
+            items.add(Map.of(
+                    "type", mockDetailType(i),
+                    "detailed", List.of(Map.of(
+                            "name", stepTitle,
+                            "url", "https://mock.verla.local/workflow/" + (i + 1)))));
+        }
+        return items;
+    }
+
+    private String mockDetailType(int index) {
+        return switch (index % 3) {
+            case 0 -> "search_serper";
+            case 1 -> "read_file";
+            default -> "format_citation_list";
+        };
+    }
+
+    private String mockRunningDetailContent(String title, String summary) {
+        return title + " started. " + summary + "\n";
+    }
+
+    private String mockCompletedDetailContent(String title, String outputSummary) {
+        String summary = outputSummary == null || outputSummary.isBlank()
+                ? "The mock task finished and produced its handoff notes."
+                : outputSummary;
+        return title + " completed. " + summary + "\n";
     }
 
     private List<Map<String, Object>> workflowSteps(List<String> titles, String status) {

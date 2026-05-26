@@ -8,6 +8,11 @@ import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -49,6 +54,29 @@ public class VerlaAttachmentController {
         ensureLogin(clerkUserId);
         VerlaAttachment a = attachmentService.getOwned(clerkUserId, objectId);
         return Result.success(VerlaAttachmentVO.fromUser(a));
+    }
+
+    @GetMapping("/attachments/{objectId}/content")
+    public ResponseEntity<Resource> getContent(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String objectId) {
+        ensureLogin(clerkUserId);
+        VerlaAttachment attachment = attachmentService.getOwned(clerkUserId, objectId);
+        byte[] content = attachmentService.loadAttachmentBytes(objectId);
+        if (content == null || content.length == 0) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String mimeType = attachment.getMime();
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (mimeType != null && !mimeType.isBlank()) {
+            mediaType = MediaType.parseMediaType(mimeType.trim());
+        }
+
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .cacheControl(CacheControl.noCache().cachePrivate())
+                .body(new ByteArrayResource(content));
     }
 
     private static void ensureLogin(String clerkUserId) {

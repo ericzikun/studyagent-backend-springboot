@@ -1547,7 +1547,9 @@ public class MockPyCommandConsumer {
      *   <li>{@code [--BODY_SECTION--]}：正文，嵌入 {@code [[claim]](evidence_id)} 引用标记</li>
      *   <li>{@code [--EVIDENCE_RECORDS--]}：JSON evidence 列表，前端按 sourceType
      *       渲染 academic / web / upload 三类徽章（红 ACA / 蓝 WEB / 绿 UP）</li>
-     *   <li>{@code [--REFERENCE_SECTION--]}：参考文献列表（已按当前 citation_style 排版好）</li>
+     *   <li>{@code [--REFERENCE_SECTION--]}：参考文献列表（已按当前 citation_style 排版好；
+     *       有 URL 的条目为 {@code [整条文献](https://...)} markdown 链接，URL 不裸露；
+     *       upload 无外链条目为纯文本）</li>
      *   <li>{@code [--CITATION_STYLE--]}：引用样式开关</li>
      * </ul>
      *
@@ -1661,8 +1663,8 @@ public class MockPyCommandConsumer {
 
                 [--REFERENCE_SECTION--]
 
-                - Vasanthakumar, S., & Wickramarachchi, R. (2023). Engaging with Aboriginal and Torres Strait Islander communities: A practical guide for business. *Journal of Business Ethics*, 188(3), 521-540. https://doi.org/10.1007/s10551-023-05421-3
-                - Australian Government Department of Finance. (n.d.). *Indigenous procurement policy*. https://www.finance.gov.au/government/procurement/indigenous-procurement-policy
+                - [Vasanthakumar, S., & Wickramarachchi, R. (2023). Engaging with Aboriginal and Torres Strait Islander communities: A practical guide for business. *Journal of Business Ethics*, 188(3), 521-540.](https://doi.org/10.1007/s10551-023-05421-3)
+                - [Australian Government Department of Finance. (n.d.). *Indigenous procurement policy*.](https://www.finance.gov.au/government/procurement/indigenous-procurement-policy)
                 - Course materials. (2026). *Rubric - APA 7 citation requirements* [Uploaded PDF].
 
                 [--CITATION_STYLE--]

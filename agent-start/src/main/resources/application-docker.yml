@@ -41,6 +41,9 @@ file:
 # 日志配置
 logging:
   level:
+    # 生产/Docker 环境：业务代码 INFO，Spring 框架 WARN，避免 DEBUG 日志噪音
+    com.studyagent: INFO
+    org.springframework: WARN
     # 完全关闭 MyBatis SQL 日志
     org.mybatis: ERROR
     org.apache.ibatis: ERROR

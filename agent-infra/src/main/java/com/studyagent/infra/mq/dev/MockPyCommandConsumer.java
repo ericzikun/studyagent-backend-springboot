@@ -1540,15 +1540,45 @@ public class MockPyCommandConsumer {
     /**
      * Final document emitted by Java MockPy after workflow completion.
      *
-     * Keep this content aligned with {@link #assignmentRunVisibleChunks()} so the
+     * <p>本段产物模拟 Python ComposeWorker 调用 {@code CitationToolkit.format_citation_list(
+     * output_contract="document_editor_v1")} 后的产物，按前端 document_editor_v1 contract
+     * 输出四段哨兵 markdown，让前端 {@code parseCitationContent} 能完整解析出引用结构：
+     * <ul>
+     *   <li>{@code [--BODY_SECTION--]}：正文，嵌入 {@code [[claim]](evidence_id)} 引用标记</li>
+     *   <li>{@code [--EVIDENCE_RECORDS--]}：JSON evidence 列表，前端按 sourceType
+     *       渲染 academic / web / upload 三类徽章（红 ACA / 蓝 WEB / 绿 UP）</li>
+     *   <li>{@code [--REFERENCE_SECTION--]}：参考文献列表（已按当前 citation_style 排版好）</li>
+     *   <li>{@code [--CITATION_STYLE--]}：引用样式开关</li>
+     * </ul>
+     *
+     * <p>前置修复历史：早期完整版（3 evidence + 3 marker + URLs）会让真实浏览器在
+     * dashboard 页面挂载 EmbeddedDocumentEditor 后整页 hang，请求 Pending、刷新无效。
+     * 根因定位在 {@code CitationTooltipOverlay} 在 {@code document.body} 上挂的全局
+     * MutationObserver 会持续触发 {@code normalizeCitationLinks}，后者对 ProseMirror
+     * 渲染的 {@code <a href>} 节点做 {@code removeAttribute / setAttribute}，跟
+     * ProseMirror 自身的 DOM 同步机制互相打架。修复见
+     * {@code studyagent-fronted-v2/src/features/document-editor/components/citation-tooltip-overlay.tsx}。
+     *
+     * <p>本地切换不同引用样式做联调时，把最后一段 {@code APA} 改成 {@code IEEE}/
+     * {@code MLA}/{@code Chicago}/{@code Harvard}/{@code GB7714} 等任意值，前端
+     * {@code formatCitationText} 会改变正文里学术引用的括注形态。
+     *
+     * <p>原有 e2e 与单测断言的关键字段（{@code # Revise Case Study ...}、
+     * {@code | Section | Revision Goal | Evidence Needed |}、{@code ## Checklist Before Submission}）
+     * 都保留在 BODY 段内，不破坏 {@code MockPyCommandConsumerTest} 与
+     * {@code assignment-mock-flow.spec.ts}。
+     *
+     * <p>Keep this content aligned with {@link #assignmentRunVisibleChunks()} so the
      * chat stream and artifact preview feel like the same generated assignment.
      */
     static String assignmentGeneratedArtifactBody() {
         return """
+                [--BODY_SECTION--]
+
                 # Revise Case Study on Indigenous Australian Business Protocols
 
                 ## Working Thesis
-                A strong revision should explain that effective business practice with Indigenous Australian communities depends on protocol, relationship-building, and local consultation. The final paper should avoid treating protocol as a checklist; instead, it should show how respect, consent, and accountability shape each business decision.
+                A strong revision should explain that effective business practice with Indigenous Australian communities [[depends on protocol, relationship-building, and local consultation]](acad_ss_1). [[The uploaded rubric requires APA in-text citations and a final reference list]](upload_1). The final paper should avoid treating protocol as a checklist; instead, it should show how respect, consent, and accountability shape each business decision.
 
                 ## Suggested Structure
                 1. Introduce the case context and identify the main business decision.
@@ -1564,13 +1594,79 @@ public class MockPyCommandConsumer {
                 | Recommendation | Connect action to protocol obligations | Rubric criteria, examples |
 
                 ## Sample Revision Paragraph
-                The case should frame protocol as part of business competence rather than an optional cultural addition. Before proposing a partnership model, the organization needs to identify the relevant community representatives, confirm expectations for consultation, and document how feedback changes the plan. This makes the recommendation more credible because it links commercial action to respectful process.
+                The case should frame protocol as part of business competence rather than an optional cultural addition. Before proposing a partnership model, [[the organization needs to identify the relevant community representatives, confirm expectations for consultation, and document how feedback changes the plan]](web_serper_1). This makes the recommendation more credible because it links commercial action to respectful process.
 
                 ## Checklist Before Submission
                 - Confirm the required citation style and replace placeholders.
                 - Check that every recommendation refers back to a case detail.
                 - Remove broad claims that are not supported by the supplied materials.
                 - Keep the final conclusion focused on protocol-informed decision making.
+
+                [--EVIDENCE_RECORDS--]
+                ```json
+                [
+                  {
+                    "id": "acad_ss_1",
+                    "number": 1,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "academic",
+                        "title": "Engaging with Aboriginal and Torres Strait Islander Communities: A Practical Guide for Business",
+                        "fileType": "Academic",
+                        "size": null,
+                        "url": "https://doi.org/10.1007/s10551-023-05421-3",
+                        "reason": "Anchors the working thesis on protocol-led engagement and consultation.",
+                        "authors": ["Vasanthakumar, S.", "Wickramarachchi, R."],
+                        "year": 2023
+                      }
+                    ]
+                  },
+                  {
+                    "id": "web_serper_1",
+                    "number": null,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "web",
+                        "title": "Indigenous Procurement Policy - Department of Finance",
+                        "fileType": "Web",
+                        "size": null,
+                        "url": "https://www.finance.gov.au/government/procurement/indigenous-procurement-policy",
+                        "reason": "Government guidance on consultation expectations and supplier obligations.",
+                        "authors": null,
+                        "year": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "upload_1",
+                    "number": null,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "upload",
+                        "title": "Course Rubric - APA 7 Citation Requirements (Uploaded)",
+                        "fileType": "PDF",
+                        "size": null,
+                        "url": null,
+                        "reason": "User-uploaded rubric that mandates APA in-text citations and a reference list.",
+                        "authors": null,
+                        "year": null
+                      }
+                    ]
+                  }
+                ]
+                ```
+
+                [--REFERENCE_SECTION--]
+
+                - Vasanthakumar, S., & Wickramarachchi, R. (2023). Engaging with Aboriginal and Torres Strait Islander communities: A practical guide for business. *Journal of Business Ethics*, 188(3), 521-540. https://doi.org/10.1007/s10551-023-05421-3
+                - Australian Government Department of Finance. (n.d.). *Indigenous procurement policy*. https://www.finance.gov.au/government/procurement/indigenous-procurement-policy
+                - Course materials. (2026). *Rubric - APA 7 citation requirements* [Uploaded PDF].
+
+                [--CITATION_STYLE--]
+                APA
                 """;
     }
 

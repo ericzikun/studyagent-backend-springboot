@@ -60,10 +60,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *                             (250ms)  PLAN_NEEDS_CLARIFY { question }
  * cmd.assignment.init  ──► (50ms)   ASSIGNMENT_INIT_STARTED
  *                          (200ms)  ASSIGNMENT_INIT_STREAM_CHUNK
- *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=false }
- *                          (850ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
- *                          (1000ms) ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
- *                          (1450ms) ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED { ready=true }
+ *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=true }
  * cmd.assignment.deep_understanding
  *                    ──► (50ms)   ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
  *                          (200ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
@@ -431,17 +428,8 @@ public class MockPyCommandConsumer {
                 null,
                 200);
 
-        Map<String, Object> done = new HashMap<>();
-        done.put("summary", "[Mock] Assignment requirements understood");
-        done.put("ready", false);
-        done.put("isReadyForGeneration", false);
-        done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("requirementUnderstanding", Map.of(
-                "topic", "Causes of World War I",
-                "outputType", "short outline",
-                "nextStep", "confirm requirements before generation"));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done, 650);
-        scheduleInitialDeepUnderstandingReady(cmd, 850);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
+                assignmentDefaultInitCompletedPayload(), 650);
     }
 
     private void scheduleAssignmentInitScenarioResponse(VerlaCommandEnvelope cmd,
@@ -479,34 +467,6 @@ public class MockPyCommandConsumer {
                         firstChunkDelayMs,
                         chunkIntervalMs,
                         completionSettleMs));
-    }
-
-    /**
-     * Local MockPy only: Java 当前只会为首轮 assignment clarify 派发 stage_0 命令。
-     * 真实 Py / 后续真实编排应单独产出 deep-understanding ready 信号；本地 mock
-     * 在 init 后追加同一段事件，避免前端按 ready 字段改造后停在 init completed。
-     */
-    private void scheduleInitialDeepUnderstandingReady(VerlaCommandEnvelope cmd, long startedDelayMs) {
-        markAssignmentDeepUnderstandingRound(cmd);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
-                Map.of("agentType", assignmentAgentType(cmd), "userUnderstood", false, "mockAutoPreview", true),
-                startedDelayMs);
-        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK,
-                List.of(
-                        "Connecting the extracted requirements into a clearer assignment plan...\n",
-                        "The mock brief is ready for you to choose walkthrough or assignment setup.\n"),
-                null,
-                startedDelayMs + 150);
-
-        Map<String, Object> done = new HashMap<>();
-        done.put("summary", "[Mock] Deep understanding ready");
-        done.put("userUnderstood", false);
-        done.put("ready", true);
-        done.put("isReadyForGeneration", false);
-        done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("mockAutoPreview", true);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED, done,
-                startedDelayMs + 600);
     }
 
     /**
@@ -574,19 +534,6 @@ public class MockPyCommandConsumer {
                 .computeIfAbsent(key, ignored -> new AtomicLong(0L))
                 .incrementAndGet();
         return round > 1;
-    }
-
-    private void markAssignmentDeepUnderstandingRound(VerlaCommandEnvelope cmd) {
-        Long key = refTurnId(cmd);
-        if (key == null) {
-            key = refSessionId(cmd);
-        }
-        if (key == null) {
-            return;
-        }
-        assignmentDeepUnderstandingRounds
-                .computeIfAbsent(key, ignored -> new AtomicLong(0L))
-                .incrementAndGet();
     }
 
     private List<String> assignmentDeepUnderstandingNextActions(boolean userUnderstood,
@@ -1458,6 +1405,27 @@ public class MockPyCommandConsumer {
             out.add(" agent 的模拟流式输出。\n");
         }
         return out;
+    }
+
+    /**
+     * Default local assignment init completion payload.
+     *
+     * Dashboard V2 already requires an explicit Assignment tab before the first
+     * message, so MockPy should stop at the initial choice moment and wait for the
+     * user's "Lead me..." or setup selection instead of auto-emitting a deep
+     * understanding response.
+     */
+    static Map<String, Object> assignmentDefaultInitCompletedPayload() {
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Assignment requirements understood");
+        done.put("ready", true);
+        done.put("isReadyForGeneration", false);
+        done.put("nextActions", List.of("deep_understanding", "generation"));
+        done.put("requirementUnderstanding", Map.of(
+                "topic", "Causes of World War I",
+                "outputType", "short outline",
+                "nextStep", "choose walkthrough or assignment setup"));
+        return done;
     }
 
     /**

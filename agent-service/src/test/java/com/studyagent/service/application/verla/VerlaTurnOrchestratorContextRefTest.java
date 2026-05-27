@@ -149,8 +149,13 @@ class VerlaTurnOrchestratorContextRefTest {
     }
 
     private long contextRefConvVersion() {
+        VerlaCommandEnvelope envelopeWithContextRef = mqOutboxService.envelopes.stream()
+                .filter(envelope -> envelope.getPayload() != null
+                        && envelope.getPayload().get("contextRef") instanceof Map<?, ?>)
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError("Expected an outbox command with contextRef"));
         @SuppressWarnings("unchecked")
-        Map<String, Object> contextRef = (Map<String, Object>) mqOutboxService.lastEnvelope.getPayload().get("contextRef");
+        Map<String, Object> contextRef = (Map<String, Object>) envelopeWithContextRef.getPayload().get("contextRef");
         return ((Number) contextRef.get("convVersion")).longValue();
     }
 
@@ -455,7 +460,7 @@ class VerlaTurnOrchestratorContextRefTest {
     }
 
     private static class CapturingMqOutboxService extends MqOutboxService {
-        private VerlaCommandEnvelope lastEnvelope;
+        private final List<VerlaCommandEnvelope> envelopes = new ArrayList<>();
 
         CapturingMqOutboxService() {
             super(null, null, new ObjectMapper());
@@ -463,7 +468,7 @@ class VerlaTurnOrchestratorContextRefTest {
 
         @Override
         public MqOutbox createVerlaCommand(VerlaCommandEnvelope envelope, String exchange, String routingKey) {
-            this.lastEnvelope = envelope;
+            this.envelopes.add(envelope);
             return MqOutbox.builder().id(1L).build();
         }
     }

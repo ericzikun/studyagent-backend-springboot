@@ -71,7 +71,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *                          (500ms)  ASSIGNMENT_AGENT_NODE_UPDATED plan=COMPLETED + queued task nodes
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_UPDATED each task running/completed
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_DETAILED each task process/content detail
- *                          (6600ms) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED
+ *                          (6600ms+) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED document/slides/code
  *                          (9000ms) ASSIGNMENT_AGENT_FLOW_COMPLETED
  * cmd.agent.run        ──► (50ms)   AGENT_STARTED
  *                          (150ms)  AGENT_TOOL_CALL_RECORDED  { tool=web_search, status=RUNNING }
@@ -102,6 +102,7 @@ public class MockPyCommandConsumer {
     private static final long ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS = 1200L;
     private static final long ASSIGNMENT_RUN_STREAM_INTERVAL_MS = 650L;
     private static final long ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS = 1000L;
+    private static final long ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS = 120L;
     private static final long ASSIGNMENT_RUN_COMPLETION_SETTLE_MS = 1600L;
     private static final String ASSIGNMENT_STREAM_SCENARIO_DEFAULT = "default";
     private static final String ASSIGNMENT_STREAM_SCENARIO_FAST = "fast";
@@ -111,6 +112,7 @@ public class MockPyCommandConsumer {
     private static final long ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS = 220L;
     private static final long ASSIGNMENT_INIT_MIXED_INTERVAL_MS = 260L;
     private static final long ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS = 320L;
+    private static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private final ObjectMapper objectMapper;
     private final RabbitTemplate rabbitTemplate;
@@ -705,30 +707,31 @@ public class MockPyCommandConsumer {
                 ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
                 ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
 
-        String artifactUid = "assignment_mock_document_" + UUID.randomUUID().toString().substring(0, 8);
-        String artifactBody = assignmentGeneratedArtifactBody();
-        Map<String, Object> art = new HashMap<>();
-        art.put("artifactUid", artifactUid);
-        art.put("kind", "document_markdown");
-        art.put("mime", "text/markdown");
-        art.put("summary", "Generated Assignment.md");
-        art.put("bodyOrRef", artifactBody);
-        art.put("status", "READY");
-        art.put("version", 1);
-        art.put("sizeBytes", (long) artifactBody.getBytes(StandardCharsets.UTF_8).length);
-        art.put("meta", Map.of("agent", agentType, "source", "mockpy-assignment-run"));
+        List<Map<String, Object>> artifacts = assignmentGeneratedArtifacts(
+                agentType,
+                UUID.randomUUID().toString().substring(0, 8));
         long lastVisibleChunkDelayMs = assignmentRunStreamDelayMs(visibleChunks.size() - 1);
         long artifactDelayMs = Math.max(6600L,
                 lastVisibleChunkDelayMs + ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, artifactDelayMs);
+        for (int i = 0; i < artifacts.size(); i++) {
+            scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED,
+                    artifacts.get(i),
+                    artifactDelayMs + i * ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS);
+        }
 
+        List<String> artifactUids = artifacts.stream()
+                .map(artifact -> String.valueOf(artifact.get("artifactUid")))
+                .toList();
+        long finalArtifactDelayMs = artifactDelayMs
+                + Math.max(0, artifacts.size() - 1L) * ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS;
         Map<String, Object> done = new HashMap<>();
         done.put("summary", "[Mock] Assignment workflow completed");
-        done.put("artifactCount", 1);
-        done.put("primaryArtifactUid", artifactUid);
+        done.put("artifactCount", artifactUids.size());
+        done.put("primaryArtifactUid", artifactUids.get(0));
+        done.put("artifactUids", artifactUids);
         done.put("progress", assignmentEtaProgress("Assignment ready", 0));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done,
-                Math.max(9000L, artifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
+                Math.max(9000L, finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
     }
 
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
@@ -994,12 +997,19 @@ public class MockPyCommandConsumer {
         }
     }
 
-    private Map<String, Object> buildMockRequirementForm() {
+    static Map<String, Object> buildMockRequirementForm() {
         return Map.of(
                 "title", "Assignment requirements",
                 "description", "Confirm the details before generation.",
                 "schema", List.of(
                         Map.of("key", "subject", "label", "Subject", "type", "text", "required", true),
+                        Map.of(
+                                "key", "assignment_type",
+                                "label", "Assignment Type",
+                                "type", "select",
+                                "options", ASSIGNMENT_TYPE_OPTIONS,
+                                "defaultValue", "Case Study",
+                                "required", true),
                         Map.of("key", "format", "label", "Expected format", "type", "text", "required", true),
                         Map.of("key", "deadline", "label", "Deadline", "type", "date", "required", false)));
     }
@@ -1503,6 +1513,159 @@ public class MockPyCommandConsumer {
     static long assignmentRunStreamDelayMs(int chunkIndex) {
         return ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS
                 + Math.max(0, chunkIndex) * ASSIGNMENT_RUN_STREAM_INTERVAL_MS;
+    }
+
+    /**
+     * Final assignment artifacts emitted by local MockPy.
+     *
+     * Backend/Verla mode intentionally receives the same three editable result
+     * surfaces as frontend mock mode: document markdown, slides editor JSON, and
+     * code text. This keeps local MQ/SSE testing useful for artifact switching
+     * and editor deep links instead of only covering the first document tab.
+     */
+    static List<Map<String, Object>> assignmentGeneratedArtifacts(String agentType, String uidSuffix) {
+        String safeSuffix = uidSuffix == null || uidSuffix.isBlank()
+                ? UUID.randomUUID().toString().substring(0, 8)
+                : uidSuffix;
+        return List.of(
+                assignmentArtifactPayload(
+                        "assignment_mock_document_" + safeSuffix,
+                        "document_markdown",
+                        "text/markdown",
+                        "Generated Assignment.md",
+                        assignmentGeneratedArtifactBody(),
+                        agentType,
+                        "document"),
+                assignmentArtifactPayload(
+                        "assignment_mock_slides_editor_json_" + safeSuffix,
+                        "assignment_slides_editor_json",
+                        "application/json",
+                        "Case Study Deck.editor.json",
+                        assignmentGeneratedSlidesEditorJson(),
+                        agentType,
+                        "slides"),
+                assignmentArtifactPayload(
+                        "assignment_mock_code_text_" + safeSuffix,
+                        "assignment_code_text",
+                        "text/x-python",
+                        "assignment_support.py",
+                        assignmentGeneratedCodeText(),
+                        agentType,
+                        "code"));
+    }
+
+    private static Map<String, Object> assignmentArtifactPayload(String artifactUid,
+                                                                 String kind,
+                                                                 String mime,
+                                                                 String summary,
+                                                                 String body,
+                                                                 String agentType,
+                                                                 String artifactType) {
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", artifactUid);
+        art.put("kind", kind);
+        art.put("mime", mime);
+        art.put("summary", summary);
+        art.put("bodyOrRef", body);
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("sizeBytes", (long) body.getBytes(StandardCharsets.UTF_8).length);
+        art.put("meta", Map.of(
+                "agent", agentType,
+                "source", "mockpy-assignment-run",
+                "mockArtifactType", artifactType));
+        return art;
+    }
+
+    static String assignmentGeneratedSlidesEditorJson() {
+        return """
+                {
+                  "title": "Case Study Revision Deck",
+                  "slides": [
+                    {
+                      "id": "slide-1",
+                      "title": "Case Study Revision Goal",
+                      "elements": [
+                        {
+                          "type": "heading",
+                          "text": "Revise the case study into a protocol-led business analysis"
+                        },
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Clarify the main business decision",
+                            "Connect protocol choices to stakeholder trust",
+                            "Use rubric evidence before recommendations"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "slide-2",
+                      "title": "Evidence Map",
+                      "elements": [
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Course brief: expected APA citation and final reference list",
+                            "Academic source: protocol-led engagement",
+                            "Government source: consultation expectations"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "slide-3",
+                      "title": "Recommended Workflow",
+                      "elements": [
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Frame the stakeholder relationship",
+                            "Analyze consultation and consent",
+                            "Turn analysis into practical safeguards"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+    }
+
+    static String assignmentGeneratedCodeText() {
+        return """
+                from dataclasses import dataclass
+
+
+                @dataclass
+                class EvidenceNote:
+                    section: str
+                    claim: str
+                    source: str
+
+
+                def build_argument(prompt, evidence):
+                    thesis = choose_best_thesis(prompt)
+                    outline = plan_paragraphs(thesis, evidence)
+                    return draft_assignment(thesis, outline)
+
+
+                def choose_best_thesis(prompt):
+                    return "Protocols shape trust, authority, and accountability in the case study."
+
+
+                def plan_paragraphs(thesis, evidence):
+                    return [
+                        {"section": "context", "goal": "Frame the business risk."},
+                        {"section": "analysis", "goal": "Connect protocol decisions to stakeholder trust."},
+                        {"section": "recommendation", "goal": "Turn the analysis into practical actions."},
+                    ]
+
+
+                def draft_assignment(thesis, outline):
+                    return {"thesis": thesis, "outline": outline, "needs_citation_pass": True}
+                """;
     }
 
     /**

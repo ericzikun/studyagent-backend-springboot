@@ -72,6 +72,21 @@ class MockPyCommandConsumerTest {
     }
 
     @Test
+    void buildMockRequirementForm_includesThreeAssignmentTypeOptions() {
+        Map<String, Object> form = MockPyCommandConsumer.buildMockRequirementForm();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> schema = (List<Map<String, Object>>) form.get("schema");
+
+        assertThat(schema)
+                .anySatisfy(field -> assertThat(field)
+                        .containsEntry("key", "assignment_type")
+                        .containsEntry("label", "Assignment Type")
+                        .containsEntry("type", "select")
+                        .containsEntry("defaultValue", "Case Study")
+                        .containsEntry("options", List.of("Essay", "Lab Report", "Case Study")));
+    }
+
+    @Test
     void assignmentFastTextChunks_coverHighFrequencyPureTextFixture() {
         var chunks = MockPyCommandConsumer.assignmentFastTextChunks();
         String visibleText = String.join("", chunks);
@@ -114,6 +129,33 @@ class MockPyCommandConsumerTest {
         assertThat(body).contains("# Revise Case Study on Indigenous Australian Business Protocols");
         assertThat(body).contains("| Section | Revision Goal | Evidence Needed |");
         assertThat(body).contains("## Checklist Before Submission");
+    }
+
+    @Test
+    void assignmentGeneratedArtifacts_coverEditableDocumentSlidesAndCode() {
+        List<Map<String, Object>> artifacts =
+                MockPyCommandConsumer.assignmentGeneratedArtifacts("assignment", "test1234");
+
+        assertThat(artifacts)
+                .extracting(artifact -> artifact.get("kind"))
+                .containsExactly(
+                        "document_markdown",
+                        "assignment_slides_editor_json",
+                        "assignment_code_text");
+        assertThat(artifacts)
+                .extracting(artifact -> artifact.get("artifactUid"))
+                .containsExactly(
+                        "assignment_mock_document_test1234",
+                        "assignment_mock_slides_editor_json_test1234",
+                        "assignment_mock_code_text_test1234");
+        assertThat((String) artifacts.get(0).get("bodyOrRef"))
+                .contains("# Revise Case Study on Indigenous Australian Business Protocols");
+        assertThat((String) artifacts.get(1).get("bodyOrRef"))
+                .contains("\"slides\"")
+                .contains("Case Study Revision Deck");
+        assertThat((String) artifacts.get(2).get("bodyOrRef"))
+                .contains("def build_argument")
+                .contains("needs_citation_pass");
     }
 
     @Test

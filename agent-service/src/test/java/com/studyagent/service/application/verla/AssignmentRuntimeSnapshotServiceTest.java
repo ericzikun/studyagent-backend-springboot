@@ -309,6 +309,15 @@ class AssignmentRuntimeSnapshotServiceTest {
             Long id,
             Long conversationId,
             Long sessionId,
+            VerlaAgentEventType eventType,
+            String payloadJson) {
+        return event(id, conversationId, sessionId, null, eventType, payloadJson);
+    }
+
+    private static VerlaEventInbox event(
+            Long id,
+            Long conversationId,
+            Long sessionId,
             LocalDateTime receivedAt,
             VerlaAgentEventType eventType,
             String payloadJson) {

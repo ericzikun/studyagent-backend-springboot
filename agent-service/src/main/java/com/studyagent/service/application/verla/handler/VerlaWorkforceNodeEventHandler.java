@@ -91,6 +91,11 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
         }
 
         boolean isPlan = PLAN_NODE_ID.equals(node.getId());
+        if (!isPlan && (node.getId() == null || !node.getId().startsWith("task-"))) {
+            log.debug("[Verla/workforce] NODE_UPDATED skip non-workforce node sessionId={} nodeId={}",
+                    row.getSessionId(), node.getId());
+            return;
+        }
         VerlaWorkforceTask patch = buildTaskPatch(row, node, isPlan);
 
         VerlaWorkforceTask saved = taskRepository.upsertBySessionNode(patch);
@@ -126,7 +131,9 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             List<?> steps = node.getSteps();
             if (steps != null && !steps.isEmpty()) {
                 builder.planStepsJson(toJson(steps));
-                builder.planTaskCount(steps.size());
+                if (containsComposePartSteps(steps)) {
+                    builder.planTaskCount(steps.size());
+                }
             }
         }
 
@@ -192,5 +199,22 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
         if (s == null || s.length() <= maxLen) return s;
         log.warn("[Verla/workforce] field truncated from {} to {} chars", s.length(), maxLen);
         return s.substring(0, maxLen);
+    }
+
+    /**
+     * Compose 总轮 M 仅来自 {@code emit_compose_total} 写入的 {@code compose-part-*} steps，
+     * 避免 decomposition / canvas 占位 steps 污染 {@code plan_task_count}。
+     */
+    private boolean containsComposePartSteps(List<?> steps) {
+        for (Object step : steps) {
+            if (!(step instanceof java.util.Map<?, ?> map)) {
+                continue;
+            }
+            Object id = map.get("id");
+            if (id != null && String.valueOf(id).startsWith("compose-part-")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

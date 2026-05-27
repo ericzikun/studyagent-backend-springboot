@@ -17,6 +17,7 @@ import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +33,7 @@ class AssignmentRuntimeSnapshotServiceTest {
     private FakeArtifactRepository artifactRepository;
     private FakeEventInboxRepository eventInboxRepository;
     private FakeWorkforceTaskOutputRepository taskOutputRepository;
+    private FakeWorkforceTaskRepository workforceTaskRepository;
     private AssignmentRuntimeSnapshotService service;
 
     @BeforeEach
@@ -40,11 +42,12 @@ class AssignmentRuntimeSnapshotServiceTest {
         artifactRepository = new FakeArtifactRepository();
         eventInboxRepository = new FakeEventInboxRepository();
         taskOutputRepository = new FakeWorkforceTaskOutputRepository();
+        workforceTaskRepository = new FakeWorkforceTaskRepository();
         AssignmentRuntimeProgressEstimator progressEstimator =
                 new AssignmentRuntimeProgressEstimator(
                         new ObjectMapper(),
                         eventInboxRepository,
-                        new EmptyWorkforceTaskRepository());
+                        workforceTaskRepository);
         service = new AssignmentRuntimeSnapshotService(
                 messageRepository,
                 artifactRepository,
@@ -201,10 +204,13 @@ class AssignmentRuntimeSnapshotServiceTest {
     }
 
     @Test
-    void getSnapshot_restoresLatestProgressEtaAcrossNodeUpdates() {
+    void getSnapshot_computesProgressWhenLatestNodeEventOmitsExplicitEta() {
+        LocalDateTime startedAt = LocalDateTime.now().minusSeconds(30);
         eventInboxRepository.add(90L, event(
                 2000L,
                 90L,
+                90L,
+                startedAt,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
                 """
                         {"payload":{
@@ -215,21 +221,26 @@ class AssignmentRuntimeSnapshotServiceTest {
         eventInboxRepository.add(90L, event(
                 2001L,
                 90L,
+                90L,
+                startedAt,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
-                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"status\":\"RUNNING\"}}}"));
+                "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"));
 
         AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(90L);
 
         assertEquals(2001L, snapshot.resumeAfterEventId());
-        assertEquals("Planning assignment", snapshot.payload().progress().get("label"));
-        assertEquals(960, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+        assertEquals("Make plan", snapshot.payload().progress().get("label"));
+        assertEquals(90, snapshot.payload().progress().get("estimatedRemainingSeconds"));
     }
 
     @Test
     void getSnapshot_normalizesEquivalentEtaPayloadFields() {
+        workforceTaskRepository.snapshotBySession.put(91L, new WorkforceTaskProgressSnapshot(3, 1, 1, null));
         eventInboxRepository.add(91L, event(
                 2100L,
                 91L,
+                91L,
+                null,
                 VerlaAgentEventType.AGENT_PROGRESS,
                 "{\"payload\":{\"label\":\"Drafting\",\"estRemainingTimeSeconds\":\"645\"}}"));
 
@@ -274,7 +285,7 @@ class AssignmentRuntimeSnapshotServiceTest {
         AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(93L);
 
         assertEquals("Make plan", snapshot.payload().progress().get("label"));
-        assertEquals(600, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+        assertEquals(120, snapshot.payload().progress().get("estimatedRemainingSeconds"));
     }
 
     private static VerlaMessage message(Long id, Long conversationId, String role, String text) {
@@ -291,13 +302,14 @@ class AssignmentRuntimeSnapshotServiceTest {
             Long conversationId,
             VerlaAgentEventType eventType,
             String payloadJson) {
-        return event(id, conversationId, null, eventType, payloadJson);
+        return event(id, conversationId, null, null, eventType, payloadJson);
     }
 
     private static VerlaEventInbox event(
             Long id,
             Long conversationId,
             Long sessionId,
+            LocalDateTime receivedAt,
             VerlaAgentEventType eventType,
             String payloadJson) {
         return VerlaEventInbox.builder()
@@ -306,6 +318,7 @@ class AssignmentRuntimeSnapshotServiceTest {
                 .sessionId(sessionId)
                 .eventType(eventType.name())
                 .payloadJson(payloadJson)
+                .receivedAt(receivedAt)
                 .status(VerlaEventInbox.STATUS_PROCESSED)
                 .build();
     }
@@ -428,7 +441,9 @@ class AssignmentRuntimeSnapshotServiceTest {
         }
     }
 
-    private static class EmptyWorkforceTaskRepository implements VerlaWorkforceTaskRepository {
+    private static class FakeWorkforceTaskRepository implements VerlaWorkforceTaskRepository {
+        private final Map<Long, WorkforceTaskProgressSnapshot> snapshotBySession = new HashMap<>();
+
         @Override
         public Optional<VerlaWorkforceTask> findBySessionAndNode(Long sessionId, String nodeId) {
             return Optional.empty();
@@ -446,7 +461,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
         @Override
         public WorkforceTaskProgressSnapshot aggregateProgressBySession(Long sessionId) {
-            return WorkforceTaskProgressSnapshot.empty();
+            return snapshotBySession.getOrDefault(sessionId, WorkforceTaskProgressSnapshot.empty());
         }
 
         @Override

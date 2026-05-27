@@ -104,11 +104,12 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void resolveProgress_prefersExplicitPythonEtaOverComputedValue() {
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
         List<VerlaEventInbox> events = List.of(
-                event(2L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
-                        "{\"payload\":{\"node\":{\"id\":\"task-1\",\"status\":\"running\"}}}"),
-                event(1L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
-                        "{\"payload\":{\"progress\":{\"label\":\"Planning\",\"estimatedRemainingSeconds\":960}}}"));
+                event(2L, 100L, VerlaAgentEventType.AGENT_PROGRESS,
+                        "{\"payload\":{\"progress\":{\"label\":\"Planning\",\"estimatedRemainingSeconds\":960}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
 
         Map<String, Object> progress = estimator.resolveProgress(events);
 
@@ -117,18 +118,94 @@ class AssignmentRuntimeProgressEstimatorTest {
     }
 
     @Test
-    void resolveProgress_computesEtaWhenPythonOmitsIt() {
+    void estimateFromPlanPhase_smoothlyCountsDownTwoMinuteWindow() {
+        var atStart = estimator.estimateFromPlanPhase(
+                LocalDateTime.now(), List.of(node("assignment-plan", "running")));
+        assertEquals(120, atStart.estimatedRemainingSeconds());
+        assertEquals(0.0, atStart.completePercent(), 0.01);
+
+        var halfway = estimator.estimateFromPlanPhase(
+                LocalDateTime.now().minusSeconds(60),
+                List.of(node("assignment-plan", "running")));
+        assertEquals(60, halfway.estimatedRemainingSeconds());
+        assertEquals(5.0, halfway.completePercent(), 0.01);
+
+        var afterWindow = estimator.estimateFromPlanPhase(
+                LocalDateTime.now().minusSeconds(180),
+                List.of(node("assignment-plan", "running")));
+        assertEquals(AssignmentRuntimeProgressEstimator.PLAN_PHASE_REMAINING_FLOOR_SECONDS,
+                afterWindow.estimatedRemainingSeconds());
+    }
+
+    @Test
+    void resolveProgress_usesPlanPhaseBeforeTaskRowsExist() {
         List<VerlaEventInbox> events = List.of(
-                event(2L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                eventAt(2L, 100L, LocalDateTime.now().minusSeconds(30),
+                        VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"),
-                event(1L, null, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
-                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+                eventAt(1L, 100L, LocalDateTime.now().minusSeconds(30),
+                        VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}}"));
 
         Map<String, Object> progress = estimator.resolveProgress(events);
 
         assertNotNull(progress);
         assertEquals("Make plan", progress.get("label"));
-        assertEquals(600, progress.get("estimatedRemainingSeconds"));
+        assertEquals(90, progress.get("estimatedRemainingSeconds"));
+        assertNull(progress.get("totalTaskCount"));
+    }
+
+    @Test
+    void resolveProgress_ignoresStaleExplicitEtaWhenLatestEventHasNoEta() {
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
+        List<VerlaEventInbox> events = List.of(
+                event(3L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1\",\"taskName\":\"Research\",\"status\":\"running\"}}}"),
+                event(2L, 100L, VerlaAgentEventType.AGENT_PROGRESS,
+                        "{\"payload\":{\"progress\":{\"label\":\"Generating assignment\",\"estimatedRemainingSeconds\":720}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        Map<String, Object> progress = estimator.resolveProgress(events);
+
+        assertNotNull(progress);
+        assertEquals(25.0, progress.get("completePercent"));
+        assertEquals(900, progress.get("estimatedRemainingSeconds"));
+    }
+
+    @Test
+    void estimateFromWorkforceSnapshot_prefersComposeTitleTotalOverStalePlanCount() {
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 5);
+        List<VerlaEventInbox> events = List.of(
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"problem-solving-expert\",\"title\":\"Composing part 3/10\",\"status\":\"RUNNING\"}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        var estimate = estimator.estimateFromWorkforceSnapshot(
+                workforce, events, LocalDateTime.now().minusMinutes(5), 100L);
+
+        assertEquals(65.0, estimate.completePercent(), 0.01);
+        assertEquals(420, estimate.estimatedRemainingSeconds());
+        assertEquals(3, estimate.composeCurrentRound());
+        assertEquals(10, estimate.composeTotalRounds());
+    }
+
+    @Test
+    void resolveProgress_computesEtaWhenPythonOmitsIt() {
+        List<VerlaEventInbox> events = List.of(
+                eventAt(2L, 100L, LocalDateTime.now().minusSeconds(30),
+                        VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"),
+                eventAt(1L, 100L, LocalDateTime.now().minusSeconds(30),
+                        VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}}"));
+
+        Map<String, Object> progress = estimator.resolveProgress(events);
+
+        assertNotNull(progress);
+        assertEquals("Make plan", progress.get("label"));
+        assertEquals(90, progress.get("estimatedRemainingSeconds"));
     }
 
     @Test
@@ -147,17 +224,20 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void enrichAssignmentRunPayload_addsComputedProgressForSse() {
-        eventInboxRepository.add(10L, event(
+        LocalDateTime startedAt = LocalDateTime.now().minusSeconds(20);
+        eventInboxRepository.add(10L, eventAt(
                 1L,
                 null,
+                startedAt,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
                 "{\"payload\":{\"stage\":\"assignment_run\"}}"));
 
         Map<String, Object> payload = Map.of(
                 "node", Map.of("id", "assignment-plan", "title", "Make plan", "status", "RUNNING"));
-        VerlaEventInbox current = event(
+        VerlaEventInbox current = eventAt(
                 2L,
                 null,
+                startedAt,
                 VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                 "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}");
 
@@ -168,7 +248,7 @@ class AssignmentRuntimeProgressEstimatorTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> progress = (Map<String, Object>) enriched.get("progress");
         assertEquals("Make plan", progress.get("label"));
-        assertEquals(600, progress.get("estimatedRemainingSeconds"));
+        assertEquals(100, progress.get("estimatedRemainingSeconds"));
     }
 
     @Test
@@ -187,13 +267,22 @@ class AssignmentRuntimeProgressEstimatorTest {
     }
 
     private static VerlaEventInbox event(Long id, Long sessionId, VerlaAgentEventType type, String payloadJson) {
+        return eventAt(id, sessionId, LocalDateTime.now().minusMinutes(5), type, payloadJson);
+    }
+
+    private static VerlaEventInbox eventAt(
+            Long id,
+            Long sessionId,
+            LocalDateTime receivedAt,
+            VerlaAgentEventType type,
+            String payloadJson) {
         return VerlaEventInbox.builder()
                 .id(id)
                 .conversationId(10L)
                 .sessionId(sessionId)
                 .eventType(type.name())
                 .payloadJson(payloadJson)
-                .receivedAt(LocalDateTime.now().minusMinutes(5))
+                .receivedAt(receivedAt)
                 .status(VerlaEventInbox.STATUS_PROCESSED)
                 .build();
     }

@@ -36,6 +36,9 @@ import java.util.Set;
 public class AssignmentRuntimeProgressEstimator {
 
     static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
+    /** Plan 阶段（子任务尚未拆解）单独用 2 分钟窗口平滑倒计时，直到 task-* 入库。 */
+    static final int PLAN_PHASE_ESTIMATE_SECONDS = 120;
+    static final int PLAN_PHASE_REMAINING_FLOOR_SECONDS = 15;
     static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
     static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
     static final double RUNNING_NODE_PARTIAL_WEIGHT = 0.5;
@@ -82,7 +85,7 @@ public class AssignmentRuntimeProgressEstimator {
         }
 
         Map<String, Object> explicit = resolveExplicitProgress(recentEvents);
-        if (explicit != null && hasExplicitEta(explicit)) {
+        if (explicit != null && hasExplicitEta(explicit) && !isPlanOnlyPhase(recentEvents)) {
             return explicit;
         }
 
@@ -178,23 +181,100 @@ public class AssignmentRuntimeProgressEstimator {
     AssignmentRuntimeProgressEstimate estimateFromEvents(List<VerlaEventInbox> recentEvents) {
         LocalDateTime flowStartedAt = resolveFlowStartedAt(recentEvents);
         Long sessionId = resolveActiveSessionId(recentEvents);
-        if (sessionId != null) {
-            WorkforceTaskProgressSnapshot workforce =
-                    workforceTaskRepository.aggregateProgressBySession(sessionId);
-            if (workforce.hasTaskData() || workforce.composeTotalRounds() != null) {
-                AssignmentRuntimeProgressEstimate workforceEstimate = estimateFromWorkforceSnapshot(
-                        workforce,
-                        recentEvents,
-                        flowStartedAt,
-                        sessionId);
-                if (workforceEstimate != null) {
-                    return workforceEstimate;
-                }
+        WorkforceTaskProgressSnapshot workforce = sessionId == null
+                ? WorkforceTaskProgressSnapshot.empty()
+                : workforceTaskRepository.aggregateProgressBySession(sessionId);
+
+        if (workforce.hasTaskData() || hasComposeProgressData(workforce, recentEvents)) {
+            AssignmentRuntimeProgressEstimate workforceEstimate = estimateFromWorkforceSnapshot(
+                    workforce,
+                    recentEvents,
+                    flowStartedAt,
+                    sessionId);
+            if (workforceEstimate != null) {
+                return workforceEstimate;
             }
+        }
+
+        if (isPlanOnlyPhase(recentEvents, workforce)) {
+            return estimateFromPlanPhase(flowStartedAt, foldAgentNodes(recentEvents));
         }
 
         List<Map<String, Object>> agentNodes = foldAgentNodes(recentEvents);
         return estimateFromAgentNodes(agentNodes, flowStartedAt);
+    }
+
+    AssignmentRuntimeProgressEstimate estimateFromPlanPhase(
+            LocalDateTime flowStartedAt,
+            List<Map<String, Object>> agentNodes) {
+        int remainingSeconds = computePlanPhaseRemainingSeconds(flowStartedAt);
+        double planProgress = PLAN_PHASE_ESTIMATE_SECONDS <= 0
+                ? 0.0
+                : (1.0 - (double) remainingSeconds / PLAN_PHASE_ESTIMATE_SECONDS) * 100.0;
+        planProgress = Math.max(0.0, Math.min(100.0, planProgress));
+        // 映射到 20min 模型的完成度刻度（plan 窗口最多占 warm-up 10%）
+        double completePercent = (planProgress / 100.0) * SIMULATED_PROGRESS_MAX_PERCENT;
+        String label = resolvePlanPhaseLabel(agentNodes);
+        return new AssignmentRuntimeProgressEstimate(
+                label, remainingSeconds, completePercent, null, null, null, null);
+    }
+
+    private boolean isPlanOnlyPhase(List<VerlaEventInbox> recentEvents, WorkforceTaskProgressSnapshot workforce) {
+        if (!isAssignmentGenerationActive(recentEvents)) {
+            return false;
+        }
+        if (workforce != null && workforce.hasTaskData()) {
+            return false;
+        }
+        return !hasComposeProgressData(workforce, recentEvents);
+    }
+
+    private boolean isPlanOnlyPhase(List<VerlaEventInbox> recentEvents) {
+        Long sessionId = resolveActiveSessionId(recentEvents);
+        WorkforceTaskProgressSnapshot workforce = sessionId == null
+                ? WorkforceTaskProgressSnapshot.empty()
+                : workforceTaskRepository.aggregateProgressBySession(sessionId);
+        return isPlanOnlyPhase(recentEvents, workforce);
+    }
+
+    private boolean hasComposeProgressData(
+            WorkforceTaskProgressSnapshot workforce,
+            List<VerlaEventInbox> recentEvents) {
+        if (workforce != null
+                && workforce.composeTotalRounds() != null
+                && workforce.composeTotalRounds() > 0) {
+            return true;
+        }
+        return resolveComposeTotalRounds(recentEvents, null) > 0;
+    }
+
+    private int computePlanPhaseRemainingSeconds(LocalDateTime flowStartedAt) {
+        if (flowStartedAt == null) {
+            return PLAN_PHASE_ESTIMATE_SECONDS;
+        }
+        long nowEpoch = System.currentTimeMillis() / 1000;
+        long startEpoch = flowStartedAt.atZone(ZoneId.systemDefault()).toEpochSecond();
+        long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
+        long remaining = PLAN_PHASE_ESTIMATE_SECONDS - elapsedSeconds;
+        return (int) Math.max(PLAN_PHASE_REMAINING_FLOOR_SECONDS, remaining);
+    }
+
+    private String resolvePlanPhaseLabel(List<Map<String, Object>> agentNodes) {
+        if (agentNodes != null) {
+            for (Map<String, Object> node : agentNodes) {
+                if (node == null) {
+                    continue;
+                }
+                if (!"assignment-plan".equals(String.valueOf(node.get("id")))) {
+                    continue;
+                }
+                Object label = firstPresent(node, "taskName", "title", "summary", "subtitle");
+                if (label instanceof String text && !text.isBlank()) {
+                    return text.trim();
+                }
+            }
+        }
+        return "Make plan";
     }
 
     AssignmentRuntimeProgressEstimate estimateFromWorkforceSnapshot(
@@ -211,6 +291,7 @@ public class AssignmentRuntimeProgressEstimator {
         int running = workforce.activeTaskCount();
         Integer composeTotalRounds = workforce.composeTotalRounds();
         Integer composeCurrentRound = null;
+        Integer effectiveComposeTotalRounds = composeTotalRounds;
         double percent;
 
         if (total <= 0) {
@@ -219,11 +300,10 @@ public class AssignmentRuntimeProgressEstimator {
             double weighted = completed + (running > 0 ? RUNNING_NODE_PARTIAL_WEIGHT : 0.0);
             percent = Math.min(WORKFORCE_PHASE_WEIGHT_PERCENT, (weighted / total) * WORKFORCE_PHASE_WEIGHT_PERCENT);
         } else {
-            int composeTotal = composeTotalRounds != null && composeTotalRounds > 0
-                    ? composeTotalRounds
-                    : resolveComposeTotalRounds(recentEvents, composeTotalRounds);
+            int composeTotal = resolveComposeTotalRounds(recentEvents, composeTotalRounds);
             composeCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
             if (composeTotal > 0) {
+                effectiveComposeTotalRounds = composeTotal;
                 percent = WORKFORCE_PHASE_WEIGHT_PERCENT
                         + ((double) composeCurrentRound / composeTotal) * WORKFORCE_PHASE_WEIGHT_PERCENT;
             } else {
@@ -244,7 +324,7 @@ public class AssignmentRuntimeProgressEstimator {
                 completed,
                 total,
                 composeCurrentRound,
-                composeTotalRounds);
+                effectiveComposeTotalRounds);
     }
 
     AssignmentRuntimeProgressEstimate estimateFromAgentNodes(
@@ -280,14 +360,18 @@ public class AssignmentRuntimeProgressEstimator {
     private int resolveComposeTotalRounds(
             List<VerlaEventInbox> recentEvents,
             Integer workforceComposeTotalRounds) {
-        if (workforceComposeTotalRounds != null && workforceComposeTotalRounds > 0) {
-            return workforceComposeTotalRounds;
-        }
+        int parsedFromTitle = 0;
         for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
             Integer parsed = parseComposePartTitle(node).map(ComposePartProgress::total).orElse(null);
             if (parsed != null && parsed > 0) {
-                return parsed;
+                parsedFromTitle = Math.max(parsedFromTitle, parsed);
             }
+        }
+        if (parsedFromTitle > 0) {
+            return parsedFromTitle;
+        }
+        if (workforceComposeTotalRounds != null && workforceComposeTotalRounds > 0) {
+            return workforceComposeTotalRounds;
         }
         return 0;
     }
@@ -338,6 +422,9 @@ public class AssignmentRuntimeProgressEstimator {
         if (sessionId != null && hasRunningTask) {
             for (VerlaWorkforceTask task : workforceTaskRepository.listBySession(sessionId)) {
                 if (task == null || !"task".equalsIgnoreCase(task.getNodeKind())) {
+                    continue;
+                }
+                if (task.getNodeId() == null || !task.getNodeId().startsWith("task-")) {
                     continue;
                 }
                 if ("running".equals(normalizeNodeStatus(task.getStatus()))
@@ -400,13 +487,11 @@ public class AssignmentRuntimeProgressEstimator {
     }
 
     private Map<String, Object> resolveExplicitProgress(List<VerlaEventInbox> recentEvents) {
-        for (VerlaEventInbox event : recentEvents) {
-            Map<String, Object> progress = normalizeProgressPayload(sanitizedPayload(event));
-            if (progress != null) {
-                return progress;
-            }
+        if (recentEvents == null || recentEvents.isEmpty()) {
+            return null;
         }
-        return null;
+        // §2.2 priority 2: only the latest event may passthrough explicit ETA.
+        return normalizeProgressPayload(sanitizedPayload(recentEvents.get(0)));
     }
 
     private Map<String, Object> resolveTerminalProgress(List<VerlaEventInbox> recentEvents) {

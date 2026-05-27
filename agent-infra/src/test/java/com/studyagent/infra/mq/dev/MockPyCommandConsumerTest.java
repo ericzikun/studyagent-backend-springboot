@@ -59,6 +59,19 @@ class MockPyCommandConsumerTest {
     }
 
     @Test
+    void assignmentDefaultInitCompletedPayload_stopsAtInitialChoiceMoment() {
+        Map<String, Object> payload = MockPyCommandConsumer.assignmentDefaultInitCompletedPayload();
+
+        assertThat(payload).containsEntry("ready", true);
+        assertThat(payload).containsEntry("isReadyForGeneration", false);
+        assertThat(payload.get("nextActions"))
+                .isEqualTo(List.of("deep_understanding", "generation"));
+        assertThat(payload.get("requirementUnderstanding"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("nextStep", "choose walkthrough or assignment setup");
+    }
+
+    @Test
     void assignmentFastTextChunks_coverHighFrequencyPureTextFixture() {
         var chunks = MockPyCommandConsumer.assignmentFastTextChunks();
         String visibleText = String.join("", chunks);

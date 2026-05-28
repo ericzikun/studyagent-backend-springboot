@@ -45,7 +45,7 @@ public class VerlaConversationService {
                 : IntentLifecycle.COMMITTED.getDbValue();
         VerlaConversation c = VerlaConversation.builder()
                 .userId(userId)
-                .title(title == null || title.isBlank() ? "New Conversation" : title)
+                .title(title == null || title.isBlank() ? "New Task" : title)
                 .status(ConversationStatus.ACTIVE.getDbValue())
                 .primaryIntent(intent)
                 .intentLifecycle(lifecycle)

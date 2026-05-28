@@ -43,6 +43,10 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
             VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED);
 
+    /** task_agent / task_name 截断上限：对应 DB 列已扩至 TEXT，此处保留软上限防止异常大值 */
+    private static final int MAX_TASK_AGENT_LEN = 2000;
+    private static final int MAX_TASK_NAME_LEN  = 512;
+
     private final VerlaWorkforceTaskRepository taskRepository;
     private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
     private final ObjectMapper objectMapper;
@@ -87,6 +91,11 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
         }
 
         boolean isPlan = PLAN_NODE_ID.equals(node.getId());
+        if (!isPlan && (node.getId() == null || !node.getId().startsWith("task-"))) {
+            log.debug("[Verla/workforce] NODE_UPDATED skip non-workforce node sessionId={} nodeId={}",
+                    row.getSessionId(), node.getId());
+            return;
+        }
         VerlaWorkforceTask patch = buildTaskPatch(row, node, isPlan);
 
         VerlaWorkforceTask saved = taskRepository.upsertBySessionNode(patch);
@@ -103,8 +112,8 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
                 .sessionId(row.getSessionId())
                 .nodeId(node.getId())
                 .nodeKind(isPlan ? NODE_KIND_PLAN : NODE_KIND_TASK)
-                .taskName(node.getTaskName())
-                .taskAgent(node.getTaskAgent())
+                .taskName(truncate(node.getTaskName(), MAX_TASK_NAME_LEN))
+                .taskAgent(truncate(node.getTaskAgent(), MAX_TASK_AGENT_LEN))
                 .status(node.getStatus())
                 .content(node.getContent());
 
@@ -122,7 +131,9 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             List<?> steps = node.getSteps();
             if (steps != null && !steps.isEmpty()) {
                 builder.planStepsJson(toJson(steps));
-                builder.planTaskCount(steps.size());
+                if (containsComposePartSteps(steps)) {
+                    builder.planTaskCount(steps.size());
+                }
             }
         }
 
@@ -182,5 +193,28 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             log.warn("[Verla/workforce] JSON serialize failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null || s.length() <= maxLen) return s;
+        log.warn("[Verla/workforce] field truncated from {} to {} chars", s.length(), maxLen);
+        return s.substring(0, maxLen);
+    }
+
+    /**
+     * Compose 总轮 M 仅来自 {@code emit_compose_total} 写入的 {@code compose-part-*} steps，
+     * 避免 decomposition / canvas 占位 steps 污染 {@code plan_task_count}。
+     */
+    private boolean containsComposePartSteps(List<?> steps) {
+        for (Object step : steps) {
+            if (!(step instanceof java.util.Map<?, ?> map)) {
+                continue;
+            }
+            Object id = map.get("id");
+            if (id != null && String.valueOf(id).startsWith("compose-part-")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -146,12 +146,13 @@ class VerlaTurnOrchestratorTest {
         assertEquals("No, let’s keep chatting.", messageRepository.savedMessages.get(0).getTextContent());
         assertEquals(0, conversationRepository.incrementVersionCount);
         assertEquals(SessionStatus.DISPATCHING.name(), sessionRepository.saved.getStatus());
-        assertNotNull(mqOutboxRepository.saved);
-        assertEquals("cmd.plan.intent", mqOutboxRepository.saved.getAction());
-        assertEquals("cmd.plan.intent", mqOutboxRepository.saved.getRoutingKey());
-        assertTrue(mqOutboxRepository.saved.getPayload().contains("No, let’s keep chatting."));
-        assertTrue(mqOutboxRepository.saved.getPayload().contains("\"planConfirmRejected\":true"));
-        assertFalse(mqOutboxRepository.saved.getPayload().contains("cmd.assignment.deep_understanding"));
+        MqOutbox planCommand = mqOutboxRepository.findSavedByAction("cmd.plan.intent");
+        assertNotNull(planCommand);
+        assertEquals("cmd.plan.intent", planCommand.getAction());
+        assertEquals("cmd.plan.intent", planCommand.getRoutingKey());
+        assertTrue(planCommand.getPayload().contains("No, let’s keep chatting."));
+        assertTrue(planCommand.getPayload().contains("\"planConfirmRejected\":true"));
+        assertFalse(planCommand.getPayload().contains("cmd.assignment.deep_understanding"));
     }
 
     private static final class FakeSessionRepository implements VerlaSessionRepository {
@@ -358,11 +359,20 @@ class VerlaTurnOrchestratorTest {
 
     private static final class FakeMqOutboxRepository implements MqOutboxRepository {
         MqOutbox saved;
+        List<MqOutbox> savedMessages = new ArrayList<>();
 
         @Override
         public MqOutbox save(MqOutbox mqOutbox) {
             this.saved = mqOutbox;
+            this.savedMessages.add(mqOutbox);
             return mqOutbox;
+        }
+
+        MqOutbox findSavedByAction(String action) {
+            return savedMessages.stream()
+                    .filter(message -> action.equals(message.getAction()))
+                    .findFirst()
+                    .orElse(null);
         }
 
         @Override

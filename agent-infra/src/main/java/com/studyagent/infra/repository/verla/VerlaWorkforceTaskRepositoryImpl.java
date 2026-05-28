@@ -70,6 +70,9 @@ public class VerlaWorkforceTaskRepositoryImpl
             if (!"task".equalsIgnoreCase(row.getNodeKind())) {
                 continue;
             }
+            if (row.getNodeId() == null || !row.getNodeId().startsWith("task-")) {
+                continue;
+            }
             totalTaskCount++;
             String status = row.getStatus() == null ? "" : row.getStatus().trim().toLowerCase();
             if ("completed".equals(status)) {

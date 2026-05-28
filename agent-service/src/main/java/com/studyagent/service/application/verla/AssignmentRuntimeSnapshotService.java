@@ -9,9 +9,11 @@ import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotVie
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.VerlaWorkforceTaskOutput;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
+import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskOutputRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +40,7 @@ public class AssignmentRuntimeSnapshotService {
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaEventInboxRepository eventInboxRepository;
     private final AssignmentRuntimeProgressEstimator progressEstimator;
+    private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -54,6 +57,9 @@ public class AssignmentRuntimeSnapshotService {
                 messageRepository.findByCursor(conversationId, null, MESSAGE_LIMIT));
         List<VerlaArtifact> artifacts = artifactRepository.findByConversation(conversationId);
         ResolvedStateEvent stateEvent = resolveStateEvent(recentEvents);
+        List<Map<String, Object>> agentNodes = withPersistedNodeDetails(
+                progressEstimator.foldAgentNodes(recentEvents),
+                resolveCurrentSessionId(recentEvents));
 
         return AssignmentRuntimeSnapshotView.builder()
                 .conversationId(conversationId)
@@ -63,10 +69,91 @@ public class AssignmentRuntimeSnapshotService {
                         .messages(messages)
                         .stateEventPayload(stateEvent == null ? null : stateEvent.payload())
                         .progress(progressEstimator.resolveProgress(recentEvents))
-                        .agentNodes(progressEstimator.foldAgentNodes(recentEvents))
+                        .agentNodes(agentNodes)
                         .artifacts(artifacts == null ? List.of() : artifacts)
                         .build())
                 .build();
+    }
+
+    /**
+     * Restores detail panel state into the corresponding folded node without
+     * changing live SSE semantics. Card `content` remains the card snapshot;
+     * `detailed.content` is the accumulated ASSIGNMENT_AGENT_NODE_DETAILED output.
+     */
+    private List<Map<String, Object>> withPersistedNodeDetails(
+            List<Map<String, Object>> agentNodes,
+            Long sessionId) {
+        if (agentNodes == null || agentNodes.isEmpty() || sessionId == null) {
+            return agentNodes == null ? List.of() : agentNodes;
+        }
+        List<VerlaWorkforceTaskOutput> outputs = taskOutputRepository.listBySession(sessionId);
+        if (outputs == null || outputs.isEmpty()) {
+            return agentNodes;
+        }
+
+        Map<String, VerlaWorkforceTaskOutput> outputByNodeId = new LinkedHashMap<>();
+        for (VerlaWorkforceTaskOutput output : outputs) {
+            if (output.getNodeId() != null && !output.getNodeId().isBlank()) {
+                outputByNodeId.put(output.getNodeId(), output);
+            }
+        }
+        if (outputByNodeId.isEmpty()) {
+            return agentNodes;
+        }
+
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (Map<String, Object> node : agentNodes) {
+            String nodeId = node == null ? null : stringValue(node.get("id"));
+            VerlaWorkforceTaskOutput output = nodeId == null ? null : outputByNodeId.get(nodeId);
+            if (output == null || !hasNodeDetail(output)) {
+                enriched.add(node);
+                continue;
+            }
+
+            Map<String, Object> nextNode = new LinkedHashMap<>(node);
+            Map<String, Object> detailed = new LinkedHashMap<>();
+            if (output.getResultText() != null && !output.getResultText().isBlank()) {
+                detailed.put("content", output.getResultText());
+            }
+            List<Map<String, Object>> detailItems = parseDetailItems(output.getDetailItemsJson());
+            if (!detailItems.isEmpty()) {
+                detailed.put("detailItems", detailItems);
+            }
+            nextNode.put("detailed", detailed);
+            enriched.add(nextNode);
+        }
+        return enriched;
+    }
+
+    private Long resolveCurrentSessionId(List<VerlaEventInbox> recentEvents) {
+        if (recentEvents == null || recentEvents.isEmpty()) {
+            return null;
+        }
+        for (VerlaEventInbox event : recentEvents) {
+            if (event.getSessionId() != null) {
+                return event.getSessionId();
+            }
+        }
+        return null;
+    }
+
+    private boolean hasNodeDetail(VerlaWorkforceTaskOutput output) {
+        return output != null
+                && ((output.getResultText() != null && !output.getResultText().isBlank())
+                || (output.getDetailItemsJson() != null && !output.getDetailItemsJson().isBlank()));
+    }
+
+    private List<Map<String, Object>> parseDetailItems(String detailItemsJson) {
+        if (detailItemsJson == null || detailItemsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(
+                    detailItemsJson,
+                    new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private List<VerlaMessage> chronologicalMessages(List<VerlaMessage> rows) {
@@ -142,6 +229,14 @@ public class AssignmentRuntimeSnapshotService {
         } catch (Exception ignored) {
             return Map.of();
         }
+    }
+
+    private String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     @SuppressWarnings("unchecked")

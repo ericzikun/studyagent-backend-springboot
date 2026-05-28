@@ -36,7 +36,25 @@ cd agent-start
 mvn spring-boot:run
 ```
 
-### 3. 访问 API 文档
+### 3. 运行本地 MockPy 后端
+
+用于前端 V2 联调 Spring SSE + Java MockPy，不启动真实 Python V2 agent。
+
+```bash
+./start-mock.sh
+```
+
+常用覆盖项：
+
+```bash
+PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
+```
+
+启动脚本会默认补齐本地 mock 数据库缺失的 `user_profiles` 认证表与 `mq_outbox` Verla / claim 字段；如需跳过可设置 `PATCH_MOCK_DB=false`。
+
+启动脚本也会补齐 `verla_attachments.attachment_origin`，用于区分用户上传附件和 agent 输出附件。
+
+### 4. 访问 API 文档
 
 http://localhost:8080/swagger-ui.html
 
@@ -50,4 +68,3 @@ http://localhost:8080/swagger-ui.html
 ## 环境配置
 
 参考 `agent-start/src/main/resources/application.yml`
-

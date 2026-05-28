@@ -2,6 +2,7 @@ package com.studyagent.infra.mq.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
+import com.studyagent.common.log.util.TraceIdUtil;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.VerlaInboxService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,9 @@ public class VerlaEventListener {
         String routingKey = msg.getMessageProperties().getReceivedRoutingKey();
         String mqMessageId = msg.getMessageProperties().getMessageId();
         VerlaEventEnvelope env = null;
+        // Establish a traceId for this MQ consumer thread so log lines are correlatable.
+        // MDC is thread-local: must be cleared in finally to avoid leaking across messages.
+        TraceIdUtil.setTraceId();
         try {
             env = parse(msg);
             inboxService.ingest(env);
@@ -61,6 +65,8 @@ public class VerlaEventListener {
                     routingKey, mqMessageId,
                     env == null ? null : env.getMessageId(), e);
             channel.basicNack(deliveryTag, false, false);
+        } finally {
+            TraceIdUtil.clear();
         }
     }
 

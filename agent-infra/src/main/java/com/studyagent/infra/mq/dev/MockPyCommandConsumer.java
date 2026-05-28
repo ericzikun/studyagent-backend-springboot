@@ -60,10 +60,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *                             (250ms)  PLAN_NEEDS_CLARIFY { question }
  * cmd.assignment.init  ──► (50ms)   ASSIGNMENT_INIT_STARTED
  *                          (200ms)  ASSIGNMENT_INIT_STREAM_CHUNK
- *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=false }
- *                          (850ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
- *                          (1000ms) ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
- *                          (1450ms) ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED { ready=true }
+ *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=true }
  * cmd.assignment.deep_understanding
  *                    ──► (50ms)   ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
  *                          (200ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
@@ -73,7 +70,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *                          (80ms)   ASSIGNMENT_AGENT_NODE_UPDATED plan=RUNNING
  *                          (500ms)  ASSIGNMENT_AGENT_NODE_UPDATED plan=COMPLETED + queued task nodes
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_UPDATED each task running/completed
- *                          (6600ms) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED
+ *                          (900ms+) ASSIGNMENT_AGENT_NODE_DETAILED each task process/content detail
+ *                          (6600ms+) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED document/slides/code
  *                          (9000ms) ASSIGNMENT_AGENT_FLOW_COMPLETED
  * cmd.agent.run        ──► (50ms)   AGENT_STARTED
  *                          (150ms)  AGENT_TOOL_CALL_RECORDED  { tool=web_search, status=RUNNING }
@@ -101,6 +99,20 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MockPyCommandConsumer {
 
     private static final String PRODUCER_SERVICE = "py-mock";
+    private static final long ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS = 1200L;
+    private static final long ASSIGNMENT_RUN_STREAM_INTERVAL_MS = 650L;
+    private static final long ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS = 1000L;
+    private static final long ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS = 120L;
+    private static final long ASSIGNMENT_RUN_COMPLETION_SETTLE_MS = 1600L;
+    private static final String ASSIGNMENT_STREAM_SCENARIO_DEFAULT = "default";
+    private static final String ASSIGNMENT_STREAM_SCENARIO_FAST = "fast";
+    private static final String ASSIGNMENT_STREAM_SCENARIO_MIXED = "mixed";
+    private static final long ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS = 120L;
+    private static final long ASSIGNMENT_INIT_FAST_INTERVAL_MS = 25L;
+    private static final long ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS = 220L;
+    private static final long ASSIGNMENT_INIT_MIXED_INTERVAL_MS = 260L;
+    private static final long ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS = 320L;
+    private static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private final ObjectMapper objectMapper;
     private final RabbitTemplate rabbitTemplate;
@@ -225,7 +237,7 @@ public class MockPyCommandConsumer {
         String userText = String.valueOf(payload.getOrDefault("userText", ""));
         String hint = stringField(payload, "primaryIntentHint");
 
-        String intent = hint != null && !hint.isBlank() ? hint : inferIntent(userText);
+        String intent = resolvePlanIntent(userText, hint);
         Map<String, Object> slots = inferSlots(userText, intent);
 
         // V2: 30% 概率走 clarify 分支（关键词触发可强制开/关）
@@ -391,6 +403,21 @@ public class MockPyCommandConsumer {
      * 这样本地 smoke 能验证 Java SSE 和 assignment understanding 状态，而不是落回通用 AGENT_*。
      */
     private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
+        String scenario = resolveAssignmentStreamScenario(assignmentUserText(cmd));
+        if (ASSIGNMENT_STREAM_SCENARIO_FAST.equals(scenario)) {
+            scheduleAssignmentInitScenarioResponse(cmd, scenario,
+                    assignmentFastTextChunks(),
+                    ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS,
+                    ASSIGNMENT_INIT_FAST_INTERVAL_MS,
+                    ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS);
+            return;
+        }
+        if (ASSIGNMENT_STREAM_SCENARIO_MIXED.equals(scenario)) {
+            scheduleAssignmentInitScenarioResponse(cmd, scenario, assignmentRunVisibleChunks(),
+                    160L, ASSIGNMENT_INIT_MIXED_INTERVAL_MS, ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS);
+            return;
+        }
+
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", assignmentAgentType(cmd));
         started.put("stage", "stage_0");
@@ -403,45 +430,45 @@ public class MockPyCommandConsumer {
                 null,
                 200);
 
-        Map<String, Object> done = new HashMap<>();
-        done.put("summary", "[Mock] Assignment requirements understood");
-        done.put("ready", false);
-        done.put("isReadyForGeneration", false);
-        done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("requirementUnderstanding", Map.of(
-                "topic", "Causes of World War I",
-                "outputType", "short outline",
-                "nextStep", "confirm requirements before generation"));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done, 650);
-        scheduleInitialDeepUnderstandingReady(cmd, 850);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
+                assignmentDefaultInitCompletedPayload(), 650);
     }
 
-    /**
-     * Local MockPy only: Java 当前只会为首轮 assignment clarify 派发 stage_0 命令。
-     * 真实 Py / 后续真实编排应单独产出 deep-understanding ready 信号；本地 mock
-     * 在 init 后追加同一段事件，避免前端按 ready 字段改造后停在 init completed。
-     */
-    private void scheduleInitialDeepUnderstandingReady(VerlaCommandEnvelope cmd, long startedDelayMs) {
-        markAssignmentDeepUnderstandingRound(cmd);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
-                Map.of("agentType", assignmentAgentType(cmd), "userUnderstood", false, "mockAutoPreview", true),
-                startedDelayMs);
-        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK,
-                List.of(
-                        "Connecting the extracted requirements into a clearer assignment plan...\n",
-                        "The mock brief is ready for you to choose walkthrough or assignment setup.\n"),
-                null,
-                startedDelayMs + 150);
+    private void scheduleAssignmentInitScenarioResponse(VerlaCommandEnvelope cmd,
+                                                        String scenario,
+                                                        List<String> chunks,
+                                                        long firstChunkDelayMs,
+                                                        long chunkIntervalMs,
+                                                        long completionSettleMs) {
+        Map<String, Object> started = new HashMap<>();
+        started.put("agentType", assignmentAgentType(cmd));
+        started.put("stage", "stage_0");
+        started.put("mockScenario", scenario);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STARTED, started, 50);
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                chunks,
+                "stage_0",
+                firstChunkDelayMs,
+                chunkIntervalMs,
+                scenario);
 
         Map<String, Object> done = new HashMap<>();
-        done.put("summary", "[Mock] Deep understanding ready");
-        done.put("userUnderstood", false);
+        done.put("summary", "[Mock] Assignment stream scenario completed: " + scenario);
         done.put("ready", true);
         done.put("isReadyForGeneration", false);
         done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("mockAutoPreview", true);
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED, done,
-                startedDelayMs + 600);
+        done.put("mockScenario", scenario);
+        done.put("requirementUnderstanding", Map.of(
+                "topic", "Stream smoothing scenario",
+                "outputType", scenario,
+                "nextStep", "inspect visible stream pacing and card reveal"));
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done,
+                assignmentInitScenarioCompletionDelay(
+                        chunks.size(),
+                        firstChunkDelayMs,
+                        chunkIntervalMs,
+                        completionSettleMs));
     }
 
     /**
@@ -509,19 +536,6 @@ public class MockPyCommandConsumer {
                 .computeIfAbsent(key, ignored -> new AtomicLong(0L))
                 .incrementAndGet();
         return round > 1;
-    }
-
-    private void markAssignmentDeepUnderstandingRound(VerlaCommandEnvelope cmd) {
-        Long key = refTurnId(cmd);
-        if (key == null) {
-            key = refSessionId(cmd);
-        }
-        if (key == null) {
-            return;
-        }
-        assignmentDeepUnderstandingRounds
-                .computeIfAbsent(key, ignored -> new AtomicLong(0L))
-                .incrementAndGet();
     }
 
     private List<String> assignmentDeepUnderstandingNextActions(boolean userUnderstood,
@@ -686,33 +700,38 @@ public class MockPyCommandConsumer {
                         "Final package check"),
                 5500, 7000);
 
+        List<String> visibleChunks = assignmentRunVisibleChunks();
         scheduleAssignmentChunks(cmd, VerlaAgentEventType.AGENT_STEP_STREAM_CHUNK,
-                List.of(
-                        "I am turning the confirmed plan into a connected task workflow now.\n",
-                        "Research, outline, draft, citation, and QA tasks are progressing one by one.\n"),
+                visibleChunks,
                 "assignment_run",
-                1200);
+                ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
+                ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
 
-        String artifactUid = "assignment_mock_document_" + UUID.randomUUID().toString().substring(0, 8);
-        Map<String, Object> art = new HashMap<>();
-        art.put("artifactUid", artifactUid);
-        art.put("kind", "document_markdown");
-        art.put("mime", "text/markdown");
-        art.put("summary", "Generated Assignment.md");
-        art.put("bodyOrRef", "# Mock Generated Assignment\n\n"
-                + "This local MockPy document is emitted after workflow node events so the V2 right rail can be tested against the real SSE path.\n");
-        art.put("status", "READY");
-        art.put("version", 1);
-        art.put("sizeBytes", 512L);
-        art.put("meta", Map.of("agent", agentType, "source", "mockpy-assignment-run"));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED, art, 6600);
+        List<Map<String, Object>> artifacts = assignmentGeneratedArtifacts(
+                agentType,
+                UUID.randomUUID().toString().substring(0, 8));
+        long lastVisibleChunkDelayMs = assignmentRunStreamDelayMs(visibleChunks.size() - 1);
+        long artifactDelayMs = Math.max(6600L,
+                lastVisibleChunkDelayMs + ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS);
+        for (int i = 0; i < artifacts.size(); i++) {
+            scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED,
+                    artifacts.get(i),
+                    artifactDelayMs + i * ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS);
+        }
 
+        List<String> artifactUids = artifacts.stream()
+                .map(artifact -> String.valueOf(artifact.get("artifactUid")))
+                .toList();
+        long finalArtifactDelayMs = artifactDelayMs
+                + Math.max(0, artifacts.size() - 1L) * ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS;
         Map<String, Object> done = new HashMap<>();
         done.put("summary", "[Mock] Assignment workflow completed");
-        done.put("artifactCount", 1);
-        done.put("primaryArtifactUid", artifactUid);
+        done.put("artifactCount", artifactUids.size());
+        done.put("primaryArtifactUid", artifactUids.get(0));
+        done.put("artifactUids", artifactUids);
         done.put("progress", assignmentEtaProgress("Assignment ready", 0));
-        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done, 9000);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done,
+                Math.max(9000L, finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
     }
 
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
@@ -778,10 +797,18 @@ public class MockPyCommandConsumer {
                 inputSummary, null,
                 workflowSteps(stepTitles, "RUNNING"),
                 runningDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "RUNNING",
+                mockDetailItems(stepTitles),
+                mockRunningDetailContent(title, summary),
+                runningDelayMs + 120L);
         scheduleAssignmentNode(cmd, id, title, role, "COMPLETED", order, summary,
                 inputSummary, outputSummary,
                 workflowSteps(stepTitles, "COMPLETED"),
                 completedDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "COMPLETED",
+                List.of(),
+                mockCompletedDetailContent(title, outputSummary),
+                completedDelayMs + 80L);
     }
 
     private void scheduleAssignmentNode(VerlaCommandEnvelope cmd,
@@ -815,6 +842,75 @@ public class MockPyCommandConsumer {
 
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                 Map.of("node", node), delayMs);
+    }
+
+    private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
+                                              String id,
+                                              String title,
+                                              String role,
+                                              String status,
+                                              List<Map<String, Object>> detailChunk,
+                                              String contentChunk,
+                                              long delayMs) {
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED,
+                assignmentNodeDetailPayload(id, title, role, status, detailChunk, contentChunk),
+                delayMs);
+    }
+
+    static Map<String, Object> assignmentNodeDetailPayload(String id,
+                                                           String title,
+                                                           String role,
+                                                           String status,
+                                                           List<Map<String, Object>> detailChunk,
+                                                           String contentChunk) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", id);
+        payload.put("status", status);
+        payload.put("taskName", title);
+        payload.put("taskAgent", role);
+        payload.put("startStamp", Instant.now().toString());
+        if (detailChunk != null && !detailChunk.isEmpty()) {
+            payload.put("detailChunk", detailChunk);
+        }
+        if (contentChunk != null && !contentChunk.isBlank()) {
+            payload.put("contentChunk", contentChunk);
+        }
+        return payload;
+    }
+
+    private List<Map<String, Object>> mockDetailItems(List<String> stepTitles) {
+        if (stepTitles == null || stepTitles.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int i = 0; i < stepTitles.size(); i++) {
+            String stepTitle = stepTitles.get(i);
+            items.add(Map.of(
+                    "type", mockDetailType(i),
+                    "detailed", List.of(Map.of(
+                            "name", stepTitle,
+                            "url", "https://mock.verla.local/workflow/" + (i + 1)))));
+        }
+        return items;
+    }
+
+    private String mockDetailType(int index) {
+        return switch (index % 3) {
+            case 0 -> "search_serper";
+            case 1 -> "read_file";
+            default -> "format_citation_list";
+        };
+    }
+
+    private String mockRunningDetailContent(String title, String summary) {
+        return title + " started. " + summary + "\n";
+    }
+
+    private String mockCompletedDetailContent(String title, String outputSummary) {
+        String summary = outputSummary == null || outputSummary.isBlank()
+                ? "The mock task finished and produced its handoff notes."
+                : outputSummary;
+        return title + " completed. " + summary + "\n";
     }
 
     private List<Map<String, Object>> workflowSteps(List<String> titles, String status) {
@@ -871,6 +967,19 @@ public class MockPyCommandConsumer {
 
     private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
                                           List<String> chunks, String stage, long firstDelayMs) {
+        scheduleAssignmentChunks(cmd, eventType, chunks, stage, firstDelayMs, 200L);
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs,
+                                          long chunkIntervalMs) {
+        scheduleAssignmentChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs, null);
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs,
+                                          long chunkIntervalMs,
+                                          String mockScenario) {
         for (int i = 0; i < chunks.size(); i++) {
             Map<String, Object> chunkPayload = new HashMap<>();
             chunkPayload.put("delta", chunks.get(i));
@@ -879,16 +988,28 @@ public class MockPyCommandConsumer {
             if (stage != null) {
                 chunkPayload.put("stage", stage);
             }
-            scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * 200L);
+            if (mockScenario != null) {
+                chunkPayload.put("mockScenario", mockScenario);
+                chunkPayload.put("chunkCount", chunks.size());
+                chunkPayload.put("mockChunkIntervalMs", chunkIntervalMs);
+            }
+            scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * chunkIntervalMs);
         }
     }
 
-    private Map<String, Object> buildMockRequirementForm() {
+    static Map<String, Object> buildMockRequirementForm() {
         return Map.of(
                 "title", "Assignment requirements",
                 "description", "Confirm the details before generation.",
                 "schema", List.of(
                         Map.of("key", "subject", "label", "Subject", "type", "text", "required", true),
+                        Map.of(
+                                "key", "assignment_type",
+                                "label", "Assignment Type",
+                                "type", "select",
+                                "options", ASSIGNMENT_TYPE_OPTIONS,
+                                "defaultValue", "Case Study",
+                                "required", true),
                         Map.of("key", "format", "label", "Expected format", "type", "text", "required", true),
                         Map.of("key", "deadline", "label", "Deadline", "type", "date", "required", false)));
     }
@@ -1183,13 +1304,42 @@ public class MockPyCommandConsumer {
     // 业务模拟
     // ============================================================
 
+    /**
+     * Resolve the plan intent for local MockPy.
+     *
+     * Dashboard conversations can enter plan with a generic {@code router} hint because
+     * the real planner is expected to classify the draft. MockPy must not treat that
+     * placeholder as a final intent; it falls back to text matching so local Spring
+     * backend tests can continue into the assignment flow.
+     */
+    static String resolvePlanIntent(String userText, String primaryIntentHint) {
+        if (primaryIntentHint != null && !primaryIntentHint.isBlank()
+                && !isRouterPlaceholder(primaryIntentHint)) {
+            return primaryIntentHint;
+        }
+        return inferIntent(userText);
+    }
+
+    private static boolean isRouterPlaceholder(String primaryIntentHint) {
+        String normalized = primaryIntentHint.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "router".equals(normalized) || "route".equals(normalized);
+    }
+
     /** 极简意图判定：仅做关键词匹配，目的是让本地 demo 走通；真 Py 用 LLM。 */
     private static String inferIntent(String userText) {
         if (userText == null || userText.isBlank()) {
             return "qa";
         }
+        if (!ASSIGNMENT_STREAM_SCENARIO_DEFAULT.equals(resolveAssignmentStreamScenario(userText))) {
+            return "assignment";
+        }
         String t = userText.toLowerCase(Locale.ROOT);
-        if (containsAny(t, "作业", "习题", "题目", "做题", "解题", "homework", "assignment")) {
+        if (containsAny(t,
+                "作业", "习题", "题目", "做题", "解题", "论文", "作文", "报告", "课程设计", "读后感", "观后感",
+                "homework", "assignment", "essay", "paper", "coursework")) {
             return "assignment";
         }
         if (containsAny(t, "翻译", "翻成", "translate")) {
@@ -1221,18 +1371,436 @@ public class MockPyCommandConsumer {
         return slots;
     }
 
+    private static String assignmentUserText(VerlaCommandEnvelope cmd) {
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String userText = stringField(payload, "userText");
+        return userText == null ? "" : userText;
+    }
+
+    /**
+     * Local MockPy scenario switch. Only a leading command word is accepted so
+     * ordinary text such as "fasting" or "mixed-media" keeps the default path.
+     */
+    static String resolveAssignmentStreamScenario(String userText) {
+        String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(Locale.ROOT);
+        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_FAST)) {
+            return ASSIGNMENT_STREAM_SCENARIO_FAST;
+        }
+        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_MIXED)) {
+            return ASSIGNMENT_STREAM_SCENARIO_MIXED;
+        }
+        return ASSIGNMENT_STREAM_SCENARIO_DEFAULT;
+    }
+
+    private static boolean hasMockScenarioPrefix(String normalizedText, String prefix) {
+        if (!normalizedText.startsWith(prefix)) {
+            return false;
+        }
+        if (normalizedText.length() == prefix.length()) {
+            return true;
+        }
+        char next = normalizedText.charAt(prefix.length());
+        return Character.isWhitespace(next)
+                || next == ':' || next == '：'
+                || next == ',' || next == '，';
+    }
+
     private static List<String> mockChunks(String agentType) {
         List<String> out = new ArrayList<>();
         if ("assignment".equals(agentType)) {
-            out.add("# 物理作业（Mock）\n\n");
-            out.add("## 第 1 题\n这是模拟的解题过程……\n");
-            out.add("## 总结\n以上即为模拟回答，完整解答请等真实 Py 服务接入。\n");
+            out.addAll(assignmentRunVisibleChunks());
         } else {
             out.add("[Mock] 这是 ");
             out.add(agentType);
             out.add(" agent 的模拟流式输出。\n");
         }
         return out;
+    }
+
+    /**
+     * Default local assignment init completion payload.
+     *
+     * Dashboard V2 already requires an explicit Assignment tab before the first
+     * message, so MockPy should stop at the initial choice moment and wait for the
+     * user's "Lead me..." or setup selection instead of auto-emitting a deep
+     * understanding response.
+     */
+    static Map<String, Object> assignmentDefaultInitCompletedPayload() {
+        Map<String, Object> done = new HashMap<>();
+        done.put("summary", "[Mock] Assignment requirements understood");
+        done.put("ready", true);
+        done.put("isReadyForGeneration", false);
+        done.put("nextActions", List.of("deep_understanding", "generation"));
+        done.put("requirementUnderstanding", Map.of(
+                "topic", "Causes of World War I",
+                "outputType", "short outline",
+                "nextStep", "choose walkthrough or assignment setup"));
+        return done;
+    }
+
+    /**
+     * Pure prose, high-frequency provider chunks used to validate that frontend
+     * visible streaming is paced by its scheduler, not by backend flush cadence.
+     */
+    static List<String> assignmentFastTextChunks() {
+        String text = "I reviewed your assignment brief, rubric notes, and uploaded context. "
+                + "The first useful move is to restate the task in plain language, then separate the audience, the format, the evidence expectations, and the constraints. "
+                + "After that, I would build a short working thesis and test whether each planned paragraph has one job. "
+                + "If a paragraph only repeats background, it should either support the thesis with evidence or be removed. "
+                + "For the mock stream, the important part is not the academic quality of this answer. "
+                + "The important part is that these backend chunks arrive faster than a person can comfortably read them, while the visible message should still appear with a steady rhythm. "
+                + "This lets us check that raw provider events are buffered, segmented, and paced by the frontend instead of being appended directly to the page. "
+                + "A good result should show words appearing continuously while the network is still busy, without a long blank pause and without one sudden jump after the final event. "
+                + "The text is intentionally long enough to wrap across many lines, push the left rail toward the bottom, and exercise scroll following during the same run. "
+                + "When this scenario completes, the choice moment should appear only after the content has been committed, so the user moves from reading mode into decision mode without the composer leaving a visual gap. "
+                + "That gives us one focused test for high frequency text streaming before we inspect markdown blocks, tables, cards, and file chat in separate scenarios.";
+        return splitFastTextIntoProviderChunks(text);
+    }
+
+    private static List<String> splitFastTextIntoProviderChunks(String text) {
+        int[] chunkWidths = {5, 9, 4, 12, 7, 3, 15, 6, 10, 8, 5, 14, 4, 11, 7, 6};
+        List<String> chunks = new ArrayList<>();
+        int index = 0;
+        int widthIndex = 0;
+        while (index < text.length()) {
+            int width = chunkWidths[widthIndex % chunkWidths.length];
+            int end = Math.min(text.length(), index + width);
+            chunks.add(text.substring(index, end));
+            index = end;
+            widthIndex++;
+        }
+        return chunks;
+    }
+
+    static long assignmentInitScenarioCompletionDelay(int chunkCount,
+                                                      long firstChunkDelayMs,
+                                                      long chunkIntervalMs,
+                                                      long completionSettleMs) {
+        return firstChunkDelayMs
+                + Math.max(0, chunkCount - 1L) * chunkIntervalMs
+                + completionSettleMs;
+    }
+
+    /**
+     * Rich visible chunks for local MockPy assignment output.
+     *
+     * The real provider stream is usually not shaped like a finished paragraph; this
+     * mock intentionally mixes prose, markdown blocks, and punctuation so frontend
+     * stream smoothing can be checked through the Spring SSE path, not only the
+     * in-browser mock stream.
+     */
+    static List<String> assignmentRunVisibleChunks() {
+        return List.of(
+                "I’m turning the confirmed plan into a connected assignment workflow now. ",
+                "I’ll keep the visible stream close to a real answer: short phrases, punctuation pauses, and structure that should not jump while it renders.\n\n",
+                "## What I’m checking\n",
+                "- Whether the draft answers the exact task, not just the broad topic.\n"
+                        + "- Whether each paragraph has a claim, evidence, and explanation.\n"
+                        + "- Whether citation placeholders are clear enough for a final pass.\n\n",
+                "| Area | What I will verify |\n",
+                "| --- | --- |\n"
+                        + "| Rubric fit | The response addresses criteria, word count, and required format. |\n"
+                        + "| Evidence | Claims are tied to course material or source notes. |\n"
+                        + "| Flow | The introduction, body sections, and conclusion read as one argument. |\n\n",
+                "```text\n"
+                        + "Draft order: context -> thesis -> evidence map -> body sections -> citation pass -> final QA\n"
+                        + "```\n\n",
+                "The workflow cards are now moving through research, outline, drafting, citation, and QA. ",
+                "When the final artifact arrives, it should be long enough to test markdown preview, artifact switching, and the left-rail stream ending state.\n");
+    }
+
+    /** Delay schedule for rich assignment chunks in Java MockPy. */
+    static long assignmentRunStreamDelayMs(int chunkIndex) {
+        return ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS
+                + Math.max(0, chunkIndex) * ASSIGNMENT_RUN_STREAM_INTERVAL_MS;
+    }
+
+    /**
+     * Final assignment artifacts emitted by local MockPy.
+     *
+     * Backend/Verla mode intentionally receives the same three editable result
+     * surfaces as frontend mock mode: document markdown, slides editor JSON, and
+     * code text. This keeps local MQ/SSE testing useful for artifact switching
+     * and editor deep links instead of only covering the first document tab.
+     */
+    static List<Map<String, Object>> assignmentGeneratedArtifacts(String agentType, String uidSuffix) {
+        String safeSuffix = uidSuffix == null || uidSuffix.isBlank()
+                ? UUID.randomUUID().toString().substring(0, 8)
+                : uidSuffix;
+        return List.of(
+                assignmentArtifactPayload(
+                        "assignment_mock_document_" + safeSuffix,
+                        "document_markdown",
+                        "text/markdown",
+                        "Generated Assignment.md",
+                        assignmentGeneratedArtifactBody(),
+                        agentType,
+                        "document"),
+                assignmentArtifactPayload(
+                        "assignment_mock_slides_editor_json_" + safeSuffix,
+                        "assignment_slides_editor_json",
+                        "application/json",
+                        "Case Study Deck.editor.json",
+                        assignmentGeneratedSlidesEditorJson(),
+                        agentType,
+                        "slides"),
+                assignmentArtifactPayload(
+                        "assignment_mock_code_text_" + safeSuffix,
+                        "assignment_code_text",
+                        "text/x-python",
+                        "assignment_support.py",
+                        assignmentGeneratedCodeText(),
+                        agentType,
+                        "code"));
+    }
+
+    private static Map<String, Object> assignmentArtifactPayload(String artifactUid,
+                                                                 String kind,
+                                                                 String mime,
+                                                                 String summary,
+                                                                 String body,
+                                                                 String agentType,
+                                                                 String artifactType) {
+        Map<String, Object> art = new HashMap<>();
+        art.put("artifactUid", artifactUid);
+        art.put("kind", kind);
+        art.put("mime", mime);
+        art.put("summary", summary);
+        art.put("bodyOrRef", body);
+        art.put("status", "READY");
+        art.put("version", 1);
+        art.put("sizeBytes", (long) body.getBytes(StandardCharsets.UTF_8).length);
+        art.put("meta", Map.of(
+                "agent", agentType,
+                "source", "mockpy-assignment-run",
+                "mockArtifactType", artifactType));
+        return art;
+    }
+
+    static String assignmentGeneratedSlidesEditorJson() {
+        return """
+                {
+                  "title": "Case Study Revision Deck",
+                  "slides": [
+                    {
+                      "id": "slide-1",
+                      "title": "Case Study Revision Goal",
+                      "elements": [
+                        {
+                          "type": "heading",
+                          "text": "Revise the case study into a protocol-led business analysis"
+                        },
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Clarify the main business decision",
+                            "Connect protocol choices to stakeholder trust",
+                            "Use rubric evidence before recommendations"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "slide-2",
+                      "title": "Evidence Map",
+                      "elements": [
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Course brief: expected APA citation and final reference list",
+                            "Academic source: protocol-led engagement",
+                            "Government source: consultation expectations"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": "slide-3",
+                      "title": "Recommended Workflow",
+                      "elements": [
+                        {
+                          "type": "bullets",
+                          "items": [
+                            "Frame the stakeholder relationship",
+                            "Analyze consultation and consent",
+                            "Turn analysis into practical safeguards"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+    }
+
+    static String assignmentGeneratedCodeText() {
+        return """
+                from dataclasses import dataclass
+
+
+                @dataclass
+                class EvidenceNote:
+                    section: str
+                    claim: str
+                    source: str
+
+
+                def build_argument(prompt, evidence):
+                    thesis = choose_best_thesis(prompt)
+                    outline = plan_paragraphs(thesis, evidence)
+                    return draft_assignment(thesis, outline)
+
+
+                def choose_best_thesis(prompt):
+                    return "Protocols shape trust, authority, and accountability in the case study."
+
+
+                def plan_paragraphs(thesis, evidence):
+                    return [
+                        {"section": "context", "goal": "Frame the business risk."},
+                        {"section": "analysis", "goal": "Connect protocol decisions to stakeholder trust."},
+                        {"section": "recommendation", "goal": "Turn the analysis into practical actions."},
+                    ]
+
+
+                def draft_assignment(thesis, outline):
+                    return {"thesis": thesis, "outline": outline, "needs_citation_pass": True}
+                """;
+    }
+
+    /**
+     * Final document emitted by Java MockPy after workflow completion.
+     *
+     * <p>本段产物模拟 Python ComposeWorker 调用 {@code CitationToolkit.format_citation_list(
+     * output_contract="document_editor_v1")} 后的产物，按前端 document_editor_v1 contract
+     * 输出四段哨兵 markdown，让前端 {@code parseCitationContent} 能完整解析出引用结构：
+     * <ul>
+     *   <li>{@code [--BODY_SECTION--]}：正文，嵌入 {@code [[claim]](evidence_id)} 引用标记</li>
+     *   <li>{@code [--EVIDENCE_RECORDS--]}：JSON evidence 列表，前端按 sourceType
+     *       渲染 academic / web / upload 三类徽章（红 ACA / 蓝 WEB / 绿 UP）</li>
+     *   <li>{@code [--REFERENCE_SECTION--]}：参考文献列表（已按当前 citation_style 排版好；
+     *       有 URL 的条目为 {@code [整条文献](https://...)} markdown 链接，URL 不裸露；
+     *       upload 无外链条目为纯文本）</li>
+     *   <li>{@code [--CITATION_STYLE--]}：引用样式开关</li>
+     * </ul>
+     *
+     * <p>前置修复历史：早期完整版（3 evidence + 3 marker + URLs）会让真实浏览器在
+     * dashboard 页面挂载 EmbeddedDocumentEditor 后整页 hang，请求 Pending、刷新无效。
+     * 根因定位在 {@code CitationTooltipOverlay} 在 {@code document.body} 上挂的全局
+     * MutationObserver 会持续触发 {@code normalizeCitationLinks}，后者对 ProseMirror
+     * 渲染的 {@code <a href>} 节点做 {@code removeAttribute / setAttribute}，跟
+     * ProseMirror 自身的 DOM 同步机制互相打架。修复见
+     * {@code studyagent-fronted-v2/src/features/document-editor/components/citation-tooltip-overlay.tsx}。
+     *
+     * <p>本地切换不同引用样式做联调时，把最后一段 {@code APA} 改成 {@code IEEE}/
+     * {@code MLA}/{@code Chicago}/{@code Harvard}/{@code GB7714} 等任意值，前端
+     * {@code formatCitationText} 会改变正文里学术引用的括注形态。
+     *
+     * <p>原有 e2e 与单测断言的关键字段（{@code # Revise Case Study ...}、
+     * {@code | Section | Revision Goal | Evidence Needed |}、{@code ## Checklist Before Submission}）
+     * 都保留在 BODY 段内，不破坏 {@code MockPyCommandConsumerTest} 与
+     * {@code assignment-mock-flow.spec.ts}。
+     *
+     * <p>Keep this content aligned with {@link #assignmentRunVisibleChunks()} so the
+     * chat stream and artifact preview feel like the same generated assignment.
+     */
+    static String assignmentGeneratedArtifactBody() {
+        return """
+                [--BODY_SECTION--]
+
+                # Revise Case Study on Indigenous Australian Business Protocols
+
+                ## Working Thesis
+                A strong revision should explain that effective business practice with Indigenous Australian communities [[depends on protocol, relationship-building, and local consultation]](acad_ss_1). [[The uploaded rubric requires APA in-text citations and a final reference list]](upload_1). The final paper should avoid treating protocol as a checklist; instead, it should show how respect, consent, and accountability shape each business decision.
+
+                ## Suggested Structure
+                1. Introduce the case context and identify the main business decision.
+                2. Explain why cultural protocol matters before negotiation or delivery.
+                3. Compare the current draft against the rubric expectations.
+                4. Revise the argument so evidence appears before recommendations.
+                5. Close with practical next steps and citation checks.
+
+                | Section | Revision Goal | Evidence Needed |
+                | --- | --- | --- |
+                | Introduction | Clarify the case and stakeholder relationship | Course brief, case facts |
+                | Protocol analysis | Explain consent, consultation, and respect | Lecture notes, source excerpts |
+                | Recommendation | Connect action to protocol obligations | Rubric criteria, examples |
+
+                ## Sample Revision Paragraph
+                The case should frame protocol as part of business competence rather than an optional cultural addition. Before proposing a partnership model, [[the organization needs to identify the relevant community representatives, confirm expectations for consultation, and document how feedback changes the plan]](web_serper_1). This makes the recommendation more credible because it links commercial action to respectful process.
+
+                ## Checklist Before Submission
+                - Confirm the required citation style and replace placeholders.
+                - Check that every recommendation refers back to a case detail.
+                - Remove broad claims that are not supported by the supplied materials.
+                - Keep the final conclusion focused on protocol-informed decision making.
+
+                [--EVIDENCE_RECORDS--]
+                ```json
+                [
+                  {
+                    "id": "acad_ss_1",
+                    "number": 1,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "academic",
+                        "title": "Engaging with Aboriginal and Torres Strait Islander Communities: A Practical Guide for Business",
+                        "fileType": "Academic",
+                        "size": null,
+                        "url": "https://doi.org/10.1007/s10551-023-05421-3",
+                        "reason": "Anchors the working thesis on protocol-led engagement and consultation.",
+                        "authors": ["Vasanthakumar, S.", "Wickramarachchi, R."],
+                        "year": 2023
+                      }
+                    ]
+                  },
+                  {
+                    "id": "web_serper_1",
+                    "number": null,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "web",
+                        "title": "Indigenous Procurement Policy - Department of Finance",
+                        "fileType": "Web",
+                        "size": null,
+                        "url": "https://www.finance.gov.au/government/procurement/indigenous-procurement-policy",
+                        "reason": "Government guidance on consultation expectations and supplier obligations.",
+                        "authors": null,
+                        "year": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "upload_1",
+                    "number": null,
+                    "files": [
+                      {
+                        "id": "file_1",
+                        "sourceType": "upload",
+                        "title": "Course Rubric - APA 7 Citation Requirements (Uploaded)",
+                        "fileType": "PDF",
+                        "size": null,
+                        "url": null,
+                        "reason": "User-uploaded rubric that mandates APA in-text citations and a reference list.",
+                        "authors": null,
+                        "year": null
+                      }
+                    ]
+                  }
+                ]
+                ```
+
+                [--REFERENCE_SECTION--]
+
+                - [Vasanthakumar, S., & Wickramarachchi, R. (2023). Engaging with Aboriginal and Torres Strait Islander communities: A practical guide for business. *Journal of Business Ethics*, 188(3), 521-540.](https://doi.org/10.1007/s10551-023-05421-3)
+                - [Australian Government Department of Finance. (n.d.). *Indigenous procurement policy*.](https://www.finance.gov.au/government/procurement/indigenous-procurement-policy)
+                - Course materials. (2026). *Rubric - APA 7 citation requirements* [Uploaded PDF].
+
+                [--CITATION_STYLE--]
+                APA
+                """;
     }
 
     private static boolean containsAny(String text, String... keywords) {

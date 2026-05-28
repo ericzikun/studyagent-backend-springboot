@@ -6,7 +6,6 @@ import com.studyagent.common.verla.enums.VerlaArtifactStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.payload.VerlaArtifactUpdatedPayload;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
-import com.studyagent.service.application.verla.VerlaSlidesConvertCommandService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -44,7 +43,6 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
     private final VerlaAttachmentRepository attachmentRepository;
     private final VerlaAttachmentService attachmentService;
     private final VerlaConversationRepository conversationRepository;
-    private final VerlaSlidesConvertCommandService slidesConvertCommandService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -91,8 +89,6 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         log.info("[Verla/artifact] upsert ok cid={} uid={} kind={} version={} status={}",
                 saved.getConversationId(), saved.getArtifactUid(), saved.getKind(),
                 saved.getVersion(), saved.getStatus());
-
-        maybeQueueSlidesConvert(saved, p);
 
         // 上下文 cache 失效：artifact 变更必 bump conv version
         conversationRepository.incrementVersion(row.getConversationId());
@@ -160,25 +156,6 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         payload.put("bodyOrRef", body);
         payload.put("sizeBytes", sizeBytes);
         payload.putIfAbsent("status", VerlaArtifactStatus.READY.name());
-    }
-
-    private void maybeQueueSlidesConvert(VerlaArtifact saved, VerlaArtifactUpdatedPayload payload) {
-        if (saved == null || payload == null) {
-            return;
-        }
-        if (!"assignment_slides_pptxgenjs".equals(saved.getKind())) {
-            return;
-        }
-        if (!VerlaArtifactStatus.READY.name().equalsIgnoreCase(saved.getStatus())) {
-            return;
-        }
-
-        try {
-            slidesConvertCommandService.triggerIfNeeded(saved);
-        } catch (Exception e) {
-            log.error("[Verla/slides-convert] queue failed sourceUid={}: {}",
-                    saved.getArtifactUid(), e.getMessage(), e);
-        }
     }
 
     private String toJson(Object obj) {

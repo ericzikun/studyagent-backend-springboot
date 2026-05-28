@@ -93,3 +93,7 @@ logging:
     org.springframework.jdbc: ERROR
   file:
     name: logs/studyagent-backend.log
+
+# Gotenberg 文档转换服务（本地开发默认值）
+gotenberg:
+  base-url: ${GOTENBERG_BASE_URL:http://127.0.0.1:3300}

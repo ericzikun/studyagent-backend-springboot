@@ -38,14 +38,14 @@ public class VerlaAttachmentVO {
     private LocalDateTime createdAt;
 
     public static VerlaAttachmentVO fromUser(VerlaAttachment a) {
-        return from(a, false);
+        return from(a, false, false);
     }
 
     public static VerlaAttachmentVO fromInternal(VerlaAttachment a) {
-        return from(a, true);
+        return from(a, true, true);
     }
 
-    private static VerlaAttachmentVO from(VerlaAttachment a, boolean includeStorageUri) {
+    private static VerlaAttachmentVO from(VerlaAttachment a, boolean includeStorageUri, boolean includeOssKey) {
         if (a == null) {
             return null;
         }
@@ -64,7 +64,7 @@ public class VerlaAttachmentVO {
                 .mimeType(mime)
                 .sizeBytes(a.getSizeBytes())
                 .storageUri(includeStorageUri ? a.getStorageUri() : null)
-                .ossKey(includeStorageUri ? a.getOssKey() : null)
+                .ossKey(includeOssKey ? a.getOssKey() : null)
                 .extractStatus(a.getStatus())
                 .extractedTextRef(a.getPrimaryArtifactUid())
                 .summary(a.getSummary())

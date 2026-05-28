@@ -199,6 +199,8 @@ public class VerlaTurnOrchestrator {
      */
     private SendMessageResult onUserMessageForcedCapability(SendMessageCommand cmd, String intent) {
         VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
+        // 在创建新 turn 之前判断是否首轮：lastTurnId == null 说明此前无 turn
+        boolean isFirstTurn = conv.getLastTurnId() == null;
 
         VerlaMessage userMsg = insertUserMessagePlaceholder(conv.getId(), cmd);
         VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
@@ -226,6 +228,12 @@ public class VerlaTurnOrchestrator {
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
         refreshConversationVersion(conv,
                 conversationRepository.incrementVersionAndGet(conv.getId()));
+
+        // 第一轮对话生成会话标题（isFirstTurn 在创建 turn 之前通过 lastTurnId == null 判断，
+        // 比依赖 turnCount 内存值更可靠）
+        if (isFirstTurn) {
+            spawnTaskNameSession(conv, turn, cmd.getText());
+        }
 
         VerlaSession agentSession;
         if (isAssignmentIntent(intent)) {
@@ -400,6 +408,9 @@ public class VerlaTurnOrchestrator {
             throw new BusinessException(ApiCode.ILLEGAL_STATE,
                     "assignment plan is not ready to start clarify");
         }
+
+        // task_name session 已在 onUserMessage → spawnPlanSession 中创建（首轮时 turnCount 内存旧值==0），
+        // 此处无需重复 dispatch，否则第二个 session 的 userText 依赖 DB 查询，可能拿到空值。
 
         VerlaSession agentSession = spawnAssignmentClarifyInitialSession(
                 conv,
@@ -1533,7 +1544,7 @@ public class VerlaTurnOrchestrator {
     private VerlaCommandEnvelope buildPlanTaskNameEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                            VerlaSession session, String userText) {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("userText", userText);
+        payload.put("userText", userText != null ? userText : "");
         return baseEnvelope(VerlaCommandAction.CMD_PLAN_TASK_NAME, conv, turn, session)
                 .payload(payload)
                 .build();

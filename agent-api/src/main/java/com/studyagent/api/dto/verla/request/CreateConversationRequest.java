@@ -7,7 +7,7 @@ import java.util.Map;
 @Data
 public class CreateConversationRequest {
 
-    /** 可选，不传时后端用 "新对话" */
+    /** 可选，不传时后端用 "New Conversation" */
     private String title;
 
     /** 可选，前端可预填知道的意图（如从入口埋点） */

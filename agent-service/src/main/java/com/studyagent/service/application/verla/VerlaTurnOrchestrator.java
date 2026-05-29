@@ -991,6 +991,7 @@ public class VerlaTurnOrchestrator {
 
         String reply = extractAssistantReply(result);
         if (reply != null && !reply.isBlank()) {
+            String thinking = result.get("thinking") instanceof String t && !t.isBlank() ? t : null;
             VerlaMessage assistant = VerlaMessage.builder()
                     .conversationId(turn.getConversationId())
                     .turnId(turn.getId())
@@ -999,6 +1000,7 @@ public class VerlaTurnOrchestrator {
                     .textContent(reply)
                     .blocksJson(serializeJson(withEventTypeWithoutStage(
                             result, "ASSIGNMENT_INIT_COMPLETED")))
+                    .metaJson(thinking != null ? serializeJson(Map.of("thinking", thinking)) : null)
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);

@@ -55,7 +55,7 @@ class VerlaAttachmentServiceTest {
     @Test
     void sign_allows_pre_turn_upload_when_local_fallback_is_enabled() {
         VerlaUploadSignResult result = service.requestSign(
-                USER_ID, 74L, "assignment.pdf", "application/pdf", 8L, null, null);
+                USER_ID, 74L, "assignment.pdf", "application/pdf", 8L, null, null, null, null);
 
         assertNotNull(result.getObjectId());
         assertTrue(result.getUploadPath().contains(result.getObjectId()));
@@ -120,7 +120,7 @@ class VerlaAttachmentServiceTest {
     @Test
     void upload_content_writes_local_file_when_oss_is_unavailable() throws Exception {
         VerlaUploadSignResult result = service.requestSign(
-                USER_ID, 74L, "brief.txt", "text/plain", 5L, null, null);
+                USER_ID, 74L, "brief.txt", "text/plain", 5L, null, null, null, null);
         VerlaAttachment pending = VerlaAttachment.builder()
                 .objectId(result.getObjectId())
                 .conversationId(74L)

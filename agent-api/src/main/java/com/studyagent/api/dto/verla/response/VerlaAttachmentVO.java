@@ -35,6 +35,8 @@ public class VerlaAttachmentVO {
     private String summary;
     private String thumbnailUrl;
     private String attachmentOrigin;
+    /** 文档编辑器图片场景下后端生成的 OSS 公网访问 URL */
+    private String publicUrl;
     private LocalDateTime createdAt;
 
     public static VerlaAttachmentVO fromUser(VerlaAttachment a) {

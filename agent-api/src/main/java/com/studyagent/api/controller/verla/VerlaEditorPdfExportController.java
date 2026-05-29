@@ -1,9 +1,14 @@
 package com.studyagent.api.controller.verla;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.infra.entity.verla.VerlaArtifactEntity;
+import com.studyagent.infra.entity.verla.VerlaEditorContentEntity;
 import com.studyagent.infra.mapper.verla.VerlaArtifactMapper;
+import com.studyagent.infra.mapper.verla.VerlaEditorContentMapper;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
 import lombok.RequiredArgsConstructor;
@@ -16,13 +21,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -30,52 +34,51 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class VerlaEditorPdfExportController {
 
-    private static final String DOCX_MIME =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
     private final VerlaConversationService conversationService;
     private final VerlaArtifactMapper artifactMapper;
+    private final VerlaEditorContentMapper editorContentMapper;
     private final VerlaEditorPdfExportService pdfExportService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${verla.editor.pdf-export.max-docx-size-bytes:20971520}")
-    private long maxDocxSizeBytes;
+    @Value("${verla.editor.pdf-export.max-content-json-bytes:10485760}")
+    private long maxContentJsonBytes;
 
-    @PostMapping(consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<byte[]> exportPdf(
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
-            @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "filename", required = false) String filename) throws IOException {
+            @RequestBody(required = false) Map<String, Object> body) {
 
         ensureLogin(clerkUserId);
         ensureArtifactOwnership(clerkUserId, conversationId, artifactUid);
 
-        if (file.isEmpty()) {
-            throw new BusinessException(ApiCode.BAD_REQUEST, "Empty DOCX file");
+        VerlaEditorContentEntity editorContent = editorContentMapper.selectOne(
+                new LambdaQueryWrapper<VerlaEditorContentEntity>()
+                        .eq(VerlaEditorContentEntity::getConversationId, conversationId)
+                        .eq(VerlaEditorContentEntity::getSourceArtifactUid, artifactUid)
+                        .eq(VerlaEditorContentEntity::getEditorKind, "document")
+                        .orderByDesc(VerlaEditorContentEntity::getUpdatedAt)
+                        .last("LIMIT 1")
+        );
+
+        if (editorContent == null || editorContent.getContentJson() == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND,
+                    "No saved editor content found for this artifact");
         }
 
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".docx")) {
-            throw new BusinessException(ApiCode.BAD_REQUEST, "File must be a .docx document");
-        }
-
-        String mime = file.getContentType();
-        if (mime != null && !mime.isBlank() && !DOCX_MIME.equals(mime)) {
+        byte[] jsonBytes = editorContent.getContentJson().getBytes(StandardCharsets.UTF_8);
+        if (jsonBytes.length > maxContentJsonBytes) {
             throw new BusinessException(ApiCode.BAD_REQUEST,
-                    "Unsupported file type: " + mime);
+                    "Editor content too large for PDF export (max " + (maxContentJsonBytes / 1024 / 1024) + " MB)");
         }
 
-        long size = file.getSize();
-        if (size > maxDocxSizeBytes) {
-            throw new BusinessException(ApiCode.BAD_REQUEST,
-                    "DOCX file too large (max " + (maxDocxSizeBytes / 1024 / 1024) + " MB)");
-        }
+        String title = resolveTitle(body, editorContent);
+        JsonNode docNode = parseDocNode(editorContent.getContentJson());
 
-        byte[] docxBytes = file.getBytes();
-        byte[] pdfBytes = pdfExportService.convertDocxToPdf(docxBytes, size);
+        byte[] pdfBytes = pdfExportService.renderTiptapToPdf(title, docNode);
 
-        String downloadFilename = resolvePdfFilename(filename);
+        String downloadFilename = resolvePdfFilename(title);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
@@ -85,6 +88,32 @@ public class VerlaEditorPdfExportController {
                                 .build()
                                 .toString())
                 .body(pdfBytes);
+    }
+
+    private String resolveTitle(Map<String, Object> body, VerlaEditorContentEntity editorContent) {
+        if (body != null && body.get("title") instanceof String s && !s.isBlank()) {
+            return s;
+        }
+        if (editorContent.getTitle() != null && !editorContent.getTitle().isBlank()) {
+            return editorContent.getTitle();
+        }
+        return "Untitled document";
+    }
+
+    private JsonNode parseDocNode(String contentJson) {
+        try {
+            JsonNode root = objectMapper.readTree(contentJson);
+            JsonNode doc = root.get("doc");
+            if (doc == null) {
+                throw new BusinessException(ApiCode.INTERNAL_ERROR,
+                        "Editor content JSON is missing 'doc' field");
+            }
+            return doc;
+        } catch (Exception e) {
+            log.error("Failed to parse editor content JSON", e);
+            throw new BusinessException(ApiCode.INTERNAL_ERROR,
+                    "Invalid editor content JSON format");
+        }
     }
 
     private void ensureArtifactOwnership(String clerkUserId, Long conversationId, String artifactUid) {
@@ -98,13 +127,14 @@ public class VerlaEditorPdfExportController {
         }
     }
 
-    private String resolvePdfFilename(String filename) {
-        if (filename != null && !filename.isBlank()) {
-            String trimmed = filename.trim();
-            if (!trimmed.toLowerCase().endsWith(".pdf")) {
-                return trimmed + ".pdf";
+    private String resolvePdfFilename(String title) {
+        if (title != null && !title.isBlank()) {
+            String sanitized = title.trim()
+                    .replaceAll("[/\\\\?%*:|\"<>]", "_");
+            if (!sanitized.toLowerCase().endsWith(".pdf")) {
+                return sanitized + ".pdf";
             }
-            return trimmed;
+            return sanitized;
         }
         return "document.pdf";
     }

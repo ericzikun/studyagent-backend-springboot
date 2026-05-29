@@ -1,10 +1,11 @@
 package com.studyagent.service.application.verla;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -12,8 +13,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.concurrent.Semaphore;
@@ -24,20 +23,20 @@ import java.util.concurrent.TimeUnit;
 public class VerlaEditorPdfExportService {
 
     private final RestTemplate restTemplate;
-    private final String gotenbergBaseUrl;
+    private final String conversionBaseUrl;
     private final Semaphore concurrencySemaphore;
 
     public VerlaEditorPdfExportService(
-            @Value("${gotenberg.base-url:}") String gotenbergBaseUrl,
+            @Value("${verla.editor.pdf-export.conversion-base-url:}") String conversionBaseUrl,
             @Value("${verla.editor.pdf-export.max-concurrent:2}") int maxConcurrent) {
 
-        if (gotenbergBaseUrl == null || gotenbergBaseUrl.isBlank()) {
-            log.error("[PDF Export] gotenberg.base-url is not configured — PDF export will fail");
+        if (conversionBaseUrl == null || conversionBaseUrl.isBlank()) {
+            log.error("[PDF Export] conversion-base-url is not configured — PDF export will fail");
         }
 
-        this.gotenbergBaseUrl = (gotenbergBaseUrl != null && gotenbergBaseUrl.endsWith("/"))
-                ? gotenbergBaseUrl.substring(0, gotenbergBaseUrl.length() - 1)
-                : gotenbergBaseUrl;
+        this.conversionBaseUrl = conversionBaseUrl != null && conversionBaseUrl.endsWith("/")
+                ? conversionBaseUrl.substring(0, conversionBaseUrl.length() - 1)
+                : conversionBaseUrl;
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -45,16 +44,16 @@ public class VerlaEditorPdfExportService {
         this.restTemplate = new RestTemplate(factory);
 
         this.concurrencySemaphore = new Semaphore(Math.max(1, maxConcurrent));
-        log.info("[PDF Export] Initialized — baseUrl={}, maxConcurrent={}",
-                this.gotenbergBaseUrl, maxConcurrent);
+        log.info("[PDF Export] Initialized — conversionBaseUrl={}, maxConcurrent={}",
+                this.conversionBaseUrl, maxConcurrent);
     }
 
-    public byte[] convertDocxToPdf(byte[] docxBytes, long docxSize) {
+    public byte[] renderTiptapToPdf(String title, Object document) {
         long startTime = System.currentTimeMillis();
 
-        if (gotenbergBaseUrl == null || gotenbergBaseUrl.isBlank()) {
+        if (conversionBaseUrl == null || conversionBaseUrl.isBlank()) {
             throw new BusinessException(ApiCode.INTERNAL_ERROR,
-                    "PDF export service is not configured");
+                    "PDF export service is not configured (missing conversion-base-url)");
         }
 
         boolean acquired = false;
@@ -73,25 +72,18 @@ public class VerlaEditorPdfExportService {
         }
 
         try {
-            String url = gotenbergBaseUrl + "/forms/libreoffice/convert";
-
-            ByteArrayResource fileResource = new ByteArrayResource(docxBytes) {
-                @Override
-                public String getFilename() {
-                    return "input.docx";
-                }
-            };
-
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("files", fileResource);
+            String url = conversionBaseUrl + "/api/document-editor/export/pdf";
 
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-            HttpEntity<MultiValueMap<String, Object>> requestEntity =
-                    new HttpEntity<>(body, headers);
+            ObjectNode body = new ObjectMapper().createObjectNode();
+            body.put("title", title);
+            body.set("document", new ObjectMapper().valueToTree(document));
 
-            log.info("[PDF Export] Sending to Gotenberg — docxSize={} bytes", docxSize);
+            HttpEntity<String> requestEntity = new HttpEntity<>(body.toString(), headers);
+
+            log.info("[PDF Export] Sending Tiptap JSON to conversion service — title={}", title);
 
             ResponseEntity<byte[]> response = restTemplate.exchange(
                     url,
@@ -103,25 +95,24 @@ public class VerlaEditorPdfExportService {
             long elapsed = System.currentTimeMillis() - startTime;
 
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-                int pdfSize = response.getBody() != null ? response.getBody().length : 0;
-                log.error("[PDF Export] Gotenberg returned non-2xx — status={}, pdfSize={}, elapsedMs={}",
-                        response.getStatusCode(), pdfSize, elapsed);
+                log.error("[PDF Export] Conversion service returned non-2xx — status={}, elapsedMs={}",
+                        response.getStatusCode(), elapsed);
                 throw new BusinessException(ApiCode.INTERNAL_ERROR,
                         "PDF conversion failed");
             }
 
             byte[] pdfBytes = response.getBody();
-            log.info("[PDF Export] Success — docxSize={}, pdfSize={}, elapsedMs={}",
-                    docxSize, pdfBytes.length, elapsed);
+            log.info("[PDF Export] Success — pdfSize={}, elapsedMs={}",
+                    pdfBytes.length, elapsed);
 
             return pdfBytes;
         } catch (BusinessException e) {
-            log.error("[PDF Export] Conversion failed — docxSize={}, elapsedMs={}, error={}",
-                    docxSize, System.currentTimeMillis() - startTime, e.getMessage());
+            log.error("[PDF Export] Conversion failed — elapsedMs={}, error={}",
+                    System.currentTimeMillis() - startTime, e.getMessage());
             throw e;
         } catch (Exception e) {
-            log.error("[PDF Export] Gotenberg request failed — docxSize={}, elapsedMs={}, error={}",
-                    docxSize, System.currentTimeMillis() - startTime, e.getMessage(), e);
+            log.error("[PDF Export] Conversion service request failed — elapsedMs={}, error={}",
+                    System.currentTimeMillis() - startTime, e.getMessage(), e);
             throw new BusinessException(ApiCode.INTERNAL_ERROR,
                     "PDF conversion failed");
         } finally {

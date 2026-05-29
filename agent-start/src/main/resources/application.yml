@@ -341,11 +341,9 @@ verla:
     oss-key-prefix: ${VERLA_ATTACHMENT_OSS_KEY_PREFIX:verla/v2/attachments}
   editor:
     pdf-export:
-      max-docx-size-bytes: ${VERLA_EDITOR_PDF_EXPORT_MAX_DOCX_SIZE_BYTES:20971520}
       max-concurrent: ${VERLA_EDITOR_PDF_EXPORT_MAX_CONCURRENT:2}
-
-# Gotenberg 文档转换服务
-# 本地开发: http://127.0.0.1:3300（对应 docker run -p 3300:3000 gotenberg/gotenberg:8）
-# 线上部署: http://gotenberg:3000（docker compose 服务名）
-gotenberg:
-  base-url: ${GOTENBERG_BASE_URL:}
+      max-content-json-bytes: ${VERLA_EDITOR_PDF_EXPORT_MAX_CONTENT_JSON_BYTES:10485760}
+      # Next.js PDF 渲染服务地址（Tiptap JSON → HTML → Gotenberg → PDF）
+      # 本地开发: http://127.0.0.1:3001
+      # 线上部署: http://frontend-v2:3001（docker compose 服务名）
+      conversion-base-url: ${VERLA_EDITOR_PDF_CONVERSION_BASE_URL:}

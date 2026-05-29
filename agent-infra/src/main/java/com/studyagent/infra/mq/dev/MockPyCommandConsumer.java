@@ -66,9 +66,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *                          (200ms)  ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK
  *                          (600ms)  ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED { ready / isReadyForGeneration }
  *                              或 ASSIGNMENT_CLARIFY_FORM_READY { requirementForm }
- * cmd.assignment.run  ──► (50ms)   ASSIGNMENT_AGENT_FLOW_STARTED
+ * cmd.assignment.run  ──► (50ms)   ASSIGNMENT_AGENT_FLOW_STARTED progress.estimatedRemainingSeconds=null
  *                          (80ms)   ASSIGNMENT_AGENT_NODE_UPDATED plan=RUNNING
+ *                          (120ms)  AGENT_PROGRESS progress.estimatedRemainingSeconds=null
  *                          (500ms)  ASSIGNMENT_AGENT_NODE_UPDATED plan=COMPLETED + queued task nodes
+ *                          (1800ms+) AGENT_PROGRESS progress.estimatedRemainingSeconds=number
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_UPDATED each task running/completed
  *                          (900ms+) ASSIGNMENT_AGENT_NODE_DETAILED each task process/content detail
  *                          (6600ms+) ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED document/slides/code
@@ -594,7 +596,7 @@ public class MockPyCommandConsumer {
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", agentType);
         started.put("stage", "assignment_run");
-        started.put("progress", assignmentEtaProgress("Planning assignment", 20 * 60));
+        started.put("progress", assignmentCalculatingProgress("Calculating assignment time"));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED, started, 50);
 
         scheduleAssignmentNode(cmd,
@@ -630,13 +632,14 @@ public class MockPyCommandConsumer {
                 500);
 
         scheduleQueuedAssignmentNodes(cmd, 520);
-        scheduleAssignmentProgress(cmd, "Planning assignment", 20 * 60, 120);
-        scheduleAssignmentProgress(cmd, "Framing the solution", 16 * 60, 900);
-        scheduleAssignmentProgress(cmd, "Collecting evidence", 13 * 60, 1600);
-        scheduleAssignmentProgress(cmd, "Building outline", 10 * 60, 2400);
-        scheduleAssignmentProgress(cmd, "Drafting assignment", 7 * 60, 3200);
-        scheduleAssignmentProgress(cmd, "Reviewing citations", 4 * 60, 4400);
-        scheduleAssignmentProgress(cmd, "Final quality check", 2 * 60, 5500);
+        scheduleAssignmentProgressCalculating(cmd, "Calculating assignment time", 120);
+        scheduleAssignmentProgress(cmd, "Planning assignment", 20 * 60, 1800);
+        scheduleAssignmentProgress(cmd, "Framing the solution", 16 * 60, 2400);
+        scheduleAssignmentProgress(cmd, "Collecting evidence", 13 * 60, 3200);
+        scheduleAssignmentProgress(cmd, "Building outline", 10 * 60, 4000);
+        scheduleAssignmentProgress(cmd, "Drafting assignment", 7 * 60, 4800);
+        scheduleAssignmentProgress(cmd, "Reviewing citations", 4 * 60, 5600);
+        scheduleAssignmentProgress(cmd, "Final quality check", 2 * 60, 6400);
         scheduleAssignmentProgress(cmd, "Preparing artifact", 30, 7200);
 
         scheduleAssignmentTaskLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
@@ -734,6 +737,14 @@ public class MockPyCommandConsumer {
                 Math.max(9000L, finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
     }
 
+    private void scheduleAssignmentProgressCalculating(VerlaCommandEnvelope cmd, String label, long delayMs) {
+        scheduleEvent(cmd, VerlaAgentEventType.AGENT_PROGRESS,
+                Map.of(
+                        "stage", "assignment_run",
+                        "progress", assignmentCalculatingProgress(label)),
+                delayMs);
+    }
+
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
                                             int estimatedRemainingSeconds, long delayMs) {
         scheduleEvent(cmd, VerlaAgentEventType.AGENT_PROGRESS,
@@ -743,7 +754,14 @@ public class MockPyCommandConsumer {
                 delayMs);
     }
 
-    private Map<String, Object> assignmentEtaProgress(String label, int estimatedRemainingSeconds) {
+    static Map<String, Object> assignmentCalculatingProgress(String label) {
+        Map<String, Object> progress = new HashMap<>();
+        progress.put("label", label);
+        progress.put("estimatedRemainingSeconds", null);
+        return progress;
+    }
+
+    static Map<String, Object> assignmentEtaProgress(String label, int estimatedRemainingSeconds) {
         Map<String, Object> progress = new HashMap<>();
         progress.put("label", label);
         progress.put("estimatedRemainingSeconds", Math.max(0, estimatedRemainingSeconds));

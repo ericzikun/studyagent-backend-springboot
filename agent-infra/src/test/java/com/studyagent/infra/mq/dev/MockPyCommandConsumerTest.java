@@ -159,6 +159,19 @@ class MockPyCommandConsumerTest {
     }
 
     @Test
+    void assignmentProgressPayloads_coverCalculatingAndResolvedEtaStates() {
+        Map<String, Object> calculating = MockPyCommandConsumer.assignmentCalculatingProgress("Calculating assignment time");
+        Map<String, Object> resolved = MockPyCommandConsumer.assignmentEtaProgress("Planning assignment", 1200);
+
+        assertThat(calculating)
+                .containsEntry("label", "Calculating assignment time")
+                .containsEntry("estimatedRemainingSeconds", null);
+        assertThat(resolved)
+                .containsEntry("label", "Planning assignment")
+                .containsEntry("estimatedRemainingSeconds", 1200);
+    }
+
+    @Test
     void assignmentNodeDetailPayload_matchesWorkflowDetailContract() {
         Map<String, Object> payload = MockPyCommandConsumer.assignmentNodeDetailPayload(
                 "draft-writer",

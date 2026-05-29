@@ -84,6 +84,10 @@ public class VerlaAttachmentService {
     @Value("${verla.attachment.oss-key-prefix:verla/v2/attachments}")
     private String ossKeyPrefix;
 
+    /** 文档编辑器图片专用 OSS Key 前缀 */
+    @Value("${verla.attachment.doc-editor-image-key-prefix:studyagent/document_editor_images}")
+    private String docEditorImageKeyPrefix;
+
     /**
      * 本地开发兜底：OSS 未配置时仍允许 Dashboard 走 V2 上传链路。
      * 线上保持 false，由 OSS 承载可被 Python 消费的材料。
@@ -140,9 +144,12 @@ public class VerlaAttachmentService {
         return HDR_UPLOAD_TOKEN;
     }
 
+    private static final String ORIGIN_DOC_EDITOR_IMAGE = "DOCUMENT_EDITOR_IMAGE";
+
     @Transactional
     public VerlaUploadSignResult requestSign(String clerkUserId, long conversationId, String filename,
-                                             String mime, long sizeBytes, Long turnId, Long sessionId) {
+                                             String mime, long sizeBytes, Long turnId, Long sessionId,
+                                             String attachmentOrigin, String metaJson) {
         requireOssConfigured();
         ensureUser(clerkUserId);
         return requestSignForUser(
@@ -153,8 +160,8 @@ public class VerlaAttachmentService {
                 sizeBytes,
                 turnId,
                 sessionId,
-                VerlaAttachment.ORIGIN_USER_UPLOAD,
-                null);
+                StringUtils.hasText(attachmentOrigin) ? attachmentOrigin : VerlaAttachment.ORIGIN_USER_UPLOAD,
+                metaJson);
     }
 
     @Transactional
@@ -199,7 +206,16 @@ public class VerlaAttachmentService {
 
         String objectId = "att_" + UUID.randomUUID().toString().replace("-", "");
         String uploadToken = UUID.randomUUID().toString().replace("-", "");
-        String ossKey = VerlaAttachmentOssKeys.build(ossKeyPrefix, conversationId, objectId, filename.trim());
+
+        String normalizedOrigin = normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_USER_UPLOAD);
+        boolean isDocEditorImage = ORIGIN_DOC_EDITOR_IMAGE.equalsIgnoreCase(normalizedOrigin);
+
+        String ossKey;
+        if (isDocEditorImage) {
+            ossKey = VerlaAttachmentOssKeys.buildDocumentEditorImage(docEditorImageKeyPrefix, objectId, filename.trim());
+        } else {
+            ossKey = VerlaAttachmentOssKeys.build(ossKeyPrefix, conversationId, objectId, filename.trim());
+        }
 
         LocalDateTime now = LocalDateTime.now();
         VerlaAttachment row = VerlaAttachment.builder()
@@ -214,7 +230,7 @@ public class VerlaAttachmentService {
                 .ossKey(ossKey)
                 .storageUri("pending://" + objectId)
                 .status(VerlaAttachmentStatus.UPLOADED.name())
-                .attachmentOrigin(normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_USER_UPLOAD))
+                .attachmentOrigin(normalizedOrigin)
                 .metaJson(StringUtils.hasText(metaJson) ? metaJson.trim() : null)
                 .createdAt(now)
                 .updatedAt(now)
@@ -224,7 +240,7 @@ public class VerlaAttachmentService {
         Instant exp = Instant.now().plusSeconds(signTtlSeconds);
         uploadTickets.put(objectId, new UploadTicket(clerkUserId, uploadToken, exp));
 
-        log.info("[Verla/attachment/V2] sign objectId={} conv={} sessionId={} ossKey={}", objectId, conversationId, sessionId, ossKey);
+        log.info("[Verla/attachment/V2] sign objectId={} conv={} sessionId={} ossKey={} origin={}", objectId, conversationId, sessionId, ossKey, normalizedOrigin);
 
         return VerlaUploadSignResult.builder()
                 .objectId(objectId)
@@ -516,6 +532,9 @@ public class VerlaAttachmentService {
         }
         if (VerlaAttachment.ORIGIN_USER_UPLOAD.equals(normalized)) {
             return VerlaAttachment.ORIGIN_USER_UPLOAD;
+        }
+        if (ORIGIN_DOC_EDITOR_IMAGE.equals(normalized)) {
+            return ORIGIN_DOC_EDITOR_IMAGE;
         }
         return effectiveFallback;
     }

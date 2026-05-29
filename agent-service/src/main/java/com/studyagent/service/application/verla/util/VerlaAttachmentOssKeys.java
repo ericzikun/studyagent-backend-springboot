@@ -25,6 +25,17 @@ public final class VerlaAttachmentOssKeys {
         return String.format("%s%d/%s/%s_%s", p, conversationId, datePath, objectId, safe);
     }
 
+    /**
+     * 文档编辑器图片专用 OSS Key：不含 conversationId，路径形如
+     * {@code studyagent/document_editor_images/2026/05/29/att_xxx_cat.png}
+     */
+    public static String buildDocumentEditorImage(String prefix, String objectId, String filename) {
+        String datePath = LocalDate.now(CN).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        String p = normalizePrefix(prefix);
+        String safe = sanitizeFilename(filename);
+        return String.format("%s%s/%s_%s", p, datePath, objectId, safe);
+    }
+
     static String normalizePrefix(String prefix) {
         if (prefix == null || prefix.isBlank()) {
             return "";

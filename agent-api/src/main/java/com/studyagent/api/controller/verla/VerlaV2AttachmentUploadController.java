@@ -9,6 +9,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
+import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ import java.util.Map;
 public class VerlaV2AttachmentUploadController {
 
     private final VerlaAttachmentService attachmentService;
+    private final OssStorageService ossStorageService;
 
     @PostMapping("/sign")
     public Result<VerlaUploadSignResponseVO> sign(
@@ -52,7 +54,9 @@ public class VerlaV2AttachmentUploadController {
                 req.getMime(),
                 req.getSizeBytes() == null ? 0L : req.getSizeBytes(),
                 req.getTurnId(),
-                req.getSessionId());
+                req.getSessionId(),
+                req.getAttachmentOrigin(),
+                req.getMetaJson());
         return Result.success(VerlaUploadSignResponseVO.builder()
                 .objectId(r.getObjectId())
                 .uploadPath(r.getUploadPath())
@@ -90,7 +94,12 @@ public class VerlaV2AttachmentUploadController {
         boolean skipParse = body != null && Boolean.TRUE.equals(body.getSkipAttachmentParse());
         VerlaAttachment saved = attachmentService.finalizeUpload(
                 clerkUserId, objectId, uploadToken, turnId, chk, skipParse);
-        return Result.success(VerlaAttachmentVO.fromUser(saved));
+        VerlaAttachmentVO vo = VerlaAttachmentVO.fromUser(saved);
+        if (saved.getOssKey() != null && !saved.getOssKey().isBlank()
+                && "DOCUMENT_EDITOR_IMAGE".equalsIgnoreCase(saved.getAttachmentOrigin())) {
+            vo.setPublicUrl(ossStorageService.getOssUrl(saved.getOssKey()));
+        }
+        return Result.success(vo);
     }
 
     private static void ensureLogin(String clerkUserId) {

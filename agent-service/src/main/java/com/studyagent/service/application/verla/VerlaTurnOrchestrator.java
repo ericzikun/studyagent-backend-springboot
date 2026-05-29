@@ -48,8 +48,10 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -76,6 +78,8 @@ public class VerlaTurnOrchestrator {
     private static final String PRODUCER_SERVICE = "java-agent-service";
     private static final String INSTANCE_ID = resolveHostname();
     private static final TypeReference<Map<String, Object>> MAP_STRING_OBJECT =
+            new TypeReference<>() {};
+    private static final TypeReference<List<Object>> LIST_OBJECT =
             new TypeReference<>() {};
     private static final int MAX_ASSISTANT_TEXT_CONTENT_CHARS = 32000;
     private static final String GENERATED_ARTIFACT_READY_TEXT =
@@ -137,7 +141,7 @@ public class VerlaTurnOrchestrator {
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
 
         VerlaSession planSession = spawnPlanSession(
-                conv, turn, cmd.getText(), cmd.isPlanConfirmRejected());
+                conv, turn, cmd.getText(), cmd.getAttachmentsJson(), cmd.isPlanConfirmRejected());
 
         turn.setPlanSessionId(planSession.getId());
         turn.setActiveSessionId(planSession.getId());
@@ -232,7 +236,7 @@ public class VerlaTurnOrchestrator {
         // 第一轮对话生成会话标题（isFirstTurn 在创建 turn 之前通过 lastTurnId == null 判断，
         // 比依赖 turnCount 内存值更可靠）
         if (isFirstTurn) {
-            spawnTaskNameSession(conv, turn, cmd.getText());
+            spawnTaskNameSession(conv, turn, cmd.getText(), cmd.getAttachmentsJson());
         }
 
         VerlaSession agentSession;
@@ -987,6 +991,7 @@ public class VerlaTurnOrchestrator {
 
         String reply = extractAssistantReply(result);
         if (reply != null && !reply.isBlank()) {
+            String thinking = result.get("thinking") instanceof String t && !t.isBlank() ? t : null;
             VerlaMessage assistant = VerlaMessage.builder()
                     .conversationId(turn.getConversationId())
                     .turnId(turn.getId())
@@ -995,6 +1000,7 @@ public class VerlaTurnOrchestrator {
                     .textContent(reply)
                     .blocksJson(serializeJson(withEventTypeWithoutStage(
                             result, "ASSIGNMENT_INIT_COMPLETED")))
+                    .metaJson(thinking != null ? serializeJson(Map.of("thinking", thinking)) : null)
                     .createdAt(LocalDateTime.now())
                     .build();
             messageRepository.save(assistant);
@@ -1083,7 +1089,8 @@ public class VerlaTurnOrchestrator {
      * 创建 plan session 并写 outbox 命令（同事务）
      */
     private VerlaSession spawnPlanSession(
-            VerlaConversation conv, VerlaTurn turn, String userText, boolean planConfirmRejected) {
+            VerlaConversation conv, VerlaTurn turn, String userText, String attachmentsJson,
+            boolean planConfirmRejected) {
         LocalDateTime now = LocalDateTime.now();
 
         // ── PLAN session：意图识别（主流程）────────────────────────────────────
@@ -1117,7 +1124,7 @@ public class VerlaTurnOrchestrator {
         // touchOnNewTurnAndGetVersion 已在 DB 将 turn_count +1，但内存中 conv.turnCount 仍是
         // 旧值（refreshConversationVersion 只刷 version 字段），故第一轮时旧值为 0。
         if (conv.getTurnCount() == null || conv.getTurnCount() == 0) {
-            spawnTaskNameSession(conv, turn, userText);
+            spawnTaskNameSession(conv, turn, userText, attachmentsJson);
         }
 
         return s;
@@ -1130,7 +1137,8 @@ public class VerlaTurnOrchestrator {
      * Python 收到 cmd.plan.task_name 后直接调用 ConversationTitleService 并 emit PLAN_TASK_NAME_RESOLVED，
      * Java VerlaConversationTitleEventHandler 接收后更新 verla_conversation.title。
      */
-    private void spawnTaskNameSession(VerlaConversation conv, VerlaTurn turn, String userText) {
+    private void spawnTaskNameSession(VerlaConversation conv, VerlaTurn turn, String userText,
+                                      String attachmentsJson) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession ts = VerlaSession.builder()
                 .conversationId(conv.getId())
@@ -1153,7 +1161,8 @@ public class VerlaTurnOrchestrator {
         ts.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(ts);
 
-        VerlaCommandEnvelope taskNameEnv = buildPlanTaskNameEnvelope(conv, turn, ts, userText);
+        VerlaCommandEnvelope taskNameEnv = buildPlanTaskNameEnvelope(
+                conv, turn, ts, userText, attachmentsJson);
         mqOutboxService.createVerlaCommand(taskNameEnv, commandExchange,
                 VerlaCommandAction.CMD_PLAN_TASK_NAME.getCode());
     }
@@ -1542,9 +1551,20 @@ public class VerlaTurnOrchestrator {
     }
 
     private VerlaCommandEnvelope buildPlanTaskNameEnvelope(VerlaConversation conv, VerlaTurn turn,
-                                                           VerlaSession session, String userText) {
+                                                           VerlaSession session, String userText,
+                                                           String attachmentsJson) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userText", userText != null ? userText : "");
+        List<Map<String, Object>> attachments = parseUploadedAttachments(attachmentsJson);
+        if (!attachments.isEmpty()) {
+            payload.put("attachments", attachments);
+            payload.put("objectIds", attachments.stream()
+                    .map(attachment -> attachment.get("objectId"))
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .distinct()
+                    .toList());
+        }
         return baseEnvelope(VerlaCommandAction.CMD_PLAN_TASK_NAME, conv, turn, session)
                 .payload(payload)
                 .build();
@@ -1725,6 +1745,63 @@ public class VerlaTurnOrchestrator {
             log.warn("[Verla] resolved slots json parse failed: {}", e.getMessage());
             return Map.of();
         }
+    }
+
+    private List<Map<String, Object>> parseUploadedAttachments(String attachmentsJson) {
+        if (attachmentsJson == null || attachmentsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Object> rawAttachments = objectMapper.readValue(attachmentsJson, LIST_OBJECT);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object raw : rawAttachments) {
+                Map<String, Object> attachment = normalizeUploadedAttachment(raw);
+                if (!attachment.isEmpty()) {
+                    result.add(attachment);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("[Verla] attachments json parse failed for task name command: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private Map<String, Object> normalizeUploadedAttachment(Object raw) {
+        if (raw instanceof String objectId && !objectId.isBlank()) {
+            return Map.of("objectId", objectId);
+        }
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+
+        Map<String, Object> attachment = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() instanceof String key && entry.getValue() != null) {
+                attachment.put(key, entry.getValue());
+            }
+        }
+
+        String objectId = firstNonBlank(
+                stringValue(attachment.get("objectId")),
+                stringValue(attachment.get("sourceObjectId")));
+        if (objectId == null) {
+            return Map.of();
+        }
+        attachment.put("objectId", objectId);
+        return attachment;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> findLatestFinalClarifyResult(VerlaTurn turn) {

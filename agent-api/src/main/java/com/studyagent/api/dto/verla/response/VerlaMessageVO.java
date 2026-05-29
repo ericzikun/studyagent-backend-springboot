@@ -23,6 +23,8 @@ public class VerlaMessageVO {
     private String attachmentsJson;
     /** 卡片/Block 数组的原始 JSON 字符串（前端按 §22.2 解析） */
     private String blocksJson;
+    /** 扩展元数据，如 {"thinking": "..."} */
+    private String metaJson;
     private LocalDateTime createdAt;
 
     public static VerlaMessageVO from(VerlaMessage m) {
@@ -34,6 +36,7 @@ public class VerlaMessageVO {
                 .text(m.getTextContent())
                 .attachmentsJson(m.getAttachmentsJson())
                 .blocksJson(VerlaBlocksJsonSanitizer.withoutTopLevelStage(m.getBlocksJson()))
+                .metaJson(m.getMetaJson())
                 .createdAt(m.getCreatedAt())
                 .build();
     }

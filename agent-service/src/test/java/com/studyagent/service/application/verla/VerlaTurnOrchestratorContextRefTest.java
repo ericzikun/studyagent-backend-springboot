@@ -79,6 +79,40 @@ class VerlaTurnOrchestratorContextRefTest {
     }
 
     @Test
+    void firstUserMessage_shouldIncludeUploadedAttachmentsInTaskNameCommand() {
+        conversationRepository.put(conversation(1L, null));
+
+        orchestrator.onUserMessage(SendMessageCommand.builder()
+                .conversationId(CONVERSATION_ID)
+                .userId(USER_ID)
+                .text("帮我分析这份作业")
+                .attachmentsJson("""
+                        [
+                          {"objectId":"att_1","filename":"assignment.pdf","mime":"application/pdf","sizeBytes":12345},
+                          {"objectId":"att_2","filename":"rubric.docx","mime":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","sizeBytes":23456}
+                        ]
+                        """)
+                .build());
+
+        VerlaCommandEnvelope taskNameEnvelope = mqOutboxService.envelopes.stream()
+                .filter(envelope -> "cmd.plan.task_name".equals(envelope.getAction()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected cmd.plan.task_name"));
+
+        assertThat(taskNameEnvelope.getPayload().get("objectIds"))
+                .isEqualTo(List.of("att_1", "att_2"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments =
+                (List<Map<String, Object>>) taskNameEnvelope.getPayload().get("attachments");
+        assertThat(attachments).hasSize(2);
+        assertThat(attachments.get(0))
+                .containsEntry("objectId", "att_1")
+                .containsEntry("filename", "assignment.pdf")
+                .containsEntry("mime", "application/pdf")
+                .containsEntry("sizeBytes", 12345);
+    }
+
+    @Test
     void forcedCapability_shouldUseVersionAfterAllConversationBumps() {
         conversationRepository.put(conversation(1L, null));
 

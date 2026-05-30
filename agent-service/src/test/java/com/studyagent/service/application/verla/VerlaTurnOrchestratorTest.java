@@ -84,6 +84,86 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
+    void onAgentCompleted_persists_message_role_from_payload() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(357L)
+                .conversationId(153L)
+                .turnId(153L)
+                .status(SessionStatus.RUNNING.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(153L)
+                .conversationId(153L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAgentCompleted(357L, Map.of(
+                "role", "system",
+                "finalResult", "Done"));
+
+        assertNotNull(messageRepository.saved);
+        assertEquals("system", messageRepository.saved.getRole());
+        assertEquals("Done", messageRepository.saved.getTextContent());
+    }
+
+    @Test
+    void onAgentFailed_persists_message_role_from_payload() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(357L)
+                .conversationId(153L)
+                .turnId(153L)
+                .status(SessionStatus.RUNNING.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(153L)
+                .conversationId(153L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAgentFailed(357L, Map.of(
+                "role", "system",
+                "errorMessage", "Run failed"));
+
+        assertNotNull(messageRepository.saved);
+        assertEquals("system", messageRepository.saved.getRole());
+        assertEquals("Run failed", messageRepository.saved.getTextContent());
+        assertEquals(SessionStatus.FAILED.name(), sessionRepository.saved.getStatus());
+        assertEquals(TurnStatus.FAILED.name(), turnRepository.saved.getStatus());
+    }
+
+    @Test
     void confirmLatestPlan_when_assignment_rejected_triggers_new_plan_intent() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();

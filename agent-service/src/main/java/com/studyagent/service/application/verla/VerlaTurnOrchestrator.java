@@ -774,7 +774,7 @@ public class VerlaTurnOrchestrator {
                 VerlaMessage assistant = VerlaMessage.builder()
                         .conversationId(turn.getConversationId())
                         .turnId(turn.getId())
-                        .role("assistant")
+                        .role(resolveMessageRole(result))
                         .sourceSessionId(agentSessionId)
                         .textContent(reply)
                         .blocksJson(serializeJson(sanitizeAssistantBlocks(result)))
@@ -1031,6 +1031,7 @@ public class VerlaTurnOrchestrator {
         }
 
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        boolean agentTurnJustFailed = !curTurn.isTerminal();
         if (!curTurn.isTerminal()) {
             TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.AGENT_FAIL);
             turn.setStatus(nextTurn.name());
@@ -1038,6 +1039,22 @@ public class VerlaTurnOrchestrator {
             turn.setUpdatedAt(LocalDateTime.now());
             turn.setErrorJson(serializeJson(errorBlock));
             turnRepository.save(turn);
+        }
+
+        if (agentTurnJustFailed) {
+            String reply = extractFailureReply(errorBlock);
+            if (reply != null && !reply.isBlank()) {
+                VerlaMessage message = VerlaMessage.builder()
+                        .conversationId(turn.getConversationId())
+                        .turnId(turn.getId())
+                        .role(resolveMessageRole(errorBlock))
+                        .sourceSessionId(agentSessionId)
+                        .textContent(reply)
+                        .blocksJson(serializeJson(withoutTopLevelStage(errorBlock)))
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                messageRepository.save(message);
+            }
         }
     }
 
@@ -1942,6 +1959,31 @@ public class VerlaTurnOrchestrator {
             }
         }
         return extractAssistantReply(result);
+    }
+
+    private static String extractFailureReply(Map<String, Object> result) {
+        if (result != null) {
+            Object errorMessage = result.get("errorMessage");
+            if (errorMessage instanceof String text && !text.isBlank()) {
+                return truncateAssistantTextContent(text);
+            }
+        }
+        return extractAssistantReply(result);
+    }
+
+    private static String resolveMessageRole(Map<String, Object> payload) {
+        if (payload == null) {
+            return "assistant";
+        }
+        Object value = payload.get("role");
+        if (!(value instanceof String role) || role.isBlank()) {
+            return "assistant";
+        }
+        String normalized = role.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "user", "assistant", "system" -> normalized;
+            default -> "assistant";
+        };
     }
 
     private String resolveFileChatObjectId(VerlaTurn turn, Map<String, Object> result) {

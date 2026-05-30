@@ -51,6 +51,15 @@ public class VerlaSessionRepositoryImpl
         return toDomain(this.baseMapper.selectByCorrelationId(correlationId));
     }
 
+    @Override
+    public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+        if (sessionId == null || ledgerId == null) {
+            return false;
+        }
+        int rows = this.baseMapper.bindQuotaLedger(sessionId, ledgerId, amount);
+        return rows > 0;
+    }
+
     private VerlaSession toDomain(VerlaSessionEntity e) {
         if (e == null) {
             return null;
@@ -61,6 +70,8 @@ public class VerlaSessionRepositoryImpl
                 .turnId(e.getTurnId())
                 .kind(e.getKind())
                 .featureCode(e.getFeatureCode())
+                .quotaLedgerId(e.getQuotaLedgerId())
+                .quotaAmount(e.getQuotaAmount())
                 .status(e.getStatus())
                 .correlationId(e.getCorrelationId())
                 .contextRefJson(e.getContextRefJson())
@@ -86,6 +97,8 @@ public class VerlaSessionRepositoryImpl
                 .setTurnId(d.getTurnId())
                 .setKind(d.getKind())
                 .setFeatureCode(d.getFeatureCode())
+                .setQuotaLedgerId(d.getQuotaLedgerId())
+                .setQuotaAmount(d.getQuotaAmount())
                 .setStatus(d.getStatus())
                 .setCorrelationId(d.getCorrelationId())
                 .setContextRefJson(d.getContextRefJson())

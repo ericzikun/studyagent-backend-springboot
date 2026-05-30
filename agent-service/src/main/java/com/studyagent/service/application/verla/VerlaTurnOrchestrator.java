@@ -20,6 +20,8 @@ import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
 import com.studyagent.service.application.verla.dto.FileChatAnalysisStatus;
 import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
 import com.studyagent.service.application.verla.dto.FileChatPanelState;
+import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -102,6 +104,8 @@ public class VerlaTurnOrchestrator {
     private final SessionStateMachine sessionStateMachine;
     private final MqOutboxService mqOutboxService;
     private final ObjectMapper objectMapper;
+    /** V2 商业化额度门面（feature: task_create / ai_detection / humanizer）。 */
+    private final VerlaQuotaService verlaQuotaService;
 
     // ==========================================================
     // 1) 用户消息入口
@@ -1022,6 +1026,9 @@ public class VerlaTurnOrchestrator {
             turn.setErrorJson(serializeJson(errorBlock));
             turnRepository.save(turn);
         }
+
+        // ✦ 商业化退款：Agent 失败 → 按 sessionId 反查 quota_ledger_id 全额退款；幂等。
+        verlaQuotaService.refundBySessionId(agentSessionId, "agent_failed");
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1057,6 +1064,9 @@ public class VerlaTurnOrchestrator {
             turn.setUpdatedAt(LocalDateTime.now());
             turnRepository.save(turn);
         }
+
+        // ✦ 商业化退款：Agent 取消 → 按 sessionId 反查 quota_ledger_id 全额退款；幂等。
+        verlaQuotaService.refundBySessionId(agentSessionId, "agent_cancelled");
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1313,6 +1323,18 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        // ✦ 商业化扣费：CMD_ASSIGNMENT_RUN 派发前同事务扣 1 个 task_create；
+        //    余额不足抛 InsufficientQuotaException → GlobalExceptionHandler 返回 1.0 协议响应；
+        //    outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
+        verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
+                .clerkUserId(conv == null ? null : conv.getUserId())
+                .conversationId(s.getConversationId())
+                .turnId(turn.getId())
+                .sessionId(s.getId())
+                .intent(intent)
+                .userMessageId(turn.getUserMessageId())
+                .build());
+
         VerlaCommandEnvelope env = buildAssignmentRunEnvelope(conv, turn, s, intent, finalClarifyResult);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
@@ -1367,9 +1389,27 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        String userText = resolveTurnUserText(turn);
+
+        // ✦ 商业化扣费：CMD_DETECTION_RUN / CMD_HUMANIZER_RUN 派发前按总 words 一次性预扣；
+        //    Plan / TASK_NAME 等其他 commandAction 不在商业化范围，跳过。
+        VerlaQuotaContext qctx = VerlaQuotaContext.builder()
+                .clerkUserId(conv == null ? null : conv.getUserId())
+                .conversationId(s.getConversationId())
+                .turnId(turn.getId())
+                .sessionId(s.getId())
+                .intent(intent)
+                .userMessageId(turn.getUserMessageId())
+                .build();
+        if (commandAction == VerlaCommandAction.CMD_DETECTION_RUN) {
+            verlaQuotaService.consumeForDetection(qctx, userText);
+        } else if (commandAction == VerlaCommandAction.CMD_HUMANIZER_RUN) {
+            verlaQuotaService.consumeForHumanizer(qctx, userText);
+        }
+
         VerlaCommandEnvelope env = buildCapabilityEnvelope(
                 conv, turn, s, intent, resolvedSlots, commandAction,
-                resolveTurnUserText(turn));
+                userText);
         mqOutboxService.createVerlaCommand(env, commandExchange, commandAction.getCode());
         log.info("[Verla] dispatched {} turnId={} sessionId={}", commandAction.getCode(), turn.getId(), s.getId());
         return s;

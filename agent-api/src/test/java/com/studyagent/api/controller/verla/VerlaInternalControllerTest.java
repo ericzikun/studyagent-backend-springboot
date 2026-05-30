@@ -350,6 +350,11 @@ class VerlaInternalControllerTest {
         public VerlaSession findByCorrelationId(String correlationId) {
             return null;
         }
+
+        @Override
+        public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+            return false;
+        }
     }
 
     private static class NoopArtifactRepository implements VerlaArtifactRepository {

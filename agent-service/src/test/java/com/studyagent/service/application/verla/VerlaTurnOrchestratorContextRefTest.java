@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -17,6 +18,7 @@ import com.studyagent.service.domain.verla.state.SessionStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -61,7 +63,8 @@ class VerlaTurnOrchestratorContextRefTest {
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
-                new ObjectMapper());
+                new ObjectMapper(),
+                Mockito.mock(VerlaQuotaService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
     }
 
@@ -411,6 +414,11 @@ class VerlaTurnOrchestratorContextRefTest {
         @Override
         public VerlaSession findByCorrelationId(String correlationId) {
             return null;
+        }
+
+        @Override
+        public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+            return true;
         }
 
         Long latestSessionId() {

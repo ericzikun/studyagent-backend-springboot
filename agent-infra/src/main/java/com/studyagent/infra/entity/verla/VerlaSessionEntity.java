@@ -33,6 +33,12 @@ public class VerlaSessionEntity {
     /** 功能码：assignment / flashcards / outline ... */
     private String featureCode;
 
+    /** 商业化扣费流水 ID（quota_ledger.id）；refund 时按此反查；空 = 未扣费 */
+    private Long quotaLedgerId;
+
+    /** 商业化扣费数量（次 / 字）；空 = 未扣费；仅审计 */
+    private Long quotaAmount;
+
     /** CREATED / DISPATCHING / RUNNING / SUCCEEDED / FAILED / CANCELLING / CANCELLED */
     private String status;
 

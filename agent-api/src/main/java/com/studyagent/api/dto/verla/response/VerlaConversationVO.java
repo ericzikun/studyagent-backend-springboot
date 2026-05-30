@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -30,6 +31,8 @@ public class VerlaConversationVO {
     private Long lastTurnId;
     private LocalDateTime lastMessageAt;
     private LocalDateTime createdAt;
+    /** 编辑器预览图列表，按固定 kind 顺序排列 (document / code / slides) */
+    private List<EditorPreviewItem> editorPreviews;
 
     public static VerlaConversationVO from(VerlaConversation c) {
         return from(c, null);

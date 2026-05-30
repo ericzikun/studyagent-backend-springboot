@@ -96,8 +96,13 @@ public class VerlaV2AttachmentUploadController {
                 clerkUserId, objectId, uploadToken, turnId, chk, skipParse);
         VerlaAttachmentVO vo = VerlaAttachmentVO.fromUser(saved);
         if (saved.getOssKey() != null && !saved.getOssKey().isBlank()
-                && "DOCUMENT_EDITOR_IMAGE".equalsIgnoreCase(saved.getAttachmentOrigin())) {
-            vo.setPublicUrl(ossStorageService.getOssUrl(saved.getOssKey()));
+                && ("DOCUMENT_EDITOR_IMAGE".equalsIgnoreCase(saved.getAttachmentOrigin())
+                    || "EDITOR_PREVIEW_IMAGE".equalsIgnoreCase(saved.getAttachmentOrigin()))) {
+            String publicUrl = ossStorageService.getOssUrl(saved.getOssKey());
+            if (publicUrl == null) {
+                publicUrl = "/api/document-editor/images/" + saved.getObjectId();
+            }
+            vo.setPublicUrl(publicUrl);
         }
         return Result.success(vo);
     }

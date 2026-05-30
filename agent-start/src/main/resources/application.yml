@@ -347,3 +347,7 @@ verla:
       # 本地开发: http://127.0.0.1:3001
       # 线上部署: http://frontend-v2:3001（docker compose 服务名）
       conversion-base-url: ${VERLA_EDITOR_PDF_CONVERSION_BASE_URL:}
+  # V2 verla 链路商业化额度
+  quota:
+    enabled: ${VERLA_QUOTA_ENABLED:true}
+    whitelist-user-ids: ${VERLA_QUOTA_WHITELIST_USER_IDS:}

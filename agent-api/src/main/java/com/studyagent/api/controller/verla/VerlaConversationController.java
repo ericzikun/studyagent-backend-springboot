@@ -10,15 +10,18 @@ import com.studyagent.api.dto.verla.response.AssignmentRuntimeSnapshotVO;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.PlanConfirmResponseVO;
 import com.studyagent.api.dto.verla.response.SendMessageResponseVO;
+import com.studyagent.api.dto.verla.response.EditorPreviewItem;
 import com.studyagent.api.dto.verla.response.VerlaConversationPageVO;
 import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
+import com.studyagent.infra.entity.verla.VerlaEditorPreviewEntity;
 import com.studyagent.service.application.verla.AssignmentRuntimeSnapshotService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
+import com.studyagent.api.service.VerlaEditorPreviewService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
@@ -43,6 +46,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -62,6 +66,7 @@ public class VerlaConversationController {
 
     private final VerlaConversationService conversationService;
     private final VerlaConversationDashboardStatusService dashboardStatusService;
+    private final VerlaEditorPreviewService previewService;
     private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final ObjectMapper objectMapper;
@@ -99,9 +104,31 @@ public class VerlaConversationController {
         ConversationStatus st = parseConversationStatusFilter(status);
         VerlaConversationListSlice slice =
                 conversationService.listConversations(clerkUserId, pageNo, pageSize, seg, st);
-        return Result.success(VerlaConversationPageVO.fromSlice(
+        VerlaConversationPageVO pageVO = VerlaConversationPageVO.fromSlice(
                 slice,
-                dashboardStatusService.resolveAll(slice.records())));
+                dashboardStatusService.resolveAll(slice.records()));
+
+        // Attach editor previews — top 3 per conversation by updated_at DESC
+        List<Long> conversationIds = slice.records().stream()
+                .map(VerlaConversation::getId)
+                .collect(Collectors.toList());
+        if (!conversationIds.isEmpty()) {
+            List<VerlaEditorPreviewEntity> allPreviews = previewService.listByConversationIds(conversationIds);
+            Map<Long, List<VerlaEditorPreviewEntity>> previewsByConv = allPreviews.stream()
+                    .collect(Collectors.groupingBy(VerlaEditorPreviewEntity::getConversationId));
+            for (VerlaConversationVO vo : pageVO.getRecords()) {
+                List<VerlaEditorPreviewEntity> previews = previewsByConv.getOrDefault(
+                        vo.getConversationId(), List.of());
+                List<EditorPreviewItem> items = previews.stream()
+                        .limit(3)
+                        .map(p -> new EditorPreviewItem(
+                                p.getEditorKind(), p.getPreviewUrl(), p.getUpdatedAt()))
+                        .collect(Collectors.toList());
+                vo.setEditorPreviews(items);
+            }
+        }
+
+        return Result.success(pageVO);
     }
 
     // ========================================================

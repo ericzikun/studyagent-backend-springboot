@@ -88,6 +88,10 @@ public class VerlaAttachmentService {
     @Value("${verla.attachment.doc-editor-image-key-prefix:studyagent/document_editor_images}")
     private String docEditorImageKeyPrefix;
 
+    /** Editor 预览缩略图专用 OSS Key 前缀 */
+    @Value("${verla.attachment.preview-image-key-prefix:studyagent/editor_previews}")
+    private String previewImageKeyPrefix;
+
     /**
      * 本地开发兜底：OSS 未配置时仍允许 Dashboard 走 V2 上传链路。
      * 线上保持 false，由 OSS 承载可被 Python 消费的材料。
@@ -145,6 +149,7 @@ public class VerlaAttachmentService {
     }
 
     private static final String ORIGIN_DOC_EDITOR_IMAGE = "DOCUMENT_EDITOR_IMAGE";
+    private static final String ORIGIN_EDITOR_PREVIEW_IMAGE = "EDITOR_PREVIEW_IMAGE";
 
     @Transactional
     public VerlaUploadSignResult requestSign(String clerkUserId, long conversationId, String filename,
@@ -209,10 +214,13 @@ public class VerlaAttachmentService {
 
         String normalizedOrigin = normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_USER_UPLOAD);
         boolean isDocEditorImage = ORIGIN_DOC_EDITOR_IMAGE.equalsIgnoreCase(normalizedOrigin);
+        boolean isEditorPreviewImage = ORIGIN_EDITOR_PREVIEW_IMAGE.equalsIgnoreCase(normalizedOrigin);
 
         String ossKey;
         if (isDocEditorImage) {
             ossKey = VerlaAttachmentOssKeys.buildDocumentEditorImage(docEditorImageKeyPrefix, objectId, filename.trim());
+        } else if (isEditorPreviewImage) {
+            ossKey = VerlaAttachmentOssKeys.buildEditorPreviewImage(previewImageKeyPrefix, objectId, filename.trim());
         } else {
             ossKey = VerlaAttachmentOssKeys.build(ossKeyPrefix, conversationId, objectId, filename.trim());
         }
@@ -535,6 +543,9 @@ public class VerlaAttachmentService {
         }
         if (ORIGIN_DOC_EDITOR_IMAGE.equals(normalized)) {
             return ORIGIN_DOC_EDITOR_IMAGE;
+        }
+        if (ORIGIN_EDITOR_PREVIEW_IMAGE.equals(normalized)) {
+            return ORIGIN_EDITOR_PREVIEW_IMAGE;
         }
         return effectiveFallback;
     }

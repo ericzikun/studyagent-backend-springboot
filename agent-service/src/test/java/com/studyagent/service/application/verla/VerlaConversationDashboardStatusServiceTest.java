@@ -390,6 +390,11 @@ class VerlaConversationDashboardStatusServiceTest {
         public VerlaSession findByCorrelationId(String correlationId) {
             return null;
         }
+
+        @Override
+        public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+            return true;
+        }
     }
 
     private static class FakeClarifyFormRepository implements VerlaClarifyFormRepository {

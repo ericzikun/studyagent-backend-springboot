@@ -51,7 +51,8 @@ class VerlaTurnOrchestratorTest {
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -99,7 +100,8 @@ class VerlaTurnOrchestratorTest {
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -138,7 +140,8 @@ class VerlaTurnOrchestratorTest {
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -189,7 +192,8 @@ class VerlaTurnOrchestratorTest {
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
-                objectMapper);
+                objectMapper,
+                null);
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -271,6 +275,11 @@ class VerlaTurnOrchestratorTest {
         @Override
         public VerlaSession findByCorrelationId(String correlationId) {
             return null;
+        }
+
+        @Override
+        public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+            return true;
         }
     }
 

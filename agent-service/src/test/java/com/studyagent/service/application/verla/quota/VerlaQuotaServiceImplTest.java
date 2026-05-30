@@ -1,0 +1,271 @@
+package com.studyagent.service.application.verla.quota;
+
+import com.studyagent.common.exception.InsufficientQuotaException;
+import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.QuotaBalance;
+import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
+import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+/**
+ * {@link VerlaQuotaServiceImpl} 核心行为单测：
+ * - 豁免（admin / 白名单 / 开关关闭）
+ * - 余额不足抛 {@link InsufficientQuotaException}
+ * - 扣费成功回写 verla_sessions.quota_ledger_id
+ * - 并发绑定失败 → 抛 {@link IllegalStateException} 触发外层事务回滚
+ * - 退款幂等：未扣过 / refund 失败均静默
+ */
+class VerlaQuotaServiceImplTest {
+
+    private QuotaDomainService quotaDomainService;
+    private UserRepository userRepository;
+    private VerlaSessionRepository sessionRepository;
+    private VerlaQuotaWordCounter wordCounter;
+    private VerlaQuotaServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        quotaDomainService = mock(QuotaDomainService.class);
+        userRepository = mock(UserRepository.class);
+        sessionRepository = mock(VerlaSessionRepository.class);
+        wordCounter = new VerlaQuotaWordCounter();
+        service = new VerlaQuotaServiceImpl(
+                quotaDomainService, userRepository, sessionRepository, wordCounter);
+        ReflectionTestUtils.setField(service, "quotaEnabled", true);
+        ReflectionTestUtils.setField(service, "whitelistUserIds", List.of());
+    }
+
+    private VerlaQuotaContext ctx() {
+        return VerlaQuotaContext.builder()
+                .clerkUserId("user_abc")
+                .conversationId(11L)
+                .turnId(22L)
+                .sessionId(33L)
+                .intent("ASSIGNMENT")
+                .userMessageId(44L)
+                .build();
+    }
+
+    private QuotaBalance balance(long totalAvailable) {
+        return new QuotaBalance(
+                FeatureCode.TASK_CREATE.getCode(),
+                "Assignment",
+                "count",
+                Math.min(totalAvailable, 5),
+                5L,
+                null,
+                Math.max(0, totalAvailable - 5),
+                totalAvailable);
+    }
+
+    // ---------------------- 豁免 ----------------------
+
+    @Test
+    void isQuotaExempt_returnsTrue_whenQuotaDisabled() {
+        ReflectionTestUtils.setField(service, "quotaEnabled", false);
+        assertTrue(service.isQuotaExempt("user_abc"));
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void isQuotaExempt_returnsTrue_forAdmin() {
+        User admin = User.builder()
+                .clerkUserId("user_admin")
+                .isAdmin(Boolean.TRUE)
+                .isActive(Boolean.TRUE)
+                .build();
+        when(userRepository.findByClerkUserId("user_admin")).thenReturn(Optional.of(admin));
+        assertTrue(service.isQuotaExempt("user_admin"));
+    }
+
+    @Test
+    void isQuotaExempt_returnsTrue_forWhitelist() {
+        ReflectionTestUtils.setField(service, "whitelistUserIds", List.of("user_w"));
+        when(userRepository.findByClerkUserId("user_w")).thenReturn(Optional.empty());
+        assertTrue(service.isQuotaExempt("user_w"));
+    }
+
+    @Test
+    void consumeForAssignmentRun_returnsExempt_andSkipsQuotaService_whenExempt() {
+        ReflectionTestUtils.setField(service, "quotaEnabled", false);
+
+        VerlaQuotaConsumeResult r = service.consumeForAssignmentRun(ctx());
+
+        assertTrue(r.exempt());
+        assertNull(r.ledgerId());
+        verifyNoInteractions(quotaDomainService);
+        verify(sessionRepository, never()).bindQuotaLedger(anyLong(), anyLong(), anyLong());
+    }
+
+    // ---------------------- 余额不足 ----------------------
+
+    @Test
+    void consumeForAssignmentRun_throwsInsufficient_whenCanConsumeFalse() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1L))
+                .thenReturn(false);
+        when(quotaDomainService.getUserQuota("user_abc", FeatureCode.TASK_CREATE.getCode()))
+                .thenReturn(balance(0));
+
+        InsufficientQuotaException ex = assertThrows(
+                InsufficientQuotaException.class,
+                () -> service.consumeForAssignmentRun(ctx()));
+
+        assertEquals(FeatureCode.TASK_CREATE.getCode(), ex.getData().getFeatureCode());
+        assertEquals(0L, ex.getData().getTotalAvailable());
+        verify(quotaDomainService, never()).consume(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+        verify(sessionRepository, never()).bindQuotaLedger(anyLong(), anyLong(), anyLong());
+    }
+
+    // ---------------------- 扣费成功 ----------------------
+
+    @Test
+    void consumeForDetection_consumes_correctWordsAndBindsLedger() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.AI_DETECTION.getCode()), anyLong()))
+                .thenReturn(true);
+        when(quotaDomainService.consume(
+                anyString(), eq(FeatureCode.AI_DETECTION.getCode()), anyLong(),
+                eq("verla_session"), eq("33"), any()))
+                .thenReturn(new ConsumeResult(9999L));
+        when(sessionRepository.bindQuotaLedger(33L, 9999L, 4L)).thenReturn(true);
+
+        // "hello world ai detection" → 4 英文词
+        VerlaQuotaConsumeResult r = service.consumeForDetection(ctx(), "hello world ai detection");
+
+        assertFalse(r.exempt());
+        assertEquals(9999L, r.ledgerId());
+        assertEquals(4L, r.amount());
+
+        ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
+        verify(quotaDomainService).consume(
+                eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(4L),
+                eq("verla_session"), eq("33"), biz.capture());
+        Map<String, Object> bz = biz.getValue();
+        assertEquals(33L, bz.get("verla_session_id"));
+        assertEquals(11L, bz.get("conversation_id"));
+        assertEquals(22L, bz.get("turn_id"));
+        assertEquals(44L, bz.get("user_message_id"));
+        assertEquals("ASSIGNMENT", bz.get("intent"));
+        assertEquals(4L, bz.get("word_count"));
+    }
+
+    @Test
+    void consumeForHumanizer_consumesAtLeastOneWord_forBlankText() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L)))
+                .thenReturn(true);
+        when(quotaDomainService.consume(
+                anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
+                anyString(), anyString(), any()))
+                .thenReturn(new ConsumeResult(123L));
+        when(sessionRepository.bindQuotaLedger(33L, 123L, 1L)).thenReturn(true);
+
+        VerlaQuotaConsumeResult r = service.consumeForHumanizer(ctx(), "   ");
+
+        assertEquals(1L, r.amount());
+    }
+
+    // ---------------------- 并发绑定冲突 ----------------------
+
+    @Test
+    void consumeForAssignmentRun_throwsIllegalState_whenBindReturnsFalse() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume(anyString(), anyString(), anyLong())).thenReturn(true);
+        when(quotaDomainService.consume(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any()))
+                .thenReturn(new ConsumeResult(111L));
+        when(sessionRepository.bindQuotaLedger(33L, 111L, 1L)).thenReturn(false);
+        // 反查 session 用于日志
+        VerlaSession existing = VerlaSession.builder().id(33L).quotaLedgerId(222L).build();
+        when(sessionRepository.findById(33L)).thenReturn(existing);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.consumeForAssignmentRun(ctx()));
+    }
+
+    // ---------------------- 退款 ----------------------
+
+    @Test
+    void refundBySessionId_skips_whenNoLedgerBound() {
+        VerlaSession s = VerlaSession.builder().id(33L).build();
+        when(sessionRepository.findById(33L)).thenReturn(s);
+
+        assertDoesNotThrow(() -> service.refundBySessionId(33L, "agent_failed"));
+        verify(quotaDomainService, never()).refund(anyLong(), anyString());
+    }
+
+    @Test
+    void refundBySessionId_callsDomainRefund_withReason() {
+        VerlaSession s = VerlaSession.builder().id(33L).quotaLedgerId(555L).build();
+        when(sessionRepository.findById(33L)).thenReturn(s);
+
+        service.refundBySessionId(33L, "agent_failed");
+
+        verify(quotaDomainService, times(1)).refund(555L, "agent_failed");
+    }
+
+    @Test
+    void refundBySessionId_swallowsException_forIdempotency() {
+        VerlaSession s = VerlaSession.builder().id(33L).quotaLedgerId(555L).build();
+        when(sessionRepository.findById(33L)).thenReturn(s);
+        doThrow(new IllegalArgumentException("Ledger not found"))
+                .when(quotaDomainService).refund(eq(555L), anyString());
+
+        assertDoesNotThrow(() -> service.refundBySessionId(33L, "agent_cancelled"));
+    }
+
+    @Test
+    void refundBySessionId_skips_whenSessionMissing() {
+        when(sessionRepository.findById(33L)).thenReturn(null);
+
+        assertDoesNotThrow(() -> service.refundBySessionId(33L, "x"));
+        verifyNoInteractions(quotaDomainService);
+    }
+
+    // ---------------------- WordCounter ----------------------
+
+    @Test
+    void wordCounter_countsCjkAndAsciiMixed() {
+        // "你好世界 你好 hello world ai" → 6 个 CJK + 3 个英文词
+        long n = wordCounter.countWords("你好世界 你好 hello world ai");
+        assertEquals(6 + 3, n);
+    }
+
+    @Test
+    void wordCounter_returnsZero_forBlank() {
+        assertEquals(0L, wordCounter.countWords(""));
+        assertEquals(0L, wordCounter.countWords("   "));
+        assertEquals(0L, wordCounter.countWords(null));
+    }
+}

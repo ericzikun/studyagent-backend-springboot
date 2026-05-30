@@ -148,6 +148,35 @@ public class VerlaInternalController {
     }
 
     // ====================================================================
+    // 2b) GET /v1/internal/verla/conversations/{cid}/file-chat-messages
+    //     文件对话历史（scene=FILE_CHAT AND objectId=?），供 Py 文件对话 hydrate。
+    //     与主对话/会话上下文隔离：主路径用 findByCursor 已排除 FILE_CHAT。
+    // ====================================================================
+    @GetMapping("/conversations/{conversationId}/file-chat-messages")
+    public Result<MessagePageVO> getFileChatMessages(
+            @PathVariable Long conversationId,
+            @RequestParam("objectId") String objectId,
+            @RequestParam(value = "before", required = false) Long beforeId,
+            @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        log.info("[verla-internal] getFileChatMessages cid={} objectId={} before={} limit={}",
+                conversationId, objectId, beforeId, limit);
+        if (objectId == null || objectId.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "objectId required");
+        }
+        VerlaConversation c = conversationRepository.findById(conversationId);
+        if (c == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        List<VerlaMessage> page = messageRepository.findFileChatByCursor(conversationId, objectId, beforeId, safeLimit);
+        Long nextCursor = page.isEmpty() ? null : page.get(page.size() - 1).getId();
+        return Result.success(MessagePageVO.builder()
+                .items(page.stream().map(VerlaMessageVO::from).collect(Collectors.toList()))
+                .nextCursor(nextCursor)
+                .build());
+    }
+
+    // ====================================================================
     // 3) GET /v1/internal/verla/conversations/{cid}
     // ====================================================================
     @GetMapping("/conversations/{conversationId}")

@@ -35,9 +35,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
 
-    private static final String NODE_KIND_PLAN = "plan";
-    private static final String NODE_KIND_TASK = "task";
-    private static final String PLAN_NODE_ID = "assignment-plan";
+    private static final String NODE_KIND_PLAN    = "plan";
+    private static final String NODE_KIND_TASK    = "task";
+    private static final String NODE_KIND_COMPOSE = "compose";
+    private static final String PLAN_NODE_ID      = "assignment-plan";
 
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
             VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
@@ -90,13 +91,17 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
             return;
         }
 
-        boolean isPlan = PLAN_NODE_ID.equals(node.getId());
-        if (!isPlan && (node.getId() == null || !node.getId().startsWith("task-"))) {
-            log.debug("[Verla/workforce] NODE_UPDATED skip non-workforce node sessionId={} nodeId={}",
-                    row.getSessionId(), node.getId());
+        // nodeType 字段是唯一分类依据；plan 节点额外保留 id 兜底以兼容旧 Python 版本
+        boolean isPlan    = "plan".equalsIgnoreCase(node.getNodeType())
+                || PLAN_NODE_ID.equals(node.getId());
+        boolean isTask    = !isPlan && "task".equalsIgnoreCase(node.getNodeType());
+        boolean isCompose = !isPlan && !isTask && "compose".equalsIgnoreCase(node.getNodeType());
+        if (!isPlan && !isTask && !isCompose) {
+            log.debug("[Verla/workforce] NODE_UPDATED skip unknown node sessionId={} nodeId={} nodeType={}",
+                    row.getSessionId(), node.getId(), node.getNodeType());
             return;
         }
-        VerlaWorkforceTask patch = buildTaskPatch(row, node, isPlan);
+        VerlaWorkforceTask patch = buildTaskPatch(row, node, isPlan, isTask, isCompose);
 
         VerlaWorkforceTask saved = taskRepository.upsertBySessionNode(patch);
         log.info("[Verla/workforce] NODE_UPDATED upsert ok sessionId={} nodeId={} status={}",
@@ -105,36 +110,51 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
 
     private VerlaWorkforceTask buildTaskPatch(VerlaEventInbox row,
                                               VerlaWorkforceNodeUpdatedPayload.Node node,
-                                              boolean isPlan) {
+                                              boolean isPlan,
+                                              boolean isTask,
+                                              boolean isCompose) {
+        String nodeKind = isPlan ? NODE_KIND_PLAN : (isCompose ? NODE_KIND_COMPOSE : NODE_KIND_TASK);
         VerlaWorkforceTask.VerlaWorkforceTaskBuilder builder = VerlaWorkforceTask.builder()
                 .conversationId(row.getConversationId())
                 .turnId(row.getTurnId())
                 .sessionId(row.getSessionId())
                 .nodeId(node.getId())
-                .nodeKind(isPlan ? NODE_KIND_PLAN : NODE_KIND_TASK)
+                .nodeKind(nodeKind)
                 .taskName(truncate(node.getTaskName(), MAX_TASK_NAME_LEN))
                 .taskAgent(truncate(node.getTaskAgent(), MAX_TASK_AGENT_LEN))
                 .status(node.getStatus())
                 .content(node.getContent());
 
-        if (!isPlan) {
-            // task-{camelTaskId}
-            String camelTaskId = node.getId().startsWith("task-")
-                    ? node.getId().substring("task-".length()) : null;
+        if (isTask) {
+            // id 格式为 task-{camelTaskId}，去除前缀还原原始 task id
+            String rawId = node.getId() == null ? "" : node.getId();
+            String camelTaskId = rawId.startsWith("task-")
+                    ? rawId.substring("task-".length()) : (rawId.isBlank() ? null : rawId);
             builder.camelTaskId(camelTaskId);
 
             if (node.getProcessingTimeSeconds() != null) {
                 builder.processingTimeMs((int) (node.getProcessingTimeSeconds() * 1000));
             }
+        } else if (isCompose) {
+            // compose 节点：持久化当前轮次和总轮次
+            builder.composeCurrentRound(node.getComposeCurrentRound());
+            builder.composeTotalRounds(node.getComposeTotalRounds());
         } else {
-            // plan 节点：持久化 steps 数组和子任务数量
+            // plan 节点：持久化 steps 数组和 compose 总轮次
+            // 优先读显式 composeTotalRounds 字段；兜底解析 compose-part-* steps
+            Integer composeTotalRounds = node.getComposeTotalRounds();
             List<?> steps = node.getSteps();
             if (steps != null && !steps.isEmpty()) {
                 builder.planStepsJson(toJson(steps));
-                if (containsComposePartSteps(steps)) {
+                if (composeTotalRounds != null && composeTotalRounds > 0) {
+                    builder.planTaskCount(composeTotalRounds);
+                } else if (containsComposePartSteps(steps)) {
                     builder.planTaskCount(steps.size());
                 }
+            } else if (composeTotalRounds != null && composeTotalRounds > 0) {
+                builder.planTaskCount(composeTotalRounds);
             }
+            builder.composeTotalRounds(composeTotalRounds);
         }
 
         return builder.build();

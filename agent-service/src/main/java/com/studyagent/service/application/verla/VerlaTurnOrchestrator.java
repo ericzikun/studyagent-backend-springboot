@@ -1678,6 +1678,10 @@ public class VerlaTurnOrchestrator {
         Map<String, Object> payload = new HashMap<>();
         payload.put("objectId", objectId);
         payload.put("message", message);
+        // 当前轮用户消息 ID：Py 拉取文件对话历史时以此为 before 游标，排除刚落库的本轮提问，避免重复 hydrate。
+        if (turn.getUserMessageId() != null) {
+            payload.put("userMessageId", turn.getUserMessageId());
+        }
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));

@@ -301,7 +301,10 @@ class VerlaFileChatSendFlowTest {
                 CONVERSATION_ID,
                 "obj_123",
                 "先帮我提取格式要求。");
-        assertThat(mqOutboxService.lastEnvelope.getPayload()).containsOnlyKeys("objectId", "message", "contextRef");
+        assertThat(mqOutboxService.lastEnvelope.getPayload())
+                .containsOnlyKeys("objectId", "message", "userMessageId", "contextRef");
+        assertThat(mqOutboxService.lastEnvelope.getPayload().get("userMessageId"))
+                .isEqualTo(result.getUserMessageId());
 
         orchestrator.onFileChatCompleted(result.getAgentSessionId(), Map.of(
                 "objectId", "obj_123",

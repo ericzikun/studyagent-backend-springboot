@@ -9,10 +9,11 @@ public record WorkforceTaskProgressSnapshot(
         int totalTaskCount,
         int completedTaskCount,
         int activeTaskCount,
-        Integer composeTotalRounds
+        Integer composeTotalRounds,
+        Integer composeCurrentRound
 ) {
     public static WorkforceTaskProgressSnapshot empty() {
-        return new WorkforceTaskProgressSnapshot(0, 0, 0, null);
+        return new WorkforceTaskProgressSnapshot(0, 0, 0, null, null);
     }
 
     public boolean hasTaskData() {

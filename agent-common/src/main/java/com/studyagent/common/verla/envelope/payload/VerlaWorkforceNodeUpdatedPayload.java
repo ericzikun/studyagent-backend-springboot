@@ -29,8 +29,13 @@ public class VerlaWorkforceNodeUpdatedPayload {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Node {
-        /** "assignment-plan" 或 "task-{camel_task_id}" */
+        /** "assignment-plan"、"task-{camel_task_id}" 或 "compose-progress" */
         private String id;
+        /**
+         * 节点类型（Python 显式携带，优先于 id 推断）：
+         * "plan" — 规划节点；"task" — 子任务节点；"compose" — Compose 进度节点
+         */
+        private String nodeType;
         private String taskName;
         private String taskAgent;
         /** queued / running / completed / failed */
@@ -41,5 +46,9 @@ public class VerlaWorkforceNodeUpdatedPayload {
         private List<Map<String, Object>> steps;
         /** CAMEL processing_time_seconds，task 节点完成时携带 */
         private Double processingTimeSeconds;
+        /** compose 节点：当前已完成的 compose 轮次 */
+        private Integer composeCurrentRound;
+        /** plan / compose 节点：compose 总轮次 */
+        private Integer composeTotalRounds;
     }
 }

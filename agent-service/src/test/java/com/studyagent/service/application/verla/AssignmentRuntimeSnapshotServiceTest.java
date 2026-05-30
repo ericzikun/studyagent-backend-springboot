@@ -235,7 +235,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
     @Test
     void getSnapshot_normalizesEquivalentEtaPayloadFields() {
-        workforceTaskRepository.snapshotBySession.put(91L, new WorkforceTaskProgressSnapshot(3, 1, 1, null));
+        workforceTaskRepository.snapshotBySession.put(91L, new WorkforceTaskProgressSnapshot(3, 1, 1, null, null));
         eventInboxRepository.add(91L, event(
                 2100L,
                 91L,

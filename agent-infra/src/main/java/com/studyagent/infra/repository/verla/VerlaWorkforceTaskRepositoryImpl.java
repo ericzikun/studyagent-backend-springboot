@@ -54,31 +54,41 @@ public class VerlaWorkforceTaskRepositoryImpl
         int completedTaskCount = 0;
         int activeTaskCount = 0;
         Integer composeTotalRounds = null;
+        Integer composeCurrentRound = null;
 
         for (VerlaWorkforceTaskEntity row : rows) {
             if (row == null) {
                 continue;
             }
-            if ("plan".equalsIgnoreCase(row.getNodeKind())) {
-                if (row.getPlanTaskCount() != null) {
+            String kind = row.getNodeKind() == null ? "" : row.getNodeKind().trim().toLowerCase();
+            if ("plan".equals(kind)) {
+                // plan 行：读 compose 总轮次（planTaskCount 为旧字段，composeTotalRounds 为新字段）
+                Integer rounds = row.getComposeTotalRounds() != null
+                        ? row.getComposeTotalRounds() : row.getPlanTaskCount();
+                if (rounds != null && rounds > 0) {
                     composeTotalRounds = composeTotalRounds == null
-                            ? row.getPlanTaskCount()
-                            : Math.max(composeTotalRounds, row.getPlanTaskCount());
+                            ? rounds : Math.max(composeTotalRounds, rounds);
                 }
-                continue;
-            }
-            if (!"task".equalsIgnoreCase(row.getNodeKind())) {
-                continue;
-            }
-            if (row.getNodeId() == null || !row.getNodeId().startsWith("task-")) {
-                continue;
-            }
-            totalTaskCount++;
-            String status = row.getStatus() == null ? "" : row.getStatus().trim().toLowerCase();
-            if ("completed".equals(status)) {
-                completedTaskCount++;
-            } else if ("running".equals(status)) {
-                activeTaskCount++;
+            } else if ("compose".equals(kind)) {
+                // compose 行：读当前轮次和总轮次（取最新/最大值）
+                if (row.getComposeTotalRounds() != null && row.getComposeTotalRounds() > 0) {
+                    composeTotalRounds = composeTotalRounds == null
+                            ? row.getComposeTotalRounds()
+                            : Math.max(composeTotalRounds, row.getComposeTotalRounds());
+                }
+                if (row.getComposeCurrentRound() != null && row.getComposeCurrentRound() > 0) {
+                    composeCurrentRound = composeCurrentRound == null
+                            ? row.getComposeCurrentRound()
+                            : Math.max(composeCurrentRound, row.getComposeCurrentRound());
+                }
+            } else if ("task".equals(kind)) {
+                totalTaskCount++;
+                String status = row.getStatus() == null ? "" : row.getStatus().trim().toLowerCase();
+                if ("completed".equals(status)) {
+                    completedTaskCount++;
+                } else if ("running".equals(status)) {
+                    activeTaskCount++;
+                }
             }
         }
 
@@ -86,7 +96,8 @@ public class VerlaWorkforceTaskRepositoryImpl
                 totalTaskCount,
                 completedTaskCount,
                 activeTaskCount,
-                composeTotalRounds);
+                composeTotalRounds,
+                composeCurrentRound);
     }
 
     @Override

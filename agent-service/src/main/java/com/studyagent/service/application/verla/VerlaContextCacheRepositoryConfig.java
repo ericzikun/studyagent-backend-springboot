@@ -56,6 +56,15 @@ public class VerlaContextCacheRepositoryConfig {
             public VerlaSession findByCorrelationId(String correlationId) {
                 return delegate.findByCorrelationId(correlationId);
             }
+
+            @Override
+            public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
+                boolean ok = delegate.bindQuotaLedger(sessionId, ledgerId, amount);
+                if (ok && sessionId != null) {
+                    publisher.publishEvent(new VerlaSessionCacheSyncEvent(sessionId));
+                }
+                return ok;
+            }
         };
     }
 

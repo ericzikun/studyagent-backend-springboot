@@ -192,6 +192,14 @@ humanizer-service:
 humanizer:
   whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
 
+# V2 verla 链路商业化额度（feature: task_create / ai_detection / humanizer，复用 1.0 套餐 & 接口）
+# enabled=false 时所有 verla 链路一律豁免，灰度上线 / 紧急关停时使用
+# whitelist-user-ids：verla 链路专属白名单（与 humanizer.whitelist-user-ids 独立）
+verla:
+  quota:
+    enabled: ${VERLA_QUOTA_ENABLED:true}
+    whitelist-user-ids: ${VERLA_QUOTA_WHITELIST_USER_IDS:}
+
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}

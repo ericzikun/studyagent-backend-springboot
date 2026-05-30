@@ -22,6 +22,16 @@ public class VerlaSession {
     /** PLAN / AGENT / MATERIALS */
     private String kind;
     private String featureCode;
+    /**
+     * 本 session 商业化扣费流水 ID（quota_ledger.id）。
+     * <p>
+     * 仅 V2 verla 链路在 {@code spawnAssignmentRunSession / spawnCapabilitySession}
+     * 派发命令前同事务回填；为空表示 admin / 白名单 / 未启用配额。
+     * 失败 / 取消时按此反查并退款，保证幂等。
+     */
+    private Long quotaLedgerId;
+    /** 本 session 扣费数量（次 / 字），仅用于审计与排错；为空同上。 */
+    private Long quotaAmount;
     /** CREATED / DISPATCHING / RUNNING / SUCCEEDED / FAILED / CANCELLING / CANCELLED */
     private String status;
     private String correlationId;

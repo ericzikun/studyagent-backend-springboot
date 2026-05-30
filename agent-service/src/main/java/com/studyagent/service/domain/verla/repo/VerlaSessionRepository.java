@@ -23,4 +23,14 @@ public interface VerlaSessionRepository {
     List<VerlaSession> findCompletedSiblings(Long turnId, Long excludeSessionId);
 
     VerlaSession findByCorrelationId(String correlationId);
+
+    /**
+     * V2 商业化：扣费成功后回填 quota_ledger_id / quota_amount。
+     * <p>
+     * 乐观保护：仅当原 quota_ledger_id 为空时才写入；若并发已有 ledger 则返回 false 并由
+     * 上层判断是否重复扣费（建议直接抛 {@link IllegalStateException} 触发事务回滚）。
+     *
+     * @return true 绑定成功；false 已有 ledger 或 session 不存在
+     */
+    boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount);
 }

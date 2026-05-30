@@ -257,6 +257,19 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalArgumentException("Only consume ledger can be refunded: " + ledgerId);
         }
 
+        // 幂等保护：同一 consume 流水若已生成 refund 流水（biz_context.original_ledger_id 命中），跳过。
+        // 既兼容 1.0 V1 HumanizerTaskWorker.refundQuota 的重复触发，也兼容 V2 verla 链路 fail+cancel 双回调。
+        QuotaLedgerEntity refundExist = quotaLedgerMapper.selectOne(
+                new LambdaQueryWrapper<QuotaLedgerEntity>()
+                        .eq(QuotaLedgerEntity::getLedgerType, LEDGER_TYPE_REFUND)
+                        .like(QuotaLedgerEntity::getBizContext, "\"original_ledger_id\":" + ledgerId)
+                        .last("LIMIT 1"));
+        if (refundExist != null) {
+            log.info("额度已退过，幂等跳过: original_ledger_id={}, refund_ledger_id={}",
+                    ledgerId, refundExist.getId());
+            return;
+        }
+
         // amount 为负数，回滚时加回
         long refundAmount = Math.abs(consumeLedger.getAmount());
         if (refundAmount <= 0) {
@@ -422,10 +435,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         return switch (entity.getLedgerType()) {
             case LEDGER_TYPE_CONSUME -> switch (entity.getSourceType()) {
                 case "task" -> featureDisplayName + " consumed " + absAmount + " " + unitStr;
+                // V2 verla 链路扣费：与 V1 task 文案一致，前端无需新增分支
+                case "verla_session" -> featureDisplayName + " consumed " + absAmount + " " + unitStr;
                 default -> "Consumed " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_REFUND -> switch (entity.getSourceType()) {
                 case "task" -> "Task failed, refunded " + absAmount + " " + unitStr;
+                case "verla_session" -> "Task failed, refunded " + absAmount + " " + unitStr;
                 default -> "Refunded " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_RECHARGE -> {

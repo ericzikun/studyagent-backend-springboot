@@ -522,9 +522,14 @@ public class VerlaAttachmentService {
     }
 
     private boolean isVisibleToUserAttachmentList(VerlaAttachment attachment) {
-        return attachment != null
-                && !VerlaAttachment.ORIGIN_AGENT_OUTPUT.equalsIgnoreCase(
-                normalizeAttachmentOrigin(attachment.getAttachmentOrigin(), VerlaAttachment.ORIGIN_USER_UPLOAD));
+        if (attachment == null) {
+            return false;
+        }
+        String normalizedOrigin = normalizeAttachmentOrigin(
+                attachment.getAttachmentOrigin(),
+                VerlaAttachment.ORIGIN_USER_UPLOAD);
+        return !VerlaAttachment.ORIGIN_AGENT_OUTPUT.equalsIgnoreCase(normalizedOrigin)
+                && !ORIGIN_EDITOR_PREVIEW_IMAGE.equalsIgnoreCase(normalizedOrigin);
     }
 
     private String normalizeAttachmentOrigin(String attachmentOrigin, String fallback) {

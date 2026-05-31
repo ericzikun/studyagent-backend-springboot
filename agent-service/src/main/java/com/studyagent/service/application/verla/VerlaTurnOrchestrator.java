@@ -86,6 +86,8 @@ public class VerlaTurnOrchestrator {
     private static final int MAX_ASSISTANT_TEXT_CONTENT_CHARS = 32000;
     private static final String GENERATED_ARTIFACT_READY_TEXT =
             "Assignment output is ready. Open the generated artifact to view the full result.";
+    private static final String AGENT_WORKFORCE_ROLE = "agent_workforce";
+    private static final String AGENT_WORKFORCE_COMPLETED_TEXT = "Verla agent team task finished";
     private static final String PLAN_CONFIRM_YES_TEXT = "Yes, please help me finish it.";
     private static final String PLAN_CONFIRM_NO_TEXT = "No, let’s keep chatting.";
     private static final String ASSIGNMENT_START_YES_TEXT = "Yes, let's complete the assignment.";
@@ -786,6 +788,9 @@ public class VerlaTurnOrchestrator {
                         .build();
                 messageRepository.save(assistant);
             }
+            // Spring owns the persisted workforce status row; the turn-status
+            // guard above keeps repeated completed events from duplicating it.
+            persistAgentWorkforceCompletionMessage(turn, agentSessionId);
         }
 
         if (turn != null) {
@@ -2025,9 +2030,21 @@ public class VerlaTurnOrchestrator {
         }
         String normalized = role.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "user", "assistant", "system" -> normalized;
+            case "user", "assistant", "system", AGENT_WORKFORCE_ROLE -> normalized;
             default -> "assistant";
         };
+    }
+
+    private void persistAgentWorkforceCompletionMessage(VerlaTurn turn, Long agentSessionId) {
+        VerlaMessage workforceStatus = VerlaMessage.builder()
+                .conversationId(turn.getConversationId())
+                .turnId(turn.getId())
+                .role(AGENT_WORKFORCE_ROLE)
+                .sourceSessionId(agentSessionId)
+                .textContent(AGENT_WORKFORCE_COMPLETED_TEXT)
+                .createdAt(LocalDateTime.now())
+                .build();
+        messageRepository.save(workforceStatus);
     }
 
     private String resolveFileChatObjectId(VerlaTurn turn, Map<String, Object> result) {

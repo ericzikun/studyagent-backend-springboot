@@ -27,7 +27,7 @@ public class VerlaMessageEntity {
 
     private Long turnId;
 
-    /** user / assistant / system */
+    /** user / assistant / system / agent_workforce */
     private String role;
 
     /** assistant 消息的来源 session（plan/agent） */

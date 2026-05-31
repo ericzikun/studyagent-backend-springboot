@@ -51,7 +51,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void estimateFromWorkforceSnapshot_usesV1TwoPhaseFormulaForSubtasks() {
-        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 2, 1, 10);
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 2, 1, 10, null);
 
         var estimate = estimator.estimateFromWorkforceSnapshot(
                 workforce,
@@ -67,7 +67,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void estimateFromWorkforceSnapshot_usesComposeRoundForSecondPhase() {
-        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 10);
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 10, null);
         List<VerlaEventInbox> events = List.of(
                 event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"compose\",\"title\":\"Composing part 3/10\",\"status\":\"RUNNING\"}}}"),
@@ -86,7 +86,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void resolveProgress_prefersWorkforceAggregateOverAgentNodes() {
-        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10, null));
         List<VerlaEventInbox> events = List.of(
                 event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"assignment-plan\",\"title\":\"Make plan\",\"status\":\"RUNNING\"}}}"),
@@ -104,7 +104,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void resolveProgress_prefersExplicitPythonEtaOverComputedValue() {
-        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10, null));
         List<VerlaEventInbox> events = List.of(
                 event(2L, 100L, VerlaAgentEventType.AGENT_PROGRESS,
                         "{\"payload\":{\"progress\":{\"label\":\"Planning\",\"estimatedRemainingSeconds\":960}}}"),
@@ -157,7 +157,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void resolveProgress_ignoresStaleExplicitEtaWhenLatestEventHasNoEta() {
-        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10));
+        workforceTaskRepository.snapshotBySession.put(100L, new WorkforceTaskProgressSnapshot(5, 2, 1, 10, null));
         List<VerlaEventInbox> events = List.of(
                 event(3L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"task-1\",\"taskName\":\"Research\",\"status\":\"running\"}}}"),
@@ -175,7 +175,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
     @Test
     void estimateFromWorkforceSnapshot_prefersComposeTitleTotalOverStalePlanCount() {
-        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 5);
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 5, null);
         List<VerlaEventInbox> events = List.of(
                 event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
                         "{\"payload\":{\"node\":{\"id\":\"problem-solving-expert\",\"title\":\"Composing part 3/10\",\"status\":\"RUNNING\"}}}"),

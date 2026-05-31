@@ -54,6 +54,12 @@ PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
 
 启动脚本也会补齐 `verla_attachments.attachment_origin`，用于区分用户上传附件和 agent 输出附件。
 
+启动脚本还会在已存在 Verla 基础会话表时补齐 `verla_editor_contents` 与 `verla_editor_content_versions`，避免本地 mock 数据库漏跑 V2 editor storage SQL 后在打开编辑器内容时运行时报缺表。
+
+启动脚本会补齐旧 mock 数据库缺失的商业化额度字段：`verla_sessions.quota_ledger_id`、`verla_sessions.quota_amount` 以及 `humanizer_tasks` 的 quota 相关列。
+
+启动脚本会补齐旧 mock 数据库缺失的 Verla workforce 进度列与 `verla_editor_previews`，避免 conversation 列表和 compose-progress 链路因旧 schema 报错。
+
 ### 4. 访问 API 文档
 
 http://localhost:8080/swagger-ui.html

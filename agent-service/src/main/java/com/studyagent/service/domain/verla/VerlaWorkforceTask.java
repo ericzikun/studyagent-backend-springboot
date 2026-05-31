@@ -24,11 +24,11 @@ public class VerlaWorkforceTask {
     private Long turnId;
     private Long sessionId;
 
-    /** "assignment-plan" 或 "task-{camel_task_id}"，session 内唯一 */
+    /** "assignment-plan"、"task-{camel_task_id}" 或 "compose-progress"，session 内唯一 */
     private String nodeId;
-    /** CAMEL 原始 task_id，plan 节点为 null */
+    /** CAMEL 原始 task_id，plan / compose 节点为 null */
     private String camelTaskId;
-    /** plan / task */
+    /** plan / task / compose */
     private String nodeKind;
 
     private String taskName;
@@ -43,6 +43,11 @@ public class VerlaWorkforceTask {
     /** plan 节点的 steps 数组（JSON 字符串） */
     private String planStepsJson;
     private Integer planTaskCount;
+
+    /** compose 节点：当前已完成的 compose 轮次 */
+    private Integer composeCurrentRound;
+    /** compose / plan 节点：compose 总轮次 */
+    private Integer composeTotalRounds;
 
     private Integer sortOrder;
 

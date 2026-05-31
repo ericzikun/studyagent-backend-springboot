@@ -19,7 +19,7 @@ public class VerlaMessage {
     private Long id;
     private Long conversationId;
     private Long turnId;
-    /** user / assistant / system */
+    /** user / assistant / system / agent_workforce */
     private String role;
     private Long sourceSessionId;
     private String textContent;

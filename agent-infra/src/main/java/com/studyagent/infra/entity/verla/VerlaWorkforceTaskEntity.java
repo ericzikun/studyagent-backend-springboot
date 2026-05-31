@@ -38,6 +38,11 @@ public class VerlaWorkforceTaskEntity {
     private String planStepsJson;
     private Integer planTaskCount;
 
+    /** compose 节点：当前已完成的 compose 轮次 */
+    private Integer composeCurrentRound;
+    /** compose / plan 节点：compose 总轮次 */
+    private Integer composeTotalRounds;
+
     private Integer sortOrder;
 
     private LocalDateTime startedAt;

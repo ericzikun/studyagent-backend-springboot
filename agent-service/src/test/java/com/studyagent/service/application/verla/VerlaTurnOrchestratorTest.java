@@ -3,6 +3,9 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
+import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -35,6 +38,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VerlaTurnOrchestratorTest {
 
+    private static final String AGENT_WORKFORCE_COMPLETED_TEXT = "Verla agent team task finished";
+
     @Test
     void onAgentCompleted_does_not_persist_large_finalResult_as_message_text() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
@@ -52,7 +57,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -73,12 +78,16 @@ class VerlaTurnOrchestratorTest {
 
         orchestrator.onAgentCompleted(357L, payload);
 
-        VerlaMessage savedMessage = messageRepository.saved;
+        assertEquals(2, messageRepository.savedMessages.size());
+        VerlaMessage savedMessage = messageRepository.savedMessages.get(0);
         assertNotNull(savedMessage);
         assertEquals("Assignment output is ready. Open the generated artifact to view the full result.",
                 savedMessage.getTextContent());
         assertFalse(savedMessage.getBlocksJson().contains(finalResult));
         assertTrue(savedMessage.getBlocksJson().contains("\"finalResultTruncated\":true"));
+        VerlaMessage workforceStatus = messageRepository.savedMessages.get(1);
+        assertEquals("agent_workforce", workforceStatus.getRole());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, workforceStatus.getTextContent());
         assertEquals(SessionStatus.SUCCEEDED.name(), sessionRepository.saved.getStatus());
         assertEquals(TurnStatus.COMPLETED.name(), turnRepository.saved.getStatus());
         assertEquals(153L, conversationRepository.incrementedConversationId);
@@ -101,7 +110,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -119,9 +128,53 @@ class VerlaTurnOrchestratorTest {
                 "role", "system",
                 "finalResult", "Done"));
 
-        assertNotNull(messageRepository.saved);
-        assertEquals("system", messageRepository.saved.getRole());
-        assertEquals("Done", messageRepository.saved.getTextContent());
+        assertEquals(2, messageRepository.savedMessages.size());
+        assertEquals("system", messageRepository.savedMessages.get(0).getRole());
+        assertEquals("Done", messageRepository.savedMessages.get(0).getTextContent());
+        assertEquals("agent_workforce", messageRepository.savedMessages.get(1).getRole());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(1).getTextContent());
+    }
+
+    @Test
+    void onAgentCompleted_does_not_duplicate_workforce_status_on_replay() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(357L)
+                .conversationId(153L)
+                .turnId(153L)
+                .status(SessionStatus.RUNNING.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(153L)
+                .conversationId(153L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        Map<String, Object> payload = Map.of("finalResult", "Done");
+        orchestrator.onAgentCompleted(357L, payload);
+        orchestrator.onAgentCompleted(357L, payload);
+
+        assertEquals(2, messageRepository.savedMessages.size());
+        assertEquals(1, messageRepository.savedMessages.stream()
+                .filter(message -> "agent_workforce".equals(message.getRole()))
+                .count());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(1).getTextContent());
     }
 
     @Test
@@ -141,7 +194,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -164,6 +217,46 @@ class VerlaTurnOrchestratorTest {
         assertEquals("Run failed", messageRepository.saved.getTextContent());
         assertEquals(SessionStatus.FAILED.name(), sessionRepository.saved.getStatus());
         assertEquals(TurnStatus.FAILED.name(), turnRepository.saved.getStatus());
+    }
+
+    @Test
+    void onAgentFailed_preserves_agentWorkforce_role_from_payload() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(357L)
+                .conversationId(153L)
+                .turnId(153L)
+                .status(SessionStatus.RUNNING.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(153L)
+                .conversationId(153L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAgentFailed(357L, Map.of(
+                "role", "agent_workforce",
+                "errorMessage", "Run failed"));
+
+        assertNotNull(messageRepository.saved);
+        assertEquals("agent_workforce", messageRepository.saved.getRole());
+        assertEquals("Run failed", messageRepository.saved.getTextContent());
     }
 
     @Test
@@ -193,7 +286,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 mqOutboxService,
                 objectMapper,
-                null);
+                new NoopQuotaService());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -443,6 +536,32 @@ class VerlaTurnOrchestratorTest {
         @Override
         public com.studyagent.service.domain.verla.VerlaAttachment updateByObjectIdSelective(com.studyagent.service.domain.verla.VerlaAttachment patch) {
             return patch;
+        }
+    }
+
+    private static final class NoopQuotaService implements VerlaQuotaService {
+        @Override
+        public VerlaQuotaConsumeResult consumeForAssignmentRun(VerlaQuotaContext ctx) {
+            return null;
+        }
+
+        @Override
+        public VerlaQuotaConsumeResult consumeForDetection(VerlaQuotaContext ctx, String text) {
+            return null;
+        }
+
+        @Override
+        public VerlaQuotaConsumeResult consumeForHumanizer(VerlaQuotaContext ctx, String text) {
+            return null;
+        }
+
+        @Override
+        public void refundBySessionId(Long sessionId, String reason) {
+        }
+
+        @Override
+        public boolean isQuotaExempt(String clerkUserId) {
+            return false;
         }
     }
 

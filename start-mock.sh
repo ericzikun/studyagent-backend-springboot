@@ -163,6 +163,19 @@ table_exists() {
   " | tr -d '[:space:]')" ]]
 }
 
+index_exists() {
+  local table="$1"
+  local index="$2"
+  [[ -n "$(run_mysql -N -B -e "
+    SELECT INDEX_NAME
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = '${DB_NAME}'
+      AND TABLE_NAME = '${table}'
+      AND INDEX_NAME = '${index}'
+    LIMIT 1;
+  " | tr -d '[:space:]')" ]]
+}
+
 apply_mq_outbox_verla_columns() {
   run_mysql <<SQL
 ALTER TABLE \`${DB_NAME}\`.\`mq_outbox\`
@@ -218,11 +231,207 @@ CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`user_profiles\` (
 SQL
 }
 
+apply_ai_feature_defs_table() {
+  run_mysql <<SQL
+CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`ai_feature_defs\` (
+  \`id\` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  \`feature_code\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '功能编码',
+  \`feature_name\` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '功能名称',
+  \`quota_unit\` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'count' COMMENT '额度单位: count / words',
+  \`free_quota_period\` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'monthly' COMMENT '免费额度周期',
+  \`free_quota_amount\` bigint NOT NULL DEFAULT 0 COMMENT '每周期免费额度',
+  \`is_active\` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+  \`display_order\` int NOT NULL DEFAULT 0 COMMENT '展示顺序',
+  \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  \`updated_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_ai_feature_defs_code\` (\`feature_code\`),
+  KEY \`idx_ai_feature_defs_active_order\` (\`is_active\`, \`display_order\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 功能额度定义';
+SQL
+}
+
+apply_ai_feature_packages_table() {
+  run_mysql <<SQL
+CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`ai_feature_packages\` (
+  \`id\` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  \`feature_code\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '功能编码',
+  \`package_code\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '套餐编码',
+  \`package_name\` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '套餐名称',
+  \`quota_amount\` bigint NOT NULL DEFAULT 0 COMMENT '充值额度',
+  \`price_cents\` int NOT NULL DEFAULT 0 COMMENT '价格（美分）',
+  \`currency\` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'usd' COMMENT '币种',
+  \`stripe_price_id\` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe price id',
+  \`stripe_product_id\` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe product id',
+  \`is_active\` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+  \`display_order\` int NOT NULL DEFAULT 0 COMMENT '展示顺序',
+  \`label\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '展示标签',
+  \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  \`updated_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_ai_feature_packages_code\` (\`feature_code\`, \`package_code\`),
+  KEY \`idx_ai_feature_packages_active_order\` (\`feature_code\`, \`is_active\`, \`display_order\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 功能充值套餐定义';
+SQL
+}
+
+apply_user_ai_quotas_table() {
+  run_mysql <<SQL
+CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`user_ai_quotas\` (
+  \`id\` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  \`clerk_user_id\` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Clerk 用户ID',
+  \`feature_code\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '功能编码',
+  \`free_balance\` bigint NOT NULL DEFAULT 0 COMMENT '免费额度余额',
+  \`free_period_start\` datetime DEFAULT NULL COMMENT '免费周期开始时间',
+  \`free_period_end\` datetime DEFAULT NULL COMMENT '免费周期结束时间',
+  \`paid_balance\` bigint NOT NULL DEFAULT 0 COMMENT '付费额度余额',
+  \`version\` int NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+  \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  \`updated_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_user_ai_quotas_user_feature\` (\`clerk_user_id\`, \`feature_code\`),
+  KEY \`idx_user_ai_quotas_feature\` (\`feature_code\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户 AI 额度余额';
+SQL
+}
+
+apply_quota_ledger_table() {
+  run_mysql <<SQL
+CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`quota_ledger\` (
+  \`id\` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  \`ledger_no\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '流水号',
+  \`clerk_user_id\` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Clerk 用户ID',
+  \`feature_code\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '功能编码',
+  \`ledger_type\` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'consume / refund / recharge',
+  \`amount\` bigint NOT NULL COMMENT '流水额度，扣减为负数',
+  \`source_type\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源类型',
+  \`source_id\` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源ID',
+  \`free_balance_after\` bigint DEFAULT NULL COMMENT '变更后免费余额',
+  \`paid_balance_after\` bigint DEFAULT NULL COMMENT '变更后付费余额',
+  \`biz_context\` json DEFAULT NULL COMMENT '业务上下文',
+  \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_quota_ledger_no\` (\`ledger_no\`),
+  KEY \`idx_quota_ledger_user_feature\` (\`clerk_user_id\`, \`feature_code\`, \`created_at\`),
+  KEY \`idx_quota_ledger_source\` (\`source_type\`, \`source_id\`),
+  KEY \`idx_quota_ledger_type\` (\`ledger_type\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 额度流水';
+SQL
+}
+
+seed_mock_quota_features() {
+  run_mysql <<SQL
+INSERT INTO \`${DB_NAME}\`.\`ai_feature_defs\`
+  (\`feature_code\`, \`feature_name\`, \`quota_unit\`, \`free_quota_period\`, \`free_quota_amount\`, \`is_active\`, \`display_order\`, \`created_at\`, \`updated_at\`)
+VALUES
+  ('task_create', 'Assignment', 'count', 'monthly', 20, 1, 10, NOW(), NOW()),
+  ('ai_detection', 'AI Detection', 'words', 'monthly', 20000, 1, 20, NOW(), NOW()),
+  ('humanizer', 'Humanizer', 'words', 'monthly', 20000, 1, 30, NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  \`feature_name\` = VALUES(\`feature_name\`),
+  \`quota_unit\` = VALUES(\`quota_unit\`),
+  \`free_quota_period\` = VALUES(\`free_quota_period\`),
+  \`free_quota_amount\` = VALUES(\`free_quota_amount\`),
+  \`is_active\` = VALUES(\`is_active\`),
+  \`display_order\` = VALUES(\`display_order\`),
+  \`updated_at\` = NOW();
+
+INSERT INTO \`${DB_NAME}\`.\`ai_feature_packages\`
+  (\`feature_code\`, \`package_code\`, \`package_name\`, \`quota_amount\`, \`price_cents\`, \`currency\`, \`is_active\`, \`display_order\`, \`label\`, \`created_at\`, \`updated_at\`)
+VALUES
+  ('task_create', 'mock_task_50', 'Mock Assignment 50', 50, 0, 'usd', 1, 10, 'mock', NOW(), NOW()),
+  ('ai_detection', 'mock_detection_50k', 'Mock Detection 50k', 50000, 0, 'usd', 1, 20, 'mock', NOW(), NOW()),
+  ('humanizer', 'mock_humanizer_50k', 'Mock Humanizer 50k', 50000, 0, 'usd', 1, 30, 'mock', NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  \`package_name\` = VALUES(\`package_name\`),
+  \`quota_amount\` = VALUES(\`quota_amount\`),
+  \`price_cents\` = VALUES(\`price_cents\`),
+  \`currency\` = VALUES(\`currency\`),
+  \`is_active\` = VALUES(\`is_active\`),
+  \`display_order\` = VALUES(\`display_order\`),
+  \`label\` = VALUES(\`label\`),
+  \`updated_at\` = NOW();
+SQL
+}
+
 apply_verla_attachments_attachment_origin_column() {
   run_mysql <<SQL
 ALTER TABLE \`${DB_NAME}\`.\`verla_attachments\`
     ADD COLUMN attachment_origin VARCHAR(32) NOT NULL DEFAULT 'USER_UPLOAD' COMMENT 'USER_UPLOAD / AGENT_OUTPUT' AFTER primary_artifact_uid;
 SQL
+}
+
+apply_verla_sessions_quota_ledger_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_sessions\`
+    ADD COLUMN quota_ledger_id BIGINT NULL COMMENT '本 session 扣费流水 ID（refund 索引）' AFTER feature_code;
+SQL
+}
+
+apply_verla_sessions_quota_amount_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_sessions\`
+    ADD COLUMN quota_amount BIGINT NULL COMMENT '本 session 扣费数量（次或字，仅记录便于排错）' AFTER quota_ledger_id;
+SQL
+}
+
+apply_verla_sessions_quota_ledger_id_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_sessions\`
+    ADD INDEX idx_quota_ledger_id (quota_ledger_id);
+SQL
+}
+
+apply_humanizer_tasks_quota_ledger_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`humanizer_tasks\`
+    ADD COLUMN quota_ledger_id BIGINT NULL COMMENT 'Quota ledger ID for refund on failure' AFTER retry_count;
+SQL
+}
+
+apply_humanizer_tasks_total_words_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`humanizer_tasks\`
+    ADD COLUMN total_words INT NOT NULL DEFAULT 0 COMMENT 'Total word count of input text' AFTER quota_ledger_id;
+SQL
+}
+
+apply_humanizer_tasks_consumed_words_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`humanizer_tasks\`
+    ADD COLUMN consumed_words INT NOT NULL DEFAULT 0 COMMENT 'Words consumed (quota deducted) so far, for streaming per-chunk billing' AFTER total_words;
+SQL
+}
+
+apply_verla_workforce_tasks_compose_current_round_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_workforce_tasks\`
+    ADD COLUMN compose_current_round SMALLINT DEFAULT NULL
+        COMMENT 'compose 节点：当前已完成的 compose 轮次'
+        AFTER plan_task_count;
+SQL
+}
+
+apply_verla_workforce_tasks_compose_total_rounds_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_workforce_tasks\`
+    ADD COLUMN compose_total_rounds SMALLINT DEFAULT NULL
+        COMMENT 'compose / plan 节点：compose 总轮次'
+        AFTER compose_current_round;
+SQL
+}
+
+apply_verla_workforce_tasks_node_kind_comment() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`verla_workforce_tasks\`
+    MODIFY COLUMN node_kind VARCHAR(16) NOT NULL DEFAULT 'task'
+        COMMENT 'plan / task / compose';
+SQL
+}
+
+apply_sql_file() {
+  local file="$1"
+  run_mysql < "${file}"
 }
 
 ensure_mock_db_schema() {
@@ -241,11 +450,106 @@ ensure_mock_db_schema() {
     apply_user_profiles_table
   fi
 
+  if ! table_exists "ai_feature_defs"; then
+    echo "Creating ai_feature_defs table for local quota mock"
+    apply_ai_feature_defs_table
+  fi
+  if ! table_exists "ai_feature_packages"; then
+    echo "Creating ai_feature_packages table for local quota mock"
+    apply_ai_feature_packages_table
+  fi
+  if ! table_exists "user_ai_quotas"; then
+    echo "Creating user_ai_quotas table for local quota mock"
+    apply_user_ai_quotas_table
+  fi
+  if ! table_exists "quota_ledger"; then
+    echo "Creating quota_ledger table for local quota mock"
+    apply_quota_ledger_table
+  fi
+  seed_mock_quota_features
+
   if table_exists "verla_attachments"; then
     if ! column_exists "verla_attachments" "attachment_origin"; then
       echo "Applying verla_attachments attachment_origin patch"
       apply_verla_attachments_attachment_origin_column
     fi
+  fi
+
+  # Local mock DBs are long-lived; patch individual commercialization columns
+  # instead of replaying full ALTER scripts so repeated starts stay idempotent.
+  if table_exists "verla_sessions"; then
+    if ! column_exists "verla_sessions" "quota_ledger_id"; then
+      echo "Applying verla_sessions quota_ledger_id patch"
+      apply_verla_sessions_quota_ledger_id_column
+    fi
+    if ! column_exists "verla_sessions" "quota_amount"; then
+      echo "Applying verla_sessions quota_amount patch"
+      apply_verla_sessions_quota_amount_column
+    fi
+    if ! index_exists "verla_sessions" "idx_quota_ledger_id"; then
+      echo "Applying verla_sessions quota_ledger_id index patch"
+      apply_verla_sessions_quota_ledger_id_index
+    fi
+  else
+    echo "WARN: verla_sessions table does not exist; skip Verla quota patch. Apply sql/026_V2_verla_schema.sql first." >&2
+  fi
+
+  if table_exists "humanizer_tasks"; then
+    if ! column_exists "humanizer_tasks" "quota_ledger_id"; then
+      echo "Applying humanizer_tasks quota_ledger_id patch"
+      apply_humanizer_tasks_quota_ledger_id_column
+    fi
+    if ! column_exists "humanizer_tasks" "total_words"; then
+      echo "Applying humanizer_tasks total_words patch"
+      apply_humanizer_tasks_total_words_column
+    fi
+    if ! column_exists "humanizer_tasks" "consumed_words"; then
+      echo "Applying humanizer_tasks consumed_words patch"
+      apply_humanizer_tasks_consumed_words_column
+    fi
+  fi
+
+  if table_exists "verla_conversations"; then
+    if ! table_exists "verla_editor_contents" || ! table_exists "verla_editor_content_versions"; then
+      echo "Applying Verla editor content storage patch"
+      apply_sql_file "${SCRIPT_DIR}/sql/043_conversation_based_editor_storage.sql"
+    fi
+    if ! table_exists "verla_editor_previews"; then
+      echo "Applying Verla editor previews patch"
+      apply_sql_file "${SCRIPT_DIR}/sql/051_editor_previews.sql"
+    fi
+  else
+    echo "WARN: verla_conversations table does not exist; skip Verla editor storage patches. Apply sql/026_V2_verla_schema.sql first." >&2
+  fi
+
+  if ! table_exists "verla_workforce_tasks" || ! table_exists "verla_workforce_task_outputs"; then
+    echo "Applying Verla workforce task tables patch"
+    apply_sql_file "${SCRIPT_DIR}/sql/047_verla_workforce_tasks.sql"
+  fi
+
+  if table_exists "verla_workforce_tasks"; then
+    if [[ "$(column_value "verla_workforce_tasks" "task_agent" "DATA_TYPE")" != "text" ]] \
+      || [[ "$(column_value "verla_workforce_tasks" "task_name" "CHARACTER_MAXIMUM_LENGTH")" != "512" ]]; then
+      echo "Applying Verla workforce task_agent width patch"
+      apply_sql_file "${SCRIPT_DIR}/sql/049_verla_workforce_tasks_widen_task_agent.sql"
+    fi
+    if ! column_exists "verla_workforce_tasks" "compose_current_round"; then
+      echo "Applying Verla workforce compose_current_round patch"
+      apply_verla_workforce_tasks_compose_current_round_column
+    fi
+    if ! column_exists "verla_workforce_tasks" "compose_total_rounds"; then
+      echo "Applying Verla workforce compose_total_rounds patch"
+      apply_verla_workforce_tasks_compose_total_rounds_column
+    fi
+    if [[ "$(column_value "verla_workforce_tasks" "node_kind" "COLUMN_COMMENT")" != *compose* ]]; then
+      echo "Applying Verla workforce node_kind comment patch"
+      apply_verla_workforce_tasks_node_kind_comment
+    fi
+  fi
+
+  if table_exists "verla_tool_calls" && ! column_exists "verla_tool_calls" "node_id"; then
+    echo "Applying verla_tool_calls node_id patch"
+    apply_sql_file "${SCRIPT_DIR}/sql/048_verla_tool_calls_add_node_id.sql"
   fi
 
   if ! table_exists "mq_outbox"; then

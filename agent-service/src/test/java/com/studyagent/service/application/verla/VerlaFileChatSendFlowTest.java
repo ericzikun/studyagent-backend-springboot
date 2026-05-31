@@ -304,7 +304,10 @@ class VerlaFileChatSendFlowTest {
                 CONVERSATION_ID,
                 "obj_123",
                 "先帮我提取格式要求。");
-        assertThat(mqOutboxService.lastEnvelope.getPayload()).containsOnlyKeys("objectId", "message", "contextRef");
+        assertThat(mqOutboxService.lastEnvelope.getPayload())
+                .containsOnlyKeys("objectId", "message", "userMessageId", "contextRef");
+        assertThat(mqOutboxService.lastEnvelope.getPayload().get("userMessageId"))
+                .isEqualTo(result.getUserMessageId());
 
         orchestrator.onFileChatCompleted(result.getAgentSessionId(), Map.of(
                 "objectId", "obj_123",
@@ -643,6 +646,9 @@ class VerlaFileChatSendFlowTest {
                     .filter(message -> {
                         com.studyagent.service.application.verla.dto.FileChatMessageMeta meta =
                                 VerlaFileChatMetadataHelper.readMessageMeta(message.getMetaJson());
+                        if (meta == null) {
+                            return false;
+                        }
                         return com.studyagent.service.application.verla.dto.FileChatMessageMeta.SCENE_FILE_CHAT.equals(meta.getScene())
                                 && objectId.equals(meta.getObjectId());
                     })

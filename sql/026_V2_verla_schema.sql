@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS verla_messages (
     id                  BIGINT       NOT NULL AUTO_INCREMENT,
     conversation_id     BIGINT       NOT NULL,
     turn_id             BIGINT       NOT NULL,
-    role                VARCHAR(16)  NOT NULL                   COMMENT 'user / assistant / system',
+    role                VARCHAR(16)  NOT NULL                   COMMENT 'user / assistant / system / agent_workforce',
     source_session_id   BIGINT       DEFAULT NULL               COMMENT 'assistant 消息的来源 session（plan/agent）',
     text_content        TEXT         DEFAULT NULL,
     blocks_json         JSON         DEFAULT NULL               COMMENT '卡片 / block 数组（见 §22.2）',

@@ -265,7 +265,7 @@ public class AssignmentRuntimeProgressEstimator {
                 if (node == null) {
                     continue;
                 }
-                if (!"assignment-plan".equals(String.valueOf(node.get("id")))) {
+                if (!isPlanNode(node)) {
                     continue;
                 }
                 Object label = firstPresent(node, "taskName", "title", "summary", "subtitle");
@@ -275,6 +275,24 @@ public class AssignmentRuntimeProgressEstimator {
             }
         }
         return "Make plan";
+    }
+
+    /** 判断 foldAgentNodes 折叠后的节点是否为 plan 节点（优先 nodeType，兜底 id）。 */
+    private boolean isPlanNode(Map<String, Object> node) {
+        Object nodeType = node.get("nodeType");
+        if (nodeType instanceof String t && !t.isBlank()) {
+            return "plan".equalsIgnoreCase(t);
+        }
+        return "assignment-plan".equals(String.valueOf(node.get("id")));
+    }
+
+    /** 判断 foldAgentNodes 折叠后的节点是否为 compose 进度节点（优先 nodeType，兜底 id）。 */
+    private boolean isComposeNode(Map<String, Object> node) {
+        Object nodeType = node.get("nodeType");
+        if (nodeType instanceof String t && !t.isBlank()) {
+            return "compose".equalsIgnoreCase(t);
+        }
+        return "compose-progress".equals(String.valueOf(node.get("id")));
     }
 
     AssignmentRuntimeProgressEstimate estimateFromWorkforceSnapshot(
@@ -290,7 +308,8 @@ public class AssignmentRuntimeProgressEstimator {
         int completed = workforce.completedTaskCount();
         int running = workforce.activeTaskCount();
         Integer composeTotalRounds = workforce.composeTotalRounds();
-        Integer composeCurrentRound = null;
+        // composeCurrentRound 优先从 DB snapshot（compose 行）读取，再降级到 foldAgentNodes
+        Integer composeCurrentRound = workforce.composeCurrentRound();
         Integer effectiveComposeTotalRounds = composeTotalRounds;
         double percent;
 
@@ -301,7 +320,9 @@ public class AssignmentRuntimeProgressEstimator {
             percent = Math.min(WORKFORCE_PHASE_WEIGHT_PERCENT, (weighted / total) * WORKFORCE_PHASE_WEIGHT_PERCENT);
         } else {
             int composeTotal = resolveComposeTotalRounds(recentEvents, composeTotalRounds);
-            composeCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
+            if (composeCurrentRound == null) {
+                composeCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
+            }
             if (composeTotal > 0) {
                 effectiveComposeTotalRounds = composeTotal;
                 percent = WORKFORCE_PHASE_WEIGHT_PERCENT
@@ -360,12 +381,24 @@ public class AssignmentRuntimeProgressEstimator {
     private int resolveComposeTotalRounds(
             List<VerlaEventInbox> recentEvents,
             Integer workforceComposeTotalRounds) {
+        // 优先：compose-progress 节点携带的显式 composeTotalRounds 字段
+        int fromExplicitField = 0;
         int parsedFromTitle = 0;
         for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+            if (isComposeNode(node) || isPlanNode(node)) {
+                Object raw = node.get("composeTotalRounds");
+                if (raw instanceof Number n && n.intValue() > 0) {
+                    fromExplicitField = Math.max(fromExplicitField, n.intValue());
+                }
+            }
+            // 兜底：从标题 regex 解析（旧版 Python 兼容）
             Integer parsed = parseComposePartTitle(node).map(ComposePartProgress::total).orElse(null);
             if (parsed != null && parsed > 0) {
                 parsedFromTitle = Math.max(parsedFromTitle, parsed);
             }
+        }
+        if (fromExplicitField > 0) {
+            return fromExplicitField;
         }
         if (parsedFromTitle > 0) {
             return parsedFromTitle;
@@ -382,6 +415,14 @@ public class AssignmentRuntimeProgressEstimator {
         }
         int maxCurrent = 0;
         for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+            // 优先：compose-progress 节点的显式 composeCurrentRound 字段
+            if (isComposeNode(node)) {
+                Object raw = node.get("composeCurrentRound");
+                if (raw instanceof Number n && n.intValue() > 0) {
+                    maxCurrent = Math.max(maxCurrent, Math.min(n.intValue(), composeTotalRounds));
+                }
+            }
+            // 兜底：从标题 regex 解析（旧版 Python 兼容）
             java.util.Optional<ComposePartProgress> parsed = parseComposePartTitle(node);
             if (parsed.isPresent()) {
                 maxCurrent = Math.max(maxCurrent, Math.min(parsed.get().current(), composeTotalRounds));
@@ -424,9 +465,7 @@ public class AssignmentRuntimeProgressEstimator {
                 if (task == null || !"task".equalsIgnoreCase(task.getNodeKind())) {
                     continue;
                 }
-                if (task.getNodeId() == null || !task.getNodeId().startsWith("task-")) {
-                    continue;
-                }
+                // nodeKind=="task" 已由 handler 保证，无需再做 id 前缀检查
                 if ("running".equals(normalizeNodeStatus(task.getStatus()))
                         && task.getTaskName() != null
                         && !task.getTaskName().isBlank()) {

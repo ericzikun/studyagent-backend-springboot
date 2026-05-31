@@ -646,6 +646,9 @@ class VerlaFileChatSendFlowTest {
                     .filter(message -> {
                         com.studyagent.service.application.verla.dto.FileChatMessageMeta meta =
                                 VerlaFileChatMetadataHelper.readMessageMeta(message.getMetaJson());
+                        if (meta == null) {
+                            return false;
+                        }
                         return com.studyagent.service.application.verla.dto.FileChatMessageMeta.SCENE_FILE_CHAT.equals(meta.getScene())
                                 && objectId.equals(meta.getObjectId());
                     })

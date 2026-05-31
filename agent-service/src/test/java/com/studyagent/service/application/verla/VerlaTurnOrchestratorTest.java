@@ -3,6 +3,9 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
+import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -52,7 +55,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopVerlaQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -101,7 +104,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopVerlaQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -141,7 +144,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                null);
+                new NoopVerlaQuotaService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -193,7 +196,7 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 mqOutboxService,
                 objectMapper,
-                null);
+                new NoopVerlaQuotaService());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -443,6 +446,32 @@ class VerlaTurnOrchestratorTest {
         @Override
         public com.studyagent.service.domain.verla.VerlaAttachment updateByObjectIdSelective(com.studyagent.service.domain.verla.VerlaAttachment patch) {
             return patch;
+        }
+    }
+
+    private static final class NoopVerlaQuotaService implements VerlaQuotaService {
+        @Override
+        public VerlaQuotaConsumeResult consumeForAssignmentRun(VerlaQuotaContext ctx) {
+            return null;
+        }
+
+        @Override
+        public VerlaQuotaConsumeResult consumeForDetection(VerlaQuotaContext ctx, String text) {
+            return null;
+        }
+
+        @Override
+        public VerlaQuotaConsumeResult consumeForHumanizer(VerlaQuotaContext ctx, String text) {
+            return null;
+        }
+
+        @Override
+        public void refundBySessionId(Long sessionId, String reason) {
+        }
+
+        @Override
+        public boolean isQuotaExempt(String clerkUserId) {
+            return true;
         }
     }
 

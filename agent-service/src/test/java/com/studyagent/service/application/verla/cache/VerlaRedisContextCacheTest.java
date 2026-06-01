@@ -8,6 +8,7 @@ import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -358,6 +359,26 @@ class VerlaRedisContextCacheTest {
                 .withBean(RedisConnectionFactory.class, () -> mock(RedisConnectionFactory.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(StringRedisTemplate.class);
+                    assertThat(context).hasSingleBean(VerlaRedisContextCache.class);
+                });
+    }
+
+    @Test
+    void shouldCreateVerlaRedisBeansWhenBootRedisAutoConfigProvidesConnectionFactory() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        ConfigurationPropertiesAutoConfiguration.class,
+                        RedisAutoConfiguration.class))
+                .withBean(VerlaContextCacheProperties.class)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withUserConfiguration(VerlaRedisCacheConfig.class)
+                .withPropertyValues(
+                        "verla.context-cache.redis-enabled=true",
+                        "spring.data.redis.host=127.0.0.1",
+                        "spring.data.redis.port=6379")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(RedisConnectionFactory.class);
                     assertThat(context).hasSingleBean(StringRedisTemplate.class);
                     assertThat(context).hasSingleBean(VerlaRedisContextCache.class);
                 });

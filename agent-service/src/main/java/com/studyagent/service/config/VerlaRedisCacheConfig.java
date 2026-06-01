@@ -33,7 +33,6 @@ public class VerlaRedisCacheConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "verla.context-cache", name = "redis-enabled", havingValue = "true")
-    @ConditionalOnBean(RedisConnectionFactory.class)
     @ConditionalOnMissingBean
     StringRedisTemplate verlaStringRedisTemplate(RedisConnectionFactory connectionFactory) {
         return new StringRedisTemplate(connectionFactory);
@@ -41,7 +40,6 @@ public class VerlaRedisCacheConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "verla.context-cache", name = "redis-enabled", havingValue = "true")
-    @ConditionalOnBean(StringRedisTemplate.class)
     @ConditionalOnMissingBean
     VerlaRedisContextCache verlaRedisContextCache(StringRedisTemplate redisTemplate,
                                                   VerlaCacheJsonCodec codec,

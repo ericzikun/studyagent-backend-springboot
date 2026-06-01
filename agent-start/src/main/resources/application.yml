@@ -312,13 +312,13 @@ verla:
   context-cache:
     redis-enabled: false
     key-prefix: verla:v1
-    conv-summary-ttl: 60s
-    messages-recent-ttl: 60s
-    messages-history-ttl: 10m
+    conv-summary-ttl: 10m
+    messages-recent-ttl: 10m
+    messages-history-ttl: 30m
     turn-meta-ttl: 30s
-    sess-meta-ttl: 10s
-    session-running-ttl: 10s
-    session-terminal-ttl: 300s
+    sess-meta-ttl: 30s
+    session-running-ttl: 30s
+    session-terminal-ttl: 10m
     upstream-sessions-ttl: 30s
     block-responses-ttl: 120s
     negative-ttl: 20s

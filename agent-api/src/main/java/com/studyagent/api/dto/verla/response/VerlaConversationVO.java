@@ -33,6 +33,10 @@ public class VerlaConversationVO {
     private LocalDateTime createdAt;
     /** 编辑器预览图列表，按固定 kind 顺序排列 (document / code / slides) */
     private List<EditorPreviewItem> editorPreviews;
+    /** 该 assignment conversation 可展示的产物类型集合（document / slides / code），
+     *  由后端根据 artifacts 实时推导，不依赖截图链路。
+     *  非 assignment conversation 返回空数组或不返回该字段。 */
+    private List<String> artifactPreviewKinds;
 
     public static VerlaConversationVO from(VerlaConversation c) {
         return from(c, null);

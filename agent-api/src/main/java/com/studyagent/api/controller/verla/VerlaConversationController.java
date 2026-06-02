@@ -18,6 +18,8 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.infra.entity.verla.VerlaEditorPreviewEntity;
+import com.studyagent.infra.entity.verla.VerlaArtifactEntity;
+import com.studyagent.infra.mapper.verla.VerlaArtifactMapper;
 import com.studyagent.service.application.verla.AssignmentRuntimeSnapshotService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
@@ -47,6 +49,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -67,6 +70,7 @@ public class VerlaConversationController {
     private final VerlaConversationService conversationService;
     private final VerlaConversationDashboardStatusService dashboardStatusService;
     private final VerlaEditorPreviewService previewService;
+    private final VerlaArtifactMapper artifactMapper;
     private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final ObjectMapper objectMapper;
@@ -125,6 +129,41 @@ public class VerlaConversationController {
                                 p.getEditorKind(), p.getPreviewUrl(), p.getUpdatedAt()))
                         .collect(Collectors.toList());
                 vo.setEditorPreviews(items);
+            }
+        }
+
+        // Attach artifact preview kinds — derive from artifact kinds per conversation
+        if (!conversationIds.isEmpty()) {
+            List<VerlaArtifactEntity> artifacts = artifactMapper.selectByConversationIds(conversationIds);
+            Map<Long, List<VerlaArtifactEntity>> artifactsByConv = artifacts.stream()
+                    .collect(Collectors.groupingBy(VerlaArtifactEntity::getConversationId));
+            for (VerlaConversationVO vo : pageVO.getRecords()) {
+                if (!shouldExposeAssignmentPreviewKinds(vo)) {
+                    vo.setArtifactPreviewKinds(null);
+                    continue;
+                }
+                List<VerlaArtifactEntity> convArtifacts = artifactsByConv.getOrDefault(
+                        vo.getConversationId(), List.of());
+                List<VerlaArtifactEntity> previewSourceArtifacts = pickPreviewSourceArtifacts(
+                        convArtifacts,
+                        vo.getLastTurnId());
+                LinkedHashSet<String> kinds = new LinkedHashSet<>();
+                for (VerlaArtifactEntity a : previewSourceArtifacts) {
+                    if (!isRenderablePreviewArtifact(a)) {
+                        continue;
+                    }
+                    String mapped = mapArtifactKindToPreviewKind(a.getKind());
+                    if (mapped != null) {
+                        kinds.add(mapped);
+                    }
+                }
+                List<String> sorted = new ArrayList<>();
+                for (String orderKind : ARTIFACT_PREVIEW_KIND_ORDER) {
+                    if (kinds.contains(orderKind)) {
+                        sorted.add(orderKind);
+                    }
+                }
+                vo.setArtifactPreviewKinds(sorted.isEmpty() ? null : sorted);
             }
         }
 
@@ -313,10 +352,71 @@ public class VerlaConversationController {
     // ========================================================
     // helper
     // ========================================================
+    private static final List<String> ARTIFACT_PREVIEW_KIND_ORDER = List.of("document", "slides", "code");
+    private static final List<String> ASSIGNMENT_PREVIEW_INTENTS = List.of("ASSIGNMENT", "CREATE_ASSIGNMENT");
+
     private void ensureLogin(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
         }
+    }
+
+    private static boolean shouldExposeAssignmentPreviewKinds(VerlaConversationVO vo) {
+        if (vo == null || vo.isDraft()) {
+            return false;
+        }
+        String intent = vo.getPrimaryIntent();
+        if (intent == null || intent.isBlank()) {
+            return false;
+        }
+        String normalized = intent.trim().toUpperCase(Locale.ROOT);
+        return ASSIGNMENT_PREVIEW_INTENTS.contains(normalized);
+    }
+
+    private static List<VerlaArtifactEntity> pickPreviewSourceArtifacts(
+            List<VerlaArtifactEntity> artifacts,
+            Long lastTurnId) {
+        if (artifacts == null || artifacts.isEmpty()) {
+            return List.of();
+        }
+        if (lastTurnId == null) {
+            return artifacts;
+        }
+        List<VerlaArtifactEntity> latestTurnArtifacts = artifacts.stream()
+                .filter(a -> lastTurnId.equals(a.getTurnId()))
+                .collect(Collectors.toList());
+        return latestTurnArtifacts.isEmpty() ? artifacts : latestTurnArtifacts;
+    }
+
+    private static boolean isRenderablePreviewArtifact(VerlaArtifactEntity artifact) {
+        if (artifact == null) {
+            return false;
+        }
+        String bodyOrRef = artifact.getBodyOrRef();
+        if (bodyOrRef == null || bodyOrRef.isBlank()) {
+            return false;
+        }
+        String status = artifact.getStatus();
+        if (status == null || status.isBlank()) {
+            return true;
+        }
+        String normalized = status.trim().toUpperCase(Locale.ROOT);
+        return "READY".equals(normalized) || "COMPLETED".equals(normalized);
+    }
+
+    /**
+     * 将 artifact kind 映射为 Dashboard 预览类型（document / slides / code），
+     * 非目标类型返回 null。与前端 {@code mapArtifactKind} 保持一致。
+     */
+    private static String mapArtifactKindToPreviewKind(String artifactKind) {
+        if (artifactKind == null) return null;
+        String k = artifactKind.toLowerCase();
+        if (k.contains("slides_editor_json")) return "slides";
+        if (k.contains("slides_pptxgenjs")) return null;
+        if (k.contains("code") || k.endsWith(".py")) return "code";
+        if (k.contains("document_md") || k.contains("assignment")
+                || k.contains("document") || k.contains("markdown") || k.contains("card")) return "document";
+        return null;
     }
 
     /**

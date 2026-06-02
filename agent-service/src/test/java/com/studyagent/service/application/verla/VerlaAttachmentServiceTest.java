@@ -148,6 +148,36 @@ class VerlaAttachmentServiceTest {
     }
 
     @Test
+    void listByConversation_hides_document_editor_image_attachments_from_user_views() {
+        attachmentRepository.conversationAttachments = List.of(
+                VerlaAttachment.builder()
+                        .objectId("att_user")
+                        .conversationId(74L)
+                        .userId(USER_ID)
+                        .filename("assignment.pdf")
+                        .mime("application/pdf")
+                        .sizeBytes(8L)
+                        .status("PARSED")
+                        .attachmentOrigin("USER_UPLOAD")
+                        .build(),
+                VerlaAttachment.builder()
+                        .objectId("att_doc_image")
+                        .conversationId(74L)
+                        .userId(USER_ID)
+                        .filename("inline-image.png")
+                        .mime("image/png")
+                        .sizeBytes(12L)
+                        .status("PARSED")
+                        .attachmentOrigin("DOCUMENT_EDITOR_IMAGE")
+                        .build());
+
+        List<VerlaAttachment> attachments = service.listByConversation(USER_ID, 74L, 50);
+
+        assertEquals(1, attachments.size());
+        assertEquals("att_user", attachments.get(0).getObjectId());
+    }
+
+    @Test
     void upload_content_writes_local_file_when_oss_is_unavailable() throws Exception {
         VerlaUploadSignResult result = service.requestSign(
                 USER_ID, 74L, "brief.txt", "text/plain", 5L, null, null, null, null);

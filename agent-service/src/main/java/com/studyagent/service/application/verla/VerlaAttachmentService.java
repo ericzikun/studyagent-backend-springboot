@@ -529,6 +529,7 @@ public class VerlaAttachmentService {
                 attachment.getAttachmentOrigin(),
                 VerlaAttachment.ORIGIN_USER_UPLOAD);
         return !VerlaAttachment.ORIGIN_AGENT_OUTPUT.equalsIgnoreCase(normalizedOrigin)
+                && !ORIGIN_DOC_EDITOR_IMAGE.equalsIgnoreCase(normalizedOrigin)
                 && !ORIGIN_EDITOR_PREVIEW_IMAGE.equalsIgnoreCase(normalizedOrigin);
     }
 

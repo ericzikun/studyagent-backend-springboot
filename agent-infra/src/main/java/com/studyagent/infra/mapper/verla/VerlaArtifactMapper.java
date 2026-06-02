@@ -19,4 +19,13 @@ public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
 
     @Select("SELECT * FROM verla_artifacts WHERE artifact_uid = #{uid} LIMIT 1")
     VerlaArtifactEntity selectByUid(@Param("uid") String artifactUid);
+
+    @Select("<script>" +
+            "SELECT * FROM verla_artifacts " +
+            "WHERE conversation_id IN " +
+            "<foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>" +
+            " ORDER BY updated_at DESC" +
+            "</script>")
+    List<VerlaArtifactEntity> selectByConversationIds(
+            @Param("conversationIds") List<Long> conversationIds);
 }

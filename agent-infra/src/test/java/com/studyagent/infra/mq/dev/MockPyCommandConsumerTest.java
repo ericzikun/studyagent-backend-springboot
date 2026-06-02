@@ -60,7 +60,7 @@ class MockPyCommandConsumerTest {
 
     @Test
     void assignmentDefaultInitCompletedPayload_stopsAtInitialChoiceMoment() {
-        Map<String, Object> payload = MockPyCommandConsumer.assignmentDefaultInitCompletedPayload();
+        Map<String, Object> payload = MockPyAssignmentFixtures.defaultInitCompletedPayload();
 
         assertThat(payload).containsEntry("ready", true);
         assertThat(payload).containsEntry("isReadyForGeneration", false);
@@ -73,7 +73,7 @@ class MockPyCommandConsumerTest {
 
     @Test
     void buildMockRequirementForm_includesThreeAssignmentTypeOptions() {
-        Map<String, Object> form = MockPyCommandConsumer.buildMockRequirementForm();
+        Map<String, Object> form = MockPyAssignmentFixtures.buildRequirementForm();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> schema = (List<Map<String, Object>>) form.get("schema");
 
@@ -88,7 +88,7 @@ class MockPyCommandConsumerTest {
 
     @Test
     void assignmentFastTextChunks_coverHighFrequencyPureTextFixture() {
-        var chunks = MockPyCommandConsumer.assignmentFastTextChunks();
+        var chunks = MockPyAssignmentFixtures.fastTextChunks();
         String visibleText = String.join("", chunks);
 
         assertThat(chunks).hasSizeGreaterThan(80);
@@ -102,29 +102,62 @@ class MockPyCommandConsumerTest {
 
     @Test
     void assignmentRunVisibleChunks_coverStreamSmoothingFixtures() {
-        var chunks = MockPyCommandConsumer.assignmentRunVisibleChunks();
+        var chunks = MockPyAssignmentFixtures.runVisibleChunks();
         String visibleText = String.join("", chunks);
 
         assertThat(chunks).hasSizeGreaterThanOrEqualTo(8);
         assertThat(visibleText).contains("## What I’m checking");
         assertThat(visibleText).contains("| Area | What I will verify |");
         assertThat(visibleText).contains("```text");
-        assertThat(MockPyCommandConsumer.assignmentRunStreamDelayMs(0))
+        assertThat(MockPyAssignmentFixtures.runStreamDelayMs(0))
                 .isEqualTo(1200L);
-        assertThat(MockPyCommandConsumer.assignmentRunStreamDelayMs(chunks.size() - 1))
+        assertThat(MockPyAssignmentFixtures.runStreamDelayMs(chunks.size() - 1))
                 .isEqualTo(6400L);
     }
 
     @Test
     void assignmentInitScenarioCompletionDelay_waitsForLastChunk() {
-        long delayMs = MockPyCommandConsumer.assignmentInitScenarioCompletionDelay(100, 120, 25, 220);
+        long delayMs = MockPyAssignmentFixtures.initScenarioCompletionDelay(100, 120, 25, 220);
 
         assertThat(delayMs).isEqualTo(2815L);
     }
 
     @Test
+    void assignmentThinkingChunks_useRequirementAnalysisCaseFixture() {
+        var chunks = MockPyAssignmentFixtures.initThinkingChunks();
+        String thinking = String.join("", chunks);
+
+        assertThat(chunks).hasSizeGreaterThanOrEqualTo(10);
+        assertThat(thinking)
+                .contains("Thinking Process:")
+                .contains("Requirement Analysis Agent")
+                .contains("deep-research-report.md")
+                .contains("Kimi K2.6")
+                .contains("no specific assignment task")
+                .contains("not specified");
+        assertThat(chunks.get(chunks.size() - 1))
+                .contains("The uploaded file contains a comprehensive deep research report");
+    }
+
+    @Test
+    void assignmentDefaultInitTiming_completesAfterThinkingAndContentChunks() {
+        var thinkingChunks = MockPyAssignmentFixtures.initThinkingChunks();
+        int contentChunkCount = 2;
+        MockPyCommandConsumer.AssignmentInitTiming timing =
+                MockPyCommandConsumer.defaultAssignmentInitTiming(thinkingChunks.size(), contentChunkCount);
+
+        long lastThinkingDelayMs = timing.thinkingFirstDelayMs()
+                + (thinkingChunks.size() - 1L) * timing.thinkingIntervalMs();
+        long lastContentDelayMs = timing.contentFirstDelayMs()
+                + (contentChunkCount - 1L) * timing.contentIntervalMs();
+
+        assertThat(timing.contentFirstDelayMs()).isGreaterThan(lastThinkingDelayMs);
+        assertThat(timing.completedDelayMs()).isGreaterThan(lastContentDelayMs);
+    }
+
+    @Test
     void assignmentGeneratedArtifactBody_matchesRichAssignmentTopic() {
-        String body = MockPyCommandConsumer.assignmentGeneratedArtifactBody();
+        String body = MockPyAssignmentFixtures.generatedArtifactBody();
 
         assertThat(body).contains("# Revise Case Study on Indigenous Australian Business Protocols");
         assertThat(body).contains("| Section | Revision Goal | Evidence Needed |");
@@ -134,7 +167,7 @@ class MockPyCommandConsumerTest {
     @Test
     void assignmentGeneratedArtifacts_coverEditableDocumentSlidesAndCode() {
         List<Map<String, Object>> artifacts =
-                MockPyCommandConsumer.assignmentGeneratedArtifacts("assignment", "test1234");
+                MockPyAssignmentFixtures.generatedArtifacts("assignment", "test1234");
 
         assertThat(artifacts)
                 .extracting(artifact -> artifact.get("kind"))
@@ -160,7 +193,7 @@ class MockPyCommandConsumerTest {
 
     @Test
     void assignmentNodeDetailPayload_matchesWorkflowDetailContract() {
-        Map<String, Object> payload = MockPyCommandConsumer.assignmentNodeDetailPayload(
+        Map<String, Object> payload = MockPyAssignmentFixtures.nodeDetailPayload(
                 "draft-writer",
                 "Draft Writer",
                 "Writing",

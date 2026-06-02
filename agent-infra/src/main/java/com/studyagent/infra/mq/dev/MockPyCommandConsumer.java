@@ -5,15 +5,10 @@ import com.rabbitmq.client.Channel;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
-import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
-import com.studyagent.common.verla.envelope.VerlaProducerInfo;
-import com.studyagent.common.verla.util.VerlaRoutingKey;
-import com.studyagent.common.verla.util.VerlaShardCalculator;
 import com.studyagent.infra.mq.VerlaRabbitConfig;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -59,7 +54,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *                             (150ms)  AGENT_CLARIFY_FORM_ISSUED { formId, schema }
  *                             (250ms)  PLAN_NEEDS_CLARIFY { question }
  * cmd.assignment.init  ──► (50ms)   ASSIGNMENT_INIT_STARTED
- *                          (200ms)  ASSIGNMENT_INIT_STREAM_CHUNK
+ *                          (120ms)  ASSIGNMENT_INIT_STREAM_CHUNK { channel=thinking }
+ *                          (200ms)  ASSIGNMENT_INIT_STREAM_CHUNK { channel=content }
  *                          (600ms)  ASSIGNMENT_INIT_COMPLETED { requirementUnderstanding, ready=true }
  * cmd.assignment.deep_understanding
  *                    ──► (50ms)   ASSIGNMENT_DEEP_UNDERSTANDING_STARTED
@@ -98,28 +94,23 @@ import java.util.concurrent.atomic.AtomicLong;
 @ConditionalOnProperty(name = "verla.mq.mock.enabled", havingValue = "true", matchIfMissing = false)
 public class MockPyCommandConsumer {
 
-    private static final String PRODUCER_SERVICE = "py-mock";
-    private static final long ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS = 1200L;
-    private static final long ASSIGNMENT_RUN_STREAM_INTERVAL_MS = 650L;
     private static final long ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS = 1000L;
     private static final long ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS = 120L;
     private static final long ASSIGNMENT_RUN_COMPLETION_SETTLE_MS = 1600L;
-    private static final String ASSIGNMENT_STREAM_SCENARIO_DEFAULT = "default";
-    private static final String ASSIGNMENT_STREAM_SCENARIO_FAST = "fast";
-    private static final String ASSIGNMENT_STREAM_SCENARIO_MIXED = "mixed";
     private static final long ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS = 120L;
     private static final long ASSIGNMENT_INIT_FAST_INTERVAL_MS = 25L;
     private static final long ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS = 220L;
     private static final long ASSIGNMENT_INIT_MIXED_INTERVAL_MS = 260L;
     private static final long ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS = 320L;
-    private static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
+    private static final long ASSIGNMENT_INIT_THINKING_FIRST_DELAY_MS = 120L;
+    private static final long ASSIGNMENT_INIT_THINKING_INTERVAL_MS = 60L;
+    private static final long ASSIGNMENT_INIT_THINKING_TO_CONTENT_SETTLE_MS = 140L;
+    private static final long ASSIGNMENT_INIT_CONTENT_INTERVAL_MS = 200L;
+    private static final long ASSIGNMENT_INIT_COMPLETION_SETTLE_MS = 250L;
 
     private final ObjectMapper objectMapper;
-    private final RabbitTemplate rabbitTemplate;
-    private final VerlaRabbitConfig rabbitConfig;
+    private final MockPyEventPublisher eventPublisher;
     private final ScheduledExecutorService scheduler;
-    /** 按 sessionId 维护事件 seq，保证同 session 内单调递增 */
-    private final ConcurrentHashMap<Long, AtomicLong> sessionSeq = new ConcurrentHashMap<>();
     /** 按 turn 记录 deep understanding 轮次，用来模拟“多轮后可开始生成”的 composer 按钮信号。 */
     private final ConcurrentHashMap<Long, AtomicLong> assignmentDeepUnderstandingRounds = new ConcurrentHashMap<>();
     private final String instanceId;
@@ -133,14 +124,13 @@ public class MockPyCommandConsumer {
                                  @Value("${verla.mq.mock.delay-base-ms:50}") long delayBaseMs,
                                  @Value("${verla.mq.mock.clarify-rate:30}") int clarifyRate) {
         this.objectMapper = objectMapper;
-        this.rabbitTemplate = rabbitTemplate;
-        this.rabbitConfig = rabbitConfig;
         this.scheduler = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "verla-mock-event-scheduler");
             t.setDaemon(true);
             return t;
         });
         this.instanceId = "local-" + Long.toHexString(System.nanoTime() & 0xffffffL);
+        this.eventPublisher = new MockPyEventPublisher(objectMapper, rabbitTemplate, rabbitConfig, instanceId);
         this.clarifyRate = Math.max(0, Math.min(100, clarifyRate));
         log.info("[MockPy] enabled, instanceId={}, delayBaseMs={}, clarifyRate={}%",
                 instanceId, delayBaseMs, this.clarifyRate);
@@ -404,16 +394,16 @@ public class MockPyCommandConsumer {
      */
     private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
         String scenario = resolveAssignmentStreamScenario(assignmentUserText(cmd));
-        if (ASSIGNMENT_STREAM_SCENARIO_FAST.equals(scenario)) {
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_FAST.equals(scenario)) {
             scheduleAssignmentInitScenarioResponse(cmd, scenario,
-                    assignmentFastTextChunks(),
+                    MockPyAssignmentFixtures.fastTextChunks(),
                     ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS,
                     ASSIGNMENT_INIT_FAST_INTERVAL_MS,
                     ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS);
             return;
         }
-        if (ASSIGNMENT_STREAM_SCENARIO_MIXED.equals(scenario)) {
-            scheduleAssignmentInitScenarioResponse(cmd, scenario, assignmentRunVisibleChunks(),
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_MIXED.equals(scenario)) {
+            scheduleAssignmentInitScenarioResponse(cmd, scenario, MockPyAssignmentFixtures.runVisibleChunks(),
                     160L, ASSIGNMENT_INIT_MIXED_INTERVAL_MS, ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS);
             return;
         }
@@ -423,15 +413,57 @@ public class MockPyCommandConsumer {
         started.put("stage", "stage_0");
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STARTED, started, 50);
 
-        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
-                List.of(
-                        "Reading the assignment brief and extracting the core requirements...\n",
-                        "I found the topic, expected output, and the constraints that still need confirmation.\n"),
+        List<String> thinkingChunks = MockPyAssignmentFixtures.initThinkingChunks();
+        List<String> contentChunks = List.of(
+                "Reading the assignment brief and extracting the core requirements...\n",
+                "I found the topic, expected output, and the constraints that still need confirmation.\n");
+        AssignmentInitTiming timing = defaultAssignmentInitTiming(thinkingChunks.size(), contentChunks.size());
+        // Any stream chunk maps to a running turn on the frontend. Keep completed
+        // last so late thinking chunks cannot overwrite the ready choice state.
+        scheduleAssignmentThinkingChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                thinkingChunks,
                 null,
-                200);
+                timing.thinkingFirstDelayMs(),
+                timing.thinkingIntervalMs());
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                contentChunks,
+                null,
+                timing.contentFirstDelayMs(),
+                timing.contentIntervalMs());
 
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
-                assignmentDefaultInitCompletedPayload(), 650);
+                MockPyAssignmentFixtures.defaultInitCompletedPayload(), timing.completedDelayMs());
+    }
+
+    static AssignmentInitTiming defaultAssignmentInitTiming(int thinkingChunkCount, int contentChunkCount) {
+        long thinkingLastDelayMs = lastScheduledChunkDelayMs(
+                thinkingChunkCount,
+                ASSIGNMENT_INIT_THINKING_FIRST_DELAY_MS,
+                ASSIGNMENT_INIT_THINKING_INTERVAL_MS);
+        long contentFirstDelayMs = thinkingLastDelayMs + ASSIGNMENT_INIT_THINKING_TO_CONTENT_SETTLE_MS;
+        long contentLastDelayMs = lastScheduledChunkDelayMs(
+                contentChunkCount,
+                contentFirstDelayMs,
+                ASSIGNMENT_INIT_CONTENT_INTERVAL_MS);
+        return new AssignmentInitTiming(
+                ASSIGNMENT_INIT_THINKING_FIRST_DELAY_MS,
+                ASSIGNMENT_INIT_THINKING_INTERVAL_MS,
+                contentFirstDelayMs,
+                ASSIGNMENT_INIT_CONTENT_INTERVAL_MS,
+                contentLastDelayMs + ASSIGNMENT_INIT_COMPLETION_SETTLE_MS);
+    }
+
+    private static long lastScheduledChunkDelayMs(int chunkCount, long firstDelayMs, long intervalMs) {
+        return firstDelayMs + Math.max(0, chunkCount - 1L) * intervalMs;
+    }
+
+    record AssignmentInitTiming(
+            long thinkingFirstDelayMs,
+            long thinkingIntervalMs,
+            long contentFirstDelayMs,
+            long contentIntervalMs,
+            long completedDelayMs) {
     }
 
     private void scheduleAssignmentInitScenarioResponse(VerlaCommandEnvelope cmd,
@@ -464,7 +496,7 @@ public class MockPyCommandConsumer {
                 "outputType", scenario,
                 "nextStep", "inspect visible stream pacing and card reveal"));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED, done,
-                assignmentInitScenarioCompletionDelay(
+                MockPyAssignmentFixtures.initScenarioCompletionDelay(
                         chunks.size(),
                         firstChunkDelayMs,
                         chunkIntervalMs,
@@ -495,7 +527,7 @@ public class MockPyCommandConsumer {
             done.put("summary", "[Mock] Clarifying form ready");
             done.put("ready", true);
             done.put("nextActions", assignmentDeepUnderstandingNextActions(true, false));
-            done.put("requirementForm", buildMockRequirementForm());
+            done.put("requirementForm", MockPyAssignmentFixtures.buildRequirementForm());
             done.put("appendAsk", buildMockAppendAsk());
             scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY, done, 650);
             return;
@@ -700,17 +732,17 @@ public class MockPyCommandConsumer {
                         "Final package check"),
                 5500, 7000);
 
-        List<String> visibleChunks = assignmentRunVisibleChunks();
+        List<String> visibleChunks = MockPyAssignmentFixtures.runVisibleChunks();
         scheduleAssignmentChunks(cmd, VerlaAgentEventType.AGENT_STEP_STREAM_CHUNK,
                 visibleChunks,
                 "assignment_run",
-                ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
-                ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
+                MockPyAssignmentFixtures.ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
+                MockPyAssignmentFixtures.ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
 
-        List<Map<String, Object>> artifacts = assignmentGeneratedArtifacts(
+        List<Map<String, Object>> artifacts = MockPyAssignmentFixtures.generatedArtifacts(
                 agentType,
                 UUID.randomUUID().toString().substring(0, 8));
-        long lastVisibleChunkDelayMs = assignmentRunStreamDelayMs(visibleChunks.size() - 1);
+        long lastVisibleChunkDelayMs = MockPyAssignmentFixtures.runStreamDelayMs(visibleChunks.size() - 1);
         long artifactDelayMs = Math.max(6600L,
                 lastVisibleChunkDelayMs + ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS);
         for (int i = 0; i < artifacts.size(); i++) {
@@ -853,29 +885,8 @@ public class MockPyCommandConsumer {
                                               String contentChunk,
                                               long delayMs) {
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED,
-                assignmentNodeDetailPayload(id, title, role, status, detailChunk, contentChunk),
+                MockPyAssignmentFixtures.nodeDetailPayload(id, title, role, status, detailChunk, contentChunk),
                 delayMs);
-    }
-
-    static Map<String, Object> assignmentNodeDetailPayload(String id,
-                                                           String title,
-                                                           String role,
-                                                           String status,
-                                                           List<Map<String, Object>> detailChunk,
-                                                           String contentChunk) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("id", id);
-        payload.put("status", status);
-        payload.put("taskName", title);
-        payload.put("taskAgent", role);
-        payload.put("startStamp", Instant.now().toString());
-        if (detailChunk != null && !detailChunk.isEmpty()) {
-            payload.put("detailChunk", detailChunk);
-        }
-        if (contentChunk != null && !contentChunk.isBlank()) {
-            payload.put("contentChunk", contentChunk);
-        }
-        return payload;
     }
 
     private List<Map<String, Object>> mockDetailItems(List<String> stepTitles) {
@@ -980,10 +991,32 @@ public class MockPyCommandConsumer {
                                           List<String> chunks, String stage, long firstDelayMs,
                                           long chunkIntervalMs,
                                           String mockScenario) {
+        scheduleAssignmentChannelChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
+                mockScenario, "content");
+    }
+
+    private void scheduleAssignmentThinkingChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                                  List<String> chunks, String stage, long firstDelayMs,
+                                                  long chunkIntervalMs) {
+        scheduleAssignmentChannelChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
+                null, "thinking");
+    }
+
+    /**
+     * Emit assignment stream chunks with an explicit channel.
+     *
+     * Frontend V2 maps {@code channel=thinking} into a collapsible thinking
+     * message, while {@code channel=content} remains the final assistant text.
+     */
+    private void scheduleAssignmentChannelChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                                 List<String> chunks, String stage, long firstDelayMs,
+                                                 long chunkIntervalMs,
+                                                 String mockScenario,
+                                                 String channel) {
         for (int i = 0; i < chunks.size(); i++) {
             Map<String, Object> chunkPayload = new HashMap<>();
             chunkPayload.put("delta", chunks.get(i));
-            chunkPayload.put("channel", "content");
+            chunkPayload.put("channel", channel);
             chunkPayload.put("index", i);
             if (stage != null) {
                 chunkPayload.put("stage", stage);
@@ -995,23 +1028,6 @@ public class MockPyCommandConsumer {
             }
             scheduleEvent(cmd, eventType, chunkPayload, firstDelayMs + i * chunkIntervalMs);
         }
-    }
-
-    static Map<String, Object> buildMockRequirementForm() {
-        return Map.of(
-                "title", "Assignment requirements",
-                "description", "Confirm the details before generation.",
-                "schema", List.of(
-                        Map.of("key", "subject", "label", "Subject", "type", "text", "required", true),
-                        Map.of(
-                                "key", "assignment_type",
-                                "label", "Assignment Type",
-                                "type", "select",
-                                "options", ASSIGNMENT_TYPE_OPTIONS,
-                                "defaultValue", "Case Study",
-                                "required", true),
-                        Map.of("key", "format", "label", "Expected format", "type", "text", "required", true),
-                        Map.of("key", "deadline", "label", "Deadline", "type", "date", "required", false)));
     }
 
     private Map<String, Object> buildMockAppendAsk() {
@@ -1243,61 +1259,8 @@ public class MockPyCommandConsumer {
     /** 把事件构造好后扔给调度器，延迟 N ms 异步发布 */
     private void scheduleEvent(VerlaCommandEnvelope cmd, VerlaAgentEventType type,
                                Map<String, Object> payload, long delayMs) {
-        scheduler.schedule(() -> publishEvent(cmd, type, payload),
+        scheduler.schedule(() -> eventPublisher.publishEvent(cmd, type, payload),
                 Math.max(0L, delayMs), TimeUnit.MILLISECONDS);
-    }
-
-    private void publishEvent(VerlaCommandEnvelope cmd, VerlaAgentEventType type,
-                              Map<String, Object> payload) {
-        Long sessionId = cmd.getSession().getSessionId();
-        long seq = sessionSeq.computeIfAbsent(sessionId, k -> new AtomicLong(0L)).incrementAndGet();
-        int shard = VerlaShardCalculator.shardOf(sessionId, rabbitConfig.getShardCount());
-        String routingKey = VerlaRoutingKey.forEvent(type, shard);
-        String messageId = "evt-mock-" + UUID.randomUUID();
-
-        VerlaEventEnvelope env = VerlaEventEnvelope.builder()
-                .schemaVersion(1)
-                .messageId(messageId)
-                .eventId(messageId)
-                .correlationId(cmd.getCorrelationId())
-                .orderingKey(cmd.getOrderingKey())
-                .eventType(type.name())
-                .routingKey(routingKey)
-                .eventSeq(seq)
-                .timestamp(Instant.now())
-                .producer(VerlaProducerInfo.builder()
-                        .service(PRODUCER_SERVICE)
-                        .instanceId(instanceId)
-                        .build())
-                .conversation(cmd.getConversation())
-                .turn(cmd.getTurn())
-                .session(cmd.getSession())
-                .payload(payload)
-                .build();
-
-        try {
-            byte[] body = objectMapper.writeValueAsBytes(env);
-            Message m = MessageBuilder.withBody(body)
-                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                    .setContentEncoding(StandardCharsets.UTF_8.name())
-                    .setMessageId(messageId)
-                    .setHeader("messageId", messageId)
-                    .setHeader("correlationId", env.getCorrelationId())
-                    .setHeader("orderingKey", env.getOrderingKey())
-                    .setHeader("eventType", type.name())
-                    .setHeader("eventSeq", seq)
-                    .setHeader("schemaVersion", 1)
-                    .setHeader("conversationId", refConvId(env))
-                    .setHeader("turnId", refTurnId(env))
-                    .setHeader("sessionId", sessionId)
-                    .build();
-            rabbitTemplate.send(VerlaRabbitConfig.EVENTS_EXCHANGE, routingKey, m);
-            log.info("[MockPy/event] published rk={} seq={} type={} sessionId={}",
-                    routingKey, seq, type, sessionId);
-        } catch (Exception e) {
-            log.error("[MockPy/event] publish failed sessionId={} type={} seq={}",
-                    sessionId, type, seq, e);
-        }
     }
 
     // ============================================================
@@ -1333,7 +1296,7 @@ public class MockPyCommandConsumer {
         if (userText == null || userText.isBlank()) {
             return "qa";
         }
-        if (!ASSIGNMENT_STREAM_SCENARIO_DEFAULT.equals(resolveAssignmentStreamScenario(userText))) {
+        if (!MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT.equals(resolveAssignmentStreamScenario(userText))) {
             return "assignment";
         }
         String t = userText.toLowerCase(Locale.ROOT);
@@ -1377,430 +1340,20 @@ public class MockPyCommandConsumer {
         return userText == null ? "" : userText;
     }
 
-    /**
-     * Local MockPy scenario switch. Only a leading command word is accepted so
-     * ordinary text such as "fasting" or "mixed-media" keeps the default path.
-     */
     static String resolveAssignmentStreamScenario(String userText) {
-        String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(Locale.ROOT);
-        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_FAST)) {
-            return ASSIGNMENT_STREAM_SCENARIO_FAST;
-        }
-        if (hasMockScenarioPrefix(normalized, ASSIGNMENT_STREAM_SCENARIO_MIXED)) {
-            return ASSIGNMENT_STREAM_SCENARIO_MIXED;
-        }
-        return ASSIGNMENT_STREAM_SCENARIO_DEFAULT;
-    }
-
-    private static boolean hasMockScenarioPrefix(String normalizedText, String prefix) {
-        if (!normalizedText.startsWith(prefix)) {
-            return false;
-        }
-        if (normalizedText.length() == prefix.length()) {
-            return true;
-        }
-        char next = normalizedText.charAt(prefix.length());
-        return Character.isWhitespace(next)
-                || next == ':' || next == '：'
-                || next == ',' || next == '，';
+        return MockPyAssignmentFixtures.resolveStreamScenario(userText);
     }
 
     private static List<String> mockChunks(String agentType) {
         List<String> out = new ArrayList<>();
         if ("assignment".equals(agentType)) {
-            out.addAll(assignmentRunVisibleChunks());
+            out.addAll(MockPyAssignmentFixtures.runVisibleChunks());
         } else {
             out.add("[Mock] 这是 ");
             out.add(agentType);
             out.add(" agent 的模拟流式输出。\n");
         }
         return out;
-    }
-
-    /**
-     * Default local assignment init completion payload.
-     *
-     * Dashboard V2 already requires an explicit Assignment tab before the first
-     * message, so MockPy should stop at the initial choice moment and wait for the
-     * user's "Lead me..." or setup selection instead of auto-emitting a deep
-     * understanding response.
-     */
-    static Map<String, Object> assignmentDefaultInitCompletedPayload() {
-        Map<String, Object> done = new HashMap<>();
-        done.put("summary", "[Mock] Assignment requirements understood");
-        done.put("ready", true);
-        done.put("isReadyForGeneration", false);
-        done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("requirementUnderstanding", Map.of(
-                "topic", "Causes of World War I",
-                "outputType", "short outline",
-                "nextStep", "choose walkthrough or assignment setup"));
-        return done;
-    }
-
-    /**
-     * Pure prose, high-frequency provider chunks used to validate that frontend
-     * visible streaming is paced by its scheduler, not by backend flush cadence.
-     */
-    static List<String> assignmentFastTextChunks() {
-        String text = "I reviewed your assignment brief, rubric notes, and uploaded context. "
-                + "The first useful move is to restate the task in plain language, then separate the audience, the format, the evidence expectations, and the constraints. "
-                + "After that, I would build a short working thesis and test whether each planned paragraph has one job. "
-                + "If a paragraph only repeats background, it should either support the thesis with evidence or be removed. "
-                + "For the mock stream, the important part is not the academic quality of this answer. "
-                + "The important part is that these backend chunks arrive faster than a person can comfortably read them, while the visible message should still appear with a steady rhythm. "
-                + "This lets us check that raw provider events are buffered, segmented, and paced by the frontend instead of being appended directly to the page. "
-                + "A good result should show words appearing continuously while the network is still busy, without a long blank pause and without one sudden jump after the final event. "
-                + "The text is intentionally long enough to wrap across many lines, push the left rail toward the bottom, and exercise scroll following during the same run. "
-                + "When this scenario completes, the choice moment should appear only after the content has been committed, so the user moves from reading mode into decision mode without the composer leaving a visual gap. "
-                + "That gives us one focused test for high frequency text streaming before we inspect markdown blocks, tables, cards, and file chat in separate scenarios.";
-        return splitFastTextIntoProviderChunks(text);
-    }
-
-    private static List<String> splitFastTextIntoProviderChunks(String text) {
-        int[] chunkWidths = {5, 9, 4, 12, 7, 3, 15, 6, 10, 8, 5, 14, 4, 11, 7, 6};
-        List<String> chunks = new ArrayList<>();
-        int index = 0;
-        int widthIndex = 0;
-        while (index < text.length()) {
-            int width = chunkWidths[widthIndex % chunkWidths.length];
-            int end = Math.min(text.length(), index + width);
-            chunks.add(text.substring(index, end));
-            index = end;
-            widthIndex++;
-        }
-        return chunks;
-    }
-
-    static long assignmentInitScenarioCompletionDelay(int chunkCount,
-                                                      long firstChunkDelayMs,
-                                                      long chunkIntervalMs,
-                                                      long completionSettleMs) {
-        return firstChunkDelayMs
-                + Math.max(0, chunkCount - 1L) * chunkIntervalMs
-                + completionSettleMs;
-    }
-
-    /**
-     * Rich visible chunks for local MockPy assignment output.
-     *
-     * The real provider stream is usually not shaped like a finished paragraph; this
-     * mock intentionally mixes prose, markdown blocks, and punctuation so frontend
-     * stream smoothing can be checked through the Spring SSE path, not only the
-     * in-browser mock stream.
-     */
-    static List<String> assignmentRunVisibleChunks() {
-        return List.of(
-                "I’m turning the confirmed plan into a connected assignment workflow now. ",
-                "I’ll keep the visible stream close to a real answer: short phrases, punctuation pauses, and structure that should not jump while it renders.\n\n",
-                "## What I’m checking\n",
-                "- Whether the draft answers the exact task, not just the broad topic.\n"
-                        + "- Whether each paragraph has a claim, evidence, and explanation.\n"
-                        + "- Whether citation placeholders are clear enough for a final pass.\n\n",
-                "| Area | What I will verify |\n",
-                "| --- | --- |\n"
-                        + "| Rubric fit | The response addresses criteria, word count, and required format. |\n"
-                        + "| Evidence | Claims are tied to course material or source notes. |\n"
-                        + "| Flow | The introduction, body sections, and conclusion read as one argument. |\n\n",
-                "```text\n"
-                        + "Draft order: context -> thesis -> evidence map -> body sections -> citation pass -> final QA\n"
-                        + "```\n\n",
-                "The workflow cards are now moving through research, outline, drafting, citation, and QA. ",
-                "When the final artifact arrives, it should be long enough to test markdown preview, artifact switching, and the left-rail stream ending state.\n");
-    }
-
-    /** Delay schedule for rich assignment chunks in Java MockPy. */
-    static long assignmentRunStreamDelayMs(int chunkIndex) {
-        return ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS
-                + Math.max(0, chunkIndex) * ASSIGNMENT_RUN_STREAM_INTERVAL_MS;
-    }
-
-    /**
-     * Final assignment artifacts emitted by local MockPy.
-     *
-     * Backend/Verla mode intentionally receives the same three editable result
-     * surfaces as frontend mock mode: document markdown, slides editor JSON, and
-     * code text. This keeps local MQ/SSE testing useful for artifact switching
-     * and editor deep links instead of only covering the first document tab.
-     */
-    static List<Map<String, Object>> assignmentGeneratedArtifacts(String agentType, String uidSuffix) {
-        String safeSuffix = uidSuffix == null || uidSuffix.isBlank()
-                ? UUID.randomUUID().toString().substring(0, 8)
-                : uidSuffix;
-        return List.of(
-                assignmentArtifactPayload(
-                        "assignment_mock_document_" + safeSuffix,
-                        "document_markdown",
-                        "text/markdown",
-                        "Generated Assignment.md",
-                        assignmentGeneratedArtifactBody(),
-                        agentType,
-                        "document"),
-                assignmentArtifactPayload(
-                        "assignment_mock_slides_editor_json_" + safeSuffix,
-                        "assignment_slides_editor_json",
-                        "application/json",
-                        "Case Study Deck.editor.json",
-                        assignmentGeneratedSlidesEditorJson(),
-                        agentType,
-                        "slides"),
-                assignmentArtifactPayload(
-                        "assignment_mock_code_text_" + safeSuffix,
-                        "assignment_code_text",
-                        "text/x-python",
-                        "assignment_support.py",
-                        assignmentGeneratedCodeText(),
-                        agentType,
-                        "code"));
-    }
-
-    private static Map<String, Object> assignmentArtifactPayload(String artifactUid,
-                                                                 String kind,
-                                                                 String mime,
-                                                                 String summary,
-                                                                 String body,
-                                                                 String agentType,
-                                                                 String artifactType) {
-        Map<String, Object> art = new HashMap<>();
-        art.put("artifactUid", artifactUid);
-        art.put("kind", kind);
-        art.put("mime", mime);
-        art.put("summary", summary);
-        art.put("bodyOrRef", body);
-        art.put("status", "READY");
-        art.put("version", 1);
-        art.put("sizeBytes", (long) body.getBytes(StandardCharsets.UTF_8).length);
-        art.put("meta", Map.of(
-                "agent", agentType,
-                "source", "mockpy-assignment-run",
-                "mockArtifactType", artifactType));
-        return art;
-    }
-
-    static String assignmentGeneratedSlidesEditorJson() {
-        return """
-                {
-                  "title": "Case Study Revision Deck",
-                  "slides": [
-                    {
-                      "id": "slide-1",
-                      "title": "Case Study Revision Goal",
-                      "elements": [
-                        {
-                          "type": "heading",
-                          "text": "Revise the case study into a protocol-led business analysis"
-                        },
-                        {
-                          "type": "bullets",
-                          "items": [
-                            "Clarify the main business decision",
-                            "Connect protocol choices to stakeholder trust",
-                            "Use rubric evidence before recommendations"
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "id": "slide-2",
-                      "title": "Evidence Map",
-                      "elements": [
-                        {
-                          "type": "bullets",
-                          "items": [
-                            "Course brief: expected APA citation and final reference list",
-                            "Academic source: protocol-led engagement",
-                            "Government source: consultation expectations"
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "id": "slide-3",
-                      "title": "Recommended Workflow",
-                      "elements": [
-                        {
-                          "type": "bullets",
-                          "items": [
-                            "Frame the stakeholder relationship",
-                            "Analyze consultation and consent",
-                            "Turn analysis into practical safeguards"
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-                """;
-    }
-
-    static String assignmentGeneratedCodeText() {
-        return """
-                from dataclasses import dataclass
-
-
-                @dataclass
-                class EvidenceNote:
-                    section: str
-                    claim: str
-                    source: str
-
-
-                def build_argument(prompt, evidence):
-                    thesis = choose_best_thesis(prompt)
-                    outline = plan_paragraphs(thesis, evidence)
-                    return draft_assignment(thesis, outline)
-
-
-                def choose_best_thesis(prompt):
-                    return "Protocols shape trust, authority, and accountability in the case study."
-
-
-                def plan_paragraphs(thesis, evidence):
-                    return [
-                        {"section": "context", "goal": "Frame the business risk."},
-                        {"section": "analysis", "goal": "Connect protocol decisions to stakeholder trust."},
-                        {"section": "recommendation", "goal": "Turn the analysis into practical actions."},
-                    ]
-
-
-                def draft_assignment(thesis, outline):
-                    return {"thesis": thesis, "outline": outline, "needs_citation_pass": True}
-                """;
-    }
-
-    /**
-     * Final document emitted by Java MockPy after workflow completion.
-     *
-     * <p>本段产物模拟 Python ComposeWorker 调用 {@code CitationToolkit.format_citation_list(
-     * output_contract="document_editor_v1")} 后的产物，按前端 document_editor_v1 contract
-     * 输出四段哨兵 markdown，让前端 {@code parseCitationContent} 能完整解析出引用结构：
-     * <ul>
-     *   <li>{@code [--BODY_SECTION--]}：正文，嵌入 {@code [[claim]](evidence_id)} 引用标记</li>
-     *   <li>{@code [--EVIDENCE_RECORDS--]}：JSON evidence 列表，前端按 sourceType
-     *       渲染 academic / web / upload 三类徽章（红 ACA / 蓝 WEB / 绿 UP）</li>
-     *   <li>{@code [--REFERENCE_SECTION--]}：参考文献列表（已按当前 citation_style 排版好；
-     *       有 URL 的条目为 {@code [整条文献](https://...)} markdown 链接，URL 不裸露；
-     *       upload 无外链条目为纯文本）</li>
-     *   <li>{@code [--CITATION_STYLE--]}：引用样式开关</li>
-     * </ul>
-     *
-     * <p>前置修复历史：早期完整版（3 evidence + 3 marker + URLs）会让真实浏览器在
-     * dashboard 页面挂载 EmbeddedDocumentEditor 后整页 hang，请求 Pending、刷新无效。
-     * 根因定位在 {@code CitationTooltipOverlay} 在 {@code document.body} 上挂的全局
-     * MutationObserver 会持续触发 {@code normalizeCitationLinks}，后者对 ProseMirror
-     * 渲染的 {@code <a href>} 节点做 {@code removeAttribute / setAttribute}，跟
-     * ProseMirror 自身的 DOM 同步机制互相打架。修复见
-     * {@code studyagent-fronted-v2/src/features/document-editor/components/citation-tooltip-overlay.tsx}。
-     *
-     * <p>本地切换不同引用样式做联调时，把最后一段 {@code APA} 改成 {@code IEEE}/
-     * {@code MLA}/{@code Chicago}/{@code Harvard}/{@code GB7714} 等任意值，前端
-     * {@code formatCitationText} 会改变正文里学术引用的括注形态。
-     *
-     * <p>原有 e2e 与单测断言的关键字段（{@code # Revise Case Study ...}、
-     * {@code | Section | Revision Goal | Evidence Needed |}、{@code ## Checklist Before Submission}）
-     * 都保留在 BODY 段内，不破坏 {@code MockPyCommandConsumerTest} 与
-     * {@code assignment-mock-flow.spec.ts}。
-     *
-     * <p>Keep this content aligned with {@link #assignmentRunVisibleChunks()} so the
-     * chat stream and artifact preview feel like the same generated assignment.
-     */
-    static String assignmentGeneratedArtifactBody() {
-        return """
-                [--BODY_SECTION--]
-
-                # Revise Case Study on Indigenous Australian Business Protocols
-
-                ## Working Thesis
-                A strong revision should explain that effective business practice with Indigenous Australian communities [[depends on protocol, relationship-building, and local consultation]](acad_ss_1). [[The uploaded rubric requires APA in-text citations and a final reference list]](upload_1). The final paper should avoid treating protocol as a checklist; instead, it should show how respect, consent, and accountability shape each business decision.
-
-                ## Suggested Structure
-                1. Introduce the case context and identify the main business decision.
-                2. Explain why cultural protocol matters before negotiation or delivery.
-                3. Compare the current draft against the rubric expectations.
-                4. Revise the argument so evidence appears before recommendations.
-                5. Close with practical next steps and citation checks.
-
-                | Section | Revision Goal | Evidence Needed |
-                | --- | --- | --- |
-                | Introduction | Clarify the case and stakeholder relationship | Course brief, case facts |
-                | Protocol analysis | Explain consent, consultation, and respect | Lecture notes, source excerpts |
-                | Recommendation | Connect action to protocol obligations | Rubric criteria, examples |
-
-                ## Sample Revision Paragraph
-                The case should frame protocol as part of business competence rather than an optional cultural addition. Before proposing a partnership model, [[the organization needs to identify the relevant community representatives, confirm expectations for consultation, and document how feedback changes the plan]](web_serper_1). This makes the recommendation more credible because it links commercial action to respectful process.
-
-                ## Checklist Before Submission
-                - Confirm the required citation style and replace placeholders.
-                - Check that every recommendation refers back to a case detail.
-                - Remove broad claims that are not supported by the supplied materials.
-                - Keep the final conclusion focused on protocol-informed decision making.
-
-                [--EVIDENCE_RECORDS--]
-                ```json
-                [
-                  {
-                    "id": "acad_ss_1",
-                    "number": 1,
-                    "files": [
-                      {
-                        "id": "file_1",
-                        "sourceType": "academic",
-                        "title": "Engaging with Aboriginal and Torres Strait Islander Communities: A Practical Guide for Business",
-                        "fileType": "Academic",
-                        "size": null,
-                        "url": "https://doi.org/10.1007/s10551-023-05421-3",
-                        "reason": "Anchors the working thesis on protocol-led engagement and consultation.",
-                        "authors": ["Vasanthakumar, S.", "Wickramarachchi, R."],
-                        "year": 2023
-                      }
-                    ]
-                  },
-                  {
-                    "id": "web_serper_1",
-                    "number": null,
-                    "files": [
-                      {
-                        "id": "file_1",
-                        "sourceType": "web",
-                        "title": "Indigenous Procurement Policy - Department of Finance",
-                        "fileType": "Web",
-                        "size": null,
-                        "url": "https://www.finance.gov.au/government/procurement/indigenous-procurement-policy",
-                        "reason": "Government guidance on consultation expectations and supplier obligations.",
-                        "authors": null,
-                        "year": null
-                      }
-                    ]
-                  },
-                  {
-                    "id": "upload_1",
-                    "number": null,
-                    "files": [
-                      {
-                        "id": "file_1",
-                        "sourceType": "upload",
-                        "title": "Course Rubric - APA 7 Citation Requirements (Uploaded)",
-                        "fileType": "PDF",
-                        "size": null,
-                        "url": null,
-                        "reason": "User-uploaded rubric that mandates APA in-text citations and a reference list.",
-                        "authors": null,
-                        "year": null
-                      }
-                    ]
-                  }
-                ]
-                ```
-
-                [--REFERENCE_SECTION--]
-
-                - [Vasanthakumar, S., & Wickramarachchi, R. (2023). Engaging with Aboriginal and Torres Strait Islander communities: A practical guide for business. *Journal of Business Ethics*, 188(3), 521-540.](https://doi.org/10.1007/s10551-023-05421-3)
-                - [Australian Government Department of Finance. (n.d.). *Indigenous procurement policy*.](https://www.finance.gov.au/government/procurement/indigenous-procurement-policy)
-                - Course materials. (2026). *Rubric - APA 7 citation requirements* [Uploaded PDF].
-
-                [--CITATION_STYLE--]
-                APA
-                """;
     }
 
     private static boolean containsAny(String text, String... keywords) {
@@ -1862,13 +1415,5 @@ public class MockPyCommandConsumer {
 
     private static Long refConvId(VerlaCommandEnvelope env) {
         return env == null || env.getConversation() == null ? null : env.getConversation().getConversationId();
-    }
-
-    private static Long refConvId(VerlaEventEnvelope env) {
-        return env == null || env.getConversation() == null ? null : env.getConversation().getConversationId();
-    }
-
-    private static Long refTurnId(VerlaEventEnvelope env) {
-        return env == null || env.getTurn() == null ? null : env.getTurn().getTurnId();
     }
 }

@@ -230,7 +230,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
         assertEquals(2001L, snapshot.resumeAfterEventId());
         assertEquals("Make plan", snapshot.payload().progress().get("label"));
-        assertEquals(90, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+        assertEquals(1170, snapshot.payload().progress().get("estimatedRemainingSeconds"));
     }
 
     @Test
@@ -285,7 +285,7 @@ class AssignmentRuntimeSnapshotServiceTest {
         AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(93L);
 
         assertEquals("Make plan", snapshot.payload().progress().get("label"));
-        assertEquals(120, snapshot.payload().progress().get("estimatedRemainingSeconds"));
+        assertEquals(1200, snapshot.payload().progress().get("estimatedRemainingSeconds"));
     }
 
     private static VerlaMessage message(Long id, Long conversationId, String role, String text) {

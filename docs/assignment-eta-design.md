@@ -217,26 +217,33 @@ estimateFromEvents(recentEvents)
 
 | 常量 | 值 | 含义 |
 |---|---|---|
-| `PLAN_PHASE_ESTIMATE_SECONDS` | 120 s | Plan 阶段总估算窗口 |
-| `PLAN_PHASE_REMAINING_FLOOR_SECONDS` | 15 s | 剩余时间最小值 |
+| `SIMULATED_PROGRESS_WINDOW_SECONDS` | 120 s | warm-up 窗口（0→10% 用时） |
 | `SIMULATED_PROGRESS_MAX_PERCENT` | 10% | Plan 阶段最多占总进度的 10% |
+| `TOTAL_ESTIMATED_SECONDS` | 1200 s | 倒计时基准总轴 |
 
-**计算：**
+**计算：** Plan 阶段直接复用 `computeSimulatedPercent`，映射到 **20min 总轴**的 warm-up 段（0→10%），
+倒计时与后续 workforce 阶段共用同一基准，保证衔接处单调不回弹（旧实现用独立 120s 窗口会导致
+1200s→≤120s→回弹 ~1080s 的跳变）。
 ```
 elapsed = now - flowStartedAt
-remaining = max(15, 120 - elapsed)
-planProgress = (1 - remaining/120) * 100%   [0–100%]
-completePercent = planProgress/100 * 10%     [0–10%]
+completePercent = min(10%, elapsed/120 * 10%)     [0–10%]
+remaining = round(1200 * (1 - completePercent/100))  [1200→1080]
 label = assignment-plan 节点的 taskName，默认 "Make plan"
 ```
 
 ### 4.2 Workforce 阶段（`estimateFromWorkforceSnapshot`）
 
-**触发条件：** `verla_workforce_tasks` 有 task 行（`totalTaskCount > 0`）或有 compose 进度数据。
+**触发条件（事件优先）：** 事件折叠后已出现 task 节点（`countTaskNodesFromEvents().hasData()`），**或** `verla_workforce_tasks` 有 task 行（`totalTaskCount > 0`），**或**有 compose 进度数据。事件先满足即进入本阶段，无需等待 DB 写入。
+
+> **数据来源统一为"事件优先、DB 聚合兜底"**：所有进度数字都先从 `foldAgentNodes(recentEvents)` 折叠的节点读取，事件窗口内取不到才回退 `aggregateProgressBySession` 的 DB 聚合。
 
 整体采用**两段式 50/50 模型**：
 
 #### 阶段一：子任务执行（0% → 50%）
+
+子任务计数来源：
+1. **事件**：`countTaskNodesFromEvents` 统计折叠后 `nodeType=="task"`（兜底 id 前缀 `task-`）的节点，按归一化 status 得 total / completed / running
+2. **DB 兜底**：事件窗口内无 task 节点时，回退 `verla_workforce_tasks` 聚合的 `totalTaskCount` / `completedTaskCount` / `activeTaskCount`
 
 ```
 weighted = completedTaskCount + (activeTaskCount > 0 ? 0.5 : 0.0)
@@ -252,11 +259,15 @@ percent  = min(50%, (weighted / totalTaskCount) * 50%)
 
 该条件在 compose 任务发出 `on_compose_total` 后**自动满足**：`on_compose_total` 将该行 `node_kind` 从 `task` 覆写为 `compose`，使其退出 `totalTaskCount` / `activeTaskCount` 统计，其余任务此时均已 COMPLETED，故 `running == 0` 成立。
 
-Compose 总轮次解析（优先级）：
-1. DB `compose_total_rounds` 字段（compose 行，由 `on_compose_total` 写入）
-2. 历史事件折叠节点中 `nodeType=="compose"` 节点的 `composeTotalRounds` 字段
-3. 节点标题正则匹配 `"Composing part N/M"` → M（旧版兼容）
+Compose **总轮次** 解析（优先级，事件优先）：
+1. 事件折叠节点中 `nodeType=="compose"`/`plan` 节点的 `composeTotalRounds` 字段
+2. 节点标题正则匹配 `"Composing part N/M"` → M（旧版兼容）
+3. DB `compose_total_rounds` 字段（compose 行，由 `on_compose_total` 写入）
 4. 0（无 compose 信息）
+
+Compose **当前轮次** 解析（优先级，事件优先）：
+1. 事件折叠节点的 `composeCurrentRound` 字段 / 标题正则（`resolveComposeCurrentRound`）
+2. DB `compose_current_round` 兜底（事件解析结果 ≤ 0 时）
 
 ```
 percent = 50% + (composeCurrentRound / composeTotalRounds) * 50%
@@ -363,9 +374,7 @@ GET /api/v2/verla/conversation/{id}/assignment-snapshot
 | 常量 | 值 | 位置 |
 |---|---|---|
 | `TOTAL_ESTIMATED_SECONDS` | 1200 (20 min) | `AssignmentRuntimeProgressEstimator` |
-| `PLAN_PHASE_ESTIMATE_SECONDS` | 120 s | 同上 |
-| `PLAN_PHASE_REMAINING_FLOOR_SECONDS` | 15 s | 同上 |
-| `SIMULATED_PROGRESS_WINDOW_SECONDS` | 120 s | 同上 |
+| `SIMULATED_PROGRESS_WINDOW_SECONDS` | 120 s | 同上（plan 阶段亦复用） |
 | `SIMULATED_PROGRESS_MAX_PERCENT` | 10.0% | 同上 |
 | `RUNNING_NODE_PARTIAL_WEIGHT` | 0.5 | 同上 |
 | `WORKFORCE_PHASE_WEIGHT_PERCENT` | 50.0% | 同上 |

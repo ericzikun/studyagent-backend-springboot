@@ -247,6 +247,8 @@ public class VerlaTurnOrchestrator {
 
         VerlaSession agentSession;
         if (isAssignmentIntent(intent)) {
+            // ✦ 商业化预检：forceIntent=ASSIGNMENT 跳过 Plan 直接进入 clarify 前校验余额
+            verlaQuotaService.assertSufficientForAssignmentRun(cmd.getUserId());
             agentSession = spawnAssignmentClarifyInitialSession(conv, turn, intent, Map.of());
         } else {
             VerlaCommandAction action = "AI_DETECTION".equals(intent)
@@ -418,6 +420,10 @@ public class VerlaTurnOrchestrator {
             throw new BusinessException(ApiCode.ILLEGAL_STATE,
                     "assignment plan is not ready to start clarify");
         }
+
+        // ✦ 商业化预检：进入 clarify 流程（cmd.assignment.init）前只读校验 task_create 余额，
+        //    避免用户走完 init / deep understanding 后才发现余额不足。
+        verlaQuotaService.assertSufficientForAssignmentRun(userId);
 
         // task_name session 已在 onUserMessage → spawnPlanSession 中创建（首轮时 turnCount 内存旧值==0），
         // 此处无需重复 dispatch，否则第二个 session 的 userText 依赖 DB 查询，可能拿到空值。

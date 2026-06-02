@@ -59,6 +59,57 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
                              @Param("conversationStatus") String conversationStatus);
 
     /**
+     * 关键词模糊搜索（标题 + 消息正文），可选 segment / status 过滤。
+     * {@code keyword} 已在 Java 侧转义 LIKE 通配符。
+     */
+    @Select("<script>"
+            + "SELECT DISTINCT c.* FROM verla_conversations c "
+            + "WHERE c.user_id = #{userId} AND c.status &lt;&gt; 'deleted' "
+            + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
+            + "OR c.primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND c.primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "</choose>"
+            + "</if>"
+            + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR EXISTS (SELECT 1 FROM verla_messages m "
+            + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
+            + "ORDER BY c.last_message_at DESC, c.id DESC LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<VerlaConversationEntity> searchByUserKeywordPaged(@Param("userId") String userId,
+                                                           @Param("keyword") String keyword,
+                                                           @Param("segment") String segment,
+                                                           @Param("conversationStatus") String conversationStatus,
+                                                           @Param("limit") int limit,
+                                                           @Param("offset") int offset);
+
+    @Select("<script>"
+            + "SELECT COUNT(DISTINCT c.id) FROM verla_conversations c "
+            + "WHERE c.user_id = #{userId} AND c.status &lt;&gt; 'deleted' "
+            + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
+            + "OR c.primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND c.primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "</choose>"
+            + "</if>"
+            + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR EXISTS (SELECT 1 FROM verla_messages m "
+            + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
+            + "</script>")
+    long countByUserKeyword(@Param("userId") String userId,
+                            @Param("keyword") String keyword,
+                            @Param("segment") String segment,
+                            @Param("conversationStatus") String conversationStatus);
+
+    /**
      * 自增 version + 同步刷新 last_message_at / last_turn_id / turn_count（按需）
      */
     @Update("UPDATE verla_conversations "

@@ -28,6 +28,25 @@ public interface VerlaConversationRepository {
                              String conversationStatusDb);
 
     /**
+     * 关键词模糊搜索（标题 + 消息正文），{@code keywordPattern} 为已转义 LIKE 模式片段（不含首尾 %）。
+     */
+    default List<VerlaConversation> searchByUserKeywordPaged(String userId,
+                                                             String keywordPattern,
+                                                             String segmentQueryKey,
+                                                             String conversationStatusDb,
+                                                             int page,
+                                                             int size) {
+        return List.of();
+    }
+
+    default long countByUserKeyword(String userId,
+                                    String keywordPattern,
+                                    String segmentQueryKey,
+                                    String conversationStatusDb) {
+        return 0L;
+    }
+
+    /**
      * 写新 turn 后调用：自增 version + last_message_at + last_turn_id + turn_count + 1
      */
     int touchOnNewTurn(Long id, Long turnId);

@@ -50,6 +50,29 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
+    public List<VerlaConversation> searchByUserKeywordPaged(String userId,
+                                                            String keywordPattern,
+                                                            String segmentQueryKey,
+                                                            String conversationStatusDb,
+                                                            int page,
+                                                            int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
+        return this.baseMapper.searchByUserKeywordPaged(
+                        userId, keywordPattern, segmentQueryKey, conversationStatusDb, s, (p - 1) * s)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countByUserKeyword(String userId,
+                                   String keywordPattern,
+                                   String segmentQueryKey,
+                                   String conversationStatusDb) {
+        return this.baseMapper.countByUserKeyword(
+                userId, keywordPattern, segmentQueryKey, conversationStatusDb);
+    }
+
+    @Override
     public int touchOnNewTurn(Long id, Long turnId) {
         return this.baseMapper.touchOnNewTurn(id, turnId);
     }

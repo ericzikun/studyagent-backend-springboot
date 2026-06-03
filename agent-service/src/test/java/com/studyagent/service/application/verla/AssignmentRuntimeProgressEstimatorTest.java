@@ -66,6 +66,51 @@ class AssignmentRuntimeProgressEstimatorTest {
     }
 
     @Test
+    void estimateFromWorkforceSnapshot_prefersEventTaskCountsOverStaleDbAggregate() {
+        // DB 聚合显示 5 任务完成 2，但事件折叠显示 3 任务完成 2 运行 1 —— 事件优先生效。
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 2, 1, null, null);
+        List<VerlaEventInbox> events = List.of(
+                event(4L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1\",\"nodeType\":\"task\",\"status\":\"completed\"}}}"),
+                event(3L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-2\",\"nodeType\":\"task\",\"status\":\"completed\"}}}"),
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-3\",\"nodeType\":\"task\",\"status\":\"running\"}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        var estimate = estimator.estimateFromWorkforceSnapshot(
+                workforce, events, LocalDateTime.now().minusMinutes(5), 100L);
+
+        // (2 + 0.5) / 3 * 50% = 41.67%，来自事件而非 DB 的 25%。
+        assertEquals(41.67, estimate.completePercent(), 0.01);
+        assertEquals(700, estimate.estimatedRemainingSeconds());
+        assertEquals(3, estimate.totalTaskCount());
+        assertEquals(2, estimate.completedTaskCount());
+    }
+
+    @Test
+    void resolveProgress_entersWorkforcePhaseFromEventsWhenDbAggregateIsEmpty() {
+        // verla_workforce_tasks 尚未写入（snapshot 为空），但事件已有 task 节点 —— 直接进入 workforce 阶段。
+        List<VerlaEventInbox> events = List.of(
+                event(3L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1\",\"nodeType\":\"task\",\"status\":\"completed\"}}}"),
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-2\",\"nodeType\":\"task\",\"status\":\"running\"}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        Map<String, Object> progress = estimator.resolveProgress(events);
+
+        assertNotNull(progress);
+        // (1 + 0.5) / 2 * 50% = 37.5% —— 证明未走 plan-only 阶段。
+        assertEquals(37.5, progress.get("completePercent"));
+        assertEquals(750, progress.get("estimatedRemainingSeconds"));
+        assertEquals(2, progress.get("totalTaskCount"));
+        assertEquals(1, progress.get("completedTaskCount"));
+    }
+
+    @Test
     void estimateFromWorkforceSnapshot_usesComposeRoundForSecondPhase() {
         WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(5, 5, 0, 10, null);
         List<VerlaEventInbox> events = List.of(
@@ -82,6 +127,35 @@ class AssignmentRuntimeProgressEstimatorTest {
         assertEquals("Composing part 3/10", estimate.label());
         assertEquals(3, estimate.composeCurrentRound());
         assertEquals(10, estimate.composeTotalRounds());
+    }
+
+    @Test
+    void estimateFromWorkforceSnapshot_keepsComposeRoundAfterNodeFlipsToTaskOnCompletion() {
+        // 回归：compose 完成时 Python 把同一 node id (task-1.6) 的 nodeType 从 "compose" 翻成
+        // "task"，且 completed 事件不再带 composeCurrentRound。DB 聚合同样丢了当前轮（compose 行
+        // 被 task 行覆盖 → composeCurrentRound=null）。修复前当前轮解析成 0，进度回落到 50% 相位
+        // 地板、剩余时间从接近 0 跳回 600s（10min）。修复后应读到折叠节点残留的 composeCurrentRound=9。
+        WorkforceTaskProgressSnapshot workforce = new WorkforceTaskProgressSnapshot(1, 1, 0, 9, null);
+        List<VerlaEventInbox> events = List.of(
+                event(4L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1.6\",\"nodeType\":\"task\",\"status\":\"completed\"}}}"),
+                event(3L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1.6\",\"nodeType\":\"compose\",\"status\":\"running\","
+                                + "\"composeCurrentRound\":9,\"composeTotalRounds\":9}}}"),
+                event(2L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_UPDATED,
+                        "{\"payload\":{\"node\":{\"id\":\"task-1.6\",\"nodeType\":\"compose\",\"status\":\"running\","
+                                + "\"composeCurrentRound\":5,\"composeTotalRounds\":9}}}"),
+                event(1L, 100L, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED,
+                        "{\"payload\":{\"stage\":\"assignment_run\"}}"));
+
+        var estimate = estimator.estimateFromWorkforceSnapshot(
+                workforce, events, LocalDateTime.now().minusMinutes(5), 100L);
+
+        // 50% + (9/9) * 50% = 100% → 剩余 0s，而不是卡在 50% / 600s。
+        assertEquals(100.0, estimate.completePercent(), 0.01);
+        assertEquals(0, estimate.estimatedRemainingSeconds());
+        assertEquals(9, estimate.composeCurrentRound());
+        assertEquals(9, estimate.composeTotalRounds());
     }
 
     @Test
@@ -118,23 +192,26 @@ class AssignmentRuntimeProgressEstimatorTest {
     }
 
     @Test
-    void estimateFromPlanPhase_smoothlyCountsDownTwoMinuteWindow() {
+    void estimateFromPlanPhase_countsDownMonotonicallyOnTotalAxis() {
+        // Plan 阶段映射到 20min 总轴的 warm-up（0→10%），倒计时从 1200s 单调下降，
+        // 与后续 workforce 阶段衔接处不回弹。
         var atStart = estimator.estimateFromPlanPhase(
                 LocalDateTime.now(), List.of(node("assignment-plan", "running")));
-        assertEquals(120, atStart.estimatedRemainingSeconds());
+        assertEquals(1200, atStart.estimatedRemainingSeconds());
         assertEquals(0.0, atStart.completePercent(), 0.01);
 
         var halfway = estimator.estimateFromPlanPhase(
                 LocalDateTime.now().minusSeconds(60),
                 List.of(node("assignment-plan", "running")));
-        assertEquals(60, halfway.estimatedRemainingSeconds());
+        assertEquals(1140, halfway.estimatedRemainingSeconds());
         assertEquals(5.0, halfway.completePercent(), 0.01);
 
+        // 超过 2 分钟窗口后 warm-up 封顶 10%，倒计时停在 1080s（≥ workforce 起点，不回弹）。
         var afterWindow = estimator.estimateFromPlanPhase(
                 LocalDateTime.now().minusSeconds(180),
                 List.of(node("assignment-plan", "running")));
-        assertEquals(AssignmentRuntimeProgressEstimator.PLAN_PHASE_REMAINING_FLOOR_SECONDS,
-                afterWindow.estimatedRemainingSeconds());
+        assertEquals(1080, afterWindow.estimatedRemainingSeconds());
+        assertEquals(10.0, afterWindow.completePercent(), 0.01);
     }
 
     @Test
@@ -151,7 +228,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
         assertNotNull(progress);
         assertEquals("Make plan", progress.get("label"));
-        assertEquals(90, progress.get("estimatedRemainingSeconds"));
+        assertEquals(1170, progress.get("estimatedRemainingSeconds"));
         assertNull(progress.get("totalTaskCount"));
     }
 
@@ -205,7 +282,7 @@ class AssignmentRuntimeProgressEstimatorTest {
 
         assertNotNull(progress);
         assertEquals("Make plan", progress.get("label"));
-        assertEquals(90, progress.get("estimatedRemainingSeconds"));
+        assertEquals(1170, progress.get("estimatedRemainingSeconds"));
     }
 
     @Test
@@ -248,7 +325,7 @@ class AssignmentRuntimeProgressEstimatorTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> progress = (Map<String, Object>) enriched.get("progress");
         assertEquals("Make plan", progress.get("label"));
-        assertEquals(100, progress.get("estimatedRemainingSeconds"));
+        assertEquals(1180, progress.get("estimatedRemainingSeconds"));
     }
 
     @Test

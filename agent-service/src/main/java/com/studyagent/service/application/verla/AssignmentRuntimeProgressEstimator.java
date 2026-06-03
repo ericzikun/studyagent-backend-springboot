@@ -36,9 +36,6 @@ import java.util.Set;
 public class AssignmentRuntimeProgressEstimator {
 
     static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
-    /** Plan 阶段（子任务尚未拆解）单独用 2 分钟窗口平滑倒计时，直到 task-* 入库。 */
-    static final int PLAN_PHASE_ESTIMATE_SECONDS = 120;
-    static final int PLAN_PHASE_REMAINING_FLOOR_SECONDS = 15;
     static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
     static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
     static final double RUNNING_NODE_PARTIAL_WEIGHT = 0.5;
@@ -185,7 +182,9 @@ public class AssignmentRuntimeProgressEstimator {
                 ? WorkforceTaskProgressSnapshot.empty()
                 : workforceTaskRepository.aggregateProgressBySession(sessionId);
 
-        if (workforce.hasTaskData() || hasComposeProgressData(workforce, recentEvents)) {
+        if (countTaskNodesFromEvents(recentEvents).hasData()
+                || workforce.hasTaskData()
+                || hasComposeProgressData(workforce, recentEvents)) {
             AssignmentRuntimeProgressEstimate workforceEstimate = estimateFromWorkforceSnapshot(
                     workforce,
                     recentEvents,
@@ -207,13 +206,10 @@ public class AssignmentRuntimeProgressEstimator {
     AssignmentRuntimeProgressEstimate estimateFromPlanPhase(
             LocalDateTime flowStartedAt,
             List<Map<String, Object>> agentNodes) {
-        int remainingSeconds = computePlanPhaseRemainingSeconds(flowStartedAt);
-        double planProgress = PLAN_PHASE_ESTIMATE_SECONDS <= 0
-                ? 0.0
-                : (1.0 - (double) remainingSeconds / PLAN_PHASE_ESTIMATE_SECONDS) * 100.0;
-        planProgress = Math.max(0.0, Math.min(100.0, planProgress));
-        // 映射到 20min 模型的完成度刻度（plan 窗口最多占 warm-up 10%）
-        double completePercent = (planProgress / 100.0) * SIMULATED_PROGRESS_MAX_PERCENT;
+        // Plan 阶段映射到 20min 总轴的 warm-up（0→10%），与后续 workforce 阶段共用
+        // computeSimulatedPercent，保证 plan → 子任务执行的衔接处倒计时单调不回弹。
+        double completePercent = computeSimulatedPercent(flowStartedAt);
+        int remainingSeconds = computeRemainingSeconds(completePercent);
         String label = resolvePlanPhaseLabel(agentNodes);
         return new AssignmentRuntimeProgressEstimate(
                 label, remainingSeconds, completePercent, null, null, null, null);
@@ -221,6 +217,10 @@ public class AssignmentRuntimeProgressEstimator {
 
     private boolean isPlanOnlyPhase(List<VerlaEventInbox> recentEvents, WorkforceTaskProgressSnapshot workforce) {
         if (!isAssignmentGenerationActive(recentEvents)) {
+            return false;
+        }
+        // 事件优先：事件折叠后已出现 task 节点即视为已离开 plan-only 阶段
+        if (countTaskNodesFromEvents(recentEvents).hasData()) {
             return false;
         }
         if (workforce != null && workforce.hasTaskData()) {
@@ -246,17 +246,6 @@ public class AssignmentRuntimeProgressEstimator {
             return true;
         }
         return resolveComposeTotalRounds(recentEvents, null) > 0;
-    }
-
-    private int computePlanPhaseRemainingSeconds(LocalDateTime flowStartedAt) {
-        if (flowStartedAt == null) {
-            return PLAN_PHASE_ESTIMATE_SECONDS;
-        }
-        long nowEpoch = System.currentTimeMillis() / 1000;
-        long startEpoch = flowStartedAt.atZone(ZoneId.systemDefault()).toEpochSecond();
-        long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
-        long remaining = PLAN_PHASE_ESTIMATE_SECONDS - elapsedSeconds;
-        return (int) Math.max(PLAN_PHASE_REMAINING_FLOOR_SECONDS, remaining);
     }
 
     private String resolvePlanPhaseLabel(List<Map<String, Object>> agentNodes) {
@@ -295,6 +284,44 @@ public class AssignmentRuntimeProgressEstimator {
         return "compose-progress".equals(String.valueOf(node.get("id")));
     }
 
+    /** 判断 foldAgentNodes 折叠后的节点是否为子任务节点（优先 nodeType，兜底 id 前缀 task-）。 */
+    private boolean isTaskNode(Map<String, Object> node) {
+        Object nodeType = node.get("nodeType");
+        if (nodeType instanceof String t && !t.isBlank()) {
+            return "task".equalsIgnoreCase(t);
+        }
+        return String.valueOf(node.get("id")).startsWith("task-");
+    }
+
+    /**
+     * 从折叠后的事件节点直接统计子任务进度（事件优先来源）。
+     * total = task 节点数；completed/running 按归一化 status 计数。
+     */
+    private TaskNodeCounts countTaskNodesFromEvents(List<VerlaEventInbox> recentEvents) {
+        int total = 0;
+        int completed = 0;
+        int running = 0;
+        for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
+            if (node == null || !isTaskNode(node)) {
+                continue;
+            }
+            total++;
+            String status = normalizeNodeStatus(node.get("status"));
+            if ("completed".equals(status)) {
+                completed++;
+            } else if ("running".equals(status)) {
+                running++;
+            }
+        }
+        return new TaskNodeCounts(total, completed, running);
+    }
+
+    private record TaskNodeCounts(int total, int completed, int running) {
+        boolean hasData() {
+            return total > 0;
+        }
+    }
+
     AssignmentRuntimeProgressEstimate estimateFromWorkforceSnapshot(
             WorkforceTaskProgressSnapshot workforce,
             List<VerlaEventInbox> recentEvents,
@@ -304,13 +331,22 @@ public class AssignmentRuntimeProgressEstimator {
             return null;
         }
 
-        int total = workforce.totalTaskCount();
-        int completed = workforce.completedTaskCount();
-        int running = workforce.activeTaskCount();
-        Integer composeTotalRounds = workforce.composeTotalRounds();
-        // composeCurrentRound 优先从 DB snapshot（compose 行）读取，再降级到 foldAgentNodes
-        Integer composeCurrentRound = workforce.composeCurrentRound();
-        Integer effectiveComposeTotalRounds = composeTotalRounds;
+        // 子任务计数：事件折叠优先，DB 聚合兜底（事件窗口内无 task 节点时回退）
+        TaskNodeCounts eventCounts = countTaskNodesFromEvents(recentEvents);
+        int total = eventCounts.hasData() ? eventCounts.total() : workforce.totalTaskCount();
+        int completed = eventCounts.hasData() ? eventCounts.completed() : workforce.completedTaskCount();
+        int running = eventCounts.hasData() ? eventCounts.running() : workforce.activeTaskCount();
+
+        // compose 轮次：事件优先（resolveComposeTotalRounds 内部已是事件>标题>DB 顺序），DB 兜底
+        int composeTotal = resolveComposeTotalRounds(recentEvents, workforce.composeTotalRounds());
+        int eventCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
+        Integer composeCurrentRound;
+        if (eventCurrentRound > 0) {
+            composeCurrentRound = eventCurrentRound;
+        } else {
+            composeCurrentRound = workforce.composeCurrentRound();
+        }
+        Integer effectiveComposeTotalRounds = composeTotal > 0 ? composeTotal : null;
         double percent;
 
         if (total <= 0) {
@@ -319,14 +355,12 @@ public class AssignmentRuntimeProgressEstimator {
             double weighted = completed + (running > 0 ? RUNNING_NODE_PARTIAL_WEIGHT : 0.0);
             percent = Math.min(WORKFORCE_PHASE_WEIGHT_PERCENT, (weighted / total) * WORKFORCE_PHASE_WEIGHT_PERCENT);
         } else {
-            int composeTotal = resolveComposeTotalRounds(recentEvents, composeTotalRounds);
-            if (composeCurrentRound == null) {
-                composeCurrentRound = resolveComposeCurrentRound(recentEvents, composeTotal);
-            }
             if (composeTotal > 0) {
-                effectiveComposeTotalRounds = composeTotal;
+                int currentRound = composeCurrentRound == null
+                        ? 0
+                        : Math.min(composeCurrentRound, composeTotal);
                 percent = WORKFORCE_PHASE_WEIGHT_PERCENT
-                        + ((double) composeCurrentRound / composeTotal) * WORKFORCE_PHASE_WEIGHT_PERCENT;
+                        + ((double) currentRound / composeTotal) * WORKFORCE_PHASE_WEIGHT_PERCENT;
             } else {
                 percent = WORKFORCE_PHASE_WEIGHT_PERCENT;
             }
@@ -415,12 +449,15 @@ public class AssignmentRuntimeProgressEstimator {
         }
         int maxCurrent = 0;
         for (Map<String, Object> node : foldAgentNodes(recentEvents)) {
-            // 优先：compose-progress 节点的显式 composeCurrentRound 字段
-            if (isComposeNode(node)) {
-                Object raw = node.get("composeCurrentRound");
-                if (raw instanceof Number n && n.intValue() > 0) {
-                    maxCurrent = Math.max(maxCurrent, Math.min(n.intValue(), composeTotalRounds));
-                }
+            // 优先：显式 composeCurrentRound 字段。
+            // 注意：compose 完成时 Python 会把同一 node id 的 nodeType 从 "compose" 翻成
+            // "task"（completed 事件不再带 composeCurrentRound），但 foldAgentNodes 按 id 合并、
+            // putAll 不会清掉旧 key，合并后的节点仍残留最后一轮的 composeCurrentRound。这里不再
+            // 用 isComposeNode 作为读取闸门，只要字段在就读——否则完成瞬间当前轮丢成 0、进度回落
+            // 到 50% 相位地板，剩余时间会从接近 0 跳回 10min。
+            Object raw = node.get("composeCurrentRound");
+            if (raw instanceof Number n && n.intValue() > 0) {
+                maxCurrent = Math.max(maxCurrent, Math.min(n.intValue(), composeTotalRounds));
             }
             // 兜底：从标题 regex 解析（旧版 Python 兼容）
             java.util.Optional<ComposePartProgress> parsed = parseComposePartTitle(node);

@@ -135,6 +135,25 @@ public class VerlaContextCacheRepositoryConfig {
             }
 
             @Override
+            public List<VerlaConversation> searchByUserKeywordPaged(String userId,
+                                                                    String keywordPattern,
+                                                                    String segmentQueryKey,
+                                                                    String conversationStatusDb,
+                                                                    int page,
+                                                                    int size) {
+                return delegate.searchByUserKeywordPaged(
+                        userId, keywordPattern, segmentQueryKey, conversationStatusDb, page, size);
+            }
+
+            @Override
+            public long countByUserKeyword(String userId,
+                                           String keywordPattern,
+                                           String segmentQueryKey,
+                                           String conversationStatusDb) {
+                return delegate.countByUserKeyword(userId, keywordPattern, segmentQueryKey, conversationStatusDb);
+            }
+
+            @Override
             public int touchOnNewTurn(Long id, Long turnId) {
                 int updated = delegate.touchOnNewTurn(id, turnId);
                 if (updated > 0 && id != null) {

@@ -563,6 +563,10 @@ class VerlaTurnOrchestratorTest {
         public boolean isQuotaExempt(String clerkUserId) {
             return false;
         }
+
+        @Override
+        public void assertSufficientForAssignmentRun(String clerkUserId) {
+        }
     }
 
     private static final class FakeMqOutboxRepository implements MqOutboxRepository {

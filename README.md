@@ -60,6 +60,8 @@ PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
 
 启动脚本会补齐旧 mock 数据库缺失的 Verla workforce 进度列与 `verla_editor_previews`，避免 conversation 列表和 compose-progress 链路因旧 schema 报错。
 
+本地 MockPy 的 Assignment init 默认流会先发送一段基于真实 requirement-analysis case 分割的 `channel=thinking` stream chunk，再发送 `channel=content` 正文 chunk，用于验证 V2 前端左栏 thinking 折叠消息和正文流式消息的切换。
+
 ### 4. 访问 API 文档
 
 http://localhost:8080/swagger-ui.html

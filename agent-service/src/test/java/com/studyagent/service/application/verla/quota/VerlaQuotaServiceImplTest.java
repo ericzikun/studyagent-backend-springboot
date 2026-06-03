@@ -253,6 +253,37 @@ class VerlaQuotaServiceImplTest {
         verifyNoInteractions(quotaDomainService);
     }
 
+    // ---------------------- assertSufficientForAssignmentRun ----------------------
+
+    @Test
+    void assertSufficientForAssignmentRun_passes_whenExempt() {
+        ReflectionTestUtils.setField(service, "quotaEnabled", false);
+
+        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc"));
+        verifyNoInteractions(quotaDomainService);
+    }
+
+    @Test
+    void assertSufficientForAssignmentRun_passes_whenBalanceOk() {
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1))
+                .thenReturn(true);
+
+        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc"));
+        verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void assertSufficientForAssignmentRun_throws_whenInsufficient() {
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1))
+                .thenReturn(false);
+        when(quotaDomainService.getUserQuota("user_abc", FeatureCode.TASK_CREATE.getCode()))
+                .thenReturn(balance(0));
+
+        assertThrows(InsufficientQuotaException.class,
+                () -> service.assertSufficientForAssignmentRun("user_abc"));
+        verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+    }
+
     // ---------------------- WordCounter ----------------------
 
     @Test

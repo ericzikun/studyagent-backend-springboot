@@ -78,6 +78,44 @@ public class VerlaConversationService {
         return new VerlaConversationListSlice(rows, total, page, size);
     }
 
+    /**
+     * 关键词模糊搜索对话（聚合搜或按 segment 过滤）。
+     * 匹配范围：对话标题 + 消息正文。
+     */
+    public VerlaConversationListSlice searchConversations(String userId,
+                                                            String keyword,
+                                                            int pageNo,
+                                                            int pageSize,
+                                                            VerlaConversationListSegment segment,
+                                                            ConversationStatus statusFilter) {
+        if (userId == null || userId.isBlank()) {
+            throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        String trimmed = keyword == null ? "" : keyword.trim();
+        if (trimmed.isEmpty()) {
+            throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "keyword is required");
+        }
+        if (trimmed.length() > 200) {
+            throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "keyword too long");
+        }
+        int page = Math.max(pageNo, 1);
+        int size = Math.min(Math.max(pageSize, 1), 100);
+        String keywordPattern = escapeLikePattern(trimmed);
+        String segmentKey = segment == null ? null : segment.getQueryKey();
+        String statusDb = statusFilter == null ? null : statusFilter.getDbValue();
+        long total = conversationRepository.countByUserKeyword(userId, keywordPattern, segmentKey, statusDb);
+        List<VerlaConversation> rows =
+                conversationRepository.searchByUserKeywordPaged(
+                        userId, keywordPattern, segmentKey, statusDb, page, size);
+        return new VerlaConversationListSlice(rows, total, page, size);
+    }
+
+    private static String escapeLikePattern(String raw) {
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
     public VerlaConversation getOwned(String userId, Long conversationId) {
         VerlaConversation c = conversationRepository.findById(conversationId);
         if (c == null || ConversationStatus.fromDb(c.getStatus()) == ConversationStatus.DELETED) {

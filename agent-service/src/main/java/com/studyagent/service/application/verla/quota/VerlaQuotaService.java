@@ -49,4 +49,10 @@ public interface VerlaQuotaService {
      * 调用方可在派发前预先判断，方便日志/调试；门面方法本身也会内部判断。
      */
     boolean isQuotaExempt(String clerkUserId);
+
+    /**
+     * Assignment Clarify 流程入口前只读校验：余额不足时抛 {@link com.studyagent.common.exception.InsufficientQuotaException}，
+     * 不扣费。真正扣费仍在 {@link #consumeForAssignmentRun}（{@code cmd.assignment.run} 派发前）。
+     */
+    void assertSufficientForAssignmentRun(String clerkUserId);
 }

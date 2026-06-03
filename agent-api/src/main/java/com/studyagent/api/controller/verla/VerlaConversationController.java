@@ -171,6 +171,27 @@ public class VerlaConversationController {
     }
 
     // ========================================================
+    // 2b) GET /v1/verla/conversations/search  ——  关键词搜索（聚合 / 按 segment）
+    // ========================================================
+    @GetMapping("/search")
+    public Result<VerlaConversationPageVO> search(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @RequestParam("keyword") String keyword,
+            @RequestParam(value = "pageNo", defaultValue = "1") int pageNo,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(value = "segment", required = false) String segment,
+            @RequestParam(value = "status", required = false) String status) {
+        ensureLogin(clerkUserId);
+        VerlaConversationListSegment seg = parseSegment(segment);
+        ConversationStatus st = parseConversationStatusFilter(status);
+        VerlaConversationListSlice slice =
+                conversationService.searchConversations(clerkUserId, keyword, pageNo, pageSize, seg, st);
+        return Result.success(VerlaConversationPageVO.fromSlice(
+                slice,
+                dashboardStatusService.resolveAll(slice.records())));
+    }
+
+    // ========================================================
     // 3) GET /v1/verla/conversations/{cid}  ——  详情
     // ========================================================
     @GetMapping("/{cid}")

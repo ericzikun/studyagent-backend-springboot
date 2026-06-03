@@ -75,6 +75,29 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         return isAdmin || isWhitelisted;
     }
 
+    @Override
+    public void assertSufficientForAssignmentRun(String clerkUserId) {
+        if (isQuotaExempt(clerkUserId)) {
+            return;
+        }
+        if (!quotaDomainService.canConsume(clerkUserId, FeatureCode.TASK_CREATE.getCode(), 1)) {
+            QuotaBalance balance = quotaDomainService.getUserQuota(clerkUserId, FeatureCode.TASK_CREATE.getCode());
+            throw new InsufficientQuotaException(
+                    "Insufficient quota for assignment clarify, required=1, available="
+                            + balance.totalAvailable(),
+                    InsufficientQuotaData.builder()
+                            .featureCode(balance.featureCode())
+                            .featureName(balance.featureName())
+                            .quotaUnit(balance.quotaUnit())
+                            .freeBalance(balance.freeBalance())
+                            .freePeriodTotal(balance.freePeriodTotal())
+                            .paidBalance(balance.paidBalance())
+                            .totalAvailable(balance.totalAvailable())
+                            .totalWords(1)
+                            .build());
+        }
+    }
+
     // ===================================================================
     //  扣费
     // ===================================================================

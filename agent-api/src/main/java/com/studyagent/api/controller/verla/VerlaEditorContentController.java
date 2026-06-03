@@ -44,7 +44,7 @@ import java.util.Set;
 public class VerlaEditorContentController {
 
     private static final Set<String> SUPPORTED_EDITOR_KINDS = Set.of("document", "slides", "code");
-    private static final int MAX_EDITOR_VERSIONS = 10;
+    private static final int MAX_EDITOR_VERSIONS = 1;
 
     private final VerlaConversationService conversationService;
     private final VerlaArtifactMapper artifactMapper;

@@ -18,9 +18,6 @@ final class MockPyAssignmentFixtures {
 
     static final String STREAM_SCENARIO_DEFAULT = "default";
     static final String STREAM_SCENARIO_FAST = "fast";
-    static final String STREAM_SCENARIO_MIXED = "mixed";
-    static final long ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS = 1200L;
-    static final long ASSIGNMENT_RUN_STREAM_INTERVAL_MS = 650L;
     static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private MockPyAssignmentFixtures() {
@@ -28,15 +25,12 @@ final class MockPyAssignmentFixtures {
 
     /**
      * Local MockPy scenario switch. Only a leading command word is accepted so
-     * ordinary text such as "fasting" or "mixed-media" keeps the default path.
+     * ordinary text such as "fasting" keeps the default path.
      */
     static String resolveStreamScenario(String userText) {
         String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(java.util.Locale.ROOT);
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_FAST)) {
             return STREAM_SCENARIO_FAST;
-        }
-        if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_MIXED)) {
-            return STREAM_SCENARIO_MIXED;
         }
         return STREAM_SCENARIO_DEFAULT;
     }
@@ -146,40 +140,6 @@ final class MockPyAssignmentFixtures {
                         *   Language: English (regardless of input language).
 
                 """);
-    }
-
-    /**
-     * Rich visible chunks for local MockPy assignment output.
-     *
-     * The real provider stream is usually not shaped like a finished paragraph; this
-     * mock intentionally mixes prose, markdown blocks, and punctuation so frontend
-     * stream smoothing can be checked through the Spring SSE path, not only the
-     * in-browser mock stream.
-     */
-    static List<String> runVisibleChunks() {
-        return List.of(
-                "I’m turning the confirmed plan into a connected assignment workflow now. ",
-                "I’ll keep the visible stream close to a real answer: short phrases, punctuation pauses, and structure that should not jump while it renders.\n\n",
-                "## What I’m checking\n",
-                "- Whether the draft answers the exact task, not just the broad topic.\n"
-                        + "- Whether each paragraph has a claim, evidence, and explanation.\n"
-                        + "- Whether citation placeholders are clear enough for a final pass.\n\n",
-                "| Area | What I will verify |\n",
-                "| --- | --- |\n"
-                        + "| Rubric fit | The response addresses criteria, word count, and required format. |\n"
-                        + "| Evidence | Claims are tied to course material or source notes. |\n"
-                        + "| Flow | The introduction, body sections, and conclusion read as one argument. |\n\n",
-                "```text\n"
-                        + "Draft order: context -> thesis -> evidence map -> body sections -> citation pass -> final QA\n"
-                        + "```\n\n",
-                "The workflow cards are now moving through research, outline, drafting, citation, and QA. ",
-                "When the final artifact arrives, it should be long enough to test markdown preview, artifact switching, and the left-rail stream ending state.\n");
-    }
-
-    /** Delay schedule for rich assignment chunks in Java MockPy. */
-    static long runStreamDelayMs(int chunkIndex) {
-        return ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS
-                + Math.max(0, chunkIndex) * ASSIGNMENT_RUN_STREAM_INTERVAL_MS;
     }
 
     static Map<String, Object> buildRequirementForm() {
@@ -383,8 +343,9 @@ final class MockPyAssignmentFixtures {
      * 也刻意保持轻量，避免重新引入早期 ProseMirror citation link normalization 的
      * 浏览器 hang 回归。
      *
-     * <p>Keep this content aligned with {@link #runVisibleChunks()} so the chat
-     * stream and artifact preview feel like the same generated assignment.
+     * <p>Assignment run mock no longer emits synthetic left-rail assistant chunks;
+     * the artifact fixture should stand on its own and workflow progress should
+     * come from node/progress/artifact events.
      */
     static String generatedArtifactBody() {
         return """

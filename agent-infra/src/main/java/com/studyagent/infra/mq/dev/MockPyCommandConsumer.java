@@ -94,14 +94,13 @@ import java.util.concurrent.atomic.AtomicLong;
 @ConditionalOnProperty(name = "verla.mq.mock.enabled", havingValue = "true", matchIfMissing = false)
 public class MockPyCommandConsumer {
 
-    private static final long ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS = 1000L;
     private static final long ASSIGNMENT_RUN_ARTIFACT_STAGGER_MS = 120L;
     private static final long ASSIGNMENT_RUN_COMPLETION_SETTLE_MS = 1600L;
+    private static final long ASSIGNMENT_RUN_ARTIFACT_MIN_DELAY_MS = 6600L;
+    private static final long ASSIGNMENT_RUN_COMPLETION_MIN_DELAY_MS = 9000L;
     private static final long ASSIGNMENT_INIT_FAST_FIRST_DELAY_MS = 120L;
     private static final long ASSIGNMENT_INIT_FAST_INTERVAL_MS = 25L;
     private static final long ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS = 220L;
-    private static final long ASSIGNMENT_INIT_MIXED_INTERVAL_MS = 260L;
-    private static final long ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS = 320L;
     private static final long ASSIGNMENT_INIT_THINKING_FIRST_DELAY_MS = 120L;
     private static final long ASSIGNMENT_INIT_THINKING_INTERVAL_MS = 60L;
     private static final long ASSIGNMENT_INIT_THINKING_TO_CONTENT_SETTLE_MS = 140L;
@@ -402,12 +401,6 @@ public class MockPyCommandConsumer {
                     ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS);
             return;
         }
-        if (MockPyAssignmentFixtures.STREAM_SCENARIO_MIXED.equals(scenario)) {
-            scheduleAssignmentInitScenarioResponse(cmd, scenario, MockPyAssignmentFixtures.runVisibleChunks(),
-                    160L, ASSIGNMENT_INIT_MIXED_INTERVAL_MS, ASSIGNMENT_INIT_MIXED_COMPLETION_SETTLE_MS);
-            return;
-        }
-
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", assignmentAgentType(cmd));
         started.put("stage", "stage_0");
@@ -732,19 +725,10 @@ public class MockPyCommandConsumer {
                         "Final package check"),
                 5500, 7000);
 
-        List<String> visibleChunks = MockPyAssignmentFixtures.runVisibleChunks();
-        scheduleAssignmentChunks(cmd, VerlaAgentEventType.AGENT_STEP_STREAM_CHUNK,
-                visibleChunks,
-                "assignment_run",
-                MockPyAssignmentFixtures.ASSIGNMENT_RUN_STREAM_FIRST_DELAY_MS,
-                MockPyAssignmentFixtures.ASSIGNMENT_RUN_STREAM_INTERVAL_MS);
-
         List<Map<String, Object>> artifacts = MockPyAssignmentFixtures.generatedArtifacts(
                 agentType,
                 UUID.randomUUID().toString().substring(0, 8));
-        long lastVisibleChunkDelayMs = MockPyAssignmentFixtures.runStreamDelayMs(visibleChunks.size() - 1);
-        long artifactDelayMs = Math.max(6600L,
-                lastVisibleChunkDelayMs + ASSIGNMENT_RUN_ARTIFACT_SETTLE_MS);
+        long artifactDelayMs = ASSIGNMENT_RUN_ARTIFACT_MIN_DELAY_MS;
         for (int i = 0; i < artifacts.size(); i++) {
             scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED,
                     artifacts.get(i),
@@ -763,7 +747,8 @@ public class MockPyCommandConsumer {
         done.put("artifactUids", artifactUids);
         done.put("progress", assignmentEtaProgress("Assignment ready", 0));
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done,
-                Math.max(9000L, finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
+                Math.max(ASSIGNMENT_RUN_COMPLETION_MIN_DELAY_MS,
+                        finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
     }
 
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
@@ -1347,7 +1332,7 @@ public class MockPyCommandConsumer {
     private static List<String> mockChunks(String agentType) {
         List<String> out = new ArrayList<>();
         if ("assignment".equals(agentType)) {
-            out.addAll(MockPyAssignmentFixtures.runVisibleChunks());
+            out.add("[Mock] Assignment agent is running.\n");
         } else {
             out.add("[Mock] 这是 ");
             out.add(agentType);

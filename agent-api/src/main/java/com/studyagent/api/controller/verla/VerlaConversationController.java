@@ -132,40 +132,7 @@ public class VerlaConversationController {
             }
         }
 
-        // Attach artifact preview kinds — derive from artifact kinds per conversation
-        if (!conversationIds.isEmpty()) {
-            List<VerlaArtifactEntity> artifacts = artifactMapper.selectByConversationIds(conversationIds);
-            Map<Long, List<VerlaArtifactEntity>> artifactsByConv = artifacts.stream()
-                    .collect(Collectors.groupingBy(VerlaArtifactEntity::getConversationId));
-            for (VerlaConversationVO vo : pageVO.getRecords()) {
-                if (!shouldExposeAssignmentPreviewKinds(vo)) {
-                    vo.setArtifactPreviewKinds(null);
-                    continue;
-                }
-                List<VerlaArtifactEntity> convArtifacts = artifactsByConv.getOrDefault(
-                        vo.getConversationId(), List.of());
-                List<VerlaArtifactEntity> previewSourceArtifacts = pickPreviewSourceArtifacts(
-                        convArtifacts,
-                        vo.getLastTurnId());
-                LinkedHashSet<String> kinds = new LinkedHashSet<>();
-                for (VerlaArtifactEntity a : previewSourceArtifacts) {
-                    if (!isRenderablePreviewArtifact(a)) {
-                        continue;
-                    }
-                    String mapped = mapArtifactKindToPreviewKind(a.getKind());
-                    if (mapped != null) {
-                        kinds.add(mapped);
-                    }
-                }
-                List<String> sorted = new ArrayList<>();
-                for (String orderKind : ARTIFACT_PREVIEW_KIND_ORDER) {
-                    if (kinds.contains(orderKind)) {
-                        sorted.add(orderKind);
-                    }
-                }
-                vo.setArtifactPreviewKinds(sorted.isEmpty() ? null : sorted);
-            }
-        }
+        attachArtifactPreviewKinds(pageVO, slice.records());
 
         return Result.success(pageVO);
     }
@@ -186,9 +153,11 @@ public class VerlaConversationController {
         ConversationStatus st = parseConversationStatusFilter(status);
         VerlaConversationListSlice slice =
                 conversationService.searchConversations(clerkUserId, keyword, pageNo, pageSize, seg, st);
-        return Result.success(VerlaConversationPageVO.fromSlice(
+        VerlaConversationPageVO pageVO = VerlaConversationPageVO.fromSlice(
                 slice,
-                dashboardStatusService.resolveAll(slice.records())));
+                dashboardStatusService.resolveAll(slice.records()));
+        attachArtifactPreviewKinds(pageVO, slice.records());
+        return Result.success(pageVO);
     }
 
     // ========================================================
@@ -375,6 +344,56 @@ public class VerlaConversationController {
     // ========================================================
     private static final List<String> ARTIFACT_PREVIEW_KIND_ORDER = List.of("document", "slides", "code");
     private static final List<String> ASSIGNMENT_PREVIEW_INTENTS = List.of("ASSIGNMENT", "CREATE_ASSIGNMENT");
+
+    /**
+     * 为 Dashboard Assignment 历史卡片补充静态预览类型。
+     * 该字段从 artifacts 实时推导，是当前卡片预览的权威来源；不依赖已废弃的 editorPreviews 截图链路。
+     */
+    private void attachArtifactPreviewKinds(VerlaConversationPageVO pageVO, List<VerlaConversation> conversations) {
+        if (pageVO == null || pageVO.getRecords() == null || conversations == null || conversations.isEmpty()) {
+            return;
+        }
+        List<Long> conversationIds = conversations.stream()
+                .map(VerlaConversation::getId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        if (conversationIds.isEmpty()) {
+            return;
+        }
+        List<VerlaArtifactEntity> artifacts = artifactMapper.selectByConversationIds(conversationIds);
+        Map<Long, List<VerlaArtifactEntity>> artifactsByConv = (artifacts == null ? List.<VerlaArtifactEntity>of() : artifacts)
+                .stream()
+                .collect(Collectors.groupingBy(VerlaArtifactEntity::getConversationId));
+        for (VerlaConversationVO vo : pageVO.getRecords()) {
+            if (!shouldExposeAssignmentPreviewKinds(vo)) {
+                vo.setArtifactPreviewKinds(null);
+                continue;
+            }
+            List<VerlaArtifactEntity> convArtifacts = artifactsByConv.getOrDefault(
+                    vo.getConversationId(), List.of());
+            List<VerlaArtifactEntity> previewSourceArtifacts = pickPreviewSourceArtifacts(
+                    convArtifacts,
+                    vo.getLastTurnId());
+            LinkedHashSet<String> kinds = new LinkedHashSet<>();
+            for (VerlaArtifactEntity a : previewSourceArtifacts) {
+                if (!isRenderablePreviewArtifact(a)) {
+                    continue;
+                }
+                String mapped = mapArtifactKindToPreviewKind(a.getKind());
+                if (mapped != null) {
+                    kinds.add(mapped);
+                }
+            }
+            List<String> sorted = new ArrayList<>();
+            for (String orderKind : ARTIFACT_PREVIEW_KIND_ORDER) {
+                if (kinds.contains(orderKind)) {
+                    sorted.add(orderKind);
+                }
+            }
+            vo.setArtifactPreviewKinds(sorted.isEmpty() ? null : sorted);
+        }
+    }
 
     private void ensureLogin(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {

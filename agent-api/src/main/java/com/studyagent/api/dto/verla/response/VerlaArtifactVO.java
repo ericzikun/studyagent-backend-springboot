@@ -36,6 +36,17 @@ public class VerlaArtifactVO {
     private Integer version;
     private LocalDateTime updatedAt;
 
+    /**
+     * {@code assignment_code_file} 是后端内部索引行（支撑单文件懒加载 / 整包 zip），
+     * 不作为前端可渲染 artifact 暴露（见技术方案 §2.2 / §4.2）。
+     */
+    public static final String KIND_CODE_FILE = "assignment_code_file";
+
+    /** conversation 列表是否应排除该 artifact（内部文件行不暴露给前端）。 */
+    public static boolean isListVisible(VerlaArtifact a) {
+        return a != null && !KIND_CODE_FILE.equals(a.getKind());
+    }
+
     public static VerlaArtifactVO from(VerlaArtifact a) {
         if (a == null) {
             return null;

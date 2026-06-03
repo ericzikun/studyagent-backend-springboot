@@ -184,7 +184,11 @@ public class VerlaInboxService {
                 handlerDispatcher.dispatch(ready, env);
                 inboxRepository.markProcessed(ready.getId());
                 processedCounter.increment();
-                ssePending.add(toSsePayload(ready, env));
+                // assignment_code_file 是后端内部索引行（支撑单文件懒加载 / 整包 zip），
+                // 已落库但不应推成前端卡片；正文走 /files、整包走 /archive（见技术方案 §4.2）。
+                if (!isInternalCodeFileArtifactEvent(ready, env)) {
+                    ssePending.add(toSsePayload(ready, env));
+                }
                 lastProcessed = seq;
                 seq++;
                 batched++;
@@ -243,6 +247,20 @@ public class VerlaInboxService {
         } else {
             flush.run();
         }
+    }
+
+    /** {@code assignment_code_file} 行支撑后端读取，不作为前端卡片推送（见技术方案 §4.2）。 */
+    private static final String KIND_CODE_FILE = "assignment_code_file";
+
+    private static boolean isInternalCodeFileArtifactEvent(VerlaEventInbox row, VerlaEventEnvelope env) {
+        String type = row.getEventType();
+        if (type == null || !type.endsWith("ARTIFACT_UPDATED")) {
+            return false;
+        }
+        if (env == null || env.getPayload() == null) {
+            return false;
+        }
+        return KIND_CODE_FILE.equals(env.getPayload().get("kind"));
     }
 
     private VerlaSseEventPayload toSsePayload(VerlaEventInbox row, VerlaEventEnvelope env) {

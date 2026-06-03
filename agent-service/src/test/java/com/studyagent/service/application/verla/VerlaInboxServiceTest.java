@@ -251,7 +251,87 @@ class VerlaInboxServiceTest {
                         && "最终回答".equals(payload.getPayload().get("finalText"))));
     }
 
+    @Test
+    void codeFileArtifactEvent_isNotPublishedToSse() {
+        when(ssePublisherProvider.getIfAvailable()).thenReturn(ssePublisher);
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox r = inv.getArgument(0);
+            r.setId(6L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9003L), any(), any()))
+                .thenReturn(cursor(9003L, 1L, 0L));
+
+        VerlaEventEnvelope env = artifactEnvelope(9003L, 1L, "assignment_code_file");
+        VerlaEventInbox readyRow = sampleInboxRow(6L, 9003L, 1L, "ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED");
+        readyRow.setPayloadJson(artifactPayloadJson(9003L, "assignment_code_file"));
+        when(inboxRepo.findReady(9003L, 1L)).thenReturn(readyRow);
+        when(inboxRepo.findReady(9003L, 2L)).thenReturn(null);
+
+        service.ingest(env);
+
+        verify(ssePublisher, never()).publish(any(), any());
+    }
+
+    @Test
+    void codeProjectManifestEvent_isPublishedToSse() {
+        when(ssePublisherProvider.getIfAvailable()).thenReturn(ssePublisher);
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox r = inv.getArgument(0);
+            r.setId(7L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9004L), any(), any()))
+                .thenReturn(cursor(9004L, 1L, 0L));
+
+        VerlaEventEnvelope env = artifactEnvelope(9004L, 1L, "assignment_code_project");
+        VerlaEventInbox readyRow = sampleInboxRow(7L, 9004L, 1L, "ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED");
+        readyRow.setPayloadJson(artifactPayloadJson(9004L, "assignment_code_project"));
+        when(inboxRepo.findReady(9004L, 1L)).thenReturn(readyRow);
+        when(inboxRepo.findReady(9004L, 2L)).thenReturn(null);
+
+        service.ingest(env);
+
+        verify(ssePublisher).publish(eq(1L), argThat(payload ->
+                payload != null
+                        && "ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED".equals(payload.getType())
+                        && payload.getPayload() != null
+                        && "assignment_code_project".equals(payload.getPayload().get("kind"))));
+    }
+
     // -----------------------------------------------------------
+
+    private static VerlaEventEnvelope artifactEnvelope(long sessionId, long seq, String kind) {
+        return VerlaEventEnvelope.builder()
+                .messageId("evt_" + sessionId + "_" + seq)
+                .correlationId("conv:1:turn:1:sess:" + sessionId)
+                .orderingKey("session:" + sessionId)
+                .eventType("ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED")
+                .eventSeq(seq)
+                .timestamp(Instant.now())
+                .conversation(VerlaConversationRef.builder().conversationId(1L).build())
+                .turn(VerlaTurnRef.builder().turnId(1L).build())
+                .session(VerlaSessionRef.builder().sessionId(sessionId).kind(VerlaSessionKind.ASSIGNMENT).build())
+                .payload(java.util.Map.of("kind", kind, "artifactUid", "artifact_1_1_" + sessionId + "_x"))
+                .build();
+    }
+
+    private static String artifactPayloadJson(long sessionId, String kind) {
+        return """
+                {
+                  "messageId": "evt_%1$d_1",
+                  "correlationId": "conv:1:turn:1:sess:%1$d",
+                  "orderingKey": "session:%1$d",
+                  "eventType": "ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED",
+                  "eventSeq": 1,
+                  "timestamp": "2026-05-21T00:00:00Z",
+                  "conversation": { "conversationId": 1 },
+                  "turn": { "turnId": 1 },
+                  "session": { "sessionId": %1$d, "kind": "ASSIGNMENT" },
+                  "payload": { "kind": "%2$s", "artifactUid": "artifact_1_1_%1$d_x" }
+                }
+                """.formatted(sessionId, kind);
+    }
 
     private static VerlaEventEnvelope envelope(long sessionId, long seq, String type) {
         return VerlaEventEnvelope.builder()

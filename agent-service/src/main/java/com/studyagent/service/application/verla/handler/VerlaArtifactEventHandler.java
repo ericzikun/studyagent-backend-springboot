@@ -114,6 +114,11 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         if (p.getSourceObjectId() == null || p.getSourceObjectId().isBlank()) {
             return;
         }
+        // 二进制产物（如 coding 项目里的图片）不可解码成 UTF-8 bodyOrRef：
+        // 已有 contentRef 或 meta.binary 标记时，正文应由前端走单文件接口按 contentRef 取。
+        if (isBinaryArtifact(p)) {
+            return;
+        }
 
         try {
             VerlaAttachment attachment = attachmentRepository.findByObjectId(p.getSourceObjectId());
@@ -145,6 +150,14 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
             log.warn("[Verla/artifact] hydrate body failed sourceObjectId={}: {}",
                     p.getSourceObjectId(), e.getMessage());
         }
+    }
+
+    private boolean isBinaryArtifact(VerlaArtifactUpdatedPayload p) {
+        if (p.getContentRef() != null && !p.getContentRef().isBlank()) {
+            return true;
+        }
+        Map<String, Object> meta = p.getMeta();
+        return meta != null && Boolean.TRUE.equals(meta.get("binary"));
     }
 
     @SuppressWarnings("unchecked")

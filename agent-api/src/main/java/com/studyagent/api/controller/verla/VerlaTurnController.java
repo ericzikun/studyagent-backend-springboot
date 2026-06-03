@@ -119,6 +119,7 @@ public class VerlaTurnController {
         conversationService.getOwned(clerkUserId, cid);
         List<VerlaArtifact> list = artifactRepository.findByConversation(cid);
         return Result.success(list.stream()
+                .filter(VerlaArtifactVO::isListVisible)
                 .map(VerlaArtifactVO::from).collect(Collectors.toList()));
     }
 

@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -129,7 +131,20 @@ public class VerlaToolCallEventHandler implements VerlaEventHandler {
         if (json.length() <= FIELD_MAX_LEN) {
             return json;
         }
-        return json.substring(0, FIELD_MAX_LEN) + TRUNCATED_TAIL;
+        return toTruncatedJsonEnvelope(json);
+    }
+
+    private String toTruncatedJsonEnvelope(String json) {
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        envelope.put("_truncated", true);
+        envelope.put("originalJsonLength", json.length());
+        envelope.put("preview", json.substring(0, FIELD_MAX_LEN / 2) + TRUNCATED_TAIL);
+        try {
+            return objectMapper.writeValueAsString(envelope);
+        } catch (Exception e) {
+            log.warn("[Verla/tool] truncated field serialize failed: {}", e.getMessage());
+            return "{\"_truncated\":true,\"preview\":\"[truncated]\"}";
+        }
     }
 
     private static String truncateString(String s, int max) {

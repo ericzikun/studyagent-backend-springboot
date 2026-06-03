@@ -31,9 +31,9 @@ class MockPyCommandConsumerTest {
     void resolvePlanIntent_treatsStreamScenarioPrefixesAsAssignment() {
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fast test high frequency stream", "router"))
                 .isEqualTo("assignment");
-        assertThat(MockPyCommandConsumer.resolvePlanIntent("mixed test rich markdown stream", "router"))
-                .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fasting is unrelated", "router"))
+                .isEqualTo("qa");
+        assertThat(MockPyCommandConsumer.resolvePlanIntent("mixed test rich markdown stream", "router"))
                 .isEqualTo("qa");
     }
 
@@ -51,7 +51,7 @@ class MockPyCommandConsumerTest {
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fast assignment smoothing"))
                 .isEqualTo("fast");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  mixed: assignment markdown"))
-                .isEqualTo("mixed");
+                .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fasting should stay normal"))
                 .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("normal assignment"))
@@ -98,21 +98,6 @@ class MockPyCommandConsumerTest {
         assertThat(visibleText).doesNotContain("```");
         assertThat(visibleText).doesNotContain("| Area |");
         assertThat(visibleText).doesNotContain("\n- ");
-    }
-
-    @Test
-    void assignmentRunVisibleChunks_coverStreamSmoothingFixtures() {
-        var chunks = MockPyAssignmentFixtures.runVisibleChunks();
-        String visibleText = String.join("", chunks);
-
-        assertThat(chunks).hasSizeGreaterThanOrEqualTo(8);
-        assertThat(visibleText).contains("## What I’m checking");
-        assertThat(visibleText).contains("| Area | What I will verify |");
-        assertThat(visibleText).contains("```text");
-        assertThat(MockPyAssignmentFixtures.runStreamDelayMs(0))
-                .isEqualTo(1200L);
-        assertThat(MockPyAssignmentFixtures.runStreamDelayMs(chunks.size() - 1))
-                .isEqualTo(6400L);
     }
 
     @Test

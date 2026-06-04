@@ -112,6 +112,8 @@ public class MockPyCommandConsumer {
     private final ScheduledExecutorService scheduler;
     /** 按 turn 记录 deep understanding 轮次，用来模拟“多轮后可开始生成”的 composer 按钮信号。 */
     private final ConcurrentHashMap<Long, AtomicLong> assignmentDeepUnderstandingRounds = new ConcurrentHashMap<>();
+    /** 按 turn 记录本地 MockPy artifact 场景，避免 init 输入前缀在 clarify/run payload 中丢失。 */
+    private final ConcurrentHashMap<Long, String> assignmentArtifactScenarios = new ConcurrentHashMap<>();
     private final String instanceId;
 
     /** plan agent 触发 clarify form 的概率 (0~100)。可通过 verla.mq.mock.clarify-rate 配置。 */
@@ -393,6 +395,7 @@ public class MockPyCommandConsumer {
      */
     private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
         String scenario = resolveAssignmentStreamScenario(assignmentUserText(cmd));
+        rememberAssignmentArtifactScenario(cmd, scenario);
         if (MockPyAssignmentFixtures.STREAM_SCENARIO_FAST.equals(scenario)) {
             scheduleAssignmentInitScenarioResponse(cmd, scenario,
                     MockPyAssignmentFixtures.fastTextChunks(),
@@ -426,7 +429,7 @@ public class MockPyCommandConsumer {
                 timing.contentIntervalMs());
 
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
-                MockPyAssignmentFixtures.defaultInitCompletedPayload(), timing.completedDelayMs());
+                MockPyAssignmentFixtures.defaultInitCompletedPayload(scenario), timing.completedDelayMs());
     }
 
     static AssignmentInitTiming defaultAssignmentInitTiming(int thinkingChunkCount, int contentChunkCount) {
@@ -725,9 +728,13 @@ public class MockPyCommandConsumer {
                         "Final package check"),
                 5500, 7000);
 
+        String artifactScenario = resolveAssignmentArtifactScenario(
+                cmd.getPayload() == null ? Map.of() : cmd.getPayload(),
+                rememberedAssignmentArtifactScenario(cmd));
         List<Map<String, Object>> artifacts = MockPyAssignmentFixtures.generatedArtifacts(
                 agentType,
-                UUID.randomUUID().toString().substring(0, 8));
+                UUID.randomUUID().toString().substring(0, 8),
+                artifactScenario);
         long artifactDelayMs = ASSIGNMENT_RUN_ARTIFACT_MIN_DELAY_MS;
         for (int i = 0; i < artifacts.size(); i++) {
             scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED,
@@ -736,6 +743,7 @@ public class MockPyCommandConsumer {
         }
 
         List<String> artifactUids = artifacts.stream()
+                .filter(MockPyCommandConsumer::isFrontendVisibleArtifact)
                 .map(artifact -> String.valueOf(artifact.get("artifactUid")))
                 .toList();
         long finalArtifactDelayMs = artifactDelayMs
@@ -749,6 +757,10 @@ public class MockPyCommandConsumer {
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_COMPLETED, done,
                 Math.max(ASSIGNMENT_RUN_COMPLETION_MIN_DELAY_MS,
                         finalArtifactDelayMs + ASSIGNMENT_RUN_COMPLETION_SETTLE_MS));
+    }
+
+    private static boolean isFrontendVisibleArtifact(Map<String, Object> artifact) {
+        return !"assignment_code_file".equals(String.valueOf(artifact.get("kind")));
     }
 
     private void scheduleAssignmentProgress(VerlaCommandEnvelope cmd, String label,
@@ -1327,6 +1339,104 @@ public class MockPyCommandConsumer {
 
     static String resolveAssignmentStreamScenario(String userText) {
         return MockPyAssignmentFixtures.resolveStreamScenario(userText);
+    }
+
+    static String resolveAssignmentArtifactScenario(Map<String, Object> payload) {
+        return resolveAssignmentArtifactScenario(payload, MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT);
+    }
+
+    static String resolveAssignmentArtifactScenario(Map<String, Object> payload, String fallbackScenario) {
+        if (payload == null || payload.isEmpty()) {
+            return normalizeArtifactScenario(fallbackScenario);
+        }
+
+        for (String key : List.of("mockScenario", "artifactScenario", "streamScenario", "userText")) {
+            String value = stringField(payload, key);
+            if (isCodeProjectMockSignal(value)) {
+                return MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT;
+            }
+        }
+
+        for (String key : List.of(
+                "requirementUnderstanding",
+                "requirementForm",
+                "reservedFields",
+                "appendAskAnswers",
+                "slots")) {
+            if (containsCodeProjectMockSignal(payload.get(key))) {
+                return MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT;
+            }
+        }
+        return normalizeArtifactScenario(fallbackScenario);
+    }
+
+    private static String normalizeArtifactScenario(String scenario) {
+        return MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT.equals(scenario)
+                ? MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT
+                : MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT;
+    }
+
+    private void rememberAssignmentArtifactScenario(VerlaCommandEnvelope cmd, String scenario) {
+        String normalized = normalizeArtifactScenario(scenario);
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT.equals(normalized)) {
+            return;
+        }
+        Long key = assignmentScenarioKey(cmd);
+        if (key != null) {
+            assignmentArtifactScenarios.put(key, normalized);
+        }
+    }
+
+    private String rememberedAssignmentArtifactScenario(VerlaCommandEnvelope cmd) {
+        Long key = assignmentScenarioKey(cmd);
+        if (key == null) {
+            return MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT;
+        }
+        return assignmentArtifactScenarios.getOrDefault(key, MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT);
+    }
+
+    private static Long assignmentScenarioKey(VerlaCommandEnvelope cmd) {
+        Long turnId = refTurnId(cmd);
+        return turnId != null ? turnId : refSessionId(cmd);
+    }
+
+    private static boolean containsCodeProjectMockSignal(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof String text) {
+            return isCodeProjectMockSignal(text);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.values().stream().anyMatch(MockPyCommandConsumer::containsCodeProjectMockSignal);
+        }
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (containsCodeProjectMockSignal(item)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isCodeProjectMockSignal(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String scenario = MockPyAssignmentFixtures.resolveStreamScenario(text);
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT.equals(scenario)) {
+            return true;
+        }
+        String normalized = text.toLowerCase(Locale.ROOT);
+        return containsAny(normalized,
+                "assignment_code_project",
+                "code_project",
+                "code project",
+                "coding project",
+                "代码工程",
+                "工程目录",
+                "项目级代码");
     }
 
     private static List<String> mockChunks(String agentType) {

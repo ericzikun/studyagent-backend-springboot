@@ -18,6 +18,7 @@ final class MockPyAssignmentFixtures {
 
     static final String STREAM_SCENARIO_DEFAULT = "default";
     static final String STREAM_SCENARIO_FAST = "fast";
+    static final String STREAM_SCENARIO_CODE_PROJECT = "code-project";
     static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private MockPyAssignmentFixtures() {
@@ -31,6 +32,11 @@ final class MockPyAssignmentFixtures {
         String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(java.util.Locale.ROOT);
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_FAST)) {
             return STREAM_SCENARIO_FAST;
+        }
+        if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_CODE_PROJECT)
+                || hasMockScenarioPrefix(normalized, "code_project")
+                || hasMockScenarioPrefix(normalized, "codeproject")) {
+            return STREAM_SCENARIO_CODE_PROJECT;
         }
         return STREAM_SCENARIO_DEFAULT;
     }
@@ -57,15 +63,27 @@ final class MockPyAssignmentFixtures {
      * understanding response.
      */
     static Map<String, Object> defaultInitCompletedPayload() {
+        return defaultInitCompletedPayload(STREAM_SCENARIO_DEFAULT);
+    }
+
+    static Map<String, Object> defaultInitCompletedPayload(String scenario) {
         Map<String, Object> done = new HashMap<>();
         done.put("summary", "[Mock] Assignment requirements understood");
         done.put("ready", true);
         done.put("isReadyForGeneration", false);
         done.put("nextActions", List.of("deep_understanding", "generation"));
-        done.put("requirementUnderstanding", Map.of(
-                "topic", "Causes of World War I",
-                "outputType", "short outline",
-                "nextStep", "choose walkthrough or assignment setup"));
+        if (STREAM_SCENARIO_CODE_PROJECT.equals(scenario)) {
+            done.put("mockScenario", STREAM_SCENARIO_CODE_PROJECT);
+            done.put("requirementUnderstanding", Map.of(
+                    "topic", "Code project homework analyzer",
+                    "outputType", STREAM_SCENARIO_CODE_PROJECT,
+                    "nextStep", "start generation to emit an assignment_code_project fixture"));
+        } else {
+            done.put("requirementUnderstanding", Map.of(
+                    "topic", "Causes of World War I",
+                    "outputType", "short outline",
+                    "nextStep", "choose walkthrough or assignment setup"));
+        }
         return done;
     }
 
@@ -189,9 +207,16 @@ final class MockPyAssignmentFixtures {
      * and editor deep links instead of only covering the first document tab.
      */
     static List<Map<String, Object>> generatedArtifacts(String agentType, String uidSuffix) {
+        return generatedArtifacts(agentType, uidSuffix, STREAM_SCENARIO_DEFAULT);
+    }
+
+    static List<Map<String, Object>> generatedArtifacts(String agentType, String uidSuffix, String scenario) {
         String safeSuffix = uidSuffix == null || uidSuffix.isBlank()
                 ? UUID.randomUUID().toString().substring(0, 8)
                 : uidSuffix;
+        if (STREAM_SCENARIO_CODE_PROJECT.equals(scenario)) {
+            return generatedCodeProjectArtifacts(agentType, safeSuffix);
+        }
         return List.of(
                 artifactPayload(
                         "assignment_mock_document_" + safeSuffix,
@@ -219,6 +244,70 @@ final class MockPyAssignmentFixtures {
                         "code"));
     }
 
+    private static List<Map<String, Object>> generatedCodeProjectArtifacts(String agentType, String safeSuffix) {
+        String projectUid = "assignment_mock_code_project_" + safeSuffix;
+        return List.of(
+                artifactPayload(
+                        "assignment_mock_document_" + safeSuffix,
+                        "document_markdown",
+                        "text/markdown",
+                        "Generated Assignment.md",
+                        generatedArtifactBody(),
+                        agentType,
+                        "document"),
+                artifactPayload(
+                        "assignment_mock_slides_editor_json_" + safeSuffix,
+                        "assignment_slides_editor_json",
+                        "application/json",
+                        "Case Study Deck.editor.json",
+                        generatedSlidesEditorJson(),
+                        agentType,
+                        "slides"),
+                codeProjectFilePayload(
+                        projectUid + "_src_main_py",
+                        "src/main.py",
+                        "text/x-python",
+                        "python",
+                        generatedCodeProjectMainPy(),
+                        agentType),
+                codeProjectFilePayload(
+                        projectUid + "_src_analyzer_py",
+                        "src/analyzer.py",
+                        "text/x-python",
+                        "python",
+                        generatedCodeProjectAnalyzerPy(),
+                        agentType),
+                codeProjectFilePayload(
+                        projectUid + "_next_config_js",
+                        "next.config.js",
+                        "application/javascript",
+                        "javascript",
+                        generatedCodeProjectNextConfigJs(),
+                        agentType),
+                codeProjectFilePayload(
+                        projectUid + "_package_json",
+                        "package.json",
+                        "application/json",
+                        "json",
+                        generatedCodeProjectPackageJson(),
+                        agentType),
+                codeProjectFilePayload(
+                        projectUid + "_tailwind_config_ts",
+                        "tailwind.config.ts",
+                        "text/typescript",
+                        "typescript",
+                        generatedCodeProjectTailwindConfigTs(),
+                        agentType),
+                artifactPayload(
+                        projectUid,
+                        "assignment_code_project",
+                        "application/json",
+                        "homework-analyzer",
+                        generatedCodeProjectManifest(),
+                        agentType,
+                        "code_project"));
+    }
+
     private static Map<String, Object> artifactPayload(String artifactUid,
                                                        String kind,
                                                        String mime,
@@ -226,6 +315,17 @@ final class MockPyAssignmentFixtures {
                                                        String body,
                                                        String agentType,
                                                        String artifactType) {
+        return artifactPayload(artifactUid, kind, mime, summary, body, agentType, artifactType, Map.of());
+    }
+
+    private static Map<String, Object> artifactPayload(String artifactUid,
+                                                       String kind,
+                                                       String mime,
+                                                       String summary,
+                                                       String body,
+                                                       String agentType,
+                                                       String artifactType,
+                                                       Map<String, Object> extraMeta) {
         Map<String, Object> art = new HashMap<>();
         art.put("artifactUid", artifactUid);
         art.put("kind", kind);
@@ -235,11 +335,162 @@ final class MockPyAssignmentFixtures {
         art.put("status", "READY");
         art.put("version", 1);
         art.put("sizeBytes", (long) body.getBytes(StandardCharsets.UTF_8).length);
-        art.put("meta", Map.of(
-                "agent", agentType,
-                "source", "mockpy-assignment-run",
-                "mockArtifactType", artifactType));
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("agent", agentType);
+        meta.put("source", "mockpy-assignment-run");
+        meta.put("mockArtifactType", artifactType);
+        meta.putAll(extraMeta);
+        art.put("meta", meta);
         return art;
+    }
+
+    private static Map<String, Object> codeProjectFilePayload(String artifactUid,
+                                                              String relPath,
+                                                              String mime,
+                                                              String language,
+                                                              String body,
+                                                              String agentType) {
+        return artifactPayload(
+                artifactUid,
+                "assignment_code_file",
+                mime,
+                relPath,
+                body,
+                agentType,
+                "code_project_file",
+                Map.of(
+                        "projectUid", "code_project",
+                        "relPath", relPath,
+                        "language", language,
+                        "binary", false));
+    }
+
+    static String generatedCodeProjectManifest() {
+        return """
+                {
+                  "schemaVersion": 1,
+                  "projectUid": "code_project",
+                  "rootDir": "homework-analyzer",
+                  "fileCount": 5,
+                  "totalBytes": 2860,
+                  "files": [
+                    {"relPath": "src/main.py", "artifactUid": "code_project_src_main_py", "language": "python", "sizeBytes": 498, "binary": false},
+                    {"relPath": "src/analyzer.py", "artifactUid": "code_project_src_analyzer_py", "language": "python", "sizeBytes": 734, "binary": false},
+                    {"relPath": "next.config.js", "artifactUid": "code_project_next_config_js", "language": "javascript", "sizeBytes": 154, "binary": false},
+                    {"relPath": "package.json", "artifactUid": "code_project_package_json", "language": "json", "sizeBytes": 624, "binary": false},
+                    {"relPath": "tailwind.config.ts", "artifactUid": "code_project_tailwind_config_ts", "language": "typescript", "sizeBytes": 486, "binary": false}
+                  ]
+                }
+                """;
+    }
+
+    static String generatedCodeProjectMainPy() {
+        return """
+                from analyzer import summarize_homework
+
+
+                def main():
+                    assignment = {
+                        "topic": "Calculus homework",
+                        "questions": [
+                            "Differentiate x^3 - 4x",
+                            "Find the limit of sin(x) / x as x approaches 0",
+                            "Explain the chain rule in one paragraph",
+                        ],
+                    }
+                    result = summarize_homework(assignment)
+                    print(result)
+
+
+                if __name__ == "__main__":
+                    main()
+                """;
+    }
+
+    static String generatedCodeProjectAnalyzerPy() {
+        return """
+                def summarize_homework(assignment):
+                    questions = assignment.get("questions", [])
+                    return {
+                        "topic": assignment.get("topic", "Untitled homework"),
+                        "questionCount": len(questions),
+                        "plan": [build_step(index, question) for index, question in enumerate(questions, start=1)],
+                    }
+
+
+                def build_step(index, question):
+                    return {
+                        "step": index,
+                        "question": question,
+                        "strategy": infer_strategy(question),
+                    }
+
+
+                def infer_strategy(question):
+                    text = question.lower()
+                    if "differentiate" in text:
+                        return "Apply derivative rules and simplify."
+                    if "limit" in text:
+                        return "Use a standard limit or algebraic rewrite."
+                    return "Restate the concept, then provide a concise example."
+                """;
+    }
+
+    static String generatedCodeProjectNextConfigJs() {
+        return """
+                /** @type {import('next').NextConfig} */
+                const nextConfig = {
+                  reactStrictMode: true,
+                };
+
+                module.exports = nextConfig;
+                """;
+    }
+
+    static String generatedCodeProjectPackageJson() {
+        return """
+                {
+                  "name": "homework-analyzer",
+                  "version": "0.1.0",
+                  "private": true,
+                  "scripts": {
+                    "dev": "next dev",
+                    "build": "next build",
+                    "start": "next start",
+                    "analyze": "python src/main.py"
+                  },
+                  "dependencies": {
+                    "next": "^15.0.0",
+                    "react": "^18.3.0",
+                    "react-dom": "^18.3.0"
+                  },
+                  "devDependencies": {
+                    "tailwindcss": "^3.4.0",
+                    "typescript": "^5.8.0"
+                  }
+                }
+                """;
+    }
+
+    static String generatedCodeProjectTailwindConfigTs() {
+        return """
+                import type { Config } from "tailwindcss";
+
+                const config: Config = {
+                  content: ["./src/**/*.{js,ts,jsx,tsx}"],
+                  theme: {
+                    extend: {
+                      colors: {
+                        ink: "#232323",
+                        paper: "#fbfaf7"
+                      }
+                    }
+                  },
+                  plugins: []
+                };
+
+                export default config;
+                """;
     }
 
     static String generatedSlidesEditorJson() {

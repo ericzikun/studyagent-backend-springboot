@@ -31,6 +31,8 @@ class MockPyCommandConsumerTest {
     void resolvePlanIntent_treatsStreamScenarioPrefixesAsAssignment() {
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fast test high frequency stream", "router"))
                 .isEqualTo("assignment");
+        assertThat(MockPyCommandConsumer.resolvePlanIntent("code-project test generated folder", "router"))
+                .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fasting is unrelated", "router"))
                 .isEqualTo("qa");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("mixed test rich markdown stream", "router"))
@@ -50,12 +52,39 @@ class MockPyCommandConsumerTest {
     void resolveAssignmentStreamScenario_onlyAcceptsLeadingCommandWord() {
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fast assignment smoothing"))
                 .isEqualTo("fast");
+        assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("code-project assignment folder"))
+                .isEqualTo("code-project");
+        assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  code_project: assignment folder"))
+                .isEqualTo("code-project");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  mixed: assignment markdown"))
                 .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fasting should stay normal"))
                 .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("normal assignment"))
                 .isEqualTo("default");
+    }
+
+    @Test
+    void resolveAssignmentArtifactScenario_acceptsExplicitAndFormSignals() {
+        assertThat(MockPyCommandConsumer.resolveAssignmentArtifactScenario(Map.of(
+                "mockScenario", "code-project")))
+                .isEqualTo("code-project");
+        assertThat(MockPyCommandConsumer.resolveAssignmentArtifactScenario(Map.of(
+                "requirementForm", Map.of(
+                        "subject", "Coding project",
+                        "format", "工程目录"))))
+                .isEqualTo("code-project");
+        assertThat(MockPyCommandConsumer.resolveAssignmentArtifactScenario(Map.of(
+                "requirementForm", Map.of("subject", "History essay"))))
+                .isEqualTo("default");
+        assertThat(MockPyCommandConsumer.resolveAssignmentArtifactScenario(
+                Map.of(),
+                "code-project"))
+                .isEqualTo("code-project");
+        assertThat(MockPyCommandConsumer.resolveAssignmentArtifactScenario(
+                Map.of("requirementForm", Map.of("subject", "History essay")),
+                "code-project"))
+                .isEqualTo("code-project");
     }
 
     @Test
@@ -69,6 +98,17 @@ class MockPyCommandConsumerTest {
         assertThat(payload.get("requirementUnderstanding"))
                 .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
                 .containsEntry("nextStep", "choose walkthrough or assignment setup");
+    }
+
+    @Test
+    void assignmentCodeProjectInitCompletedPayload_persistsMockScenario() {
+        Map<String, Object> payload = MockPyAssignmentFixtures.defaultInitCompletedPayload("code-project");
+
+        assertThat(payload).containsEntry("mockScenario", "code-project");
+        assertThat(payload.get("requirementUnderstanding"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("outputType", "code-project")
+                .containsEntry("nextStep", "start generation to emit an assignment_code_project fixture");
     }
 
     @Test
@@ -174,6 +214,44 @@ class MockPyCommandConsumerTest {
         assertThat((String) artifacts.get(2).get("bodyOrRef"))
                 .contains("def build_argument")
                 .contains("needs_citation_pass");
+    }
+
+    @Test
+    void assignmentGeneratedArtifacts_canEmitCodeProjectFixture() {
+        List<Map<String, Object>> artifacts =
+                MockPyAssignmentFixtures.generatedArtifacts("assignment", "test1234", "code-project");
+
+        assertThat(artifacts)
+                .extracting(artifact -> artifact.get("kind"))
+                .containsExactly(
+                        "document_markdown",
+                        "assignment_slides_editor_json",
+                        "assignment_code_file",
+                        "assignment_code_file",
+                        "assignment_code_file",
+                        "assignment_code_file",
+                        "assignment_code_file",
+                        "assignment_code_project");
+        List<String> relPaths = artifacts.stream()
+                .filter(artifact -> "assignment_code_file".equals(artifact.get("kind")))
+                .map(artifact -> String.valueOf(((Map<?, ?>) artifact.get("meta")).get("relPath")))
+                .toList();
+        assertThat(relPaths).containsExactly(
+                "src/main.py",
+                "src/analyzer.py",
+                "next.config.js",
+                "package.json",
+                "tailwind.config.ts");
+
+        Map<String, Object> project = artifacts.get(artifacts.size() - 1);
+        assertThat(project)
+                .containsEntry("artifactUid", "assignment_mock_code_project_test1234")
+                .containsEntry("kind", "assignment_code_project")
+                .containsEntry("summary", "homework-analyzer");
+        assertThat((String) project.get("bodyOrRef"))
+                .contains("\"rootDir\": \"homework-analyzer\"")
+                .contains("\"relPath\": \"src/main.py\"")
+                .contains("\"relPath\": \"package.json\"");
     }
 
     @Test

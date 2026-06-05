@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.quota.QuotaLedgerItem;
@@ -48,7 +49,7 @@ public class QuotaController {
             Map<String, Object> freeQuota = new LinkedHashMap<>();
             freeQuota.put("balance", balance.freeBalance());
             freeQuota.put("period_total", balance.freePeriodTotal());
-            freeQuota.put("period_end", balance.freePeriodEnd() != null ? balance.freePeriodEnd().toString() : null);
+            freeQuota.put("period_end", DateTimeFormats.formatApi(balance.freePeriodEnd()));
 
             Map<String, Object> paidQuota = new LinkedHashMap<>();
             paidQuota.put("balance", balance.paidBalance());
@@ -71,7 +72,7 @@ public class QuotaController {
                     Map<String, Object> freeQuota = new LinkedHashMap<>();
                     freeQuota.put("balance", balance.freeBalance());
                     freeQuota.put("period_total", balance.freePeriodTotal());
-                    freeQuota.put("period_end", balance.freePeriodEnd() != null ? balance.freePeriodEnd().toString() : null);
+                    freeQuota.put("period_end", DateTimeFormats.formatApi(balance.freePeriodEnd()));
 
                     Map<String, Object> paidQuota = new LinkedHashMap<>();
                     paidQuota.put("balance", balance.paidBalance());
@@ -123,7 +124,7 @@ public class QuotaController {
                     m.put("displayText", item.displayText());
                     m.put("freeBalanceAfter", item.freeBalanceAfter());
                     m.put("paidBalanceAfter", item.paidBalanceAfter());
-                    m.put("createdAt", item.createdAt() != null ? item.createdAt().toString() : null);
+                    m.put("createdAt", DateTimeFormats.formatApi(item.createdAt()));
                     m.put("feature_code", item.featureCode());
                     m.put("quota_unit", item.quotaUnit());
                     return m;

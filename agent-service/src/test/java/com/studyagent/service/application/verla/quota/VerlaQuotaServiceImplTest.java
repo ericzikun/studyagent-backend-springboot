@@ -117,6 +117,7 @@ class VerlaQuotaServiceImplTest {
     @Test
     void consumeForAssignmentRun_returnsExempt_andSkipsQuotaService_whenExempt() {
         ReflectionTestUtils.setField(service, "quotaEnabled", false);
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of());
 
         VerlaQuotaConsumeResult r = service.consumeForAssignmentRun(ctx());
 
@@ -130,6 +131,7 @@ class VerlaQuotaServiceImplTest {
 
     @Test
     void consumeForAssignmentRun_throwsInsufficient_whenCanConsumeFalse() {
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of());
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1L))
                 .thenReturn(false);
@@ -199,7 +201,45 @@ class VerlaQuotaServiceImplTest {
     // ---------------------- 并发绑定冲突 ----------------------
 
     @Test
+    void consumeForAssignmentRun_reusesTurnLedger_withoutSecondConsume_whenTurnAlreadyCharged() {
+        VerlaSession charged = VerlaSession.builder()
+                .id(10L)
+                .turnId(22L)
+                .quotaLedgerId(777L)
+                .quotaAmount(1L)
+                .build();
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of(charged));
+        when(sessionRepository.bindQuotaLedger(33L, 777L, 1L)).thenReturn(true);
+
+        VerlaQuotaConsumeResult r = service.consumeForAssignmentRun(ctx());
+
+        assertEquals(777L, r.ledgerId());
+        assertEquals(1L, r.amount());
+        verify(quotaDomainService, never()).consume(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void inheritAssignmentQuotaLedger_bindsLedgerFromChargedSiblingSession() {
+        VerlaSession charged = VerlaSession.builder()
+                .id(10L)
+                .turnId(22L)
+                .quotaLedgerId(888L)
+                .quotaAmount(1L)
+                .build();
+        when(sessionRepository.findById(55L)).thenReturn(VerlaSession.builder().id(55L).turnId(22L).build());
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of(charged));
+        when(sessionRepository.bindQuotaLedger(55L, 888L, 1L)).thenReturn(true);
+
+        service.inheritAssignmentQuotaLedger(55L, 22L);
+
+        verify(sessionRepository).bindQuotaLedger(55L, 888L, 1L);
+        verifyNoInteractions(quotaDomainService);
+    }
+
+    @Test
     void consumeForAssignmentRun_throwsIllegalState_whenBindReturnsFalse() {
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of());
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(quotaDomainService.canConsume(anyString(), anyString(), anyLong())).thenReturn(true);
         when(quotaDomainService.consume(
@@ -218,11 +258,28 @@ class VerlaQuotaServiceImplTest {
 
     @Test
     void refundBySessionId_skips_whenNoLedgerBound() {
-        VerlaSession s = VerlaSession.builder().id(33L).build();
+        VerlaSession s = VerlaSession.builder().id(33L).turnId(22L).build();
         when(sessionRepository.findById(33L)).thenReturn(s);
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of());
 
         assertDoesNotThrow(() -> service.refundBySessionId(33L, "agent_failed"));
         verify(quotaDomainService, never()).refund(anyLong(), anyString());
+    }
+
+    @Test
+    void refundBySessionId_fallsBackToTurnLedger_whenCurrentSessionUnbound() {
+        VerlaSession runSession = VerlaSession.builder().id(33L).turnId(22L).build();
+        VerlaSession clarifySession = VerlaSession.builder()
+                .id(10L)
+                .turnId(22L)
+                .quotaLedgerId(666L)
+                .build();
+        when(sessionRepository.findById(33L)).thenReturn(runSession);
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of(clarifySession));
+
+        service.refundBySessionId(33L, "agent_failed");
+
+        verify(quotaDomainService).refund(666L, "agent_failed");
     }
 
     @Test

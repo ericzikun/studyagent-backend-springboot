@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * V2 verla 链路 商业化额度门面实现。
@@ -127,6 +128,26 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         return consumeInternal(ctx, FeatureCode.HUMANIZER, words, biz);
     }
 
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void inheritAssignmentQuotaLedger(Long targetSessionId, Long turnId) {
+        if (targetSessionId == null || turnId == null) {
+            return;
+        }
+        VerlaSession target = sessionRepository.findById(targetSessionId);
+        if (target == null || target.getQuotaLedgerId() != null) {
+            return;
+        }
+        findChargedSessionForTurn(turnId).ifPresent(charged -> {
+            boolean bound = sessionRepository.bindQuotaLedger(
+                    targetSessionId, charged.getQuotaLedgerId(), charged.getQuotaAmount());
+            if (bound) {
+                log.info("[VerlaQuota] inherited ledger: targetSessionId={}, turnId={}, ledgerId={}",
+                        targetSessionId, turnId, charged.getQuotaLedgerId());
+            }
+        });
+    }
+
     private VerlaQuotaConsumeResult consumeInternal(
             VerlaQuotaContext ctx,
             FeatureCode feature,
@@ -135,6 +156,28 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
 
         if (ctx == null || ctx.sessionId() == null) {
             throw new IllegalArgumentException("VerlaQuotaContext.sessionId is required");
+        }
+
+        // 0) 同 turn 已扣费 → 仅绑定既有 ledger，避免 finalize 重试双扣
+        if (ctx.turnId() != null && feature == FeatureCode.TASK_CREATE) {
+            Optional<VerlaSession> charged = findChargedSessionForTurn(ctx.turnId());
+            if (charged.isPresent()) {
+                VerlaSession existing = charged.get();
+                boolean bound = sessionRepository.bindQuotaLedger(
+                        ctx.sessionId(), existing.getQuotaLedgerId(), existing.getQuotaAmount());
+                if (!bound) {
+                    VerlaSession current = sessionRepository.findById(ctx.sessionId());
+                    Long alreadyBound = current == null ? null : current.getQuotaLedgerId();
+                    if (alreadyBound == null) {
+                        throw new IllegalStateException(
+                                "Failed to bind existing assignment quota ledger: sessionId="
+                                        + ctx.sessionId() + ", turnId=" + ctx.turnId());
+                    }
+                }
+                log.info("[VerlaQuota] reused turn ledger: sessionId={}, turnId={}, ledgerId={}",
+                        ctx.sessionId(), ctx.turnId(), existing.getQuotaLedgerId());
+                return VerlaQuotaConsumeResult.of(existing.getQuotaLedgerId(), existing.getQuotaAmount());
+            }
         }
 
         // 1) admin / 白名单 / 配额关闭 → 直接放行
@@ -207,6 +250,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
             return;
         }
         Long ledgerId = s.getQuotaLedgerId();
+        if (ledgerId == null && s.getTurnId() != null) {
+            ledgerId = findChargedSessionForTurn(s.getTurnId())
+                    .map(VerlaSession::getQuotaLedgerId)
+                    .orElse(null);
+        }
         if (ledgerId == null) {
             // 未扣过费（admin / 白名单 / 配额关闭），无需退款
             return;
@@ -226,6 +274,15 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     // ===================================================================
     //  helpers
     // ===================================================================
+
+    private Optional<VerlaSession> findChargedSessionForTurn(Long turnId) {
+        if (turnId == null) {
+            return Optional.empty();
+        }
+        return sessionRepository.findByTurn(turnId).stream()
+                .filter(session -> session.getQuotaLedgerId() != null)
+                .findFirst();
+    }
 
     private Map<String, Object> baseBizContext(VerlaQuotaContext ctx) {
         Map<String, Object> biz = new HashMap<>();

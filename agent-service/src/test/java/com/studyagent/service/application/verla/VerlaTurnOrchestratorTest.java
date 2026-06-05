@@ -567,6 +567,10 @@ class VerlaTurnOrchestratorTest {
         @Override
         public void assertSufficientForAssignmentRun(String clerkUserId) {
         }
+
+        @Override
+        public void inheritAssignmentQuotaLedger(Long targetSessionId, Long turnId) {
+        }
     }
 
     private static final class FakeMqOutboxRepository implements MqOutboxRepository {

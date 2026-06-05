@@ -1332,6 +1332,17 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
+        //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
+        verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
+                .clerkUserId(conv == null ? null : conv.getUserId())
+                .conversationId(s.getConversationId())
+                .turnId(turn.getId())
+                .sessionId(s.getId())
+                .intent(intent)
+                .userMessageId(turn.getUserMessageId())
+                .build());
+
         VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
                 conv, turn, s, intent, resolvedSlots, userText,
                 objectIds, reservedFields, appendAskAnswers, requirementForm);
@@ -1371,17 +1382,8 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        // ✦ 商业化扣费：CMD_ASSIGNMENT_RUN 派发前同事务扣 1 个 task_create；
-        //    余额不足抛 InsufficientQuotaException → GlobalExceptionHandler 返回 1.0 协议响应；
-        //    outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
-        verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
-                .clerkUserId(conv == null ? null : conv.getUserId())
-                .conversationId(s.getConversationId())
-                .turnId(turn.getId())
-                .sessionId(s.getId())
-                .intent(intent)
-                .userMessageId(turn.getUserMessageId())
-                .build());
+        // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
+        verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());
 
         VerlaCommandEnvelope env = buildAssignmentRunEnvelope(conv, turn, s, intent, finalClarifyResult);
         mqOutboxService.createVerlaCommand(env, commandExchange,

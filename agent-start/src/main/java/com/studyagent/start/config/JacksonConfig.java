@@ -3,10 +3,16 @@ package com.studyagent.start.config;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.studyagent.common.datetime.OffsetLocalDateTimeSerializer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+
+import java.time.LocalDateTime;
 
 /**
  * Jackson 配置类
@@ -45,6 +51,12 @@ public class JacksonConfig {
         
         // 🆕 启用自动刷新，提高写入效率
         objectMapper.configure(JsonGenerator.Feature.FLUSH_PASSED_TO_STREAM, true);
+
+        // LocalDateTime 统一输出带 offset 的 ISO 字符串（如 2026-06-03T04:00:00Z）
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.registerModule(new SimpleModule()
+                .addSerializer(LocalDateTime.class, new OffsetLocalDateTimeSerializer()));
         
         return objectMapper;
     }

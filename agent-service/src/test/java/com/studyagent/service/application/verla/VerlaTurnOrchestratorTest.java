@@ -79,15 +79,15 @@ class VerlaTurnOrchestratorTest {
         orchestrator.onAgentCompleted(357L, payload);
 
         assertEquals(2, messageRepository.savedMessages.size());
-        VerlaMessage savedMessage = messageRepository.savedMessages.get(0);
+        VerlaMessage workforceStatus = messageRepository.savedMessages.get(0);
+        assertEquals("agent_workforce", workforceStatus.getRole());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, workforceStatus.getTextContent());
+        VerlaMessage savedMessage = messageRepository.savedMessages.get(1);
         assertNotNull(savedMessage);
         assertEquals("Assignment output is ready. Open the generated artifact to view the full result.",
                 savedMessage.getTextContent());
         assertFalse(savedMessage.getBlocksJson().contains(finalResult));
         assertTrue(savedMessage.getBlocksJson().contains("\"finalResultTruncated\":true"));
-        VerlaMessage workforceStatus = messageRepository.savedMessages.get(1);
-        assertEquals("agent_workforce", workforceStatus.getRole());
-        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, workforceStatus.getTextContent());
         assertEquals(SessionStatus.SUCCEEDED.name(), sessionRepository.saved.getStatus());
         assertEquals(TurnStatus.COMPLETED.name(), turnRepository.saved.getStatus());
         assertEquals(153L, conversationRepository.incrementedConversationId);
@@ -129,10 +129,10 @@ class VerlaTurnOrchestratorTest {
                 "finalResult", "Done"));
 
         assertEquals(2, messageRepository.savedMessages.size());
-        assertEquals("system", messageRepository.savedMessages.get(0).getRole());
-        assertEquals("Done", messageRepository.savedMessages.get(0).getTextContent());
-        assertEquals("agent_workforce", messageRepository.savedMessages.get(1).getRole());
-        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(1).getTextContent());
+        assertEquals("agent_workforce", messageRepository.savedMessages.get(0).getRole());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(0).getTextContent());
+        assertEquals("system", messageRepository.savedMessages.get(1).getRole());
+        assertEquals("Done", messageRepository.savedMessages.get(1).getTextContent());
     }
 
     @Test
@@ -174,7 +174,7 @@ class VerlaTurnOrchestratorTest {
         assertEquals(1, messageRepository.savedMessages.stream()
                 .filter(message -> "agent_workforce".equals(message.getRole()))
                 .count());
-        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(1).getTextContent());
+        assertEquals(AGENT_WORKFORCE_COMPLETED_TEXT, messageRepository.savedMessages.get(0).getTextContent());
     }
 
     @Test

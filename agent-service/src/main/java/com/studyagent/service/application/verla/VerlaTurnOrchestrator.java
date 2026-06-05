@@ -781,6 +781,9 @@ public class VerlaTurnOrchestrator {
         }
 
         if (agentTurnJustFinished) {
+            // Workforce status is a phase marker; keep it before any final assistant
+            // reply so history restores the completed stage before its output.
+            persistAgentWorkforceCompletionMessage(turn, agentSessionId);
             String reply = extractAssistantReply(result);
             if (reply != null && !reply.isBlank()) {
                 VerlaMessage assistant = VerlaMessage.builder()
@@ -794,9 +797,6 @@ public class VerlaTurnOrchestrator {
                         .build();
                 messageRepository.save(assistant);
             }
-            // Spring owns the persisted workforce status row; the turn-status
-            // guard above keeps repeated completed events from duplicating it.
-            persistAgentWorkforceCompletionMessage(turn, agentSessionId);
         }
 
         if (turn != null) {

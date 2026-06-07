@@ -12,7 +12,9 @@ import com.studyagent.infra.mapper.FeedbackSubmissionMapper;
 import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.HumanizerTaskEntity;
+import com.studyagent.infra.entity.verla.VerlaConversationEntity;
 import com.studyagent.infra.mapper.HumanizerTaskMapper;
+import com.studyagent.infra.mapper.verla.VerlaConversationMapper;
 import com.studyagent.api.util.TaskIdEncoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,9 +42,11 @@ public class FeedbackApplicationService {
     private final FeedbackSubmissionMapper submissionMapper;
     private final TaskMapper taskMapper;
     private final HumanizerTaskMapper humanizerTaskMapper;
+    private final VerlaConversationMapper verlaConversationMapper;
 
     private static final String PREFIX_PROMPT_SESSION = "fps_";
     private static final String PREFIX_SUBMISSION = "fsub_";
+    private static final String PREFIX_VERLA_CONVERSATION_SUBJECT = "verla_conversation:";
 
     /** triggerCode + subjectType -> (variant, configKey, configVersion) */
     private static final Map<String, TriggerConfig> TRIGGER_CONFIG = new HashMap<>();
@@ -121,21 +125,47 @@ public class FeedbackApplicationService {
     }
 
     private void validateSubjectOwnership(String clerkUserId, String subjectType, String subjectIdStr) {
+        if ("task".equals(subjectType)) {
+            if (isOwnedLegacyTask(clerkUserId, subjectIdStr)
+                    || isOwnedVerlaConversation(clerkUserId, subjectIdStr)) {
+                return;
+            }
+            throw new BusinessException(ApiCode.NO_PERMISSION);
+        }
+
         Long numericId = parseFeedbackSubjectId(subjectIdStr);
         if (numericId == null) {
             throw new BusinessException(ApiCode.NO_PERMISSION);
         }
-        if ("task".equals(subjectType)) {
-            TaskEntity task = taskMapper.selectById(numericId);
-            if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
-                throw new BusinessException(ApiCode.NO_PERMISSION);
-            }
-        } else if ("humanizer_task".equals(subjectType)) {
+        if ("humanizer_task".equals(subjectType)) {
             HumanizerTaskEntity task = humanizerTaskMapper.selectById(numericId);
             if (task == null || !clerkUserId.equals(task.getClerkUserId())) {
                 throw new BusinessException(ApiCode.NO_PERMISSION);
             }
         }
+    }
+
+    private boolean isOwnedLegacyTask(String clerkUserId, String subjectIdStr) {
+        if (subjectIdStr != null && subjectIdStr.trim().startsWith(PREFIX_VERLA_CONVERSATION_SUBJECT)) {
+            return false;
+        }
+        Long numericId = parseFeedbackSubjectId(subjectIdStr);
+        if (numericId == null) {
+            return false;
+        }
+        TaskEntity task = taskMapper.selectById(numericId);
+        return task != null && clerkUserId.equals(task.getClerkUserId());
+    }
+
+    private boolean isOwnedVerlaConversation(String clerkUserId, String subjectIdStr) {
+        Long conversationId = parseVerlaConversationSubjectId(subjectIdStr);
+        if (conversationId == null) {
+            return false;
+        }
+        VerlaConversationEntity conversation = verlaConversationMapper.selectById(conversationId);
+        return conversation != null
+                && clerkUserId.equals(conversation.getUserId())
+                && !"deleted".equals(conversation.getStatus());
     }
 
     /** 数字串或 Sqids 短码（与 TaskIdEncoder 一致） */
@@ -148,6 +178,25 @@ public class FeedbackApplicationService {
             return Long.parseLong(s);
         } catch (NumberFormatException e) {
             return TaskIdEncoder.decode(s);
+        }
+    }
+
+    /**
+     * V2 Assignment 没有旧 tasks 行，下载反馈以 Verla conversation 作为 task-like subject。
+     * 前端优先传带前缀的 subjectId 来避免和旧 Task 自增 ID 撞键；无前缀数字保留兼容旧 V2 调用。
+     */
+    private static Long parseVerlaConversationSubjectId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.startsWith(PREFIX_VERLA_CONVERSATION_SUBJECT)) {
+            s = s.substring(PREFIX_VERLA_CONVERSATION_SUBJECT.length());
+        }
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

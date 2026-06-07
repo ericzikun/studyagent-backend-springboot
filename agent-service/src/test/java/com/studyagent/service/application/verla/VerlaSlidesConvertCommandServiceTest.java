@@ -168,5 +168,8 @@ class VerlaSlidesConvertCommandServiceTest {
 
         @Override
         public void markAsFailed(Long id, String workerId, String errorMessage) { }
+
+        @Override
+        public void releaseClaim(Long id, String workerId) { }
     }
 }

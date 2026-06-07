@@ -181,6 +181,20 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
                 .set(MqOutboxEntity::getErrorMessage, truncateError(errorMessage)));
     }
 
+    @Override
+    public void releaseClaim(Long id, String workerId) {
+        LambdaUpdateWrapper<MqOutboxEntity> wrapper = new LambdaUpdateWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getId, id)
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_SENDING)
+                .set(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                .set(MqOutboxEntity::getWorkerId, null)
+                .set(MqOutboxEntity::getLeaseUntil, null);
+        if (workerId != null) {
+            wrapper.eq(MqOutboxEntity::getWorkerId, workerId);
+        }
+        this.update(wrapper);
+    }
+
     private String truncateError(String errorMessage) {
         return errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
                 : errorMessage;

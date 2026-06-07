@@ -64,7 +64,8 @@ class VerlaTurnOrchestratorContextRefTest {
                 new SessionStateMachine(),
                 mqOutboxService,
                 new ObjectMapper(),
-                Mockito.mock(VerlaQuotaService.class));
+                Mockito.mock(VerlaQuotaService.class),
+                event -> {});
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
     }
 
@@ -458,6 +459,11 @@ class VerlaTurnOrchestratorContextRefTest {
         @Override
         public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
             return true;
+        }
+
+        @Override
+        public int countActiveAssignmentRuns() {
+            return 0;
         }
 
         Long latestSessionId() {

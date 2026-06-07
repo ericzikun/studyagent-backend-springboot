@@ -392,6 +392,11 @@ class VerlaContextCacheSyncIntegrationTest {
         public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
             return true;
         }
+
+        @Override
+        public int countActiveAssignmentRuns() {
+            return 0;
+        }
     }
 
     private static class InMemoryTurnRepository implements VerlaTurnRepository {

@@ -112,4 +112,10 @@ public class VerlaSessionRepositoryImpl
                 .setCreatedAt(d.getCreatedAt())
                 .setUpdatedAt(d.getUpdatedAt());
     }
+
+    @Override
+    public int countActiveAssignmentRuns() {
+        Integer count = this.baseMapper.countActiveAssignmentRuns();
+        return count == null ? 0 : count;
+    }
 }

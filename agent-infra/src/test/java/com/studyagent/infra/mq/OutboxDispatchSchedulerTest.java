@@ -3,6 +3,7 @@ package com.studyagent.infra.mq;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
+import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Message;
@@ -33,7 +34,46 @@ class OutboxDispatchSchedulerTest {
         scheduler = new OutboxDispatchScheduler(
                 mqOutboxRepository,
                 rabbitTemplate,
-                new ObjectMapper());
+                new ObjectMapper(),
+                unlimitedAssignmentRunDispatchGate());
+    }
+
+    @Test
+    void shouldDeferAssignmentRunDispatchWhenGateIsFull() {
+        MqOutbox message = claimedVerlaCommand("cmd.assignment.run", 0, 3, "worker-claimed");
+        AssignmentRunDispatchGate blockingGate = new AssignmentRunDispatchGate() {
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public int maxConcurrency() {
+                return 2;
+            }
+
+            @Override
+            public int activeCount() {
+                return 3;
+            }
+
+            @Override
+            public boolean canDispatchNow() {
+                return false;
+            }
+        };
+        OutboxDispatchScheduler blockedScheduler = new OutboxDispatchScheduler(
+                mqOutboxRepository,
+                rabbitTemplate,
+                new ObjectMapper(),
+                blockingGate);
+
+        blockedScheduler.sendMessage(message);
+
+        assertThat(mqOutboxRepository.sentId).isNull();
+        assertThat(mqOutboxRepository.releasedClaimId).isEqualTo(1001L);
+        assertThat(mqOutboxRepository.releasedClaimWorkerId).isEqualTo("worker-claimed");
+        assertThat(rabbitTemplate.sendCount).isZero();
     }
 
     @Test
@@ -144,11 +184,13 @@ class OutboxDispatchSchedulerTest {
         OutboxDispatchScheduler firstScheduler = new OutboxDispatchScheduler(
                 repository,
                 firstTemplate,
-                new ObjectMapper());
+                new ObjectMapper(),
+                unlimitedAssignmentRunDispatchGate());
         OutboxDispatchScheduler secondScheduler = new OutboxDispatchScheduler(
                 repository,
                 secondTemplate,
-                new ObjectMapper());
+                new ObjectMapper(),
+                unlimitedAssignmentRunDispatchGate());
 
         firstScheduler.dispatchPendingMessages();
         secondScheduler.dispatchPendingMessages();
@@ -293,6 +335,30 @@ class OutboxDispatchSchedulerTest {
         }
     }
 
+    private static AssignmentRunDispatchGate unlimitedAssignmentRunDispatchGate() {
+        return new AssignmentRunDispatchGate() {
+            @Override
+            public boolean isEnabled() {
+                return false;
+            }
+
+            @Override
+            public int maxConcurrency() {
+                return 0;
+            }
+
+            @Override
+            public int activeCount() {
+                return 0;
+            }
+
+            @Override
+            public boolean canDispatchNow() {
+                return true;
+            }
+        };
+    }
+
     private static class FakeMqOutboxRepository implements MqOutboxRepository {
         Long sentId;
         Long retryId;
@@ -301,6 +367,8 @@ class OutboxDispatchSchedulerTest {
         String retryWorkerId;
         Long failedId;
         String failedError;
+        Long releasedClaimId;
+        String releasedClaimWorkerId;
         boolean findPendingCalled;
         boolean claimCalled;
         Long claimById;
@@ -382,6 +450,12 @@ class OutboxDispatchSchedulerTest {
         public void markAsFailed(Long id, String workerId, String errorMessage) {
             this.failedId = id;
             this.failedError = errorMessage;
+        }
+
+        @Override
+        public void releaseClaim(Long id, String workerId) {
+            this.releasedClaimId = id;
+            this.releasedClaimWorkerId = workerId;
         }
     }
 
@@ -525,6 +599,20 @@ class OutboxDispatchSchedulerTest {
                         .retryCount(row.getRetryCount() + 1)
                         .leaseUntil(null)
                         .errorMessage(errorMessage)
+                        .build());
+            }
+        }
+
+        @Override
+        public synchronized void releaseClaim(Long id, String workerId) {
+            MqOutbox row = rows.get(id);
+            if (row != null
+                    && row.getStatus() == MqOutbox.STATUS_SENDING
+                    && (workerId == null || Objects.equals(row.getWorkerId(), workerId))) {
+                rows.put(id, copy(row)
+                        .status(MqOutbox.STATUS_UNSENT)
+                        .workerId(null)
+                        .leaseUntil(null)
                         .build());
             }
         }

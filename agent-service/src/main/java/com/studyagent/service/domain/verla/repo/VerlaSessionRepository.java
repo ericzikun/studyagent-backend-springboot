@@ -33,4 +33,9 @@ public interface VerlaSessionRepository {
      * @return true 绑定成功；false 已有 ledger 或 session 不存在
      */
     boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount);
+
+    /**
+     * 当前占用 assignment run 派发 slot 的 session 数量（见 {@code AssignmentRunDispatchGate}）。
+     */
+    int countActiveAssignmentRuns();
 }

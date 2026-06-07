@@ -42,4 +42,13 @@ public interface VerlaSessionMapper extends BaseMapper<VerlaSessionEntity> {
     int bindQuotaLedger(@Param("id") Long id,
                         @Param("ledgerId") Long ledgerId,
                         @Param("amount") Long amount);
+
+    /**
+     * 统计占用 assignment run 并发 slot 的 session 数（DISPATCHING / RUNNING 且 outbox 为主执行命令）。
+     */
+    @Select("SELECT COUNT(DISTINCT s.id) FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "WHERE s.status IN ('DISPATCHING', 'RUNNING') "
+            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")
+    int countActiveAssignmentRuns();
 }

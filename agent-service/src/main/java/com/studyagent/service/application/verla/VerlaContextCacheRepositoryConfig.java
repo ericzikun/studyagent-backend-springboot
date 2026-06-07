@@ -65,6 +65,11 @@ public class VerlaContextCacheRepositoryConfig {
                 }
                 return ok;
             }
+
+            @Override
+            public int countActiveAssignmentRuns() {
+                return delegate.countActiveAssignmentRuns();
+            }
         };
     }
 

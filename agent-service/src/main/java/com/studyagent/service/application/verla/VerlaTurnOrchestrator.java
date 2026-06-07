@@ -38,10 +38,12 @@ import com.studyagent.service.domain.verla.state.SessionStatus;
 import com.studyagent.service.domain.verla.state.TurnEvent;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
+import com.studyagent.service.domain.verla.dispatch.AssignmentRunSlotReleasedEvent;
 import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -112,6 +114,7 @@ public class VerlaTurnOrchestrator {
     private final ObjectMapper objectMapper;
     /** V2 商业化额度门面（feature: task_create / ai_detection / humanizer）。 */
     private final VerlaQuotaService verlaQuotaService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ==========================================================
     // 1) 用户消息入口
@@ -802,6 +805,8 @@ public class VerlaTurnOrchestrator {
         if (turn != null) {
             conversationRepository.incrementVersion(turn.getConversationId());
         }
+
+        publishAssignmentRunSlotReleased(agentSessionId);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1074,6 +1079,8 @@ public class VerlaTurnOrchestrator {
 
         // ✦ 商业化退款：Agent 失败 → 按 sessionId 反查 quota_ledger_id 全额退款；幂等。
         verlaQuotaService.refundBySessionId(agentSessionId, "agent_failed");
+
+        publishAssignmentRunSlotReleased(agentSessionId);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1112,6 +1119,8 @@ public class VerlaTurnOrchestrator {
 
         // ✦ 商业化退款：Agent 取消 → 按 sessionId 反查 quota_ledger_id 全额退款；幂等。
         verlaQuotaService.refundBySessionId(agentSessionId, "agent_cancelled");
+
+        publishAssignmentRunSlotReleased(agentSessionId);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -2226,6 +2235,13 @@ public class VerlaTurnOrchestrator {
         if (conv != null && latestVersion != null) {
             conv.setVersion(latestVersion);
         }
+    }
+
+    private void publishAssignmentRunSlotReleased(Long sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new AssignmentRunSlotReleasedEvent(this, sessionId));
     }
 
     private static String resolveHostname() {

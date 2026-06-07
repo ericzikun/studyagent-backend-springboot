@@ -355,6 +355,11 @@ class VerlaInternalControllerTest {
         public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
             return false;
         }
+
+        @Override
+        public int countActiveAssignmentRuns() {
+            return 0;
+        }
     }
 
     private static class NoopArtifactRepository implements VerlaArtifactRepository {

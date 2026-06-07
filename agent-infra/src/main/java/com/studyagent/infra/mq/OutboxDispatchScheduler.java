@@ -2,8 +2,10 @@ package com.studyagent.infra.mq;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.verla.dispatch.AssignmentRunDispatchActions;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
+import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
@@ -38,6 +40,7 @@ public class OutboxDispatchScheduler {
     private final MqOutboxRepository mqOutboxRepository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final AssignmentRunDispatchGate assignmentRunDispatchGate;
     private final String workerId = "java-outbox-" + UUID.randomUUID();
 
     @Value("${mq.outbox.claim-lease-seconds:60}")
@@ -91,6 +94,18 @@ public class OutboxDispatchScheduler {
      *   便于消费侧（Py / Java listener）按 header 路由与去重，不破坏信封 schema。
      */
     public void sendMessage(MqOutbox message) {
+        if (shouldDeferAssignmentRunDispatch(message)) {
+            log.info(
+                    "[Verla/assignment-run-dispatch] deferred eventId={} action={} sessionId={} active={} max={}",
+                    message.getEventId(),
+                    message.getAction(),
+                    message.getSessionId(),
+                    assignmentRunDispatchGate.activeCount(),
+                    assignmentRunDispatchGate.maxConcurrency());
+            mqOutboxRepository.releaseClaim(message.getId(), message.getWorkerId());
+            return;
+        }
+
         try {
             String exchange;
             String routingKey;
@@ -173,6 +188,12 @@ public class OutboxDispatchScheduler {
                 .setHeader("sessionId", message.getSessionId())
                 .setHeader("action", message.getAction())
                 .build();
+    }
+
+    private boolean shouldDeferAssignmentRunDispatch(MqOutbox message) {
+        return assignmentRunDispatchGate.isEnabled()
+                && AssignmentRunDispatchActions.isGated(message.getAction())
+                && !assignmentRunDispatchGate.canDispatchNow();
     }
 
     private static String nullToDefault(String s, String def) {

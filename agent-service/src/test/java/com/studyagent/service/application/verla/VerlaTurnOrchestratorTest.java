@@ -57,7 +57,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -110,7 +111,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -152,7 +154,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -194,7 +197,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -236,7 +240,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 null,
                 new ObjectMapper(),
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -286,7 +291,8 @@ class VerlaTurnOrchestratorTest {
                 new SessionStateMachine(),
                 mqOutboxService,
                 objectMapper,
-                new NoopQuotaService());
+                new NoopQuotaService(),
+                event -> {});
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -373,6 +379,11 @@ class VerlaTurnOrchestratorTest {
         @Override
         public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
             return true;
+        }
+
+        @Override
+        public int countActiveAssignmentRuns() {
+            return 0;
         }
     }
 
@@ -646,6 +657,10 @@ class VerlaTurnOrchestratorTest {
 
         @Override
         public void markAsFailed(Long id, String workerId, String errorMessage) {
+        }
+
+        @Override
+        public void releaseClaim(Long id, String workerId) {
         }
     }
 }

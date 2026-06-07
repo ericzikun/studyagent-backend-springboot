@@ -94,4 +94,9 @@ public interface MqOutboxRepository {
      * 仅当前 claim worker 可以标记最终失败。
      */
     void markAsFailed(Long id, String workerId, String errorMessage);
+
+    /**
+     * 释放 claim 并回到 UNSENT，不增加 retry_count（用于派发门控暂缓发送）。
+     */
+    void releaseClaim(Long id, String workerId);
 }

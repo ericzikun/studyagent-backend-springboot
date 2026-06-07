@@ -3,6 +3,7 @@ package com.studyagent.infra.mq;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
+import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,7 +70,8 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         OutboxDispatchScheduler scheduler = new OutboxDispatchScheduler(
                 repository,
                 rabbitTemplate,
-                new ObjectMapper());
+                new ObjectMapper(),
+                unlimitedAssignmentRunDispatchGate());
 
         scheduler.sendMessage(verlaCommand(exchangeName, "missing.routing.key"));
 
@@ -176,5 +178,33 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         @Override
         public void markAsFailed(Long id, String workerId, String errorMessage) {
         }
+
+        @Override
+        public void releaseClaim(Long id, String workerId) {
+        }
+    }
+
+    private static AssignmentRunDispatchGate unlimitedAssignmentRunDispatchGate() {
+        return new AssignmentRunDispatchGate() {
+            @Override
+            public boolean isEnabled() {
+                return false;
+            }
+
+            @Override
+            public int maxConcurrency() {
+                return 0;
+            }
+
+            @Override
+            public int activeCount() {
+                return 0;
+            }
+
+            @Override
+            public boolean canDispatchNow() {
+                return true;
+            }
+        };
     }
 }

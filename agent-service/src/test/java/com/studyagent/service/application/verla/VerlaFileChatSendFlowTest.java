@@ -75,7 +75,8 @@ class VerlaFileChatSendFlowTest {
                 new SessionStateMachine(),
                 mqOutboxService,
                 new ObjectMapper(),
-                Mockito.mock(VerlaQuotaService.class));
+                Mockito.mock(VerlaQuotaService.class),
+                event -> {});
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
 
         conversationRepository.put(conversation(1L));
@@ -611,6 +612,11 @@ class VerlaFileChatSendFlowTest {
         @Override
         public boolean bindQuotaLedger(Long sessionId, Long ledgerId, Long amount) {
             return true;
+        }
+
+        @Override
+        public int countActiveAssignmentRuns() {
+            return 0;
         }
 
     }

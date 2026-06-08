@@ -30,11 +30,20 @@ class AssignmentRunDispatchGateImplTest {
     }
 
     @Test
-    void allowsDispatchWhenActiveRunsWithinLimit() {
+    void allowsDispatchWhenActiveRunsBelowLimit() {
+        VerlaSessionRepository repository = mock(VerlaSessionRepository.class);
+        when(repository.countActiveAssignmentRuns()).thenReturn(3);
+        AssignmentRunDispatchGateImpl gate = new AssignmentRunDispatchGateImpl(repository, 4);
+
+        assertThat(gate.canDispatchNow()).isTrue();
+    }
+
+    @Test
+    void blocksDispatchWhenActiveRunsReachLimit() {
         VerlaSessionRepository repository = mock(VerlaSessionRepository.class);
         when(repository.countActiveAssignmentRuns()).thenReturn(4);
         AssignmentRunDispatchGateImpl gate = new AssignmentRunDispatchGateImpl(repository, 4);
 
-        assertThat(gate.canDispatchNow()).isTrue();
+        assertThat(gate.canDispatchNow()).isFalse();
     }
 }

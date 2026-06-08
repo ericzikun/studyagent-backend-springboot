@@ -44,11 +44,15 @@ public interface VerlaSessionMapper extends BaseMapper<VerlaSessionEntity> {
                         @Param("amount") Long amount);
 
     /**
-     * 统计占用 assignment run 并发 slot 的 session 数（DISPATCHING / RUNNING 且 outbox 为主执行命令）。
+     * 统计占用 assignment run 并发 slot 的 session 数。
+     * <p>
+     * 仅计已真正占用 slot 的任务：{@code RUNNING}，或 {@code DISPATCHING} 且 run/retry outbox 已 {@code SENT}。
+     * {@code DISPATCHING + UNSENT}（门控 defer、尚未发往 MQ）不计入，避免排队任务反向占满 slot 导致死锁。
      */
     @Select("SELECT COUNT(DISTINCT s.id) FROM verla_sessions s "
             + "INNER JOIN mq_outbox o ON o.session_id = s.id "
-            + "WHERE s.status IN ('DISPATCHING', 'RUNNING') "
-            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")
+            + "WHERE o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry') "
+            + "AND (s.status = 'RUNNING' "
+            + "     OR (s.status = 'DISPATCHING' AND o.status = 1))")
     int countActiveAssignmentRuns();
 }

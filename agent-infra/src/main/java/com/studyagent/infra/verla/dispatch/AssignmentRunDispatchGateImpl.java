@@ -48,6 +48,6 @@ public class AssignmentRunDispatchGateImpl implements AssignmentRunDispatchGate 
         if (!isEnabled()) {
             return true;
         }
-        return activeCount() <= maxConcurrency;
+        return activeCount() < maxConcurrency;
     }
 }

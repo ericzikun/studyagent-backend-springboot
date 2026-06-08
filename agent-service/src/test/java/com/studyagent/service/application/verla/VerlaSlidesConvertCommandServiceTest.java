@@ -171,5 +171,10 @@ class VerlaSlidesConvertCommandServiceTest {
 
         @Override
         public void releaseClaim(Long id, String workerId) { }
+
+        @Override
+        public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
+        }
     }
 }

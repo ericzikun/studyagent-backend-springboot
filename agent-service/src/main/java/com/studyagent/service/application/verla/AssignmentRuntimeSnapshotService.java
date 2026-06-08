@@ -187,6 +187,7 @@ public class AssignmentRuntimeSnapshotService {
             case ASSIGNMENT_AGENT_FLOW_COMPLETED, ASSIGNMENT_AGENT_FLOW_FAILED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED -> type.name();
             case ASSIGNMENT_AGENT_FLOW_STARTED -> VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED.name();
+            case ASSIGNMENT_RUN_DISPATCH_QUEUED -> type.name();
             case ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_CLARIFY_STREAM_CHUNK ->
                     VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED.name();
             case ASSIGNMENT_CLARIFY_COMPLETED -> type.name();

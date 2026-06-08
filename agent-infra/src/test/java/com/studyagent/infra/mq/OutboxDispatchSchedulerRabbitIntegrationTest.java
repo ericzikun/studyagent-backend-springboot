@@ -71,7 +71,9 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
                 repository,
                 rabbitTemplate,
                 new ObjectMapper(),
-                unlimitedAssignmentRunDispatchGate());
+                unlimitedAssignmentRunDispatchGate(),
+                message -> {
+                });
 
         scheduler.sendMessage(verlaCommand(exchangeName, "missing.routing.key"));
 
@@ -181,6 +183,11 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
 
         @Override
         public void releaseClaim(Long id, String workerId) {
+        }
+
+        @Override
+        public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
         }
     }
 

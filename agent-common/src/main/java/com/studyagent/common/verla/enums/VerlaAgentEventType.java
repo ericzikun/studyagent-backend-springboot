@@ -56,6 +56,8 @@ public enum VerlaAgentEventType {
     ASSIGNMENT_CANCELLED(true),
 
     /** Assignment AgentFlow 域（Py assignment_flow_service 新事件体系） */
+    /** Java 派发门控：run 命令在 outbox 中等待并发 slot（非 Py 上报） */
+    ASSIGNMENT_RUN_DISPATCH_QUEUED(false),
     ASSIGNMENT_AGENT_FLOW_STARTED(false),
     /** Assignment workflow canvas 节点快照更新，payload.node 直接透传给前端右栏任务卡片。 */
     ASSIGNMENT_AGENT_NODE_UPDATED(false),

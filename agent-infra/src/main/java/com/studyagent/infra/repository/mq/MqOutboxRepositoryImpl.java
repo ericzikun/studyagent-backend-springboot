@@ -3,6 +3,7 @@ package com.studyagent.infra.repository.mq;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.infra.entity.mq.MqOutboxEntity;
 import com.studyagent.infra.mapper.mq.MqOutboxMapper;
 import com.studyagent.service.domain.mq.MqOutbox;
@@ -193,6 +194,26 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
             wrapper.eq(MqOutboxEntity::getWorkerId, workerId);
         }
         this.update(wrapper);
+    }
+
+    private static final List<String> GATED_ASSIGNMENT_RUN_ACTIONS = List.of(
+            VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode(),
+            VerlaCommandAction.CMD_AGENT_RETRY.getCode());
+
+    @Override
+    public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+        if (id == null || createdAt == null) {
+            return 0;
+        }
+        long count = this.count(new LambdaQueryWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                .in(MqOutboxEntity::getAction, GATED_ASSIGNMENT_RUN_ACTIONS)
+                .and(wrapper -> wrapper
+                        .lt(MqOutboxEntity::getCreatedAt, createdAt)
+                        .or(nested -> nested
+                                .eq(MqOutboxEntity::getCreatedAt, createdAt)
+                                .lt(MqOutboxEntity::getId, id))));
+        return Math.toIntExact(count);
     }
 
     private String truncateError(String errorMessage) {

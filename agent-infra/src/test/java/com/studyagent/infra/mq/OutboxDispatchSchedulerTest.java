@@ -1,6 +1,7 @@
 package com.studyagent.infra.mq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.service.application.verla.dispatch.AssignmentRunDispatchQueueEvents;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
@@ -25,17 +26,20 @@ class OutboxDispatchSchedulerTest {
 
     private FakeMqOutboxRepository mqOutboxRepository;
     private FakeRabbitTemplate rabbitTemplate;
+    private RecordingQueueEvents queueEvents;
     private OutboxDispatchScheduler scheduler;
 
     @BeforeEach
     void setUp() {
         mqOutboxRepository = new FakeMqOutboxRepository();
         rabbitTemplate = new FakeRabbitTemplate();
+        queueEvents = new RecordingQueueEvents();
         scheduler = new OutboxDispatchScheduler(
                 mqOutboxRepository,
                 rabbitTemplate,
                 new ObjectMapper(),
-                unlimitedAssignmentRunDispatchGate());
+                unlimitedAssignmentRunDispatchGate(),
+                queueEvents);
     }
 
     @Test
@@ -66,7 +70,8 @@ class OutboxDispatchSchedulerTest {
                 mqOutboxRepository,
                 rabbitTemplate,
                 new ObjectMapper(),
-                blockingGate);
+                blockingGate,
+                queueEvents);
 
         blockedScheduler.sendMessage(message);
 
@@ -74,6 +79,7 @@ class OutboxDispatchSchedulerTest {
         assertThat(mqOutboxRepository.releasedClaimId).isEqualTo(1001L);
         assertThat(mqOutboxRepository.releasedClaimWorkerId).isEqualTo("worker-claimed");
         assertThat(rabbitTemplate.sendCount).isZero();
+        assertThat(queueEvents.deferredMessage).isSameAs(message);
     }
 
     @Test
@@ -185,12 +191,14 @@ class OutboxDispatchSchedulerTest {
                 repository,
                 firstTemplate,
                 new ObjectMapper(),
-                unlimitedAssignmentRunDispatchGate());
+                unlimitedAssignmentRunDispatchGate(),
+                noopQueueEvents());
         OutboxDispatchScheduler secondScheduler = new OutboxDispatchScheduler(
                 repository,
                 secondTemplate,
                 new ObjectMapper(),
-                unlimitedAssignmentRunDispatchGate());
+                unlimitedAssignmentRunDispatchGate(),
+                noopQueueEvents());
 
         firstScheduler.dispatchPendingMessages();
         secondScheduler.dispatchPendingMessages();
@@ -335,6 +343,20 @@ class OutboxDispatchSchedulerTest {
         }
     }
 
+    private static AssignmentRunDispatchQueueEvents noopQueueEvents() {
+        return message -> {
+        };
+    }
+
+    private static class RecordingQueueEvents implements AssignmentRunDispatchQueueEvents {
+        MqOutbox deferredMessage;
+
+        @Override
+        public void notifyDeferred(MqOutbox message) {
+            this.deferredMessage = message;
+        }
+    }
+
     private static AssignmentRunDispatchGate unlimitedAssignmentRunDispatchGate() {
         return new AssignmentRunDispatchGate() {
             @Override
@@ -456,6 +478,11 @@ class OutboxDispatchSchedulerTest {
         public void releaseClaim(Long id, String workerId) {
             this.releasedClaimId = id;
             this.releasedClaimWorkerId = workerId;
+        }
+
+        @Override
+        public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
         }
     }
 
@@ -615,6 +642,11 @@ class OutboxDispatchSchedulerTest {
                         .leaseUntil(null)
                         .build());
             }
+        }
+
+        @Override
+        public synchronized int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
         }
 
         private boolean isClaimable(MqOutbox row, LocalDateTime currentTime) {

@@ -99,4 +99,10 @@ public interface MqOutboxRepository {
      * 释放 claim 并回到 UNSENT，不增加 retry_count（用于派发门控暂缓发送）。
      */
     void releaseClaim(Long id, String workerId);
+
+    /**
+     * 统计在 FIFO 队列中排在本条 {@code cmd.assignment.run} / retry 之前的 UNSENT 条数。
+     * 用于向前端返回 {@code queuePosition}（前方还有几条等待派发）。
+     */
+    int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt);
 }

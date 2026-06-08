@@ -3,6 +3,7 @@ package com.studyagent.infra.mq;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.dispatch.AssignmentRunDispatchActions;
+import com.studyagent.service.application.verla.dispatch.AssignmentRunDispatchQueueEvents;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
@@ -41,6 +42,7 @@ public class OutboxDispatchScheduler {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final AssignmentRunDispatchGate assignmentRunDispatchGate;
+    private final AssignmentRunDispatchQueueEvents assignmentRunDispatchQueueEvents;
     private final String workerId = "java-outbox-" + UUID.randomUUID();
 
     @Value("${mq.outbox.claim-lease-seconds:60}")
@@ -103,6 +105,12 @@ public class OutboxDispatchScheduler {
                     assignmentRunDispatchGate.activeCount(),
                     assignmentRunDispatchGate.maxConcurrency());
             mqOutboxRepository.releaseClaim(message.getId(), message.getWorkerId());
+            try {
+                assignmentRunDispatchQueueEvents.notifyDeferred(message);
+            } catch (Exception e) {
+                log.warn("[Verla/assignment-run-dispatch] queue notify failed outboxId={}: {}",
+                        message.getId(), e.getMessage());
+            }
             return;
         }
 

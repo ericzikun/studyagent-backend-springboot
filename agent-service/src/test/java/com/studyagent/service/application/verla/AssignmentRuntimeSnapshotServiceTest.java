@@ -448,6 +448,11 @@ class AssignmentRuntimeSnapshotServiceTest {
                     .limit(limit)
                     .toList();
         }
+
+        @Override
+        public VerlaEventInbox findLatestProcessedBySession(Long sessionId) {
+            return null;
+        }
     }
 
     private static class FakeWorkforceTaskRepository implements VerlaWorkforceTaskRepository {

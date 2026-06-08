@@ -77,6 +77,11 @@ public class VerlaEventInboxRepositoryImpl
                 .stream().map(this::toDomain).toList();
     }
 
+    @Override
+    public VerlaEventInbox findLatestProcessedBySession(Long sessionId) {
+        return toDomain(this.baseMapper.selectLatestProcessedBySession(sessionId));
+    }
+
     private VerlaEventInbox toDomain(VerlaEventInboxEntity e) {
         if (e == null) {
             return null;

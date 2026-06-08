@@ -57,4 +57,9 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
             + "ORDER BY id DESC LIMIT #{limit}")
     List<VerlaEventInboxEntity> selectRecentProcessed(@Param("cid") Long conversationId,
                                                       @Param("limit") int limit);
+
+    @Select("SELECT * FROM verla_event_inbox "
+            + "WHERE session_id = #{sessionId} AND status = 'PROCESSED' "
+            + "ORDER BY id DESC LIMIT 1")
+    VerlaEventInboxEntity selectLatestProcessedBySession(@Param("sessionId") Long sessionId);
 }

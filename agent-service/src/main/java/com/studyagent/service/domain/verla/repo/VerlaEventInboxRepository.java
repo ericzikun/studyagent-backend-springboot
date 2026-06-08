@@ -45,4 +45,9 @@ public interface VerlaEventInboxRepository {
      * Dashboard 状态快照：取某个 conversation 最近处理完成的 Py/SSE 事件，按 id 倒序。
      */
     List<VerlaEventInbox> findRecentProcessedByConversation(Long conversationId, int limit);
+
+    /**
+     * 某 session 最近一条已处理事件（运维看板用）。
+     */
+    VerlaEventInbox findLatestProcessedBySession(Long sessionId);
 }

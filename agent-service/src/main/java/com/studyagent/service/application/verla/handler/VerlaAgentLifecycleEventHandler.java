@@ -53,7 +53,9 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.FILE_CHAT_FAILED,
             VerlaAgentEventType.FILE_CHAT_CANCELLED,
             VerlaAgentEventType.MATERIALS_STARTED,
-            VerlaAgentEventType.MATERIALS_COMPLETED);
+            VerlaAgentEventType.MATERIALS_COMPLETED,
+            VerlaAgentEventType.AI_DETECTION_COMPLETED,
+            VerlaAgentEventType.AI_HUMANIZER_COMPLETED);
 
     private final VerlaTurnOrchestrator orchestrator;
 
@@ -97,7 +99,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 orchestrator.onAssignmentClarifyCompleted(sessionId, payload);
             }
             case AGENT_COMPLETED, ASSIGNMENT_COMPLETED, MATERIALS_COMPLETED,
-                    ASSIGNMENT_AGENT_FLOW_COMPLETED -> {
+                    ASSIGNMENT_AGENT_FLOW_COMPLETED, AI_DETECTION_COMPLETED,
+                    AI_HUMANIZER_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCompleted(sessionId, payload);
             }
@@ -107,7 +110,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             }
             case AGENT_FAILED, ASSIGNMENT_INIT_FAILED, ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
                     ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED,
-                    ASSIGNMENT_AGENT_FLOW_FAILED -> {
+                    ASSIGNMENT_AGENT_FLOW_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentFailed(sessionId, payload);
             }
@@ -116,7 +119,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 orchestrator.onFileChatFailed(sessionId, payload);
             }
             case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
-                    ASSIGNMENT_AGENT_FLOW_CANCELLED -> {
+                    ASSIGNMENT_AGENT_FLOW_CANCELLED, AI_DETECTION_CANCELLED,
+                    AI_HUMANIZER_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCancelled(sessionId);
             }

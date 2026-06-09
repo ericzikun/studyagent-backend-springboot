@@ -100,7 +100,15 @@ public enum VerlaAgentEventType {
 
     AGENT_COMPLETED(true),
     AGENT_FAILED(true),
-    AGENT_CANCELLED(true);
+    AGENT_CANCELLED(true),
+
+    /** AI Detection / Humanizer 域（Py runtime 级终态；业务流内失败也可能走 AGENT_FAILED） */
+    AI_DETECTION_COMPLETED(true),
+    AI_DETECTION_FAILED(true),
+    AI_DETECTION_CANCELLED(true),
+    AI_HUMANIZER_COMPLETED(true),
+    AI_HUMANIZER_FAILED(true),
+    AI_HUMANIZER_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -132,7 +140,13 @@ public enum VerlaAgentEventType {
             FILE_CHAT_FAILED,
             FILE_CHAT_CANCELLED,
             MATERIALS_COMPLETED,
-            PLAN_TASK_NAME_RESOLVED);
+            PLAN_TASK_NAME_RESOLVED,
+            AI_DETECTION_COMPLETED,
+            AI_DETECTION_FAILED,
+            AI_DETECTION_CANCELLED,
+            AI_HUMANIZER_COMPLETED,
+            AI_HUMANIZER_FAILED,
+            AI_HUMANIZER_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

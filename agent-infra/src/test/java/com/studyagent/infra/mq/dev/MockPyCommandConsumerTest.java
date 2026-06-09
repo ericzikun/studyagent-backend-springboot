@@ -198,22 +198,58 @@ class MockPyCommandConsumerTest {
                 .extracting(artifact -> artifact.get("kind"))
                 .containsExactly(
                         "document_markdown",
+                        "document_markdown",
                         "assignment_slides_editor_json",
                         "assignment_code_text");
         assertThat(artifacts)
                 .extracting(artifact -> artifact.get("artifactUid"))
                 .containsExactly(
                         "assignment_mock_document_test1234",
+                        "assignment_mock_citation_gallery_document_test1234",
                         "assignment_mock_slides_editor_json_test1234",
                         "assignment_mock_code_text_test1234");
         assertThat((String) artifacts.get(0).get("bodyOrRef"))
                 .contains("# Revise Case Study on Indigenous Australian Business Protocols");
-        assertThat((String) artifacts.get(1).get("bodyOrRef"))
+        assertThat((String) artifacts.get(2).get("bodyOrRef"))
                 .contains("\"slides\"")
                 .contains("Case Study Revision Deck");
-        assertThat((String) artifacts.get(2).get("bodyOrRef"))
+        assertThat((String) artifacts.get(3).get("bodyOrRef"))
                 .contains("def build_argument")
                 .contains("needs_citation_pass");
+    }
+
+    @Test
+    void assignmentGeneratedArtifacts_includeCitationStyleGalleryDocument() {
+        List<Map<String, Object>> artifacts =
+                MockPyAssignmentFixtures.generatedArtifacts("assignment", "test1234");
+
+        assertThat(artifacts)
+                .extracting(artifact -> artifact.get("summary"))
+                .contains("Citation Style Gallery.md");
+
+        String gallery = String.valueOf(artifacts.get(1).get("bodyOrRef"));
+        assertThat(gallery)
+                .contains("# Citation Style Hover Gallery")
+                .contains("## APA")
+                .contains("## Harvard")
+                .contains("## Chicago")
+                .contains("## MLA")
+                .contains("## IEEE")
+                .contains("## Vancouver")
+                .contains("## GB7714")
+                .contains("Expected trigger text: `(Nguyen, 2025, p. 118)`")
+                .contains("Expected trigger text: `(Nguyen 2025, 118)`")
+                .contains("Expected trigger text: `(Nguyen 118)`")
+                .contains("Expected trigger text: `[1]`")
+                .contains("\"id\": \"acad_apa_style\"")
+                .contains("\"id\": \"web_apa_style\"")
+                .contains("\"id\": \"upload_apa_style\"")
+                .contains("\"citationStyle\": \"APA\"")
+                .contains("\"citationStyle\": \"IEEE\"")
+                .contains("\"id\": \"acad_gb7714_style\"")
+                .contains("\"id\": \"web_gb7714_style\"")
+                .contains("\"id\": \"upload_gb7714_style\"")
+                .contains("[--CITATION_STYLE--]\nAPA");
     }
 
     @Test

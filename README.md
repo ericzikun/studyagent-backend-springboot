@@ -62,6 +62,8 @@ PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
 
 本地 MockPy 的 Assignment init 默认流会先发送一段基于真实 requirement-analysis case 分割的 `channel=thinking` stream chunk，再发送 `channel=content` 正文 chunk，用于验证 V2 前端左栏 thinking 折叠消息和正文流式消息的切换。
 
+默认 Assignment 生成结果会返回主文档、slides、code，并额外返回一份 citation style gallery 文档；该文档同时覆盖 APA、Harvard、Chicago、MLA、IEEE、Vancouver、GB7714，每种格式都包含 academic、web、upload 引用，用于在 V2 文档编辑器里手动验证引用 trigger、hover tooltip 和 quote marker。
+
 ### 4. 访问 API 文档
 
 http://localhost:8080/swagger-ui.html

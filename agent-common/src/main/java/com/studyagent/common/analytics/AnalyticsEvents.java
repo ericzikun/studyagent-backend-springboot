@@ -51,4 +51,16 @@ public final class AnalyticsEvents {
      * 查询支付状态
      */
     public static final String PAYMENT_STATUS_CHECKED = "payment_status_checked";
+
+    // ==================== Assignment 生成相关事件 ====================
+
+    public static final String ASSIGNMENT_GENERATION_STARTED = "assignment:generation:started";
+    public static final String ASSIGNMENT_GENERATION_SUCCEEDED = "assignment:generation:succeeded";
+    public static final String ASSIGNMENT_GENERATION_FAILED = "assignment:generation:failed";
+
+    // ==================== 支付 alias 事件（与前端冒号命名对齐，保留老事件兼容） ====================
+
+    public static final String BILLING_CHECKOUT_SESSION_CREATED = "billing:checkout:session_created";
+    public static final String BILLING_CHECKOUT_SESSION_FAILED = "billing:checkout:session_failed";
+    public static final String BILLING_PAYMENT_SUCCEEDED = "billing:payment:succeeded";
 }

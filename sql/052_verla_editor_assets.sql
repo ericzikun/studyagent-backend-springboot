@@ -1,4 +1,4 @@
--- 048_verla_editor_assets.sql
+-- 052_verla_editor_assets.sql
 -- 编辑器内部素材资源域，与 verla_attachments 独立
 -- 只服务编辑器渲染/保存/恢复，不参与作业附件语义
 

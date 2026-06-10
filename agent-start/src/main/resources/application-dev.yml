@@ -22,7 +22,9 @@ logging:
 posthog:
   enabled: ${POSTHOG_ENABLED:false}
   api-key: ${POSTHOG_API_KEY:}
-  host: ${POSTHOG_HOST:https://app.posthog.com}
+  host: ${POSTHOG_HOST:https://us.i.posthog.com}
+  environment: ${POSTHOG_ENVIRONMENT:}
+  app-version: ${POSTHOG_APP_VERSION:}
 
 verla:
   mq:

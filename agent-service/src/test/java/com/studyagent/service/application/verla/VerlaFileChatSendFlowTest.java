@@ -76,7 +76,8 @@ class VerlaFileChatSendFlowTest {
                 mqOutboxService,
                 new ObjectMapper(),
                 Mockito.mock(VerlaQuotaService.class),
-                event -> {});
+                event -> {},
+                Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
 
         conversationRepository.put(conversation(1L));

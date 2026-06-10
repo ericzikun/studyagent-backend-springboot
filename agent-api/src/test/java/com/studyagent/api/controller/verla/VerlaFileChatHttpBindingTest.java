@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaFileChatService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -191,7 +193,7 @@ class VerlaFileChatHttpBindingTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, event -> {});
+            super(null, null, null, null, null, null, null, null, null, null, null, event -> {}, mock(AnalyticsService.class));
         }
 
         @Override

@@ -291,6 +291,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,

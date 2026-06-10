@@ -43,6 +43,15 @@ public enum VerlaCommandAction {
     /** V2: 文件对话 */
     CMD_FILE_CHAT("cmd.file.chat"),
 
+    /** Chat With Assignment：作业产物追问 / 修改对话 */
+    CMD_ASSIGNMENT_CHAT("cmd.assignment.chat"),
+
+    /** Chat With Assignment：取消进行中的追问 / 编辑 */
+    CMD_ASSIGNMENT_CHAT_CONTROL_CANCEL("cmd.assignment.chat.control.cancel"),
+
+    /** Chat With Assignment：重试失败 / 取消的追问 */
+    CMD_ASSIGNMENT_CHAT_CONTROL_RETRY("cmd.assignment.chat.control.retry"),
+
     /** V2: 学习材料生成（Flashcard / Quiz / Study Guide 等） */
     CMD_MATERIALS_GENERATE("cmd.materials.generate"),
 

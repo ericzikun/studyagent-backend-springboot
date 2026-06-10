@@ -7,9 +7,11 @@ import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotPayloadView;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotView;
 import com.studyagent.service.domain.verla.VerlaArtifact;
+import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaWorkforceTaskOutput;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactEditProposalRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
@@ -41,6 +43,7 @@ public class AssignmentRuntimeSnapshotService {
     private final VerlaEventInboxRepository eventInboxRepository;
     private final AssignmentRuntimeProgressEstimator progressEstimator;
     private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
+    private final VerlaArtifactEditProposalRepository editProposalRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -71,8 +74,62 @@ public class AssignmentRuntimeSnapshotService {
                         .progress(progressEstimator.resolveProgress(recentEvents))
                         .agentNodes(agentNodes)
                         .artifacts(artifacts == null ? List.of() : artifacts)
+                        .artifactEditProposal(resolveActiveEditProposal(conversationId))
                         .build())
                 .build();
+    }
+
+    /**
+     * 当前 conversation 下最新一条活跃（GENERATING / REVIEWING）的 Edit Proposal，供刷新恢复
+     * 蒙层 / 内联 diff（设计 §4.8）。无活跃提案返回 null。
+     */
+    private Map<String, Object> resolveActiveEditProposal(Long conversationId) {
+        List<VerlaArtifactEditProposal> active = editProposalRepository.findActiveByConversation(conversationId);
+        if (active == null || active.isEmpty()) {
+            return null;
+        }
+        VerlaArtifactEditProposal p = active.get(0);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("state", VerlaArtifactEditProposal.STATE_GENERATING.equals(p.getState())
+                ? "generating" : "reviewing");
+        out.put("proposalId", p.getProposalId());
+        out.put("targets", mergeTargetsWithChanges(p));
+        return out;
+    }
+
+    /** targets_json（含 editMode/baseVersionNo）与 changes_json（review hunks）合并回 targets[].changes。 */
+    private List<Map<String, Object>> mergeTargetsWithChanges(VerlaArtifactEditProposal p) {
+        List<Map<String, Object>> targets = readJsonList(p.getTargetsJson());
+        Map<String, Object> changesByUid = readJsonMap(p.getChangesJson());
+        for (Map<String, Object> t : targets) {
+            Object uid = t.get("artifactUid");
+            if (uid != null && changesByUid.containsKey(String.valueOf(uid)) && t.get("changes") == null) {
+                t.put("changes", changesByUid.get(String.valueOf(uid)));
+            }
+        }
+        return targets;
+    }
+
+    private List<Map<String, Object>> readJsonList(String json) {
+        if (json == null || json.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private Map<String, Object> readJsonMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
     }
 
     /**

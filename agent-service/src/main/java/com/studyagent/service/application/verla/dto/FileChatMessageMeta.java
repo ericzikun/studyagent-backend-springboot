@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class FileChatMessageMeta {
 
     public static final String SCENE_FILE_CHAT = "FILE_CHAT";
+    public static final String SCENE_ASSIGNMENT_CHAT = "ASSIGNMENT_CHAT";
 
     private String scene;
     private String objectId;

@@ -16,6 +16,9 @@ public enum VerlaSessionKind {
     /** 文件对话 */
     FILE_CHAT,
 
+    /** Chat With Assignment：作业产物追问 / 修改对话 */
+    ASSIGNMENT_CHAT,
+
     /** 学习材料生成 */
     MATERIALS,
 

@@ -174,6 +174,11 @@ public class VerlaConversationDashboardStatusService {
                     AGENT_TOOL_CALL_RECORDED, ATTACHMENT_PARSED -> STATUS_PROGRESSING;
             case FILE_CHAT_STARTED, FILE_CHAT_STREAM_CHUNK, FILE_CHAT_COMPLETED,
                     FILE_CHAT_FAILED, FILE_CHAT_CANCELLED -> null;
+            case ASSIGNMENT_CHAT_STARTED, ASSIGNMENT_CHAT_STREAM_CHUNK, ASSIGNMENT_CHAT_COMPLETED,
+                    ASSIGNMENT_CHAT_FAILED, ASSIGNMENT_CHAT_CANCELLED -> null;
+            // write 编辑提案是 chat turn 内部子生命周期，不参与 dashboard 状态汇总。
+            case ARTIFACT_EDIT_PROPOSAL_STARTED, ARTIFACT_EDIT_PROPOSAL_READY,
+                    ARTIFACT_EDIT_PROPOSAL_FAILED -> null;
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED -> null;
         };
     }

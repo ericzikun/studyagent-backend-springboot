@@ -23,4 +23,13 @@ public interface VerlaMessageRepository {
      * 文件对话历史分页（按 conversation + objectId 隔离）
      */
     List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit);
+
+    /**
+     * 作业追问（Chat With Assignment）历史分页（scene=ASSIGNMENT_CHAT，键到 conversation 隔离）。
+     * <p>
+     * default 方法：生产实现 {@code VerlaMessageRepositoryImpl} 覆盖；测试 fake 无需实现。
+     */
+    default List<VerlaMessage> findAssignmentChatByCursor(Long conversationId, Long cursor, int limit) {
+        return List.of();
+    }
 }

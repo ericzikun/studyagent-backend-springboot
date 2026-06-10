@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotView;
 import com.studyagent.service.domain.verla.VerlaArtifact;
+import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaWorkforceTaskOutput;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactEditProposalRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
 import com.studyagent.service.domain.verla.WorkforceTaskProgressSnapshot;
@@ -31,6 +33,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
     private FakeMessageRepository messageRepository;
     private FakeArtifactRepository artifactRepository;
+    private FakeArtifactEditProposalRepository editProposalRepository;
     private FakeEventInboxRepository eventInboxRepository;
     private FakeWorkforceTaskOutputRepository taskOutputRepository;
     private FakeWorkforceTaskRepository workforceTaskRepository;
@@ -40,6 +43,7 @@ class AssignmentRuntimeSnapshotServiceTest {
     void setUp() {
         messageRepository = new FakeMessageRepository();
         artifactRepository = new FakeArtifactRepository();
+        editProposalRepository = new FakeArtifactEditProposalRepository();
         eventInboxRepository = new FakeEventInboxRepository();
         taskOutputRepository = new FakeWorkforceTaskOutputRepository();
         workforceTaskRepository = new FakeWorkforceTaskRepository();
@@ -54,6 +58,7 @@ class AssignmentRuntimeSnapshotServiceTest {
                 eventInboxRepository,
                 progressEstimator,
                 taskOutputRepository,
+                editProposalRepository,
                 new ObjectMapper());
     }
 
@@ -390,6 +395,33 @@ class AssignmentRuntimeSnapshotServiceTest {
         @Override
         public VerlaArtifact upsertByUid(VerlaArtifact artifact) {
             return artifact;
+        }
+    }
+
+    private static class FakeArtifactEditProposalRepository implements VerlaArtifactEditProposalRepository {
+        @Override
+        public VerlaArtifactEditProposal upsertByProposalId(VerlaArtifactEditProposal proposal) {
+            return proposal;
+        }
+
+        @Override
+        public VerlaArtifactEditProposal findByProposalId(String proposalId) {
+            return null;
+        }
+
+        @Override
+        public List<VerlaArtifactEditProposal> findActiveByConversation(Long conversationId) {
+            return List.of();
+        }
+
+        @Override
+        public int markState(String proposalId, String newState) {
+            return 0;
+        }
+
+        @Override
+        public int supersedeActiveExcept(Long conversationId, String keepProposalId) {
+            return 0;
         }
     }
 

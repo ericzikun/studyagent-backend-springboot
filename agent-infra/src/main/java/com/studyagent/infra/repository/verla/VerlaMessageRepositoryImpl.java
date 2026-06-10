@@ -42,6 +42,13 @@ public class VerlaMessageRepositoryImpl
                 .stream().map(this::toDomain).collect(Collectors.toList());
     }
 
+    @Override
+    public List<VerlaMessage> findAssignmentChatByCursor(Long conversationId, Long cursor, int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
+        return this.baseMapper.selectAssignmentChatByCursor(conversationId, cursor, safeLimit)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
     private VerlaMessage toDomain(VerlaMessageEntity e) {
         if (e == null) {
             return null;

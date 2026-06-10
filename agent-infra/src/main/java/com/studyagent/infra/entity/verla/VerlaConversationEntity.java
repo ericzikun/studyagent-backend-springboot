@@ -46,6 +46,9 @@ public class VerlaConversationEntity {
 
     private LocalDateTime lastMessageAt;
 
+    /** 改动时间：用户点击任务 / 编辑内容 / 发送消息时刷新（Recent Task 排序键） */
+    private LocalDateTime lastActiveAt;
+
     /** Redis 缓存 key 版本号（写时 +1） */
     private Long version;
 

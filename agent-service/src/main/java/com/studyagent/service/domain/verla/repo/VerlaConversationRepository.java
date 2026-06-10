@@ -57,6 +57,15 @@ public interface VerlaConversationRepository {
     int incrementVersion(Long id);
 
     /**
+     * 刷新改动时间 last_active_at = NOW()（用户点击任务 / 编辑内容更新时调用）。
+     * 不改变 version / turn_count，避免触发缓存失效与重复计数。
+     * <p>默认空实现仅服务于测试桩；生产实现（DB / cache-aware）均需覆盖。
+     */
+    default int touchActiveAt(Long id) {
+        return 0;
+    }
+
+    /**
      * 更新 AI 生成的对话标题。
      */
     int updateTitle(Long id, String title);

@@ -30,6 +30,8 @@ public class VerlaConversation {
     private Integer turnCount;
     private Long lastTurnId;
     private LocalDateTime lastMessageAt;
+    /** 改动时间：用户点击任务 / 编辑内容 / 发送消息时刷新（Recent Task 排序键） */
+    private LocalDateTime lastActiveAt;
     private Long version;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

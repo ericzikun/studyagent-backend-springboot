@@ -30,6 +30,8 @@ public class VerlaConversationVO {
     private Integer turnCount;
     private Long lastTurnId;
     private LocalDateTime lastMessageAt;
+    /** 改动时间：用户点击任务 / 编辑内容 / 发送消息时刷新（Recent Task 排序键） */
+    private LocalDateTime lastActiveAt;
     private LocalDateTime createdAt;
     /** 编辑器预览图列表，按固定 kind 顺序排列 (document / code / slides) */
     private List<EditorPreviewItem> editorPreviews;
@@ -54,6 +56,7 @@ public class VerlaConversationVO {
                 .turnCount(c.getTurnCount())
                 .lastTurnId(c.getLastTurnId())
                 .lastMessageAt(c.getLastMessageAt())
+                .lastActiveAt(c.getLastActiveAt())
                 .createdAt(c.getCreatedAt())
                 .build();
     }

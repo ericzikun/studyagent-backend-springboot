@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,7 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class VerlaEditorPreviewVO {
 
-    private Long conversationId;
+    private String conversationId;
     private String artifactUid;
     private String kind;
     private String previewUrl;
@@ -27,7 +28,7 @@ public class VerlaEditorPreviewVO {
     public static VerlaEditorPreviewVO fromEntity(
             com.studyagent.infra.entity.verla.VerlaEditorPreviewEntity entity) {
         return VerlaEditorPreviewVO.builder()
-                .conversationId(entity.getConversationId())
+                .conversationId(VerlaPublicIdVoSupport.conversation(entity.getConversationId(), true))
                 .artifactUid(entity.getSourceArtifactUid())
                 .kind(entity.getEditorKind())
                 .previewUrl(entity.getPreviewUrl())

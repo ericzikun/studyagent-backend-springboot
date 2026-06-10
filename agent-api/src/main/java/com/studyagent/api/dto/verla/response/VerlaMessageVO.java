@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,10 +15,10 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class VerlaMessageVO {
 
-    private Long messageId;
-    private Long turnId;
+    private String messageId;
+    private String turnId;
     private String role;
-    private Long sourceSessionId;
+    private String sourceSessionId;
     private String text;
     /** 用户消息附件数组的原始 JSON 字符串（objectId / filename / mime 等） */
     private String attachmentsJson;
@@ -28,11 +29,19 @@ public class VerlaMessageVO {
     private LocalDateTime createdAt;
 
     public static VerlaMessageVO from(VerlaMessage m) {
+        return from(m, true);
+    }
+
+    public static VerlaMessageVO fromInternal(VerlaMessage m) {
+        return from(m, false);
+    }
+
+    private static VerlaMessageVO from(VerlaMessage m, boolean encodePublicIds) {
         return VerlaMessageVO.builder()
-                .messageId(m.getId())
-                .turnId(m.getTurnId())
+                .messageId(VerlaPublicIdVoSupport.message(m.getId(), encodePublicIds))
+                .turnId(VerlaPublicIdVoSupport.turn(m.getTurnId(), encodePublicIds))
                 .role(m.getRole())
-                .sourceSessionId(m.getSourceSessionId())
+                .sourceSessionId(VerlaPublicIdVoSupport.session(m.getSourceSessionId(), encodePublicIds))
                 .text(m.getTextContent())
                 .attachmentsJson(m.getAttachmentsJson())
                 .blocksJson(VerlaBlocksJsonSanitizer.withoutTopLevelStage(m.getBlocksJson()))

@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.verla.VerlaCodeProjectService;
@@ -51,7 +54,7 @@ public class VerlaCodeProjectController {
     @GetMapping("/conversations/{cid}/code-projects/{projectUid}/files")
     public ResponseEntity<Resource> getFile(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @PathVariable String projectUid,
             @RequestParam("relPath") String relPath,
             @RequestParam(value = "download", defaultValue = "0") String download) {
@@ -82,7 +85,7 @@ public class VerlaCodeProjectController {
     @GetMapping("/conversations/{cid}/code-projects/{projectUid}/archive")
     public ResponseEntity<StreamingResponseBody> archive(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @PathVariable String projectUid) {
         ensureLogin(clerkUserId);
         // 先解析 + 鉴权（异常在进入流式回调前抛出，能正常返回错误响应）。

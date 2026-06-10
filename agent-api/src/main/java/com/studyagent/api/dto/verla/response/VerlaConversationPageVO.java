@@ -24,7 +24,7 @@ public class VerlaConversationPageVO {
 
     public static VerlaConversationPageVO fromSlice(VerlaConversationListSlice slice) {
         List<VerlaConversationVO> vos = slice.records().stream()
-                .map(VerlaConversationVO::from)
+                .map(VerlaConversationVO::fromPublic)
                 .collect(Collectors.toList());
         return VerlaConversationPageVO.builder()
                 .records(vos)

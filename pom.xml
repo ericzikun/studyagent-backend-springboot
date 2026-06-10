@@ -57,6 +57,9 @@
 
         <!-- Caffeine：Verla 上下文查询本地缓存（PR-10） -->
         <caffeine.version>3.1.8</caffeine.version>
+
+        <!-- Sqids：对外 ID 混淆编码（V1 taskId + V2 public id） -->
+        <sqids.version>0.1.0</sqids.version>
     </properties>
 
     <dependencyManagement>
@@ -144,6 +147,13 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+
+            <!-- Sqids: 将数字 ID 编码为短字符串，避免对外暴露自增 ID -->
+            <dependency>
+                <groupId>org.sqids</groupId>
+                <artifactId>sqids</artifactId>
+                <version>${sqids.version}</version>
             </dependency>
 
             <!-- Agent Common (内部模块) -->

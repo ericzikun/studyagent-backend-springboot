@@ -1,6 +1,7 @@
 package com.studyagent.api.dto.verla.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import lombok.AllArgsConstructor;
@@ -17,7 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class VerlaConversationVO {
 
-    private Long conversationId;
+    /** 对外 public id，格式 vc_{sqids} */
+    private String conversationId;
     private String userId;
     private String title;
     private String status;
@@ -28,7 +30,7 @@ public class VerlaConversationVO {
     @JsonProperty("isDraft")
     private boolean draft;
     private Integer turnCount;
-    private Long lastTurnId;
+    private String lastTurnId;
     private LocalDateTime lastMessageAt;
     /** 改动时间：用户点击任务 / 编辑内容 / 发送消息时刷新（Recent Task 排序键） */
     private LocalDateTime lastActiveAt;
@@ -41,12 +43,27 @@ public class VerlaConversationVO {
     private List<String> artifactPreviewKinds;
 
     public static VerlaConversationVO from(VerlaConversation c) {
-        return from(c, null);
+        return fromPublic(c);
+    }
+
+    /** 用户面 API：返回带类型前缀的 public id */
+    public static VerlaConversationVO fromPublic(VerlaConversation c) {
+        return from(c, null, true);
+    }
+
+    /** 内部 API（Python）：保留数字字符串，便于服务间解析 */
+    public static VerlaConversationVO fromInternal(VerlaConversation c) {
+        return from(c, null, false);
     }
 
     public static VerlaConversationVO from(VerlaConversation c, String dashboardStatus) {
+        return from(c, dashboardStatus, true);
+    }
+
+    private static VerlaConversationVO from(
+            VerlaConversation c, String dashboardStatus, boolean encodePublicIds) {
         return VerlaConversationVO.builder()
-                .conversationId(c.getId())
+                .conversationId(VerlaPublicIdVoSupport.conversation(c.getId(), encodePublicIds))
                 .userId(c.getUserId())
                 .title(c.getTitle())
                 .status(c.getStatus())
@@ -54,7 +71,7 @@ public class VerlaConversationVO {
                 .primaryIntent(c.getPrimaryIntent())
                 .draft(IntentLifecycle.conversationIsDraft(c.getIntentLifecycle()))
                 .turnCount(c.getTurnCount())
-                .lastTurnId(c.getLastTurnId())
+                .lastTurnId(VerlaPublicIdVoSupport.turn(c.getLastTurnId(), encodePublicIds))
                 .lastMessageAt(c.getLastMessageAt())
                 .lastActiveAt(c.getLastActiveAt())
                 .createdAt(c.getCreatedAt())

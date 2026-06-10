@@ -1,5 +1,7 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.sse.VerlaSseGateway;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -39,7 +41,7 @@ public class VerlaSseController {
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventIdHeader,
             @RequestParam(value = "lastEventId", required = false) Long lastEventIdParam) {
         ensureLogin(clerkUserId);

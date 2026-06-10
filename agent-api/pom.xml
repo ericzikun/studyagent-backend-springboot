@@ -79,11 +79,10 @@
             <artifactId>gson</artifactId>
         </dependency>
 
-        <!-- Sqids: 将数字 ID 编码为短字符串，避免对外暴露自增 ID -->
+        <!-- Sqids: V1 taskId 编解码（实现已迁至 agent-common，此处保留以兼容旧引用） -->
         <dependency>
             <groupId>org.sqids</groupId>
             <artifactId>sqids</artifactId>
-            <version>0.1.0</version>
         </dependency>
 
         <!-- Test -->

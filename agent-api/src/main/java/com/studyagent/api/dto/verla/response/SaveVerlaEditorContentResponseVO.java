@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class SaveVerlaEditorContentResponseVO {
 
-    private Long conversationId;
+    private String conversationId;
     private String artifactUid;
     private String kind;
     private Long editorContentId;

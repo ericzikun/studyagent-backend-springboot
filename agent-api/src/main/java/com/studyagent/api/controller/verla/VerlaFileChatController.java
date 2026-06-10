@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.FileChatSendMessageRequest;
 import com.studyagent.api.dto.verla.response.FileChatPanelResponseVO;
@@ -30,7 +33,7 @@ public class VerlaFileChatController {
     @GetMapping("/{cid}/file-chat")
     public Result<FileChatPanelResponseVO> getPanel(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestParam("objectId") String objectId,
             @RequestParam(value = "cursor", required = false) Long cursor,
             @RequestParam(value = "limit", defaultValue = "20") int limit) {
@@ -43,7 +46,7 @@ public class VerlaFileChatController {
     @PostMapping("/{cid}/file-chat/messages")
     public Result<FileChatSendMessageResponseVO> sendMessage(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody @Valid FileChatSendMessageRequest req) {
         ensureLogin(clerkUserId);
         return Result.success(FileChatSendMessageResponseVO.from(

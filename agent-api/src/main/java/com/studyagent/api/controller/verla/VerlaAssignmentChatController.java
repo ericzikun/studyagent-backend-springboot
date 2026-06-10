@@ -1,5 +1,7 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.AssignmentChatSendMessageRequest;
 import com.studyagent.api.dto.verla.response.AssignmentChatSendMessageResponseVO;
@@ -31,7 +33,7 @@ public class VerlaAssignmentChatController {
     @PostMapping("/{cid}/assignment-chat/messages")
     public Result<AssignmentChatSendMessageResponseVO> sendMessage(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody @Valid AssignmentChatSendMessageRequest req) {
         ensureLogin(clerkUserId);
         return Result.success(AssignmentChatSendMessageResponseVO.from(
@@ -42,8 +44,8 @@ public class VerlaAssignmentChatController {
     @PostMapping("/{cid}/assignment-chat/sessions/{sid}/cancel")
     public Result<AssignmentChatSendMessageResponseVO> cancelSession(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
-            @PathVariable Long sid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.SESSION) @PathVariable Long sid) {
         ensureLogin(clerkUserId);
         return Result.success(AssignmentChatSendMessageResponseVO.from(
                 turnOrchestrator.cancelAssignmentChat(clerkUserId, cid, sid)));
@@ -52,8 +54,8 @@ public class VerlaAssignmentChatController {
     @PostMapping("/{cid}/assignment-chat/messages/{turnId}/retry")
     public Result<AssignmentChatSendMessageResponseVO> retryMessage(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
-            @PathVariable Long turnId) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.TURN) @PathVariable Long turnId) {
         ensureLogin(clerkUserId);
         return Result.success(AssignmentChatSendMessageResponseVO.from(
                 turnOrchestrator.retryAssignmentChat(clerkUserId, cid, turnId)));

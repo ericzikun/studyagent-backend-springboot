@@ -1,5 +1,9 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,7 +59,7 @@ public class VerlaEditorContentController {
     @GetMapping
     public Result<VerlaEditorContentResponseVO> getEditorContent(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
             @RequestParam("kind") String kind) {
         ensureLogin(clerkUserId);
@@ -73,7 +77,7 @@ public class VerlaEditorContentController {
 
         if (editorContent == null || editorContent.getContentJson() == null) {
             return Result.success(VerlaEditorContentResponseVO.builder()
-                    .conversationId(conversationId)
+                    .conversationId(VerlaPublicIdVoSupport.conversation(conversationId, true))
                     .artifactUid(artifactUid)
                     .kind(editorKind)
                     .exists(false)
@@ -106,7 +110,7 @@ public class VerlaEditorContentController {
         }
 
         return Result.success(VerlaEditorContentResponseVO.builder()
-                .conversationId(conversationId)
+                .conversationId(VerlaPublicIdVoSupport.conversation(conversationId, true))
                 .artifactUid(artifactUid)
                 .kind(editorKind)
                 .exists(true)
@@ -124,7 +128,7 @@ public class VerlaEditorContentController {
     @PutMapping
     public Result<SaveVerlaEditorContentResponseVO> saveEditorContent(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
             @RequestParam("kind") String kind,
             @RequestBody @Valid SaveVerlaEditorContentRequest request) {
@@ -189,7 +193,7 @@ public class VerlaEditorContentController {
         conversationService.touchActivity(clerkUserId, conversationId);
 
         return Result.success(SaveVerlaEditorContentResponseVO.builder()
-                .conversationId(conversationId)
+                .conversationId(VerlaPublicIdVoSupport.conversation(conversationId, true))
                 .artifactUid(artifactUid)
                 .kind(editorKind)
                 .editorContentId(editorContent.getId())

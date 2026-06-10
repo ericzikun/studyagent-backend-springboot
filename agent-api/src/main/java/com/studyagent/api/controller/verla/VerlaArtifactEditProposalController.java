@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,7 +66,7 @@ public class VerlaArtifactEditProposalController {
     @Transactional(rollbackFor = Exception.class)
     public Result<CommitEditProposalResponseVO> commit(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable("proposalId") String proposalId,
             @RequestBody @Valid CommitEditProposalRequest req) {
         ensureLogin(clerkUserId);

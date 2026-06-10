@@ -6,6 +6,7 @@ import com.studyagent.api.dto.verla.response.FileChatPanelAnalysisVO;
 import com.studyagent.api.dto.verla.response.FileChatPanelResponseVO;
 import com.studyagent.api.dto.verla.response.FileChatSendMessageResponseVO;
 import com.studyagent.api.dto.verla.response.FileChatMessageVO;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.VerlaFileChatService;
 import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class VerlaFileChatControllerTest {
 

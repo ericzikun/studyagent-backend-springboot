@@ -45,12 +45,14 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
+    private static final String LEDGER_TYPE_FREE_REFRESH = "free_refresh";
+    private static final String SOURCE_TYPE_SYSTEM = "system";
     private static final String PERIOD_MONTHLY = "monthly";
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(rollbackFor = Exception.class)
     public QuotaBalance getUserQuota(String clerkUserId, String featureCode) {
         // 1. 获取功能定义
         AiFeatureDefsEntity featureDef = aiFeatureDefsMapper.selectOne(
@@ -88,17 +90,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             );
         }
 
-        // 3. 检查是否需要刷新免费周期
+        // 3. 懒刷新：周期过期或功能周期配置变更时持久化，并写 free_refresh 流水
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime periodEnd = quota.getFreePeriodEnd();
+        refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
+
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long paidBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
-
-        if (periodEnd != null && now.isAfter(periodEnd)) {
-            // 周期过期，刷新免费额度（在 consume 时持久化）
-            freeBalance = freeQuotaAmount;
-            periodEnd = computePeriodEnd(now, featureDef.getFreeQuotaPeriod());
-        }
+        LocalDateTime periodEnd = quota.getFreePeriodEnd();
 
         return new QuotaBalance(
                 featureCode,
@@ -178,20 +176,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             quota.setCreatedAt(now);
             quota.setUpdatedAt(now);
             userAiQuotaMapper.insert(quota);
-        } else if (quota.getFreePeriodEnd() != null && now.isAfter(quota.getFreePeriodEnd())) {
-            // 刷新免费周期
-            LocalDateTime periodStart = now;
-            LocalDateTime periodEnd = computePeriodEnd(periodStart, featureDef.getFreeQuotaPeriod());
-            userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
-                    .eq(UserAiQuotaEntity::getId, quota.getId())
-                    .set(UserAiQuotaEntity::getFreeBalance, freeQuotaAmount)
-                    .set(UserAiQuotaEntity::getFreePeriodStart, periodStart)
-                    .set(UserAiQuotaEntity::getFreePeriodEnd, periodEnd)
-                    .set(UserAiQuotaEntity::getUpdatedAt, now)
-                    .setSql("version = version + 1"));
-            quota.setFreeBalance(freeQuotaAmount);
-            quota.setFreePeriodStart(periodStart);
-            quota.setFreePeriodEnd(periodEnd);
+        } else {
+            refreshFreeQuotaIfNeeded(quota, featureDef, now, "consume");
         }
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
@@ -453,12 +439,111 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 String qUnit = "words".equals(quotaUnit) ? "words" : (quotaAmount == 1 ? "time" : "times");
                 yield "Recharged " + packageName + ", +" + quotaAmount + " " + qUnit + priceStr;
             }
+            case LEDGER_TYPE_FREE_REFRESH -> {
+                String period = biz != null && biz.has("free_quota_period")
+                        ? biz.get("free_quota_period").getAsString() : "period";
+                yield featureDisplayName + " free quota refreshed (+" + absAmount + " " + unitStr + ", " + period + ")";
+            }
             default -> entity.getLedgerType() + " " + absAmount + " " + unitStr;
         };
     }
 
+    /**
+     * 免费额度懒刷新：周期到期，或 ai_feature_defs 周期配置与当前用户窗口不一致时重置。
+     */
+    private void refreshFreeQuotaIfNeeded(
+            UserAiQuotaEntity quota,
+            AiFeatureDefsEntity featureDef,
+            LocalDateTime now,
+            String trigger) {
+        if (quota == null || quota.getId() == null || featureDef == null) {
+            return;
+        }
+        long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
+        String configuredPeriod = normalizePeriod(featureDef.getFreeQuotaPeriod());
+        boolean periodExpired = quota.getFreePeriodEnd() != null && now.isAfter(quota.getFreePeriodEnd());
+        boolean periodConfigChanged = quota.getFreePeriodStart() != null
+                && quota.getFreePeriodEnd() != null
+                && !configuredPeriod.equals(inferStoredPeriod(quota.getFreePeriodStart(), quota.getFreePeriodEnd()));
+        if (!periodExpired && !periodConfigChanged) {
+            return;
+        }
+
+        long oldFreeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
+        long delta = Math.max(0, freeQuotaAmount - oldFreeBalance);
+        LocalDateTime periodStart = now;
+        LocalDateTime periodEnd = computePeriodEnd(periodStart, configuredPeriod);
+
+        userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
+                .eq(UserAiQuotaEntity::getId, quota.getId())
+                .set(UserAiQuotaEntity::getFreeBalance, freeQuotaAmount)
+                .set(UserAiQuotaEntity::getFreePeriodStart, periodStart)
+                .set(UserAiQuotaEntity::getFreePeriodEnd, periodEnd)
+                .set(UserAiQuotaEntity::getUpdatedAt, now)
+                .setSql("version = version + 1"));
+        quota.setFreeBalance(freeQuotaAmount);
+        quota.setFreePeriodStart(periodStart);
+        quota.setFreePeriodEnd(periodEnd);
+
+        if (delta <= 0) {
+            return;
+        }
+
+        long paidBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        Map<String, Object> ctx = new HashMap<>();
+        ctx.put("free_quota_period", configuredPeriod);
+        ctx.put("refresh_trigger", trigger);
+        ctx.put("previous_free_balance", oldFreeBalance);
+        ctx.put("refreshed_to", freeQuotaAmount);
+        if (periodConfigChanged) {
+            ctx.put("reason", "period_config_changed");
+        } else {
+            ctx.put("reason", "period_expired");
+        }
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(quota.getClerkUserId());
+        ledger.setFeatureCode(quota.getFeatureCode());
+        ledger.setLedgerType(LEDGER_TYPE_FREE_REFRESH);
+        ledger.setAmount(delta);
+        ledger.setSourceType(SOURCE_TYPE_SYSTEM);
+        ledger.setSourceId(quota.getFeatureCode());
+        ledger.setFreeBalanceAfter(freeQuotaAmount);
+        ledger.setPaidBalanceAfter(paidBalance);
+        ledger.setBizContext(new com.google.gson.Gson().toJson(ctx));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+
+        log.info("免费额度刷新: user={}, feature={}, delta={}, period={}, trigger={}",
+                quota.getClerkUserId(), quota.getFeatureCode(), delta, configuredPeriod, trigger);
+    }
+
+    private static String normalizePeriod(String period) {
+        if (period == null || period.isBlank()) {
+            return PERIOD_MONTHLY;
+        }
+        return period.trim().toLowerCase();
+    }
+
+    private String inferStoredPeriod(LocalDateTime start, LocalDateTime end) {
+        if (start == null || end == null || !end.isAfter(start)) {
+            return PERIOD_MONTHLY;
+        }
+        long hours = java.time.Duration.between(start, end).toHours();
+        if (hours <= 36) {
+            return PERIOD_DAILY;
+        }
+        if (hours <= 24 * 8) {
+            return PERIOD_WEEKLY;
+        }
+        return PERIOD_MONTHLY;
+    }
+
     private String resolveFeatureDisplayName(String featureCode) {
-        if (featureCode == null) return "Quota";
+        if (featureCode == null) {
+            return "Quota";
+        }
         return switch (featureCode) {
             case "task_create" -> "Assignment";
             case "ai_detection" -> "AI Detection";

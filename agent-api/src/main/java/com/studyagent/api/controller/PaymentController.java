@@ -46,6 +46,7 @@ public class PaymentController {
             paymentProps.put("customer_email", request.getCustomerEmail());
             paymentProps.put("session_id", result.getSessionId());
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
 
             Map<String, Object> data = new HashMap<>();
             data.put("sessionId", result.getSessionId());
@@ -59,6 +60,7 @@ public class PaymentController {
             errorProps.put("error_code", e.getCode());
             errorProps.put("error_message", e.getMessage());
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
 
             if ("STRIPE_ERROR".equals(e.getCode()) && e.getCause() instanceof com.stripe.exception.StripeException) {
                 log.error("Stripe API 错误: {}", e.getMessage(), e);
@@ -74,6 +76,7 @@ public class PaymentController {
             errorProps.put("error_code", "UNKNOWN");
             errorProps.put("error_message", e.getMessage());
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
 
             return Result.error(ApiCode.PAYMENT_SESSION_CREATE_FAILED);
         }

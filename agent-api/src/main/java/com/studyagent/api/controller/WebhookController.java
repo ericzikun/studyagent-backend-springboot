@@ -230,6 +230,7 @@ public class WebhookController {
                 paymentProps.put("currency", currency);
                 paymentProps.put("customer_email", customerEmail);
                 analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
+                analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
 
                 // 埋点：充值成功（积分到账）
                 Map<String, Object> rechargeProps = new HashMap<>();

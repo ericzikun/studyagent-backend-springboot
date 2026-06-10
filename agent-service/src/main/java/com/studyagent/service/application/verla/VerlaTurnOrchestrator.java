@@ -3,6 +3,8 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
@@ -118,6 +120,7 @@ public class VerlaTurnOrchestrator {
     /** V2 商业化额度门面（feature: task_create / ai_detection / humanizer）。 */
     private final VerlaQuotaService verlaQuotaService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AnalyticsService analyticsService;
 
     // ==========================================================
     // 1) 用户消息入口
@@ -813,6 +816,10 @@ public class VerlaTurnOrchestrator {
                     "assignment clarify is not finalized");
         }
 
+        analyticsService.capture(userId, AnalyticsEvents.ASSIGNMENT_GENERATION_STARTED, Map.of(
+                "conversation_id", conversationId,
+                "task_type", "assignment"));
+
         VerlaSession runSession = spawnAssignmentRunSession(
                 conv,
                 turn,
@@ -1198,6 +1205,9 @@ public class VerlaTurnOrchestrator {
                     ? turn.getResolvedIntent() : "ASSIGNMENT";
             log.info("[Verla] clarify isReadyForGeneration=true, auto-spawn run session turnId={} intent={}",
                     turn.getId(), intent);
+            analyticsService.capture(conv.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_STARTED, Map.of(
+                    "conversation_id", turn.getConversationId(),
+                    "task_type", "assignment"));
             spawnAssignmentRunSession(conv, turn, intent, result);
         }
     }
@@ -1292,6 +1302,45 @@ public class VerlaTurnOrchestrator {
         verlaQuotaService.refundBySessionId(agentSessionId, "agent_failed");
 
         publishAssignmentRunSlotReleased(agentSessionId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentCompleted(Long agentSessionId, Map<String, Object> result) {
+        onAgentCompleted(agentSessionId, result);
+        VerlaSession s = sessionRepository.findById(agentSessionId);
+        if (s != null) {
+            VerlaTurn turn = turnRepository.findById(s.getTurnId());
+            if (turn != null) {
+                VerlaConversation conversation = conversationRepository.findById(turn.getConversationId());
+                if (conversation != null && conversation.getUserId() != null) {
+                    analyticsService.capture(conversation.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_SUCCEEDED, Map.of(
+                            "conversation_id", turn.getConversationId(),
+                            "task_type", "assignment"));
+                }
+            }
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+        onAgentFailed(agentSessionId, errorBlock);
+        VerlaSession s = sessionRepository.findById(agentSessionId);
+        if (s != null) {
+            VerlaTurn turn = turnRepository.findById(s.getTurnId());
+            if (turn != null) {
+                Map<String, Object> props = new HashMap<>();
+                props.put("conversation_id", turn.getConversationId());
+                props.put("task_type", "assignment");
+                Object code = errorBlock.get("code");
+                if (code != null) {
+                    props.put("error_code", String.valueOf(code));
+                }
+                VerlaConversation conversation = conversationRepository.findById(turn.getConversationId());
+                if (conversation != null && conversation.getUserId() != null) {
+                    analyticsService.capture(conversation.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_FAILED, props);
+                }
+            }
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRED)

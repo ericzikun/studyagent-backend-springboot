@@ -2,6 +2,8 @@ package com.studyagent.service.application.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
@@ -24,6 +26,7 @@ import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -59,7 +62,8 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -114,7 +118,8 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -158,7 +163,8 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -202,7 +208,8 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -246,7 +253,8 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -267,6 +275,52 @@ class VerlaTurnOrchestratorTest {
         assertNotNull(messageRepository.saved);
         assertEquals("agent_workforce", messageRepository.saved.getRole());
         assertEquals("Run failed", messageRepository.saved.getTextContent());
+    }
+
+    @Test
+    void onAssignmentCompleted_captures_generation_success_with_conversation_user() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        AnalyticsService analyticsService = Mockito.mock(AnalyticsService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService(),
+                event -> {},
+                analyticsService);
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(357L)
+                .conversationId(153L)
+                .turnId(153L)
+                .status(SessionStatus.RUNNING.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(153L)
+                .conversationId(153L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(153L)
+                .userId("user_153")
+                .build();
+
+        orchestrator.onAssignmentCompleted(357L, Map.of("finalResult", "Done"));
+
+        Mockito.verify(analyticsService).capture(
+                "user_153",
+                AnalyticsEvents.ASSIGNMENT_GENERATION_SUCCEEDED,
+                Map.of("conversation_id", 153L, "task_type", "assignment"));
     }
 
     @Test
@@ -298,7 +352,8 @@ class VerlaTurnOrchestratorTest {
                 mqOutboxService,
                 objectMapper,
                 new NoopQuotaService(),
-                event -> {});
+                event -> {},
+                mockAnalyticsService());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -391,6 +446,10 @@ class VerlaTurnOrchestratorTest {
         public int countActiveAssignmentRuns() {
             return 0;
         }
+    }
+
+    private static AnalyticsService mockAnalyticsService() {
+        return Mockito.mock(AnalyticsService.class);
     }
 
     private static final class FakeTurnRepository implements VerlaTurnRepository {

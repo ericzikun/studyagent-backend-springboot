@@ -63,4 +63,5 @@ public final class AnalyticsEvents {
     public static final String BILLING_CHECKOUT_SESSION_CREATED = "billing:checkout:session_created";
     public static final String BILLING_CHECKOUT_SESSION_FAILED = "billing:checkout:session_failed";
     public static final String BILLING_PAYMENT_SUCCEEDED = "billing:payment:succeeded";
+    public static final String BILLING_PAYMENT_FAILED = "billing:payment:failed";
 }

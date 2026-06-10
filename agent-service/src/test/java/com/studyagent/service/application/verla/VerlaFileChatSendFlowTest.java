@@ -71,6 +71,7 @@ class VerlaFileChatSendFlowTest {
                 sessionRepository,
                 messageRepository,
                 attachmentRepository,
+                Mockito.mock(com.studyagent.service.domain.verla.repo.VerlaArtifactRepository.class),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -376,6 +377,54 @@ class VerlaFileChatSendFlowTest {
 
         assertThat(sessionRepository.findById(result.getAgentSessionId()).getStatus()).isEqualTo("CANCELLED");
         assertThat(turnRepository.findById(result.getTurnId()).getStatus()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void cancelAssignmentChat_shouldMarkTurnAndSessionCancellingAndDispatchControlCommand() {
+        SendMessageResult result = orchestrator.startAssignmentChat(
+                USER_ID,
+                CONVERSATION_ID,
+                "帮我修改作业正文。",
+                List.of("art_md"));
+
+        orchestrator.cancelAssignmentChat(USER_ID, CONVERSATION_ID, result.getAgentSessionId());
+
+        assertThat(sessionRepository.findById(result.getAgentSessionId()).getStatus()).isEqualTo("CANCELLING");
+        assertThat(turnRepository.findById(result.getTurnId()).getStatus()).isEqualTo("CANCELLING");
+        assertThat(mqOutboxService.lastEnvelope.getAction()).isEqualTo("cmd.assignment.chat.control.cancel");
+        assertThat(mqOutboxService.lastEnvelope.getPayload().get("sessionId"))
+                .isEqualTo(result.getAgentSessionId());
+    }
+
+    @Test
+    void retryAssignmentChat_shouldReuseOriginalMessageAndArtifactScopeWithoutDuplicatingUserMessage() {
+        SendMessageResult first = orchestrator.startAssignmentChat(
+                USER_ID,
+                CONVERSATION_ID,
+                "帮我修改作业正文。",
+                List.of("art_md", "art_code"));
+        VerlaTurn failedTurn = turnRepository.findById(first.getTurnId());
+        failedTurn.setStatus("FAILED");
+        turnRepository.save(failedTurn);
+        VerlaSession failedSession = sessionRepository.findById(first.getAgentSessionId());
+        failedSession.setStatus("FAILED");
+        sessionRepository.save(failedSession);
+
+        SendMessageResult retry = orchestrator.retryAssignmentChat(USER_ID, CONVERSATION_ID, first.getTurnId());
+
+        assertThat(retry.getTurnId()).isEqualTo(first.getTurnId());
+        assertThat(retry.getUserMessageId()).isEqualTo(first.getUserMessageId());
+        assertThat(retry.getAgentSessionId()).isNotEqualTo(first.getAgentSessionId());
+        assertThat(messageRepository.findById(first.getUserMessageId()).getTextContent())
+                .isEqualTo("帮我修改作业正文。");
+        assertThat(turnRepository.findById(first.getTurnId()).getStatus()).isEqualTo("RUNNING_AGENT");
+        assertThat(turnRepository.findById(first.getTurnId()).getAgentSessionId())
+                .isEqualTo(retry.getAgentSessionId());
+        assertThat(mqOutboxService.lastEnvelope.getAction()).isEqualTo("cmd.assignment.chat");
+        assertThat(mqOutboxService.lastEnvelope.getPayload().get("message"))
+                .isEqualTo("帮我修改作业正文。");
+        assertThat(mqOutboxService.lastEnvelope.getPayload().get("artifactUids"))
+                .isEqualTo(List.of("art_md", "art_code"));
     }
 
     private static VerlaConversation conversation(Long version) {

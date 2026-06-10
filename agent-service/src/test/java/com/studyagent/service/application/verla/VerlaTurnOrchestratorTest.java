@@ -53,6 +53,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -107,6 +108,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -150,6 +152,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -193,6 +196,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -236,6 +240,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -287,6 +292,7 @@ class VerlaTurnOrchestratorTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -457,6 +463,45 @@ class VerlaTurnOrchestratorTest {
         @Override
         public List<VerlaMessage> findFileChatByCursor(Long conversationId, String objectId, Long cursor, int limit) {
             return List.of();
+        }
+
+        @Override
+        public List<VerlaMessage> findAssignmentChatByCursor(Long conversationId, Long cursor, int limit) {
+            return List.of();
+        }
+    }
+
+    private static final class NoopArtifactRepository
+            implements com.studyagent.service.domain.verla.repo.VerlaArtifactRepository {
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact findByUid(String artifactUid) {
+            return null;
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findByConversation(Long conversationId) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findBySession(Long sessionId) {
+            return List.of();
+        }
+
+        @Override
+        public List<com.studyagent.service.domain.verla.VerlaArtifact> findByUids(List<String> artifactUids) {
+            return List.of();
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaArtifact upsertByUid(
+                com.studyagent.service.domain.verla.VerlaArtifact artifact) {
+            return artifact;
         }
     }
 

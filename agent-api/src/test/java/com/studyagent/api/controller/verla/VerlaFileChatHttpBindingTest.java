@@ -191,7 +191,7 @@ class VerlaFileChatHttpBindingTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, event -> {});
+            super(null, null, null, null, null, null, null, null, null, null, null, null, event -> {});
         }
 
         @Override

@@ -60,6 +60,7 @@ class VerlaTurnOrchestratorContextRefTest {
                 sessionRepository,
                 messageRepository,
                 new NoopAttachmentRepository(),
+                Mockito.mock(com.studyagent.service.domain.verla.repo.VerlaArtifactRepository.class),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,

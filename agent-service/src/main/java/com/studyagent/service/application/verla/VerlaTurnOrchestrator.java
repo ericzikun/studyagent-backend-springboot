@@ -22,11 +22,13 @@ import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
 import com.studyagent.service.application.verla.dto.FileChatPanelState;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
+import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.VerlaAttachment;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
@@ -108,6 +110,7 @@ public class VerlaTurnOrchestrator {
     private final VerlaSessionRepository sessionRepository;
     private final VerlaMessageRepository messageRepository;
     private final VerlaAttachmentRepository attachmentRepository;
+    private final VerlaArtifactRepository artifactRepository;
     private final TurnStateMachine turnStateMachine;
     private final SessionStateMachine sessionStateMachine;
     private final MqOutboxService mqOutboxService;
@@ -205,6 +208,151 @@ public class VerlaTurnOrchestrator {
                 .userMessageId(userMsg.getId())
                 .agentSessionId(session.getId())
                 .build();
+    }
+
+    /**
+     * Chat With Assignment 入口：作业完成后用户在左栏对作业产物追问 / 修改。
+     * <p>
+     * 仿 {@link #startFileChat}，差异：
+     * <ul>
+     *   <li>用户消息打 {@code scene=ASSIGNMENT_CHAT} meta（隔离历史，左栏可见但不进主对话线程）；</li>
+     *   <li>session kind = {@link VerlaSessionKind#ASSIGNMENT_CHAT}，SKIP_PLAN；</li>
+     *   <li>{@code artifactUids} 为空时解析为本 conversation 最近一次 assignment 产物（见
+     *       {@link #resolveDefaultArtifactUids}）。</li>
+     * </ul>
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startAssignmentChat(String userId, Long conversationId,
+                                                 String message, List<String> artifactUids) {
+        if (message == null || message.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "message required");
+        }
+
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+
+        // 默认范围：未显式选文件时 = 本 conversation 最近一次 assignment 的全部产物。
+        List<String> resolvedUids = (artifactUids == null || artifactUids.isEmpty())
+                ? resolveDefaultArtifactUids(conv.getId())
+                : artifactUids;
+
+        VerlaMessage userMsg = insertAssignmentChatUserMessagePlaceholder(conv.getId(), message);
+        VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
+
+        TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
+        turn.setStatus(afterSkip.name());
+        turn.setResolvedIntent("ASSIGNMENT_CHAT");
+        turn.setResolvedSlotsJson(serializeJson(Map.of("artifactUids", resolvedUids)));
+        turn.setUpdatedAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
+        VerlaSession session = spawnAssignmentChatSession(conv, turn, message, resolvedUids);
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .agentSessionId(session.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult cancelAssignmentChat(String userId, Long conversationId, Long sessionId) {
+        if (sessionId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId required");
+        }
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaSession session = sessionRepository.findByIdForUpdate(sessionId);
+        if (session == null || !conversationId.equals(session.getConversationId())
+                || !VerlaSessionKind.ASSIGNMENT_CHAT.name().equals(session.getKind())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment chat session");
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(session.getTurnId());
+        if (turn == null || !conversationId.equals(turn.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment chat turn");
+        }
+
+        SessionStatus curSession = SessionStatus.valueOf(session.getStatus());
+        if (curSession.isTerminal()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE, "assignment chat session already terminal");
+        }
+        session.setStatus(sessionStateMachine.next(curSession, SessionEvent.USER_CANCEL).name());
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (!curTurn.isTerminal()) {
+            turn.setStatus(turnStateMachine.next(curTurn, TurnEvent.USER_CANCEL).name());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        VerlaCommandEnvelope env = buildAssignmentChatCancelEnvelope(conv, turn, session);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_ASSIGNMENT_CHAT_CONTROL_CANCEL.getCode());
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(turn.getUserMessageId())
+                .agentSessionId(session.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult retryAssignmentChat(String userId, Long conversationId, Long turnId) {
+        if (turnId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "turnId required");
+        }
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaTurn turn = turnRepository.findByIdForUpdate(turnId);
+        if (turn == null || !conversationId.equals(turn.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment chat turn");
+        }
+        VerlaMessage userMessage = messageRepository.findById(turn.getUserMessageId());
+        if (userMessage == null || userMessage.getTextContent() == null
+                || userMessage.getTextContent().isBlank()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE, "assignment chat message missing");
+        }
+
+        Map<String, Object> slots = parseSlotsJson(turn.getResolvedSlotsJson());
+        List<String> artifactUids = extractStringList(slots.get("artifactUids"));
+        VerlaSession session = spawnAssignmentChatSession(
+                conv, turn, userMessage.getTextContent(), artifactUids);
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(turn.getUserMessageId())
+                .agentSessionId(session.getId())
+                .skipPlanReason("assignment_chat_retry")
+                .build();
+    }
+
+    /**
+     * 解析 Chat With Assignment 的默认 artifact 集合：本 conversation 内
+     * <b>最近一次 assignment 产物</b>（产物只由 assignment.run 产生，故取最大 sessionId 的那批）。
+     * 不用整条 conversation 的全部 artifact，避免跨轮混入旧产物（设计 §4.1）。
+     */
+    private List<String> resolveDefaultArtifactUids(Long conversationId) {
+        List<VerlaArtifact> all = artifactRepository.findByConversation(conversationId);
+        if (all == null || all.isEmpty()) {
+            return List.of();
+        }
+        Long latestSessionId = all.stream()
+                .map(VerlaArtifact::getSessionId)
+                .filter(java.util.Objects::nonNull)
+                .max(Long::compareTo)
+                .orElse(null);
+        if (latestSessionId == null) {
+            return List.of();
+        }
+        return artifactRepository.findBySession(latestSessionId).stream()
+                .map(VerlaArtifact::getArtifactUid)
+                .filter(uid -> uid != null && !uid.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     /**
@@ -751,6 +899,11 @@ public class VerlaTurnOrchestrator {
         onAgentStarted(agentSessionId);
     }
 
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentChatStarted(Long agentSessionId) {
+        onAgentStarted(agentSessionId);
+    }
+
     /**
      * AGENT_COMPLETED：agent session SUCCEEDED + turn COMPLETED。
      */
@@ -855,6 +1008,64 @@ public class VerlaTurnOrchestrator {
                                 FileChatMessageMeta.builder()
                                         .scene(FileChatMessageMeta.SCENE_FILE_CHAT)
                                         .objectId(objectId)
+                                        .build()))
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                messageRepository.save(assistant);
+            }
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
+    /**
+     * ASSIGNMENT_CHAT_COMPLETED：turn AGENT_OK + 写 assistant 消息（隔离历史 scene=ASSIGNMENT_CHAT）。
+     * 仿 {@link #onFileChatCompleted}：read 写 finalText；write（READY 后）收尾文案 + perFile 进 blocksJson。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentChatCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        Map<String, Object> safeResult = result == null ? Map.of() : result;
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
+            s.setStatus(nextSess.name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(safeResult));
+            sessionRepository.save(s);
+        }
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        boolean justCompleted = (curTurn == TurnStatus.RUNNING_AGENT);
+        if (curTurn == TurnStatus.RUNNING_AGENT) {
+            TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.AGENT_OK);
+            turn.setStatus(nextTurn.name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turn.setLastProgressAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        if (justCompleted) {
+            String reply = extractFileChatAssistantReply(safeResult);
+            if (reply != null && !reply.isBlank()) {
+                VerlaMessage assistant = VerlaMessage.builder()
+                        .conversationId(turn.getConversationId())
+                        .turnId(turn.getId())
+                        .role("assistant")
+                        .sourceSessionId(agentSessionId)
+                        .textContent(reply)
+                        .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
+                                safeResult, "ASSIGNMENT_CHAT_COMPLETED")))
+                        .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
+                                FileChatMessageMeta.builder()
+                                        .scene(FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT)
                                         .build()))
                         .createdAt(LocalDateTime.now())
                         .build();
@@ -1088,6 +1299,11 @@ public class VerlaTurnOrchestrator {
         onAgentFailed(agentSessionId, errorBlock);
     }
 
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentChatFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+        onAgentFailed(agentSessionId, errorBlock);
+    }
+
     /**
      * AGENT_CANCELLED：agent session CANCELLED + turn CANCELLED。
      */
@@ -1125,6 +1341,11 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onFileChatCancelled(Long agentSessionId) {
+        onAgentCancelled(agentSessionId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentChatCancelled(Long agentSessionId) {
         onAgentCancelled(agentSessionId);
     }
 
@@ -1510,6 +1731,43 @@ public class VerlaTurnOrchestrator {
         return s;
     }
 
+    private VerlaSession spawnAssignmentChatSession(VerlaConversation conv, VerlaTurn turn,
+                                                    String message, List<String> artifactUids) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .featureCode("ASSIGNMENT_CHAT")
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setStatus(TurnStatus.RUNNING_AGENT.name());
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildAssignmentChatEnvelope(conv, turn, s, message, artifactUids);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_ASSIGNMENT_CHAT.getCode());
+        return s;
+    }
+
     // ==========================================================
     // helpers
     // ==========================================================
@@ -1536,6 +1794,21 @@ public class VerlaTurnOrchestrator {
                         com.studyagent.service.application.verla.dto.FileChatMessageMeta.builder()
                                 .scene(com.studyagent.service.application.verla.dto.FileChatMessageMeta.SCENE_FILE_CHAT)
                                 .objectId(objectId)
+                                .build()))
+                .createdAt(LocalDateTime.now())
+                .build();
+        return messageRepository.save(m);
+    }
+
+    private VerlaMessage insertAssignmentChatUserMessagePlaceholder(Long conversationId, String text) {
+        VerlaMessage m = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(0L)
+                .role("user")
+                .textContent(text)
+                .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
+                        FileChatMessageMeta.builder()
+                                .scene(FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT)
                                 .build()))
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -1753,6 +2026,37 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
+    private VerlaCommandEnvelope buildAssignmentChatEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                             VerlaSession session, String message,
+                                                             List<String> artifactUids) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("message", message);
+        // 用户显式选中 / Java 解析的默认 artifact 集合（空 = 最近一次 assignment 产物，已在 Java 解析）。
+        payload.put("artifactUids", artifactUids == null ? List.of() : artifactUids);
+        // 本轮用户消息 ID：Py 拉取隔离的 assignment-chat 历史时以此为 before 游标，排除本轮提问。
+        if (turn.getUserMessageId() != null) {
+            payload.put("userMessageId", turn.getUserMessageId());
+        }
+        payload.put("contextRef", buildContextRef(
+                "/v1/internal/verla/sessions/" + session.getId() + "/context",
+                conv == null ? null : conv.getVersion()));
+
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_CHAT, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildAssignmentChatCancelEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                                   VerlaSession session) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("sessionId", session.getId());
+        payload.put("turnId", turn.getId());
+
+        return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_CHAT_CONTROL_CANCEL, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
     private VerlaCommandEnvelope buildAssignmentRunEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                            VerlaSession session, String intent,
                                                            Map<String, Object> finalClarifyResult) {
@@ -1828,6 +2132,17 @@ public class VerlaTurnOrchestrator {
             log.warn("[Verla] resolved slots json parse failed: {}", e.getMessage());
             return Map.of();
         }
+    }
+
+    private static List<String> extractStringList(Object raw) {
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(value -> !value.isBlank())
+                .toList();
     }
 
     private List<Map<String, Object>> parseUploadedAttachments(String attachmentsJson) {

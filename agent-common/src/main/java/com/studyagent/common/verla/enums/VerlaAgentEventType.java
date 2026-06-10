@@ -81,6 +81,21 @@ public enum VerlaAgentEventType {
     FILE_CHAT_FAILED(true),
     FILE_CHAT_CANCELLED(true),
 
+    /** Chat With Assignment 域 —— chat turn 生命周期（read / write 共用） */
+    ASSIGNMENT_CHAT_STARTED(false),
+    ASSIGNMENT_CHAT_STREAM_CHUNK(false),
+    ASSIGNMENT_CHAT_COMPLETED(true),
+    ASSIGNMENT_CHAT_FAILED(true),
+    ASSIGNMENT_CHAT_CANCELLED(true),
+
+    /**
+     * Chat With Assignment 域 —— edit proposal 生命周期（write 专用，来自 chat_with_assignment协议）。
+     * 三者均非终态：它们是 chat turn 内部的编辑子生命周期，turn 仍以 ASSIGNMENT_CHAT_COMPLETED 收尾。
+     */
+    ARTIFACT_EDIT_PROPOSAL_STARTED(false),
+    ARTIFACT_EDIT_PROPOSAL_READY(false),
+    ARTIFACT_EDIT_PROPOSAL_FAILED(false),
+
     AGENT_STARTED(false),
     AGENT_PLAN_DECOMPOSED(false),
     AGENT_STEP_STARTED(false),
@@ -131,6 +146,9 @@ public enum VerlaAgentEventType {
             FILE_CHAT_COMPLETED,
             FILE_CHAT_FAILED,
             FILE_CHAT_CANCELLED,
+            ASSIGNMENT_CHAT_COMPLETED,
+            ASSIGNMENT_CHAT_FAILED,
+            ASSIGNMENT_CHAT_CANCELLED,
             MATERIALS_COMPLETED,
             PLAN_TASK_NAME_RESOLVED);
 

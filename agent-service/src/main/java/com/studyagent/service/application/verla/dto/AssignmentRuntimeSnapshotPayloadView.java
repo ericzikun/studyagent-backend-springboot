@@ -21,6 +21,11 @@ public record AssignmentRuntimeSnapshotPayloadView(
         Map<String, Object> stateEventPayload,
         Map<String, Object> progress,
         List<Map<String, Object>> agentNodes,
-        List<VerlaArtifact> artifacts
+        List<VerlaArtifact> artifacts,
+        /**
+         * Chat With Assignment / write 模式当前活跃的 Edit Proposal（刷新恢复用，设计 §4.8）。
+         * {@code {state:"generating"|"reviewing", proposalId, targets:[...]}}；无活跃提案时为 null。
+         */
+        Map<String, Object> artifactEditProposal
 ) {
 }

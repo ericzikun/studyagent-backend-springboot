@@ -177,6 +177,31 @@ public class VerlaInternalController {
     }
 
     // ====================================================================
+    // 2c) GET /v1/internal/verla/conversations/{cid}/assignment-chat-messages
+    //     作业追问历史（scene=ASSIGNMENT_CHAT，键到 conversation），供 Py 多轮 hydrate。
+    //     与主对话/会话上下文隔离：主路径 findByCursor 已排除 ASSIGNMENT_CHAT。
+    // ====================================================================
+    @GetMapping("/conversations/{conversationId}/assignment-chat-messages")
+    public Result<MessagePageVO> getAssignmentChatMessages(
+            @PathVariable Long conversationId,
+            @RequestParam(value = "before", required = false) Long beforeId,
+            @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        log.info("[verla-internal] getAssignmentChatMessages cid={} before={} limit={}",
+                conversationId, beforeId, limit);
+        VerlaConversation c = conversationRepository.findById(conversationId);
+        if (c == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        List<VerlaMessage> page = messageRepository.findAssignmentChatByCursor(conversationId, beforeId, safeLimit);
+        Long nextCursor = page.isEmpty() ? null : page.get(page.size() - 1).getId();
+        return Result.success(MessagePageVO.builder()
+                .items(page.stream().map(VerlaMessageVO::from).collect(Collectors.toList()))
+                .nextCursor(nextCursor)
+                .build());
+    }
+
+    // ====================================================================
     // 3) GET /v1/internal/verla/conversations/{cid}
     // ====================================================================
     @GetMapping("/conversations/{conversationId}")

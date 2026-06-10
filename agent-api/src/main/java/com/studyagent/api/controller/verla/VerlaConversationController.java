@@ -196,6 +196,19 @@ public class VerlaConversationController {
     }
 
     // ========================================================
+    // 4b) POST /v1/verla/conversations/{cid}/activity  ——  刷新改动时间（Recent Task 排序）
+    //     触发场景：用户在任务页有新的点击 / 重新打开任务等用户活跃行为。
+    // ========================================================
+    @PostMapping("/{cid}/activity")
+    public Result<VerlaConversationVO> touchActivity(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        VerlaConversation c = conversationService.touchActivity(clerkUserId, cid);
+        return Result.success(VerlaConversationVO.from(c, dashboardStatusService.resolve(c)));
+    }
+
+    // ========================================================
     // 5) DELETE /v1/verla/conversations/{cid}  ——  软删除
     // ========================================================
     @DeleteMapping("/{cid}")

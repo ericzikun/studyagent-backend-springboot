@@ -185,6 +185,9 @@ public class VerlaEditorContentController {
             responseVersionNo = nextVersionNo;
         }
 
+        // 编辑页内容更新视为一次用户改动，刷新 Recent Task 排序键 last_active_at
+        conversationService.touchActivity(clerkUserId, conversationId);
+
         return Result.success(SaveVerlaEditorContentResponseVO.builder()
                 .conversationId(conversationId)
                 .artifactUid(artifactUid)

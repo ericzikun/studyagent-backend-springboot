@@ -83,6 +83,11 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
+    public int touchActiveAt(Long id) {
+        return this.baseMapper.touchActiveAt(id);
+    }
+
+    @Override
     public int updateTitle(Long id, String title) {
         return this.baseMapper.updateTitle(id, title);
     }
@@ -102,6 +107,7 @@ public class VerlaConversationRepositoryImpl
                 .turnCount(e.getTurnCount())
                 .lastTurnId(e.getLastTurnId())
                 .lastMessageAt(e.getLastMessageAt())
+                .lastActiveAt(e.getLastActiveAt())
                 .version(e.getVersion())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
@@ -123,6 +129,7 @@ public class VerlaConversationRepositoryImpl
                 .setTurnCount(d.getTurnCount())
                 .setLastTurnId(d.getLastTurnId())
                 .setLastMessageAt(d.getLastMessageAt())
+                .setLastActiveAt(d.getLastActiveAt())
                 .setVersion(d.getVersion())
                 .setCreatedAt(d.getCreatedAt())
                 .setUpdatedAt(d.getUpdatedAt());

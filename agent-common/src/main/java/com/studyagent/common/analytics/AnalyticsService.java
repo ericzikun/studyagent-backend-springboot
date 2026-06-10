@@ -27,6 +27,12 @@ public class AnalyticsService {
     @Value("${posthog.enabled:false}")
     private boolean enabled;
 
+    @Value("${posthog.environment:}")
+    private String environment;
+
+    @Value("${posthog.app-version:}")
+    private String appVersion;
+
     private PostHog postHog;
 
     @PostConstruct
@@ -72,6 +78,7 @@ public class AnalyticsService {
 
         try {
             Map<String, Object> props = properties != null ? new HashMap<>(properties) : new HashMap<>();
+            applyDefaultEventProperties(props);
             postHog.capture(distinctId, event, props);
             log.info("[Analytics] Event: {} | User: {} | Properties: {}", event, distinctId, props);
         } catch (Exception e) {
@@ -118,5 +125,14 @@ public class AnalyticsService {
      */
     public boolean isEnabled() {
         return enabled && postHog != null;
+    }
+
+    private void applyDefaultEventProperties(Map<String, Object> props) {
+        if (environment != null && !environment.isBlank()) {
+            props.put("environment", environment.trim());
+        }
+        if (appVersion != null && !appVersion.isBlank()) {
+            props.put("app_version", appVersion.trim());
+        }
     }
 }

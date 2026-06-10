@@ -98,21 +98,28 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAssignmentClarifyCompleted(sessionId, payload);
             }
-            case AGENT_COMPLETED, ASSIGNMENT_COMPLETED, MATERIALS_COMPLETED,
-                    ASSIGNMENT_AGENT_FLOW_COMPLETED, AI_DETECTION_COMPLETED,
+            case AGENT_COMPLETED, MATERIALS_COMPLETED,
+                    AI_DETECTION_COMPLETED,
                     AI_HUMANIZER_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCompleted(sessionId, payload);
+            }
+            case ASSIGNMENT_COMPLETED, ASSIGNMENT_AGENT_FLOW_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentCompleted(sessionId, payload);
             }
             case FILE_CHAT_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onFileChatCompleted(sessionId, payload);
             }
             case AGENT_FAILED, ASSIGNMENT_INIT_FAILED, ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
-                    ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED,
-                    ASSIGNMENT_AGENT_FLOW_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> {
+                    ASSIGNMENT_CLARIFY_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentFailed(sessionId, payload);
+            }
+            case ASSIGNMENT_FAILED, ASSIGNMENT_AGENT_FLOW_FAILED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentFailed(sessionId, payload);
             }
             case FILE_CHAT_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);

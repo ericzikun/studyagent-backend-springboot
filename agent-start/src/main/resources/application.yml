@@ -240,7 +240,11 @@ posthog:
   # PostHog API Key（从项目设置中获取）
   api-key: ${POSTHOG_API_KEY:}
   # PostHog 服务器地址（默认是官方云，也可以自托管）
-  host: ${POSTHOG_HOST:https://app.posthog.com}
+  host: ${POSTHOG_HOST:https://us.i.posthog.com}
+  # 环境标签（建议: staging / production）
+  environment: ${POSTHOG_ENVIRONMENT:}
+  # 应用版本标签（建议: v1 / v2）
+  app-version: ${POSTHOG_APP_VERSION:}
 
 # 日志配置
 logging:

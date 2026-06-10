@@ -117,7 +117,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(rollbackFor = Exception.class)
     public List<QuotaBalance> getAllUserQuotas(String clerkUserId) {
         List<AiFeatureDefsEntity> featureDefs = aiFeatureDefsMapper.selectList(
                 new LambdaQueryWrapper<AiFeatureDefsEntity>()

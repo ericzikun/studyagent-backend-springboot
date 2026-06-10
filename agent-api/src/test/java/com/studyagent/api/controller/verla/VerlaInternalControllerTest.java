@@ -109,7 +109,7 @@ class VerlaInternalControllerTest {
         assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
         assertThat(result.getData().getNextCursor()).isEqualTo(501L);
         assertThat(result.getData().getItems()).extracting(VerlaMessageVO::getMessageId)
-                .containsExactly(501L);
+                .containsExactly("501");
     }
 
     private VerlaSessionContextView sessionView() {

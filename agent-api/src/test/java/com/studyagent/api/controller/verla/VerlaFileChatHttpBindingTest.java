@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaFileChatService;
@@ -127,9 +128,9 @@ class VerlaFileChatHttpBindingTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.meta.statusCode").value(0))
-                .andExpect(jsonPath("$.data.turnId").value(456))
-                .andExpect(jsonPath("$.data.userMessageId").value(1001))
-                .andExpect(jsonPath("$.data.agentSessionId").value(789));
+                .andExpect(jsonPath("$.data.turnId").value(VerlaPublicIdVoSupport.turn(456L, true)))
+                .andExpect(jsonPath("$.data.userMessageId").value(VerlaPublicIdVoSupport.message(1001L, true)))
+                .andExpect(jsonPath("$.data.agentSessionId").value(VerlaPublicIdVoSupport.session(789L, true)));
 
         assertThat(fileChatService.lastUserId).isEqualTo("user_1");
         assertThat(fileChatService.lastConversationId).isEqualTo(24L);

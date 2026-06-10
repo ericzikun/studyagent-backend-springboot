@@ -1,5 +1,5 @@
 -- ========================================
--- 053: verla_conversations 增加 last_active_at（改动时间）
+-- 055: verla_conversations 增加 last_active_at（改动时间）
 -- 创建日期: 2026-06-10
 -- 说明:
 --   - Recent Task 列表排序由 last_message_at 切换为 last_active_at（改动时间）。

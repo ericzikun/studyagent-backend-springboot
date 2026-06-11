@@ -37,6 +37,8 @@ public class VerlaArtifactVO {
     private String metaJson;
     private Integer version;
     private LocalDateTime updatedAt;
+    /** 数据来源标记；{@code "LEGACY_1_0"} 表示由 1.0 历史 task_outputs 适配而来（只读）。 */
+    private String source;
 
     /**
      * {@code assignment_code_file} 是后端内部索引行（支撑单文件懒加载 / 整包 zip），

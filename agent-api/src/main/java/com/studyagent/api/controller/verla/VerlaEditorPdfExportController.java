@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,7 +49,7 @@ public class VerlaEditorPdfExportController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<byte[]> exportPdf(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
             @RequestBody(required = false) Map<String, Object> body) {
 

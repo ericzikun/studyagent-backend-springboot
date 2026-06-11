@@ -55,6 +55,12 @@
             <artifactId>posthog</artifactId>
         </dependency>
 
+        <!-- Sqids: V2 public id 编解码 -->
+        <dependency>
+            <groupId>org.sqids</groupId>
+            <artifactId>sqids</artifactId>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

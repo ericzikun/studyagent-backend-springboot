@@ -16,7 +16,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class VerlaEditorContentResponseVO {
 
-    private Long conversationId;
+    private String conversationId;
     private String artifactUid;
     private String kind;
     private Boolean exists;

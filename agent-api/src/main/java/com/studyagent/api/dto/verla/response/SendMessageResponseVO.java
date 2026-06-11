@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,18 +13,18 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class SendMessageResponseVO {
 
-    private Long turnId;
-    private Long userMessageId;
-    private Long planSessionId;
-    private Long agentSessionId;
+    private String turnId;
+    private String userMessageId;
+    private String planSessionId;
+    private String agentSessionId;
     private String skipPlanReason;
 
     public static SendMessageResponseVO from(SendMessageResult r) {
         return SendMessageResponseVO.builder()
-                .turnId(r.getTurnId())
-                .userMessageId(r.getUserMessageId())
-                .planSessionId(r.getPlanSessionId())
-                .agentSessionId(r.getAgentSessionId())
+                .turnId(VerlaPublicIdVoSupport.turn(r.getTurnId(), true))
+                .userMessageId(VerlaPublicIdVoSupport.message(r.getUserMessageId(), true))
+                .planSessionId(VerlaPublicIdVoSupport.session(r.getPlanSessionId(), true))
+                .agentSessionId(VerlaPublicIdVoSupport.session(r.getAgentSessionId(), true))
                 .skipPlanReason(r.getSkipPlanReason())
                 .build();
     }

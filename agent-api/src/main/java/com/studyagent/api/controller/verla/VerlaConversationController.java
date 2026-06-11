@@ -1,6 +1,10 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdCodec;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.dto.verla.request.AssignmentClarifyContinueRequest;
 import com.studyagent.api.dto.verla.request.CreateConversationRequest;
 import com.studyagent.api.dto.verla.request.PatchConversationRequest;
@@ -120,9 +124,14 @@ public class VerlaConversationController {
             List<VerlaEditorPreviewEntity> allPreviews = previewService.listByConversationIds(conversationIds);
             Map<Long, List<VerlaEditorPreviewEntity>> previewsByConv = allPreviews.stream()
                     .collect(Collectors.groupingBy(VerlaEditorPreviewEntity::getConversationId));
+            Map<String, Long> publicConversationIds = toPublicConversationIdMap(slice.records());
             for (VerlaConversationVO vo : pageVO.getRecords()) {
+                Long internalConversationId = publicConversationIds.get(vo.getConversationId());
+                if (internalConversationId == null) {
+                    continue;
+                }
                 List<VerlaEditorPreviewEntity> previews = previewsByConv.getOrDefault(
-                        vo.getConversationId(), List.of());
+                        internalConversationId, List.of());
                 List<EditorPreviewItem> items = previews.stream()
                         .limit(3)
                         .map(p -> new EditorPreviewItem(
@@ -166,7 +175,7 @@ public class VerlaConversationController {
     @GetMapping("/{cid}")
     public Result<VerlaConversationVO> get(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         VerlaConversation c = conversationService.getOwned(clerkUserId, cid);
         return Result.success(VerlaConversationVO.from(c, dashboardStatusService.resolve(c)));
@@ -178,7 +187,7 @@ public class VerlaConversationController {
     @PatchMapping("/{cid}")
     public Result<VerlaConversationVO> patch(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody PatchConversationRequest req) {
         ensureLogin(clerkUserId);
         VerlaConversation c;
@@ -202,7 +211,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/activity")
     public Result<VerlaConversationVO> touchActivity(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         VerlaConversation c = conversationService.touchActivity(clerkUserId, cid);
         return Result.success(VerlaConversationVO.from(c, dashboardStatusService.resolve(c)));
@@ -214,7 +223,7 @@ public class VerlaConversationController {
     @DeleteMapping("/{cid}")
     public Result<Void> delete(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         conversationService.softDelete(clerkUserId, cid);
         return Result.success(null);
@@ -226,7 +235,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/messages")
     public Result<SendMessageResponseVO> sendMessage(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody @Valid SendMessageRequest req) {
         ensureLogin(clerkUserId);
         log.info("[Verla] sendMessage HTTP: cid={}, forceIntent='{}', skipPlan={}, text='{}'",
@@ -252,7 +261,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/assignment/clarify/start")
     public Result<SendMessageResponseVO> startAssignmentClarify(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         SendMessageResult result = turnOrchestrator.startAssignmentClarifyFromLatestPlan(clerkUserId, cid);
         return Result.success(SendMessageResponseVO.from(result));
@@ -261,7 +270,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/plan/confirm")
     public Result<PlanConfirmResponseVO> confirmPlan(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody @Valid PlanConfirmRequest req) {
         ensureLogin(clerkUserId);
         PlanConfirmResult result = turnOrchestrator.confirmLatestPlan(
@@ -275,7 +284,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/assignment/clarify/continue")
     public Result<SendMessageResponseVO> continueAssignmentClarify(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
         ensureLogin(clerkUserId);
         AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
@@ -294,7 +303,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/assignment/clarify/finalize")
     public Result<SendMessageResponseVO> finalizeAssignmentClarify(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) AssignmentClarifyContinueRequest req) {
         ensureLogin(clerkUserId);
         AssignmentClarifyContinueRequest body = req == null ? new AssignmentClarifyContinueRequest() : req;
@@ -312,7 +321,7 @@ public class VerlaConversationController {
     @PostMapping("/{cid}/assignment/run")
     public Result<SendMessageResponseVO> runAssignment(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         SendMessageResult result = turnOrchestrator.startAssignmentRunFromFinalClarify(clerkUserId, cid);
         return Result.success(SendMessageResponseVO.from(result));
@@ -325,7 +334,7 @@ public class VerlaConversationController {
     @GetMapping("/{cid}/assignment/runtime-snapshot")
     public Result<AssignmentRuntimeSnapshotVO> getAssignmentRuntimeSnapshot(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         conversationService.getOwned(clerkUserId, cid);
         return Result.success(AssignmentRuntimeSnapshotVO.from(
@@ -338,7 +347,7 @@ public class VerlaConversationController {
     @GetMapping("/{cid}/messages")
     public Result<MessagePageVO> listMessages(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestParam(value = "cursor", required = false) Long cursor,
             @RequestParam(value = "limit", defaultValue = "20") int limit) {
         ensureLogin(clerkUserId);
@@ -378,16 +387,22 @@ public class VerlaConversationController {
         Map<Long, List<VerlaArtifactEntity>> artifactsByConv = (artifacts == null ? List.<VerlaArtifactEntity>of() : artifacts)
                 .stream()
                 .collect(Collectors.groupingBy(VerlaArtifactEntity::getConversationId));
+        Map<String, Long> publicConversationIds = toPublicConversationIdMap(conversations);
         for (VerlaConversationVO vo : pageVO.getRecords()) {
             if (!shouldExposeAssignmentPreviewKinds(vo)) {
                 vo.setArtifactPreviewKinds(null);
                 continue;
             }
+            Long internalConversationId = publicConversationIds.get(vo.getConversationId());
+            if (internalConversationId == null) {
+                vo.setArtifactPreviewKinds(null);
+                continue;
+            }
             List<VerlaArtifactEntity> convArtifacts = artifactsByConv.getOrDefault(
-                    vo.getConversationId(), List.of());
+                    internalConversationId, List.of());
             List<VerlaArtifactEntity> previewSourceArtifacts = pickPreviewSourceArtifacts(
                     convArtifacts,
-                    vo.getLastTurnId());
+                    resolveInternalTurnId(vo.getLastTurnId()));
             LinkedHashSet<String> kinds = new LinkedHashSet<>();
             for (VerlaArtifactEntity a : previewSourceArtifacts) {
                 if (!isRenderablePreviewArtifact(a)) {
@@ -424,6 +439,29 @@ public class VerlaConversationController {
         }
         String normalized = intent.trim().toUpperCase(Locale.ROOT);
         return ASSIGNMENT_PREVIEW_INTENTS.contains(normalized);
+    }
+
+    private static Map<String, Long> toPublicConversationIdMap(List<VerlaConversation> conversations) {
+        if (conversations == null || conversations.isEmpty()) {
+            return Map.of();
+        }
+        return conversations.stream()
+                .filter(c -> c.getId() != null)
+                .collect(Collectors.toMap(
+                        c -> VerlaPublicIdVoSupport.conversation(c.getId(), true),
+                        VerlaConversation::getId,
+                        (left, right) -> left));
+    }
+
+    private static Long resolveInternalTurnId(String publicTurnId) {
+        if (publicTurnId == null || publicTurnId.isBlank()) {
+            return null;
+        }
+        try {
+            return VerlaPublicIdCodec.requireInternalId(VerlaPublicIdType.TURN, publicTurnId);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private static List<VerlaArtifactEntity> pickPreviewSourceArtifacts(

@@ -142,7 +142,7 @@ public class VerlaInternalController {
         List<VerlaMessage> page = messageRepository.findByCursor(conversationId, beforeId, safeLimit);
         Long nextCursor = page.isEmpty() ? null : page.get(page.size() - 1).getId();
         return Result.success(MessagePageVO.builder()
-                .items(page.stream().map(VerlaMessageVO::from).collect(Collectors.toList()))
+                .items(page.stream().map(VerlaMessageVO::fromInternal).collect(Collectors.toList()))
                 .nextCursor(nextCursor)
                 .build());
     }
@@ -171,7 +171,7 @@ public class VerlaInternalController {
         List<VerlaMessage> page = messageRepository.findFileChatByCursor(conversationId, objectId, beforeId, safeLimit);
         Long nextCursor = page.isEmpty() ? null : page.get(page.size() - 1).getId();
         return Result.success(MessagePageVO.builder()
-                .items(page.stream().map(VerlaMessageVO::from).collect(Collectors.toList()))
+                .items(page.stream().map(VerlaMessageVO::fromInternal).collect(Collectors.toList()))
                 .nextCursor(nextCursor)
                 .build());
     }
@@ -196,7 +196,7 @@ public class VerlaInternalController {
         List<VerlaMessage> page = messageRepository.findAssignmentChatByCursor(conversationId, beforeId, safeLimit);
         Long nextCursor = page.isEmpty() ? null : page.get(page.size() - 1).getId();
         return Result.success(MessagePageVO.builder()
-                .items(page.stream().map(VerlaMessageVO::from).collect(Collectors.toList()))
+                .items(page.stream().map(VerlaMessageVO::fromInternal).collect(Collectors.toList()))
                 .nextCursor(nextCursor)
                 .build());
     }
@@ -210,7 +210,7 @@ public class VerlaInternalController {
         if (c == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND);
         }
-        return Result.success(VerlaConversationVO.from(c));
+        return Result.success(VerlaConversationVO.fromInternal(c));
     }
 
     // ====================================================================

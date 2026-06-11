@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.VerlaEditorAssetFinalizeRequest;
 import com.studyagent.api.dto.verla.request.VerlaEditorAssetSignRequest;
@@ -54,7 +57,7 @@ public class VerlaEditorAssetController {
     @PostMapping("/v1/verla/conversations/{cid}/editor-assets/sign")
     public Result<VerlaEditorAssetSignResponseVO> sign(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody VerlaEditorAssetSignRequest req) {
         ensureLogin(clerkUserId);
         if (req == null || req.getConversationId() == null) {

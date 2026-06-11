@@ -9,7 +9,8 @@ import java.util.Optional;
  * Verla Workforce 任务产出内容仓储接口。
  * <p>
  * 写路径：{@link #upsertBySessionNode} 由 {@code ASSIGNMENT_AGENT_NODE_DETAILED} 驱动，
- * 按 (session_id, node_id) 幂等。result_text 追加，detail_items_json JSON 数组合并。
+ * 按 (session_id, node_id) 幂等。result_text 追加，detail_items_json JSON 数组合并；
+ * patch.reset=true 时先清空旧 result_text/detail_items_json，再应用本次增量。
  */
 public interface VerlaWorkforceTaskOutputRepository {
 
@@ -21,6 +22,7 @@ public interface VerlaWorkforceTaskOutputRepository {
      * 按 (session_id, node_id) 幂等 upsert。
      * <ul>
      *   <li>不存在 → insert。</li>
+     *   <li>存在且 patch.reset=true → 先清空 resultText/detailItemsJson。</li>
      *   <li>存在 → resultText 追加（非空才追加），detailItemsJson JSON 数组合并（非空才追加）。</li>
      * </ul>
      */

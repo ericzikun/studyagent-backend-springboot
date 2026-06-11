@@ -19,6 +19,7 @@ final class MockPyAssignmentFixtures {
     static final String STREAM_SCENARIO_DEFAULT = "default";
     static final String STREAM_SCENARIO_FAST = "fast";
     static final String STREAM_SCENARIO_CODE_PROJECT = "code-project";
+    static final String STREAM_SCENARIO_RETRY = "retry";
     static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private MockPyAssignmentFixtures() {
@@ -32,6 +33,9 @@ final class MockPyAssignmentFixtures {
         String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(java.util.Locale.ROOT);
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_FAST)) {
             return STREAM_SCENARIO_FAST;
+        }
+        if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_RETRY)) {
+            return STREAM_SCENARIO_RETRY;
         }
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_CODE_PROJECT)
                 || hasMockScenarioPrefix(normalized, "code_project")
@@ -78,6 +82,12 @@ final class MockPyAssignmentFixtures {
                     "topic", "Code project homework analyzer",
                     "outputType", STREAM_SCENARIO_CODE_PROJECT,
                     "nextStep", "start generation to emit an assignment_code_project fixture"));
+        } else if (STREAM_SCENARIO_RETRY.equals(scenario)) {
+            done.put("mockScenario", STREAM_SCENARIO_RETRY);
+            done.put("requirementUnderstanding", Map.of(
+                    "topic", "Retryable assignment workflow",
+                    "outputType", STREAM_SCENARIO_RETRY,
+                    "nextStep", "start generation to emit a retrying task node fixture"));
         } else {
             done.put("requirementUnderstanding", Map.of(
                     "topic", "Causes of World War I",
@@ -183,6 +193,16 @@ final class MockPyAssignmentFixtures {
                                                  String status,
                                                  List<Map<String, Object>> detailChunk,
                                                  String contentChunk) {
+        return nodeDetailPayload(id, title, role, status, detailChunk, contentChunk, false);
+    }
+
+    static Map<String, Object> nodeDetailPayload(String id,
+                                                 String title,
+                                                 String role,
+                                                 String status,
+                                                 List<Map<String, Object>> detailChunk,
+                                                 String contentChunk,
+                                                 boolean reset) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("id", id);
         payload.put("status", status);
@@ -194,6 +214,9 @@ final class MockPyAssignmentFixtures {
         }
         if (contentChunk != null && !contentChunk.isBlank()) {
             payload.put("contentChunk", contentChunk);
+        }
+        if (reset) {
+            payload.put("reset", true);
         }
         return payload;
     }

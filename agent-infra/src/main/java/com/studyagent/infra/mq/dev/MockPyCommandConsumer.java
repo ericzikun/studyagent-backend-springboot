@@ -112,6 +112,8 @@ public class MockPyCommandConsumer {
     private final ScheduledExecutorService scheduler;
     /** 按 turn 记录 deep understanding 轮次，用来模拟“多轮后可开始生成”的 composer 按钮信号。 */
     private final ConcurrentHashMap<Long, AtomicLong> assignmentDeepUnderstandingRounds = new ConcurrentHashMap<>();
+    /** 按 turn 记录本地 MockPy stream 场景，避免 init 输入前缀在 clarify/run payload 中丢失。 */
+    private final ConcurrentHashMap<Long, String> assignmentStreamScenarios = new ConcurrentHashMap<>();
     /** 按 turn 记录本地 MockPy artifact 场景，避免 init 输入前缀在 clarify/run payload 中丢失。 */
     private final ConcurrentHashMap<Long, String> assignmentArtifactScenarios = new ConcurrentHashMap<>();
     private final String instanceId;
@@ -395,6 +397,7 @@ public class MockPyCommandConsumer {
      */
     private void scheduleAssignmentInitResponse(VerlaCommandEnvelope cmd) {
         String scenario = resolveAssignmentStreamScenario(assignmentUserText(cmd));
+        rememberAssignmentStreamScenario(cmd, scenario);
         rememberAssignmentArtifactScenario(cmd, scenario);
         if (MockPyAssignmentFixtures.STREAM_SCENARIO_FAST.equals(scenario)) {
             scheduleAssignmentInitScenarioResponse(cmd, scenario,
@@ -619,6 +622,10 @@ public class MockPyCommandConsumer {
      */
     private void scheduleAssignmentRunResponse(VerlaCommandEnvelope cmd) {
         String agentType = assignmentAgentType(cmd);
+        Map<String, Object> payload = cmd.getPayload() == null ? Map.of() : cmd.getPayload();
+        String streamScenario = resolveAssignmentRunStreamScenario(
+                payload,
+                rememberedAssignmentStreamScenario(cmd));
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", agentType);
         started.put("stage", "assignment_run");
@@ -667,16 +674,29 @@ public class MockPyCommandConsumer {
         scheduleAssignmentProgress(cmd, "Final quality check", 2 * 60, 5500);
         scheduleAssignmentProgress(cmd, "Preparing artifact", 30, 7200);
 
-        scheduleAssignmentTaskLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
-                "Problem Solving Expert", 1,
-                "Translate the prompt into a thesis direction and decide what evidence is needed.",
-                "Problem frame, constraints, deliverable type, and user-provided context.",
-                "Locked the argument direction and evidence plan.",
-                List.of(
-                        "Intent Parsing & Query Expansion",
-                        "Constraint Matching",
-                        "Evidence Need Mapping"),
-                900, 1500);
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_RETRY.equals(streamScenario)) {
+            scheduleAssignmentTaskRetryLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
+                    "Problem Solving Expert", 1,
+                    "Translate the prompt into a thesis direction and decide what evidence is needed.",
+                    "Problem frame, constraints, deliverable type, and user-provided context.",
+                    "Locked the argument direction and evidence plan after retry.",
+                    List.of(
+                            "Intent Parsing & Query Expansion",
+                            "Constraint Matching",
+                            "Evidence Need Mapping"),
+                    900, 1500);
+        } else {
+            scheduleAssignmentTaskLifecycle(cmd, "problem-solving-expert", "Problem Solving Expert",
+                    "Problem Solving Expert", 1,
+                    "Translate the prompt into a thesis direction and decide what evidence is needed.",
+                    "Problem frame, constraints, deliverable type, and user-provided context.",
+                    "Locked the argument direction and evidence plan.",
+                    List.of(
+                            "Intent Parsing & Query Expansion",
+                            "Constraint Matching",
+                            "Evidence Need Mapping"),
+                    900, 1500);
+        }
         scheduleAssignmentTaskLifecycle(cmd, "evidence-researcher", "Evidence Researcher",
                 "Research", 2,
                 "Collect and filter useful facts, references, and source notes for the assignment.",
@@ -729,7 +749,7 @@ public class MockPyCommandConsumer {
                 5500, 7000);
 
         String artifactScenario = resolveAssignmentArtifactScenario(
-                cmd.getPayload() == null ? Map.of() : cmd.getPayload(),
+                payload,
                 rememberedAssignmentArtifactScenario(cmd));
         List<Map<String, Object>> artifacts = MockPyAssignmentFixtures.generatedArtifacts(
                 agentType,
@@ -840,6 +860,55 @@ public class MockPyCommandConsumer {
                 completedDelayMs + 80L);
     }
 
+    private void scheduleAssignmentTaskRetryLifecycle(VerlaCommandEnvelope cmd,
+                                                      String id,
+                                                      String title,
+                                                      String role,
+                                                      int order,
+                                                      String summary,
+                                                      String inputSummary,
+                                                      String outputSummary,
+                                                      List<String> stepTitles,
+                                                      long runningDelayMs,
+                                                      long completedDelayMs) {
+        long failedDelayMs = runningDelayMs + 220L;
+        long retryingDelayMs = runningDelayMs + 360L;
+
+        scheduleAssignmentNode(cmd, id, title, role, "RUNNING", order, summary,
+                inputSummary, null,
+                workflowSteps(stepTitles, "RUNNING"),
+                runningDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "RUNNING",
+                mockDetailItems(stepTitles),
+                mockRunningDetailContent(title, summary),
+                runningDelayMs + 80L);
+        scheduleAssignmentNode(cmd, id, title, role, "FAILED", order, summary,
+                inputSummary, "First mock attempt failed before producing usable output.",
+                workflowSteps(stepTitles, "FAILED"),
+                failedDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "FAILED",
+                List.of(),
+                "First mock attempt failed before producing usable output.\n",
+                failedDelayMs + 40L);
+        scheduleAssignmentNode(cmd, id, title, role, "RETRYING", order, summary,
+                inputSummary, null,
+                workflowSteps(stepTitles, "RUNNING"),
+                retryingDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "RETRYING",
+                List.of(),
+                "",
+                true,
+                retryingDelayMs + 40L);
+        scheduleAssignmentNode(cmd, id, title, role, "COMPLETED", order, summary,
+                inputSummary, outputSummary,
+                workflowSteps(stepTitles, "COMPLETED"),
+                completedDelayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, "COMPLETED",
+                List.of(),
+                mockCompletedDetailContent(title, outputSummary),
+                completedDelayMs + 80L);
+    }
+
     private void scheduleAssignmentNode(VerlaCommandEnvelope cmd,
                                         String id,
                                         String title,
@@ -881,8 +950,20 @@ public class MockPyCommandConsumer {
                                               List<Map<String, Object>> detailChunk,
                                               String contentChunk,
                                               long delayMs) {
+        scheduleAssignmentNodeDetail(cmd, id, title, role, status, detailChunk, contentChunk, false, delayMs);
+    }
+
+    private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
+                                              String id,
+                                              String title,
+                                              String role,
+                                              String status,
+                                              List<Map<String, Object>> detailChunk,
+                                              String contentChunk,
+                                              boolean reset,
+                                              long delayMs) {
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED,
-                MockPyAssignmentFixtures.nodeDetailPayload(id, title, role, status, detailChunk, contentChunk),
+                MockPyAssignmentFixtures.nodeDetailPayload(id, title, role, status, detailChunk, contentChunk, reset),
                 delayMs);
     }
 
@@ -1341,6 +1422,18 @@ public class MockPyCommandConsumer {
         return MockPyAssignmentFixtures.resolveStreamScenario(userText);
     }
 
+    static String resolveAssignmentRunStreamScenario(Map<String, Object> payload, String fallbackScenario) {
+        if (payload != null && !payload.isEmpty()) {
+            for (String key : List.of("mockScenario", "streamScenario", "userText")) {
+                String scenario = resolveAssignmentStreamScenario(stringField(payload, key));
+                if (!MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT.equals(scenario)) {
+                    return scenario;
+                }
+            }
+        }
+        return normalizeStreamScenario(fallbackScenario);
+    }
+
     static String resolveAssignmentArtifactScenario(Map<String, Object> payload) {
         return resolveAssignmentArtifactScenario(payload, MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT);
     }
@@ -1393,6 +1486,34 @@ public class MockPyCommandConsumer {
             return MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT;
         }
         return assignmentArtifactScenarios.getOrDefault(key, MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT);
+    }
+
+    private static String normalizeStreamScenario(String scenario) {
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_FAST.equals(scenario)
+                || MockPyAssignmentFixtures.STREAM_SCENARIO_CODE_PROJECT.equals(scenario)
+                || MockPyAssignmentFixtures.STREAM_SCENARIO_RETRY.equals(scenario)) {
+            return scenario;
+        }
+        return MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT;
+    }
+
+    private void rememberAssignmentStreamScenario(VerlaCommandEnvelope cmd, String scenario) {
+        String normalized = normalizeStreamScenario(scenario);
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT.equals(normalized)) {
+            return;
+        }
+        Long key = assignmentScenarioKey(cmd);
+        if (key != null) {
+            assignmentStreamScenarios.put(key, normalized);
+        }
+    }
+
+    private String rememberedAssignmentStreamScenario(VerlaCommandEnvelope cmd) {
+        Long key = assignmentScenarioKey(cmd);
+        if (key == null) {
+            return MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT;
+        }
+        return assignmentStreamScenarios.getOrDefault(key, MockPyAssignmentFixtures.STREAM_SCENARIO_DEFAULT);
     }
 
     private static Long assignmentScenarioKey(VerlaCommandEnvelope cmd) {

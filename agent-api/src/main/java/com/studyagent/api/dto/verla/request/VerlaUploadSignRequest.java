@@ -1,5 +1,7 @@
 package com.studyagent.api.dto.verla.request;
 
+import com.studyagent.api.jackson.verla.VerlaPublicIdField;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +16,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class VerlaUploadSignRequest {
 
+    @VerlaPublicIdField(VerlaPublicIdType.CONVERSATION)
     private Long conversationId;
     /** Internal agent output upload must carry the Java/Clerk user id explicitly. */
     private String clerkUserId;
@@ -21,8 +24,10 @@ public class VerlaUploadSignRequest {
     private String mime;
     private Long sizeBytes;
     /** 可选：绑定 turn（发送消息前后均可） */
+    @VerlaPublicIdField(VerlaPublicIdType.TURN)
     private Long turnId;
     /** 预留：关联 verla_sessions.id */
+    @VerlaPublicIdField(VerlaPublicIdType.SESSION)
     private Long sessionId;
     /** Internal upload source marker, e.g. USER_UPLOAD / AGENT_OUTPUT. */
     private String attachmentOrigin;

@@ -1,5 +1,7 @@
 package com.studyagent.api.dto.verla.request;
 
+import com.studyagent.api.jackson.verla.VerlaPublicIdField;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +18,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class VerlaUploadFinalizeRequest {
 
+    @VerlaPublicIdField(VerlaPublicIdType.TURN)
     private Long turnId;
     /** 可选：客户端计算的 SHA-256 hex，与落盘文件校验 */
     private String checksumSha256;

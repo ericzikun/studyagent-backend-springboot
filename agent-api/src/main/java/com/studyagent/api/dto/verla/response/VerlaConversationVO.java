@@ -41,6 +41,9 @@ public class VerlaConversationVO {
      *  由后端根据 artifacts 实时推导，不依赖截图链路。
      *  非 assignment conversation 返回空数组或不返回该字段。 */
     private List<String> artifactPreviewKinds;
+    /** 数据来源标记；{@code "LEGACY_1_0"} 表示由 1.0 历史任务实时适配而来（只读），
+     *  正常 V2 对话该字段为 {@code null}。前端据此进入只读模式并展示"来自 1.0"角标。 */
+    private String source;
 
     public static VerlaConversationVO from(VerlaConversation c) {
         return fromPublic(c);

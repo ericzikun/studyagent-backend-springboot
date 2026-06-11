@@ -296,6 +296,12 @@ studyagent:
 # 对应文档 docs/verla-Java侧MVP技术方案.md §16 / §23 / §24
 # ============================================================
 verla:
+  # 1.0 历史作业轻量兼容层（见 docs/02-架构稳定性分析/11-1.0到2.0轻量API兼容方案.md）。
+  # enabled=true 时，1.0 已完成 task 实时适配为只读虚拟 conversation 合并进 Dashboard。
+  legacy-compat:
+    enabled: ${VERLA_LEGACY_COMPAT_ENABLED:false}
+    # 单 artifact body 截断阈值（字节），防大文本撑爆响应
+    max-message-bytes: ${VERLA_LEGACY_COMPAT_MAX_MESSAGE_BYTES:65536}
   # 作业 Workforce 主执行（cmd.assignment.run / cmd.agent.control.retry）全局派发并发上限。
   # 0 = 不限制；>0 时超限命令暂留 mq_outbox，待 slot 释放后再发往 Py。
   assignment-run:

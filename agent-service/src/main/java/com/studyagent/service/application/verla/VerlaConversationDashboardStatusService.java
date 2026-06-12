@@ -153,6 +153,7 @@ public class VerlaConversationDashboardStatusService {
                     ASSIGNMENT_CLARIFY_FAILED, ASSIGNMENT_FAILED, ASSIGNMENT_AGENT_FLOW_FAILED,
                     AGENT_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> STATUS_FAILED;
             case ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
+                    ASSIGNMENT_INIT_CANCELLED, ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED, AGENT_CANCELLED,
                     AI_DETECTION_CANCELLED, AI_HUMANIZER_CANCELLED -> STATUS_FAILED;
             case PLAN_INTENT_STARTED, PLAN_INTENT_STREAM_CHUNK,
@@ -179,7 +180,7 @@ public class VerlaConversationDashboardStatusService {
             // write 编辑提案是 chat turn 内部子生命周期，不参与 dashboard 状态汇总。
             case ARTIFACT_EDIT_PROPOSAL_STARTED, ARTIFACT_EDIT_PROPOSAL_READY,
                     ARTIFACT_EDIT_PROPOSAL_FAILED -> null;
-            case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED -> null;
+            case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
         };
     }
 

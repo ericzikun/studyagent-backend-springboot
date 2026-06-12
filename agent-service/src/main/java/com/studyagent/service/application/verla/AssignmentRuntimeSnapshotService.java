@@ -254,10 +254,12 @@ public class AssignmentRuntimeSnapshotService {
                     ASSIGNMENT_DEEP_UNDERSTANDING_STREAM_CHUNK ->
                     VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED.name();
             case ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED,
-                    ASSIGNMENT_DEEP_UNDERSTANDING_FAILED -> type.name();
+                    ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
+                    ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED -> type.name();
             case ASSIGNMENT_INIT_STARTED, ASSIGNMENT_INIT_STREAM_CHUNK ->
                     VerlaAgentEventType.ASSIGNMENT_INIT_STARTED.name();
-            case ASSIGNMENT_INIT_COMPLETED, ASSIGNMENT_INIT_FAILED -> type.name();
+            case ASSIGNMENT_INIT_COMPLETED, ASSIGNMENT_INIT_FAILED,
+                    ASSIGNMENT_INIT_CANCELLED -> type.name();
             default -> null;
         };
     }

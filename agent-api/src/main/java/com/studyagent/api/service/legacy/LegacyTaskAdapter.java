@@ -262,13 +262,17 @@ public class LegacyTaskAdapter {
         return t.getFinishTime() != null ? t.getFinishTime() : t.getUpdatedAt();
     }
 
+    /**
+     * 1.0 {@code task_outputs.format} 枚举：1=Word, 2=PDF, 3=PPT, 4=Markdown。
+     * 最终报告（{@code outputType=1}）的 format=4 应走文档编辑器，而不是代码编辑器。
+     */
     private static String resolveKind(Integer format) {
         if (format == null) {
             return "document_markdown";
         }
         return switch (format) {
             case 3 -> "slides";
-            case 4 -> "code";
+            case 4 -> "document_markdown";
             default -> "document_markdown";
         };
     }

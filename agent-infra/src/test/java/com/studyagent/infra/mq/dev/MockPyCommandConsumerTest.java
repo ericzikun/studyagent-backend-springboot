@@ -33,6 +33,8 @@ class MockPyCommandConsumerTest {
                 .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("code-project test generated folder", "router"))
                 .isEqualTo("assignment");
+        assertThat(MockPyCommandConsumer.resolvePlanIntent("retry test failed node reset", "router"))
+                .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fasting is unrelated", "router"))
                 .isEqualTo("qa");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("mixed test rich markdown stream", "router"))
@@ -56,6 +58,8 @@ class MockPyCommandConsumerTest {
                 .isEqualTo("code-project");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  code_project: assignment folder"))
                 .isEqualTo("code-project");
+        assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("retry assignment node reset"))
+                .isEqualTo("retry");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  mixed: assignment markdown"))
                 .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fasting should stay normal"))
@@ -109,6 +113,29 @@ class MockPyCommandConsumerTest {
                 .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
                 .containsEntry("outputType", "code-project")
                 .containsEntry("nextStep", "start generation to emit an assignment_code_project fixture");
+    }
+
+    @Test
+    void assignmentRetryInitCompletedPayload_persistsMockScenario() {
+        Map<String, Object> payload = MockPyAssignmentFixtures.defaultInitCompletedPayload("retry");
+
+        assertThat(payload).containsEntry("mockScenario", "retry");
+        assertThat(payload.get("requirementUnderstanding"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("outputType", "retry")
+                .containsEntry("nextStep", "start generation to emit a retrying task node fixture");
+    }
+
+    @Test
+    void resolveAssignmentRunStreamScenario_prefersExplicitSignalsThenFallback() {
+        assertThat(MockPyCommandConsumer.resolveAssignmentRunStreamScenario(
+                Map.of("mockScenario", "retry"),
+                "default"))
+                .isEqualTo("retry");
+        assertThat(MockPyCommandConsumer.resolveAssignmentRunStreamScenario(
+                Map.of(),
+                "retry"))
+                .isEqualTo("retry");
     }
 
     @Test
@@ -276,6 +303,18 @@ class MockPyCommandConsumerTest {
         assertThat(payload.get("detailChunk")).isEqualTo(List.of(Map.of(
                 "type", "search_serper",
                 "detailed", List.of(Map.of("name", "Mock source scan")))));
+
+        Map<String, Object> retryPayload = MockPyAssignmentFixtures.nodeDetailPayload(
+                "draft-writer",
+                "Draft Writer",
+                "Writing",
+                "RETRYING",
+                List.of(),
+                "",
+                true);
+        assertThat(retryPayload)
+                .containsEntry("status", "RETRYING")
+                .containsEntry("reset", true);
     }
 
 }

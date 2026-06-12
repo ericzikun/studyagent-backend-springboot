@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -162,6 +162,6 @@ public class VerlaClarifyFormEventHandler implements VerlaEventHandler {
     }
 
     private static LocalDateTime toLocalDateTime(java.time.Instant inst) {
-        return inst == null ? null : LocalDateTime.ofInstant(inst, ZoneId.systemDefault());
+        return DateTimeFormats.fromInstant(inst);
     }
 }

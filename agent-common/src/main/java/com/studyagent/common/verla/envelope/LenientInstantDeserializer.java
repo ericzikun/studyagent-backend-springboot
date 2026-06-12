@@ -17,7 +17,8 @@ import java.time.format.DateTimeParseException;
  * 兼容 Py/MySQL 等处序列化出的无时区 ISO-8601（如 {@code 2026-05-01T11:09:41.512545}），
  * Jackson 默认 {@link Instant} 解析要求带 {@code Z} 或偏移量。
  * <p>
- * 无时区字符串按 UTC 解释，与 Python 侧规范化后的语义一致。
+ * 无时区字符串按 UTC 解释（适用于 Python {@code datetime.now(timezone.utc)} 等带 UTC 语义的事件）。
+ * 写入 MySQL {@code DATETIME} 时请用 {@link com.studyagent.common.datetime.DateTimeFormats#fromInstant(Instant)}。
  */
 public class LenientInstantDeserializer extends JsonDeserializer<Instant> {
 

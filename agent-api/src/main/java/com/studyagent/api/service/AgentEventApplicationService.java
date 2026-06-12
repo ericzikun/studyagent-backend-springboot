@@ -21,7 +21,7 @@ import org.springframework.http.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -776,10 +776,7 @@ public class AgentEventApplicationService {
     // ========== 辅助方法 ==========
     
     private LocalDateTime toLocalDateTime(Instant instant) {
-        if (instant == null) {
-            return LocalDateTime.now();
-        }
-        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        return DateTimeFormats.fromInstantOrNow(instant);
     }
     
     private String getStringValue(Map<String, Object> map, String key) {

@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 
 /**
- * 将 {@link LocalDateTime} 序列化为带 offset 的 ISO-8601 字符串（如 {@code 2026-06-03T04:00:00Z}）。
+ * 将 {@link LocalDateTime} 序列化为带 offset 的 ISO-8601 字符串（如 {@code 2026-06-03T12:00:00+08:00}）。
  */
 public class OffsetLocalDateTimeSerializer extends JsonSerializer<LocalDateTime> {
 

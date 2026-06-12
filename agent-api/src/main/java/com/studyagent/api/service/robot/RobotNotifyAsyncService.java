@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.infra.entity.FeedbackPromptSessionEntity;
 import com.studyagent.infra.entity.FeedbackSubmissionEntity;
@@ -31,8 +32,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -123,7 +122,7 @@ public class RobotNotifyAsyncService {
             sb.append("- **邮箱(Stripe)**: ").append("—").append("\n");
             sb.append("- **失败原因**: ").append(nullToDash(failureReason)).append("\n");
             sb.append("- **PaymentIntent**: ").append(nullToDash(paymentIntentId)).append("\n");
-            sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
+            sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
             Map<String, Object> meta = baseMeta("payment_failed", notifyEventId, clerkUserId, featureCode);
             meta.put("payment_intent_id", paymentIntentId);
             robotNotifyService.dispatch(RobotNotifyRouteKind.ASSIGNMENT, notifyEventId, "notify.payment.failed", title, truncate(sb.toString(), 2000), meta);
@@ -156,7 +155,7 @@ public class RobotNotifyAsyncService {
             sb.append("- **UID**: ").append(nullToDash(clerkUserId)).append("\n");
             sb.append("- **来源**: ").append("未追踪（需在创建 Checkout 时写入 metadata.purchase_source）").append("\n");
             sb.append("- **Session**: ").append(sessionId).append("\n");
-            sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
+            sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
             Map<String, Object> meta = baseMeta("checkout_expired", stripeEventId, clerkUserId, featureCode);
             meta.put("stripe_session_id", sessionId);
             robotNotifyService.dispatch(RobotNotifyRouteKind.ASSIGNMENT, stripeEventId, "notify.checkout.expired", title, truncate(sb.toString(), 2000), meta);
@@ -264,7 +263,7 @@ public class RobotNotifyAsyncService {
                 }
             }
 
-            sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
+            sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
 
             Map<String, Object> meta = new HashMap<>();
             meta.put("kind", "feedback");
@@ -320,7 +319,7 @@ public class RobotNotifyAsyncService {
         }
         sb.append("- **各功能月均(口径见文档)**: ").append(monthlyPaySummary(clerkUserId)).append("\n");
         sb.append("- **上次任务链接**: ").append(lastTaskLink(clerkUserId, featureCode)).append("\n");
-        sb.append("- **时间(UTC)**: ").append(utcNow()).append("\n");
+        sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
         sb.append("- **Stripe**: session=").append(sessionId).append(", pi=").append(nullToDash(paymentIntentId)).append(", evt=").append(stripeEventId);
         return sb.toString();
     }
@@ -351,7 +350,7 @@ public class RobotNotifyAsyncService {
             if (t == null || t.getCreatedAt() == null) {
                 return "暂无";
             }
-            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(ZoneOffset.UTC));
+            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(DateTimeFormats.APP_ZONE));
             return days + " 天前（按最近一条 Assignment 任务创建时间）";
         }
         if (FeatureCode.AI_DETECTION.getCode().equals(featureCode)) {
@@ -364,7 +363,7 @@ public class RobotNotifyAsyncService {
             if (t == null || t.getCreatedAt() == null) {
                 return "暂无";
             }
-            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(ZoneOffset.UTC));
+            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(DateTimeFormats.APP_ZONE));
             return days + " 天前（最近 Detection 任务）";
         }
         if (FeatureCode.HUMANIZER.getCode().equals(featureCode)) {
@@ -377,7 +376,7 @@ public class RobotNotifyAsyncService {
             if (t == null || t.getCreatedAt() == null) {
                 return "暂无";
             }
-            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(ZoneOffset.UTC));
+            long days = ChronoUnit.DAYS.between(t.getCreatedAt().toLocalDate(), LocalDate.now(DateTimeFormats.APP_ZONE));
             return days + " 天前（最近 Humanize 任务）";
         }
         return "—";
@@ -396,7 +395,7 @@ public class RobotNotifyAsyncService {
         if (prev == null || prev.getPaidAt() == null) {
             return "—";
         }
-        long days = ChronoUnit.DAYS.between(prev.getPaidAt().toLocalDate(), LocalDate.now(ZoneOffset.UTC));
+        long days = ChronoUnit.DAYS.between(prev.getPaidAt().toLocalDate(), LocalDate.now(DateTimeFormats.APP_ZONE));
         return String.valueOf(days);
     }
 
@@ -418,7 +417,7 @@ public class RobotNotifyAsyncService {
         if (user == null || user.getCreatedAt() == null) {
             return "用户注册时间未知";
         }
-        long regDays = ChronoUnit.DAYS.between(user.getCreatedAt().toLocalDate(), LocalDate.now(ZoneOffset.UTC)) + 1;
+        long regDays = ChronoUnit.DAYS.between(user.getCreatedAt().toLocalDate(), LocalDate.now(DateTimeFormats.APP_ZONE)) + 1;
         if (regDays < 30) {
             return "不足一月（注册未满30天，各功能均显示不足一月）";
         }
@@ -663,8 +662,8 @@ public class RobotNotifyAsyncService {
         return "$" + amt;
     }
 
-    private static String utcNow() {
-        return LocalDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " (UTC+0)";
+    private static String appNowLabel() {
+        return DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " (UTC+8)";
     }
 
     private static Map<String, Object> baseMeta(String kind, String eventId, String clerkUserId, String featureCode) {

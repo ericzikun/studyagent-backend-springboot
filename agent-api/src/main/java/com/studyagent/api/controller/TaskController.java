@@ -47,7 +47,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -170,7 +170,7 @@ public class TaskController {
 
         SaveDraftResponse response = SaveDraftResponse.builder()
             .draftId(TaskIdEncoder.encode(saveResult.draftId()))
-            .savedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+            .savedAt(DateTimeFormats.formatApi(DateTimeFormats.now()))
             .deduplicated(saveResult.deduplicated())
             .build();
 
@@ -604,8 +604,8 @@ public class TaskController {
         // 转换为响应 DTO
         List<TaskDetailResponse.ActivityInfoResponse> activityList = activityEntities.stream()
             .map(act -> TaskDetailResponse.ActivityInfoResponse.builder()
-                .activityTime(act.getActivityTime() != null ? 
-                    act.getActivityTime().atZone(ZoneId.systemDefault()).toEpochSecond() : 0L)
+                .activityTime(act.getActivityTime() != null ?
+                    DateTimeFormats.toEpochSecond(act.getActivityTime()) : 0L)
                 .agentName(act.getAgentName())
                 .activityDesc(act.getActivityDesc())
                 .build())

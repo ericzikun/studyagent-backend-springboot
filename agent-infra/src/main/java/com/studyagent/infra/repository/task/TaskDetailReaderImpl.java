@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.service.application.dto.TaskDetailDTO;
 import com.studyagent.service.domain.task.TaskDetailReader;
 import com.studyagent.service.domain.task.TaskStatus;
@@ -13,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.lang.reflect.Type;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -156,7 +156,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         }
 
         long nowEpoch = System.currentTimeMillis() / 1000;
-        long startEpoch = taskEntity.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond();
+        long startEpoch = taskEntity.getStartTime().atZone(DateTimeFormats.APP_ZONE).toEpochSecond();
         long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
 
         long effectiveElapsed = Math.min(elapsedSeconds, SIMULATED_PROGRESS_WINDOW_SECONDS);
@@ -191,11 +191,11 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
     }
 
     private long toEpochSecond(java.time.LocalDateTime dateTime) {
-        return dateTime != null ? dateTime.atZone(ZoneId.systemDefault()).toEpochSecond() : 0L;
+        return DateTimeFormats.toEpochSecond(dateTime);
     }
 
     private Long toEpochSecondOrNull(java.time.LocalDateTime dateTime) {
-        return dateTime != null ? dateTime.atZone(ZoneId.systemDefault()).toEpochSecond() : null;
+        return DateTimeFormats.toEpochSecondOrNull(dateTime);
     }
 
     private int computeEstRemainingTime(Integer statusCode, java.math.BigDecimal completePercent) {
@@ -400,7 +400,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                     .filter(act -> agentName.equals(act.getAgentName()))
                     .min(Comparator.comparing(TaskActivityEntity::getActivityTime));
             if (earliest.isPresent() && earliest.get().getActivityTime() != null) {
-                agentStartTime = earliest.get().getActivityTime().atZone(ZoneId.systemDefault()).toEpochSecond();
+                agentStartTime = DateTimeFormats.toEpochSecond(earliest.get().getActivityTime());
             }
             result.add(TaskDetailDTO.AgentInfo.builder()
                     .agentName(agentName)

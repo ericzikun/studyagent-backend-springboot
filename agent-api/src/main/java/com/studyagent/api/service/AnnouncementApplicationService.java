@@ -12,9 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -132,9 +130,6 @@ public class AnnouncementApplicationService {
     }
 
     private static long localDateTimeToEpochSeconds(LocalDateTime dt) {
-        if (dt == null) {
-            return 0L;
-        }
-        return dt.atZone(ZoneId.systemDefault()).toEpochSecond();
+        return DateTimeFormats.toEpochSecond(dt);
     }
 }

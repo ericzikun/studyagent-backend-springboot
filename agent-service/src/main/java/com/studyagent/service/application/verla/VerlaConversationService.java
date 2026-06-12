@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -38,7 +39,7 @@ public class VerlaConversationService {
         if (userId == null || userId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = DateTimeFormats.now();
         String intent = primaryIntent == null || primaryIntent.isBlank() ? null : primaryIntent.trim();
         String lifecycle = intent == null
                 ? IntentLifecycle.NONE.getDbValue()
@@ -128,7 +129,7 @@ public class VerlaConversationService {
     public VerlaConversation touchActivity(String userId, Long conversationId) {
         VerlaConversation c = getOwned(userId, conversationId);
         conversationRepository.touchActiveAt(c.getId());
-        c.setLastActiveAt(LocalDateTime.now());
+        c.setLastActiveAt(DateTimeFormats.now());
         return c;
     }
 
@@ -155,7 +156,7 @@ public class VerlaConversationService {
     public VerlaConversation rename(String userId, Long conversationId, String newTitle) {
         VerlaConversation c = getOwned(userId, conversationId);
         c.setTitle(newTitle);
-        c.setUpdatedAt(LocalDateTime.now());
+        c.setUpdatedAt(DateTimeFormats.now());
         return conversationRepository.save(c);
     }
 
@@ -164,7 +165,7 @@ public class VerlaConversationService {
         VerlaConversation c = getOwned(userId, conversationId);
         ConversationStatus next = conversationStateMachine.archive(ConversationStatus.fromDb(c.getStatus()));
         c.setStatus(next.getDbValue());
-        c.setUpdatedAt(LocalDateTime.now());
+        c.setUpdatedAt(DateTimeFormats.now());
         return conversationRepository.save(c);
     }
 
@@ -173,7 +174,7 @@ public class VerlaConversationService {
         VerlaConversation c = getOwned(userId, conversationId);
         ConversationStatus next = conversationStateMachine.restore(ConversationStatus.fromDb(c.getStatus()));
         c.setStatus(next.getDbValue());
-        c.setUpdatedAt(LocalDateTime.now());
+        c.setUpdatedAt(DateTimeFormats.now());
         return conversationRepository.save(c);
     }
 
@@ -182,7 +183,7 @@ public class VerlaConversationService {
         VerlaConversation c = getOwned(userId, conversationId);
         ConversationStatus next = conversationStateMachine.delete(ConversationStatus.fromDb(c.getStatus()));
         c.setStatus(next.getDbValue());
-        c.setUpdatedAt(LocalDateTime.now());
+        c.setUpdatedAt(DateTimeFormats.now());
         conversationRepository.save(c);
     }
 

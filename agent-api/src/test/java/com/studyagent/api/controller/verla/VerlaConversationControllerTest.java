@@ -46,7 +46,8 @@ class VerlaConversationControllerTest {
                 artifactMapper,
                 mock(AssignmentRuntimeSnapshotService.class),
                 mock(VerlaTurnOrchestrator.class),
-                null);
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.studyagent.api.service.legacy.LegacyTaskAdapter.class));
     }
 
     @Test

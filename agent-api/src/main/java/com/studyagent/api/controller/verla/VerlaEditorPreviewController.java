@@ -1,5 +1,9 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.UpsertEditorPreviewRequest;
 import com.studyagent.api.dto.verla.response.VerlaEditorPreviewVO;
@@ -35,7 +39,7 @@ public class VerlaEditorPreviewController {
     @GetMapping
     public Result<VerlaEditorPreviewVO> getPreview(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
             @RequestParam("kind") String kind) {
         ensureLogin(clerkUserId);
@@ -45,7 +49,7 @@ public class VerlaEditorPreviewController {
         VerlaEditorPreviewEntity entity = previewService.getPreview(conversationId, artifactUid, editorKind);
         if (entity == null) {
             VerlaEditorPreviewVO empty = VerlaEditorPreviewVO.builder()
-                    .conversationId(conversationId)
+                    .conversationId(VerlaPublicIdVoSupport.conversation(conversationId, true))
                     .artifactUid(artifactUid)
                     .kind(editorKind)
                     .build();
@@ -57,7 +61,7 @@ public class VerlaEditorPreviewController {
     @PutMapping
     public Result<VerlaEditorPreviewVO> upsertPreview(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable("cid") Long conversationId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable("cid") Long conversationId,
             @PathVariable String artifactUid,
             @RequestParam("kind") String kind,
             @RequestBody @Valid UpsertEditorPreviewRequest request) {

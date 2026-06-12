@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaEditorAsset;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,7 +16,7 @@ import java.time.LocalDateTime;
 public class VerlaEditorAssetVO {
 
     private String assetId;
-    private Long conversationId;
+    private String conversationId;
     private String artifactUid;
     private String editorKind;
     private String assetRole;
@@ -29,7 +30,7 @@ public class VerlaEditorAssetVO {
     public static VerlaEditorAssetVO from(VerlaEditorAsset asset) {
         return VerlaEditorAssetVO.builder()
                 .assetId(asset.getAssetId())
-                .conversationId(asset.getConversationId())
+                .conversationId(VerlaPublicIdVoSupport.conversation(asset.getConversationId(), true))
                 .artifactUid(asset.getArtifactUid())
                 .editorKind(asset.getEditorKind())
                 .assetRole(asset.getAssetRole())

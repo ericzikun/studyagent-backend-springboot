@@ -52,6 +52,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.FILE_CHAT_COMPLETED,
             VerlaAgentEventType.FILE_CHAT_FAILED,
             VerlaAgentEventType.FILE_CHAT_CANCELLED,
+            VerlaAgentEventType.ASSIGNMENT_CHAT_STARTED,
+            VerlaAgentEventType.ASSIGNMENT_CHAT_COMPLETED,
+            VerlaAgentEventType.ASSIGNMENT_CHAT_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_CHAT_CANCELLED,
             VerlaAgentEventType.MATERIALS_STARTED,
             VerlaAgentEventType.MATERIALS_COMPLETED,
             VerlaAgentEventType.AI_DETECTION_COMPLETED,
@@ -81,6 +85,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             case FILE_CHAT_STARTED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onFileChatStarted(sessionId);
+            }
+            case ASSIGNMENT_CHAT_STARTED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentChatStarted(sessionId);
             }
             case ASSIGNMENT_INIT_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
@@ -112,6 +120,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onFileChatCompleted(sessionId, payload);
             }
+            case ASSIGNMENT_CHAT_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentChatCompleted(sessionId, payload);
+            }
             case AGENT_FAILED, ASSIGNMENT_INIT_FAILED, ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
                     ASSIGNMENT_CLARIFY_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
@@ -125,6 +137,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onFileChatFailed(sessionId, payload);
             }
+            case ASSIGNMENT_CHAT_FAILED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentChatFailed(sessionId, payload);
+            }
             case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED, AI_DETECTION_CANCELLED,
                     AI_HUMANIZER_CANCELLED -> {
@@ -134,6 +150,10 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             case FILE_CHAT_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onFileChatCancelled(sessionId);
+            }
+            case ASSIGNMENT_CHAT_CANCELLED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentChatCancelled(sessionId);
             }
             default -> log.warn("[Verla/agent] unexpected event {}", type);
         }

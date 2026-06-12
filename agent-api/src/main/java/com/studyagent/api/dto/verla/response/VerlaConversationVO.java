@@ -1,6 +1,7 @@
 package com.studyagent.api.dto.verla.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.state.IntentLifecycle;
 import lombok.AllArgsConstructor;
@@ -17,7 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class VerlaConversationVO {
 
-    private Long conversationId;
+    /** 对外 public id，格式 vc_{sqids} */
+    private String conversationId;
     private String userId;
     private String title;
     private String status;
@@ -28,8 +30,10 @@ public class VerlaConversationVO {
     @JsonProperty("isDraft")
     private boolean draft;
     private Integer turnCount;
-    private Long lastTurnId;
+    private String lastTurnId;
     private LocalDateTime lastMessageAt;
+    /** 改动时间：用户点击任务 / 编辑内容 / 发送消息时刷新（Recent Task 排序键） */
+    private LocalDateTime lastActiveAt;
     private LocalDateTime createdAt;
     /** 编辑器预览图列表，按固定 kind 顺序排列 (document / code / slides) */
     private List<EditorPreviewItem> editorPreviews;
@@ -37,14 +41,32 @@ public class VerlaConversationVO {
      *  由后端根据 artifacts 实时推导，不依赖截图链路。
      *  非 assignment conversation 返回空数组或不返回该字段。 */
     private List<String> artifactPreviewKinds;
+    /** 数据来源标记；{@code "LEGACY_1_0"} 表示由 1.0 历史任务实时适配而来（只读），
+     *  正常 V2 对话该字段为 {@code null}。前端据此进入只读模式并展示"来自 1.0"角标。 */
+    private String source;
 
     public static VerlaConversationVO from(VerlaConversation c) {
-        return from(c, null);
+        return fromPublic(c);
+    }
+
+    /** 用户面 API：返回带类型前缀的 public id */
+    public static VerlaConversationVO fromPublic(VerlaConversation c) {
+        return from(c, null, true);
+    }
+
+    /** 内部 API（Python）：保留数字字符串，便于服务间解析 */
+    public static VerlaConversationVO fromInternal(VerlaConversation c) {
+        return from(c, null, false);
     }
 
     public static VerlaConversationVO from(VerlaConversation c, String dashboardStatus) {
+        return from(c, dashboardStatus, true);
+    }
+
+    private static VerlaConversationVO from(
+            VerlaConversation c, String dashboardStatus, boolean encodePublicIds) {
         return VerlaConversationVO.builder()
-                .conversationId(c.getId())
+                .conversationId(VerlaPublicIdVoSupport.conversation(c.getId(), encodePublicIds))
                 .userId(c.getUserId())
                 .title(c.getTitle())
                 .status(c.getStatus())
@@ -52,8 +74,9 @@ public class VerlaConversationVO {
                 .primaryIntent(c.getPrimaryIntent())
                 .draft(IntentLifecycle.conversationIsDraft(c.getIntentLifecycle()))
                 .turnCount(c.getTurnCount())
-                .lastTurnId(c.getLastTurnId())
+                .lastTurnId(VerlaPublicIdVoSupport.turn(c.getLastTurnId(), encodePublicIds))
                 .lastMessageAt(c.getLastMessageAt())
+                .lastActiveAt(c.getLastActiveAt())
                 .createdAt(c.getCreatedAt())
                 .build();
     }

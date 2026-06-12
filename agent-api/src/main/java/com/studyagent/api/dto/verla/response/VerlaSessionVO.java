@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaSession;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,9 +18,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class VerlaSessionVO {
 
-    private Long sessionId;
-    private Long conversationId;
-    private Long turnId;
+    private String sessionId;
+    private String conversationId;
+    private String turnId;
     private String kind;
     private String featureCode;
     private String status;
@@ -32,13 +33,21 @@ public class VerlaSessionVO {
     private LocalDateTime createdAt;
 
     public static VerlaSessionVO from(VerlaSession s) {
+        return from(s, true);
+    }
+
+    public static VerlaSessionVO fromInternal(VerlaSession s) {
+        return from(s, false);
+    }
+
+    private static VerlaSessionVO from(VerlaSession s, boolean encodePublicIds) {
         if (s == null) {
             return null;
         }
         return VerlaSessionVO.builder()
-                .sessionId(s.getId())
-                .conversationId(s.getConversationId())
-                .turnId(s.getTurnId())
+                .sessionId(VerlaPublicIdVoSupport.session(s.getId(), encodePublicIds))
+                .conversationId(VerlaPublicIdVoSupport.conversation(s.getConversationId(), encodePublicIds))
+                .turnId(VerlaPublicIdVoSupport.turn(s.getTurnId(), encodePublicIds))
                 .kind(s.getKind())
                 .featureCode(s.getFeatureCode())
                 .status(s.getStatus())

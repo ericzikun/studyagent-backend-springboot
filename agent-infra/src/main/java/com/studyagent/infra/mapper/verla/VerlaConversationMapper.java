@@ -33,7 +33,8 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "</choose>"
             + "</if>"
-            + " ORDER BY last_message_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}"
+            + " ORDER BY COALESCE(last_active_at, last_message_at, created_at) DESC, id DESC "
+            + "LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
     List<VerlaConversationEntity> selectByUserFilteredPaged(@Param("userId") String userId,
                                                             @Param("segment") String segment,
@@ -78,7 +79,8 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
             + "OR EXISTS (SELECT 1 FROM verla_messages m "
             + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
-            + "ORDER BY c.last_message_at DESC, c.id DESC LIMIT #{limit} OFFSET #{offset}"
+            + "ORDER BY COALESCE(c.last_active_at, c.last_message_at, c.created_at) DESC, c.id DESC "
+            + "LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
     List<VerlaConversationEntity> searchByUserKeywordPaged(@Param("userId") String userId,
                                                            @Param("keyword") String keyword,
@@ -110,12 +112,13 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
                             @Param("conversationStatus") String conversationStatus);
 
     /**
-     * 自增 version + 同步刷新 last_message_at / last_turn_id / turn_count（按需）
+     * 自增 version + 同步刷新 last_message_at / last_active_at / last_turn_id / turn_count（按需）
      */
     @Update("UPDATE verla_conversations "
             + "SET version = version + 1, "
             + "    last_turn_id = #{turnId}, "
             + "    last_message_at = NOW(), "
+            + "    last_active_at = NOW(), "
             + "    turn_count = turn_count + 1, "
             + "    updated_at = NOW() "
             + "WHERE id = #{id}")
@@ -126,6 +129,13 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
      */
     @Update("UPDATE verla_conversations SET version = version + 1, updated_at = NOW() WHERE id = #{id}")
     int incrementVersion(@Param("id") Long id);
+
+    /**
+     * 仅刷新改动时间 last_active_at = NOW()（用户点击任务 / 编辑内容更新时调用）。
+     * 不动 version / turn_count，避免触发缓存失效与重复计数。
+     */
+    @Update("UPDATE verla_conversations SET last_active_at = NOW(), updated_at = NOW() WHERE id = #{id}")
+    int touchActiveAt(@Param("id") Long id);
 
     /**
      * 更新 AI 生成的对话标题（title）。

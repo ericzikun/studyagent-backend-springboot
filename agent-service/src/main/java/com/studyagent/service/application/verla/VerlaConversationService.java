@@ -52,6 +52,7 @@ public class VerlaConversationService {
                 .workspaceJson(workspaceJson)
                 .turnCount(0)
                 .version(1L)
+                .lastActiveAt(now)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -114,6 +115,21 @@ public class VerlaConversationService {
         return raw.replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
+    }
+
+    /**
+     * 刷新会话改动时间 last_active_at = NOW()（Recent Task 排序键）。
+     * <p>触发场景：用户在任务页有新的点击、编辑页内容更新等用户可感知的活跃行为。
+     * 会校验所有权；非 active 会话（archived）同样允许刷新，以便用户重新打开后回到列表前列。
+     *
+     * @return 刷新后的会话（携带最新 last_active_at）
+     */
+    @Transactional
+    public VerlaConversation touchActivity(String userId, Long conversationId) {
+        VerlaConversation c = getOwned(userId, conversationId);
+        conversationRepository.touchActiveAt(c.getId());
+        c.setLastActiveAt(LocalDateTime.now());
+        return c;
     }
 
     public VerlaConversation getOwned(String userId, Long conversationId) {

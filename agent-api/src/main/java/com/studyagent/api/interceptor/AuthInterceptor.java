@@ -289,6 +289,9 @@ public class AuthInterceptor implements HandlerInterceptor {
     /**
      * 判断是否是 verla SSE 订阅请求（GET /v1/verla/conversations/{cid}/events）。
      * 仅在该路径上允许通过 ?access_token= 兜底鉴权，其它路径仍强制 Authorization header。
+     * <p>
+     * cid 段兼容两种格式：迁移期纯数字 path，以及 V2 带类型前缀的 public id（如 {@code vc_AbS25}）。
+     * 不能再限定为 {@code \\d+}，否则 public id SSE 订阅会因取不到 access_token 而误判为 MISSING_TOKEN。
      */
     private boolean isVerlaSseRequest(HttpServletRequest request) {
         if (!"GET".equalsIgnoreCase(request.getMethod())) {
@@ -298,8 +301,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (uri == null) {
             return false;
         }
-        // /v1/verla/conversations/{digits}/events
-        return uri.matches(".*/v1/verla/conversations/\\d+/events");
+        // /v1/verla/conversations/{cid}/events，cid 可为纯数字或 public id（vc_xxx）
+        return uri.matches(".*/v1/verla/conversations/[^/]+/events");
     }
 
     /**

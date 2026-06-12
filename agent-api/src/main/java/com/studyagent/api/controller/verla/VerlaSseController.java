@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.sse.VerlaSseGateway;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -39,10 +42,23 @@ public class VerlaSseController {
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventIdHeader,
             @RequestParam(value = "lastEventId", required = false) Long lastEventIdParam) {
         ensureLogin(clerkUserId);
+        // 1.0 历史任务无任何运行时事件：发一个 readonly 帧后立刻关闭，避免空连接挂起
+        if (LegacyConversationIdCodec.isLegacy(cid)) {
+            SseEmitter emitter = new SseEmitter(0L);
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("legacy-readonly")
+                        .data(java.util.Map.of("source", "LEGACY_1_0")));
+                emitter.complete();
+            } catch (java.io.IOException ignored) {
+                emitter.complete();
+            }
+            return emitter;
+        }
         // 校验所有权（即使 conv 已 archived 也允许订阅历史事件，但 deleted 不允许）
         conversationService.getOwned(clerkUserId, cid);
 

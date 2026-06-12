@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,14 +18,14 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class VerlaTurnVO {
 
-    private Long turnId;
-    private Long conversationId;
-    private Long userMessageId;
+    private String turnId;
+    private String conversationId;
+    private String userMessageId;
     private String status;
     private String resolvedIntent;
-    private Long activeSessionId;
-    private Long planSessionId;
-    private Long agentSessionId;
+    private String activeSessionId;
+    private String planSessionId;
+    private String agentSessionId;
     private Integer totalSteps;
     private Integer completedSteps;
     private LocalDateTime lastProgressAt;
@@ -33,18 +34,26 @@ public class VerlaTurnVO {
     private LocalDateTime createdAt;
 
     public static VerlaTurnVO from(VerlaTurn t) {
+        return from(t, true);
+    }
+
+    public static VerlaTurnVO fromInternal(VerlaTurn t) {
+        return from(t, false);
+    }
+
+    private static VerlaTurnVO from(VerlaTurn t, boolean encodePublicIds) {
         if (t == null) {
             return null;
         }
         return VerlaTurnVO.builder()
-                .turnId(t.getId())
-                .conversationId(t.getConversationId())
-                .userMessageId(t.getUserMessageId())
+                .turnId(VerlaPublicIdVoSupport.turn(t.getId(), encodePublicIds))
+                .conversationId(VerlaPublicIdVoSupport.conversation(t.getConversationId(), encodePublicIds))
+                .userMessageId(VerlaPublicIdVoSupport.message(t.getUserMessageId(), encodePublicIds))
                 .status(t.getStatus())
                 .resolvedIntent(t.getResolvedIntent())
-                .activeSessionId(t.getActiveSessionId())
-                .planSessionId(t.getPlanSessionId())
-                .agentSessionId(t.getAgentSessionId())
+                .activeSessionId(VerlaPublicIdVoSupport.session(t.getActiveSessionId(), encodePublicIds))
+                .planSessionId(VerlaPublicIdVoSupport.session(t.getPlanSessionId(), encodePublicIds))
+                .agentSessionId(VerlaPublicIdVoSupport.session(t.getAgentSessionId(), encodePublicIds))
                 .totalSteps(t.getTotalSteps())
                 .completedSteps(t.getCompletedSteps())
                 .lastProgressAt(t.getLastProgressAt())

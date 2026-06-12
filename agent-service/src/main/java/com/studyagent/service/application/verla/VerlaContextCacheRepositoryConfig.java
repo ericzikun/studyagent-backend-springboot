@@ -180,6 +180,12 @@ public class VerlaContextCacheRepositoryConfig {
             public int updateTitle(Long id, String title) {
                 return delegate.updateTitle(id, title);
             }
+
+            @Override
+            public int touchActiveAt(Long id) {
+                // 仅刷新排序用的改动时间，不影响会话上下文内容，故不发缓存同步事件，避免点击/编辑造成缓存抖动
+                return delegate.touchActiveAt(id);
+            }
         };
     }
 }

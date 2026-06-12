@@ -1,5 +1,6 @@
 package com.studyagent.api.dto.verla.response;
 
+import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotPayloadView;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotView;
 import lombok.AllArgsConstructor;
@@ -22,7 +23,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class AssignmentRuntimeSnapshotVO {
 
-    private Long conversationId;
+    private String conversationId;
     private Long resumeAfterEventId;
     private String stateEventType;
     private Payload payload;
@@ -30,7 +31,7 @@ public class AssignmentRuntimeSnapshotVO {
     public static AssignmentRuntimeSnapshotVO from(AssignmentRuntimeSnapshotView view) {
         AssignmentRuntimeSnapshotPayloadView payloadView = view.payload();
         return AssignmentRuntimeSnapshotVO.builder()
-                .conversationId(view.conversationId())
+                .conversationId(VerlaPublicIdVoSupport.conversation(view.conversationId(), true))
                 .resumeAfterEventId(view.resumeAfterEventId())
                 .stateEventType(view.stateEventType())
                 .payload(Payload.from(payloadView))

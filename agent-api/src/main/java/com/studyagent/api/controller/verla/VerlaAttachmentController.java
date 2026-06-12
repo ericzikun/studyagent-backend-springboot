@@ -1,5 +1,8 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
+
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
 import com.studyagent.common.api.ApiCode;
@@ -37,7 +40,7 @@ public class VerlaAttachmentController {
     @GetMapping("/conversations/{cid}/attachments")
     public Result<List<VerlaAttachmentVO>> listByConversation(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestParam(value = "limit", defaultValue = "50") int limit) {
         ensureLogin(clerkUserId);
         int safe = Math.max(1, Math.min(limit, 100));

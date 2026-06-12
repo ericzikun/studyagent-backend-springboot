@@ -85,11 +85,12 @@ class VerlaFileChatControllerTest {
 
     @Test
     void sendMessage_shouldMapRequestAndResponse() {
-        turnOrchestrator.result = SendMessageResult.builder()
+        SendMessageResult sendResult = SendMessageResult.builder()
                 .turnId(456L)
                 .userMessageId(1001L)
                 .agentSessionId(789L)
                 .build();
+        turnOrchestrator.result = sendResult;
         FileChatSendMessageRequest request = new FileChatSendMessageRequest();
         request.setObjectId("obj_123");
         request.setMessage("Compare the 4 essay prompts for me.");
@@ -101,11 +102,7 @@ class VerlaFileChatControllerTest {
         assertThat(turnOrchestrator.lastObjectId).isEqualTo("obj_123");
         assertThat(turnOrchestrator.lastMessage).isEqualTo("Compare the 4 essay prompts for me.");
         assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
-        assertThat(result.getData()).isEqualTo(FileChatSendMessageResponseVO.builder()
-                .turnId(456L)
-                .userMessageId(1001L)
-                .agentSessionId(789L)
-                .build());
+        assertThat(result.getData()).isEqualTo(FileChatSendMessageResponseVO.from(sendResult));
     }
 
     private static final class StubVerlaFileChatService extends VerlaFileChatService {
@@ -139,7 +136,7 @@ class VerlaFileChatControllerTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, event -> {}, mock(AnalyticsService.class));
+            super(null, null, null, null, null, null, null, null, null, null, null, null, event -> {}, null);
         }
 
         @Override

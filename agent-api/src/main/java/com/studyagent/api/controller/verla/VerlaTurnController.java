@@ -1,5 +1,7 @@
 package com.studyagent.api.controller.verla;
 
+import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.response.VerlaArtifactVO;
 import com.studyagent.api.dto.verla.response.VerlaSessionVO;
@@ -47,7 +49,7 @@ public class VerlaTurnController {
     @GetMapping("/turns/{tid}")
     public Result<VerlaTurnVO> getTurn(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long tid) {
+            @VerlaPublicId(VerlaPublicIdType.TURN) @PathVariable Long tid) {
         ensureLogin(clerkUserId);
         VerlaTurn t = turnRepository.findById(tid);
         if (t == null) {
@@ -64,7 +66,7 @@ public class VerlaTurnController {
     @GetMapping("/turns/{tid}/sessions")
     public Result<List<VerlaSessionVO>> listSessionsOfTurn(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long tid) {
+            @VerlaPublicId(VerlaPublicIdType.TURN) @PathVariable Long tid) {
         ensureLogin(clerkUserId);
         VerlaTurn t = turnRepository.findById(tid);
         if (t == null) {
@@ -82,7 +84,7 @@ public class VerlaTurnController {
     @GetMapping("/sessions/{sid}")
     public Result<VerlaSessionVO> getSession(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long sid) {
+            @VerlaPublicId(VerlaPublicIdType.SESSION) @PathVariable Long sid) {
         ensureLogin(clerkUserId);
         VerlaSession s = sessionRepository.findById(sid);
         if (s == null) {
@@ -98,7 +100,7 @@ public class VerlaTurnController {
     @GetMapping("/artifacts/{aid}")
     public Result<VerlaArtifactVO> getArtifact(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long aid) {
+            @VerlaPublicId(VerlaPublicIdType.ARTIFACT) @PathVariable Long aid) {
         ensureLogin(clerkUserId);
         VerlaArtifact a = artifactRepository.findById(aid);
         if (a == null) {
@@ -114,7 +116,7 @@ public class VerlaTurnController {
     @GetMapping("/conversations/{cid}/artifacts")
     public Result<List<VerlaArtifactVO>> listArtifactsOfConversation(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         conversationService.getOwned(clerkUserId, cid);
         List<VerlaArtifact> list = artifactRepository.findByConversation(cid);

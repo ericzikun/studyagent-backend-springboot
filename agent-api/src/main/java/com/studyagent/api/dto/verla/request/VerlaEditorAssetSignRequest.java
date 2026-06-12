@@ -1,5 +1,7 @@
 package com.studyagent.api.dto.verla.request;
 
+import com.studyagent.api.jackson.verla.VerlaPublicIdField;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class VerlaEditorAssetSignRequest {
 
+    @VerlaPublicIdField(VerlaPublicIdType.CONVERSATION)
     private Long conversationId;
     private String artifactUid;
     private String filename;

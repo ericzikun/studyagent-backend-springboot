@@ -9,6 +9,7 @@ import com.studyagent.service.application.verla.dto.VerlaConversationContextView
 import com.studyagent.service.application.verla.dto.VerlaSessionContextQueryOptions;
 import com.studyagent.service.application.verla.dto.VerlaSessionContextView;
 import com.studyagent.service.config.VerlaContextCacheProperties;
+import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -72,6 +73,12 @@ class VerlaInternalControllerTest {
         assertThat(result.getData().getRecentMessages()).hasSize(1);
         assertThat(result.getData().getRecentToolCalls()).hasSize(1);
         assertThat(result.getData().getCacheHitLayer()).isEqualTo("conv");
+        assertThat(result.getData().getArtifacts()).singleElement().satisfies(artifact -> {
+            assertThat(artifact.getArtifactId()).isEqualTo("134");
+            assertThat(artifact.getConversationId()).isEqualTo("1001");
+            assertThat(artifact.getTurnId()).isEqualTo("55");
+            assertThat(artifact.getSessionId()).isEqualTo("9001");
+        });
     }
 
     @Test
@@ -94,6 +101,12 @@ class VerlaInternalControllerTest {
         assertThat(result.getData().getConvVersion()).isEqualTo(8L);
         assertThat(result.getData().getNextCursor()).isEqualTo(500L);
         assertThat(result.getData().getLatestTurn().getTurnId()).isEqualTo(55L);
+        assertThat(result.getData().getArtifacts()).singleElement().satisfies(artifact -> {
+            assertThat(artifact.getArtifactId()).isEqualTo("134");
+            assertThat(artifact.getConversationId()).isEqualTo("1001");
+            assertThat(artifact.getTurnId()).isEqualTo("55");
+            assertThat(artifact.getSessionId()).isEqualTo("9001");
+        });
     }
 
     @Test
@@ -119,6 +132,7 @@ class VerlaInternalControllerTest {
                 .session(session())
                 .upstreamSessions(List.of(session()))
                 .recentMessages(List.of(message(501L)))
+                .artifacts(List.of(artifact()))
                 .recentToolCalls(List.of(toolCall()))
                 .traceIncluded(true)
                 .cacheHitLayer("conv")
@@ -130,6 +144,7 @@ class VerlaInternalControllerTest {
                 .conversation(conversation())
                 .latestTurn(turn())
                 .recentMessages(List.of(message(501L)))
+                .artifacts(List.of(artifact()))
                 .recentToolCalls(List.of(toolCall()))
                 .traceIncluded(true)
                 .nextCursor(500L)
@@ -174,6 +189,17 @@ class VerlaInternalControllerTest {
                 .toolName("parse_pdf")
                 .visibility("INTERNAL")
                 .status("SUCCESS")
+                .build();
+    }
+
+    private VerlaArtifact artifact() {
+        return VerlaArtifact.builder()
+                .id(134L)
+                .artifactUid("artifact_134")
+                .conversationId(1001L)
+                .turnId(55L)
+                .sessionId(9001L)
+                .kind("markdown")
                 .build();
     }
 

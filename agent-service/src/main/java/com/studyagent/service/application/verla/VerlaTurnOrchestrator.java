@@ -304,6 +304,53 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
+    /**
+     * 运维控制台：取消进行中的 assignment run（主执行链路）。
+     * <p>
+     * 与 {@link #cancelAssignmentChat} 不同，这里不做用户归属校验（调用方
+     * {@code AssignmentRunDispatchAdminController} 已 assertAdmin），仅按 sessionId 定位。
+     * session/turn 经 USER_CANCEL 进入 CANCELLING，并下发 {@code cmd.agent.control.cancel}；
+     * Python 侧检测到 cancel 信号后回 AGENT_CANCELLED，由 {@link #onAgentCancelled} 收尾为 CANCELLED。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void cancelAssignmentRun(Long sessionId) {
+        if (sessionId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId required");
+        }
+        VerlaSession session = sessionRepository.findByIdForUpdate(sessionId);
+        if (session == null || !VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment run session");
+        }
+
+        SessionStatus curSession = SessionStatus.valueOf(session.getStatus());
+        if (curSession.isTerminal()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE, "assignment run already terminal");
+        }
+
+        VerlaTurn turn = turnRepository.findByIdForUpdate(session.getTurnId());
+        if (turn == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment run turn");
+        }
+        VerlaConversation conv = conversationRepository.findById(session.getConversationId());
+
+        session.setStatus(sessionStateMachine.next(curSession, SessionEvent.USER_CANCEL).name());
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (!curTurn.isTerminal()) {
+            turn.setStatus(turnStateMachine.next(curTurn, TurnEvent.USER_CANCEL).name());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        VerlaCommandEnvelope env = buildAgentRunCancelEnvelope(conv, turn, session);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_AGENT_CANCEL.getCode());
+        log.info("[admin/assignment-run-dispatch] cancel published session={} turn={}",
+                session.getId(), turn.getId());
+    }
+
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult retryAssignmentChat(String userId, Long conversationId, Long turnId) {
         if (turnId == null) {
@@ -2102,6 +2149,17 @@ public class VerlaTurnOrchestrator {
         payload.put("turnId", turn.getId());
 
         return baseEnvelope(VerlaCommandAction.CMD_ASSIGNMENT_CHAT_CONTROL_CANCEL, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private VerlaCommandEnvelope buildAgentRunCancelEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                             VerlaSession session) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("sessionId", session.getId());
+        payload.put("turnId", turn.getId());
+
+        return baseEnvelope(VerlaCommandAction.CMD_AGENT_CANCEL, conv, turn, session)
                 .payload(payload)
                 .build();
     }

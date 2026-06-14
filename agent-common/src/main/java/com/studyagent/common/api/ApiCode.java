@@ -30,6 +30,10 @@ public enum ApiCode {
     QUOTA_EXCEEDED(1010, "Daily task submission limit reached (%d times). Please try again tomorrow.", "今日任务提交次数已达上限（%d 次），请明天再试"),
     /** AI 额度不足，提示去充值 */
     INSUFFICIENT_QUOTA(1011, "Insufficient quota. Please recharge to continue.", "额度不足，请充值后继续"),
+    ADDON_REQUIRES_PAID_MEMBER(1015, "A paid subscription is required to purchase add-ons", "付费会员才能购买加量包"),
+    SUBSCRIPTION_CHANGE_PENDING(1016, "A subscription change is already pending", "已有待处理的订阅变更"),
+    SUBSCRIPTION_STATE_INVALID(1017, "The subscription cannot be changed in its current state", "当前订阅状态不可变更"),
+    PAYMENT_PROCESSING(1018, "Payment is still processing", "支付处理中"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),
@@ -47,6 +51,10 @@ public enum ApiCode {
     PAYMENT_SESSION_CREATE_FAILED(500, "Failed to create checkout session", "创建支付会话失败"),
     SESSION_ID_REQUIRED(400, "sessionId is required", "sessionId 参数不能为空"),
     SESSION_QUERY_FAILED(9999, "Failed to query session status: %s", "查询会话状态失败"),
+    INVALID_PLAN(400, "Invalid subscription plan: %s", "无效订阅套餐: %s"),
+    INVALID_ADDON(400, "Invalid add-on package: %s", "无效加量包: %s"),
+    SUBSCRIPTION_NOT_FOUND(404, "Subscription not found", "订阅不存在"),
+    SUBSCRIPTION_ALREADY_EXISTS(409, "User already has a subscription", "用户已有订阅"),
 
     // 9999 - 未知/系统异常
     UNKNOWN_ERROR(9999, "Internal server error", "系统异常"),

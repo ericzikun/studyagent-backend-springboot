@@ -1,0 +1,558 @@
+package com.studyagent.infra.service.billing;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Customer;
+import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
+import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.SubscriptionUpdateParams;
+import com.stripe.param.checkout.SessionCreateParams;
+import com.studyagent.infra.entity.AddonPackageDefEntity;
+import com.studyagent.infra.entity.RechargeOrderEntity;
+import com.studyagent.infra.entity.SubscriptionPlanEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
+import com.studyagent.infra.mapper.AddonPackageDefMapper;
+import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.mapper.SubscriptionPlanMapper;
+import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.service.domain.billing.BillingAddon;
+import com.studyagent.service.domain.billing.BillingCatalogResult;
+import com.studyagent.service.domain.billing.BillingDomainException;
+import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingPlan;
+import com.studyagent.service.domain.billing.SubscriptionResult;
+import com.studyagent.service.domain.payment.CheckoutSessionResult;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class BillingDomainServiceImpl implements BillingDomainService {
+    private static final Set<String> BLOCKING_SUBSCRIPTION_STATUSES = Set.of(
+            "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
+    );
+
+    private final SubscriptionPlanMapper subscriptionPlanMapper;
+    private final AddonPackageDefMapper addonPackageDefMapper;
+    private final UserSubscriptionMapper userSubscriptionMapper;
+    private final RechargeOrderMapper rechargeOrderMapper;
+
+    @Value("${stripe.secret-key:}")
+    private String stripeSecretKey;
+
+    @Value("${payment.success-url:http://localhost:3000/payment-success}")
+    private String successUrl;
+
+    @Value("${payment.cancel-url:http://localhost:3000/payment-canceled}")
+    private String cancelUrl;
+
+    @PostConstruct
+    public void initializeStripe() {
+        if (stripeSecretKey != null && !stripeSecretKey.isBlank()) {
+            Stripe.apiKey = stripeSecretKey;
+        }
+    }
+
+    @Override
+    public BillingCatalogResult getCatalog() {
+        List<BillingPlan> plans = subscriptionPlanMapper.selectList(
+                        new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                                .eq(SubscriptionPlanEntity::getIsActive, true)
+                                .orderByAsc(SubscriptionPlanEntity::getDisplayOrder))
+                .stream()
+                .map(this::toPlan)
+                .toList();
+        List<BillingAddon> addons = addonPackageDefMapper.selectList(
+                        new LambdaQueryWrapper<AddonPackageDefEntity>()
+                                .eq(AddonPackageDefEntity::getIsActive, true)
+                                .orderByAsc(AddonPackageDefEntity::getDisplayOrder))
+                .stream()
+                .map(this::toAddon)
+                .toList();
+        return BillingCatalogResult.builder().plans(plans).addons(addons).build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CheckoutSessionResult createSubscriptionCheckout(
+            String clerkUserId,
+            String customerEmail,
+            String planCode) {
+        requireStripeConfigured();
+        SubscriptionPlanEntity plan = requirePlan(planCode);
+        UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
+        if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
+                && userSubscription.getStripeSubscriptionId() != null) {
+            throw new BillingDomainException("SUBSCRIPTION_ALREADY_EXISTS", "User already has a subscription");
+        }
+
+        String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, userSubscription.getId())
+                .set(UserSubscriptionEntity::getPendingPlanCode, planCode)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+        String finalSuccessUrl = withSessionId(successUrl);
+        SessionCreateParams.SubscriptionData subscriptionData = SessionCreateParams.SubscriptionData.builder()
+                .putMetadata("purchase_type", "subscription")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("plan_code", planCode)
+                .build();
+        SessionCreateParams params = SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+                .setCustomer(customerId)
+                .setClientReferenceId(clerkUserId)
+                .setSuccessUrl(finalSuccessUrl)
+                .setCancelUrl(cancelUrl)
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setPrice(plan.getStripePriceId())
+                        .setQuantity(1L)
+                        .build())
+                .putMetadata("purchase_type", "subscription")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("plan_code", planCode)
+                .setSubscriptionData(subscriptionData)
+                .build();
+
+        try {
+            Session session = Session.create(params);
+            insertPendingOrder(
+                    clerkUserId,
+                    "subscription_initial",
+                    "subscription",
+                    planCode,
+                    planCode,
+                    null,
+                    0L,
+                    plan.getPriceCents(),
+                    plan.getCurrency(),
+                    session.getId(),
+                    null,
+                    session.getSubscription());
+            return CheckoutSessionResult.builder()
+                    .sessionId(session.getId())
+                    .checkoutUrl(session.getUrl())
+                    .expiresAt(session.getExpiresAt())
+                    .build();
+        } catch (StripeException e) {
+            throw stripeFailure("Create subscription Checkout failed", e);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CheckoutSessionResult createAddonCheckout(
+            String clerkUserId,
+            String customerEmail,
+            String addonCode) {
+        requireStripeConfigured();
+        if (!isPaidMember(clerkUserId)) {
+            throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
+        }
+        AddonPackageDefEntity addon = requireAddon(addonCode);
+        UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
+        String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+
+        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
+                .putMetadata("purchase_type", "addon")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("addon_code", addonCode)
+                .build();
+        SessionCreateParams params = SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCustomer(customerId)
+                .setClientReferenceId(clerkUserId)
+                .setSuccessUrl(withSessionId(successUrl))
+                .setCancelUrl(cancelUrl)
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setPrice(addon.getStripePriceId())
+                        .setQuantity(1L)
+                        .build())
+                .putMetadata("purchase_type", "addon")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("addon_code", addonCode)
+                .setPaymentIntentData(paymentIntentData)
+                .build();
+        try {
+            Session session = Session.create(params);
+            insertPendingOrder(
+                    clerkUserId,
+                    "addon",
+                    addon.getFeatureCode(),
+                    addonCode,
+                    null,
+                    addonCode,
+                    addon.getQuotaAmount(),
+                    addon.getPriceCents(),
+                    addon.getCurrency(),
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    userSubscription.getStripeSubscriptionId());
+            return CheckoutSessionResult.builder()
+                    .sessionId(session.getId())
+                    .checkoutUrl(session.getUrl())
+                    .expiresAt(session.getExpiresAt())
+                    .build();
+        } catch (StripeException e) {
+            throw stripeFailure("Create add-on Checkout failed", e);
+        }
+    }
+
+    @Override
+    public SubscriptionResult getCurrentSubscription(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        return entity == null ? freeSubscription() : toResult(entity);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResult cancelAtPeriodEnd(String clerkUserId) {
+        return setCancelAtPeriodEnd(clerkUserId, true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResult resumeSubscription(String clerkUserId) {
+        return setCancelAtPeriodEnd(clerkUserId, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode) {
+        requireStripeConfigured();
+        SubscriptionPlanEntity targetPlan = requirePlan(targetPlanCode);
+        UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        if (targetPlanCode.equals(current.getPlanCode())) {
+            return toResult(current);
+        }
+        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        if (tierRank(targetPlan.getTier()) <= tierRank(currentPlan.getTier())) {
+            throw new BillingDomainException("INVALID_UPGRADE_TARGET", "Target plan is not an upgrade");
+        }
+
+        try {
+            Subscription stripeSubscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            if (stripeSubscription.getItems() == null
+                    || stripeSubscription.getItems().getData() == null
+                    || stripeSubscription.getItems().getData().size() != 1) {
+                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
+            }
+            SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
+            SubscriptionUpdateParams params = SubscriptionUpdateParams.builder()
+                    .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
+                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
+                    .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
+                    .addItem(SubscriptionUpdateParams.Item.builder()
+                            .setId(item.getId())
+                            .setPrice(targetPlan.getStripePriceId())
+                            .build())
+                    .putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("pending_plan_code", targetPlanCode)
+                    .build();
+            RequestOptions options = RequestOptions.builder()
+                    .setIdempotencyKey("upgrade:" + clerkUserId + ":" + current.getStripeSubscriptionId()
+                            + ":" + targetPlanCode + ":" + current.getCurrentPeriodEnd())
+                    .build();
+            stripeSubscription.update(params, options);
+
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, current.getId())
+                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlanCode)
+                    .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+            current.setPendingPlanCode(targetPlanCode);
+            insertPendingOrder(
+                    clerkUserId,
+                    "subscription_upgrade",
+                    "subscription",
+                    targetPlanCode,
+                    targetPlanCode,
+                    null,
+                    0L,
+                    targetPlan.getPriceCents(),
+                    targetPlan.getCurrency(),
+                    null,
+                    null,
+                    current.getStripeSubscriptionId());
+            return toResult(current);
+        } catch (StripeException e) {
+            throw stripeFailure("Upgrade subscription failed", e);
+        }
+    }
+
+    @Override
+    public boolean isPaidMember(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        if (entity == null || entity.getStripeSubscriptionId() == null) {
+            return false;
+        }
+        return "active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus());
+    }
+
+    private SubscriptionResult setCancelAtPeriodEnd(String clerkUserId, boolean cancel) {
+        requireStripeConfigured();
+        UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        if (Boolean.valueOf(cancel).equals(current.getCancelAtPeriodEnd())) {
+            return toResult(current);
+        }
+        try {
+            Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
+                    .setCancelAtPeriodEnd(cancel)
+                    .build());
+            syncCancellationFields(current, updated);
+            return toResult(current);
+        } catch (StripeException e) {
+            throw stripeFailure(cancel ? "Cancel subscription failed" : "Resume subscription failed", e);
+        }
+    }
+
+    private void syncCancellationFields(UserSubscriptionEntity current, Subscription updated) {
+        LocalDateTime now = LocalDateTime.now();
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getCancelAtPeriodEnd, updated.getCancelAtPeriodEnd())
+                .set(UserSubscriptionEntity::getStatus, updated.getStatus())
+                .set(UserSubscriptionEntity::getCurrentPeriodStart, fromEpoch(updated.getCurrentPeriodStart()))
+                .set(UserSubscriptionEntity::getCurrentPeriodEnd, fromEpoch(updated.getCurrentPeriodEnd()))
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setCancelAtPeriodEnd(Boolean.TRUE.equals(updated.getCancelAtPeriodEnd()));
+        current.setStatus(updated.getStatus());
+        current.setCurrentPeriodStart(fromEpoch(updated.getCurrentPeriodStart()));
+        current.setCurrentPeriodEnd(fromEpoch(updated.getCurrentPeriodEnd()));
+        current.setLastSyncedAt(now);
+    }
+
+    private UserSubscriptionEntity getOrCreateUserSubscription(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        if (entity != null) {
+            return entity;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        entity = new UserSubscriptionEntity();
+        entity.setClerkUserId(clerkUserId);
+        entity.setTier("free");
+        entity.setStatus("free");
+        entity.setCancelAtPeriodEnd(false);
+        entity.setVersion(0);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        userSubscriptionMapper.insert(entity);
+        return entity;
+    }
+
+    private String ensureStripeCustomer(
+            UserSubscriptionEntity userSubscription,
+            String clerkUserId,
+            String customerEmail) {
+        if (userSubscription.getStripeCustomerId() != null
+                && !userSubscription.getStripeCustomerId().isBlank()) {
+            return userSubscription.getStripeCustomerId();
+        }
+        CustomerCreateParams.Builder builder = CustomerCreateParams.builder()
+                .putMetadata("clerk_user_id", clerkUserId);
+        if (customerEmail != null && !customerEmail.isBlank()) {
+            builder.setEmail(customerEmail);
+        }
+        try {
+            Customer customer = Customer.create(builder.build());
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, userSubscription.getId())
+                    .isNull(UserSubscriptionEntity::getStripeCustomerId)
+                    .set(UserSubscriptionEntity::getStripeCustomerId, customer.getId())
+                    .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+            userSubscription.setStripeCustomerId(customer.getId());
+            return customer.getId();
+        } catch (StripeException e) {
+            throw stripeFailure("Create Stripe customer failed", e);
+        }
+    }
+
+    private SubscriptionPlanEntity requirePlan(String planCode) {
+        SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .eq(SubscriptionPlanEntity::getIsActive, true)
+                        .last("LIMIT 1"));
+        if (plan == null) {
+            throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + planCode);
+        }
+        if (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_")) {
+            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + planCode);
+        }
+        return plan;
+    }
+
+    private AddonPackageDefEntity requireAddon(String addonCode) {
+        AddonPackageDefEntity addon = addonPackageDefMapper.selectOne(
+                new LambdaQueryWrapper<AddonPackageDefEntity>()
+                        .eq(AddonPackageDefEntity::getAddonCode, addonCode)
+                        .eq(AddonPackageDefEntity::getIsActive, true)
+                        .last("LIMIT 1"));
+        if (addon == null) {
+            throw new BillingDomainException("INVALID_ADDON", "Unknown or inactive add-on: " + addonCode);
+        }
+        if (addon.getStripePriceId() == null || !addon.getStripePriceId().startsWith("price_")) {
+            throw new BillingDomainException("ADDON_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + addonCode);
+        }
+        return addon;
+    }
+
+    private UserSubscriptionEntity requireCurrentSubscription(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        if (entity == null || entity.getStripeSubscriptionId() == null) {
+            throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "Active subscription not found");
+        }
+        return entity;
+    }
+
+    private UserSubscriptionEntity findByUser(String clerkUserId) {
+        return userSubscriptionMapper.selectOne(
+                new LambdaQueryWrapper<UserSubscriptionEntity>()
+                        .eq(UserSubscriptionEntity::getClerkUserId, clerkUserId)
+                        .last("LIMIT 1"));
+    }
+
+    private void insertPendingOrder(
+            String clerkUserId,
+            String orderType,
+            String featureCode,
+            String packageCode,
+            String planCode,
+            String addonCode,
+            long quotaAmount,
+            int priceCents,
+            String currency,
+            String stripeSessionId,
+            String paymentIntentId,
+            String subscriptionId) {
+        LocalDateTime now = LocalDateTime.now();
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderNo(generateOrderNo());
+        order.setOrderType(orderType);
+        order.setClerkUserId(clerkUserId);
+        order.setFeatureCode(featureCode);
+        order.setPackageCode(packageCode);
+        order.setPlanCode(planCode);
+        order.setAddonCode(addonCode);
+        order.setQuotaAmount(quotaAmount);
+        order.setPriceCents(priceCents);
+        order.setCurrency(currency == null ? "usd" : currency);
+        order.setStripeSessionId(stripeSessionId);
+        order.setStripePaymentIntentId(paymentIntentId);
+        order.setStripeSubscriptionId(subscriptionId);
+        order.setStatus("pending");
+        order.setCreatedAt(now);
+        order.setUpdatedAt(now);
+        rechargeOrderMapper.insert(order);
+    }
+
+    private BillingPlan toPlan(SubscriptionPlanEntity entity) {
+        return BillingPlan.builder()
+                .planCode(entity.getPlanCode())
+                .tier(entity.getTier())
+                .billingInterval(entity.getBillingInterval())
+                .stripeProductId(entity.getStripeProductId())
+                .stripePriceId(entity.getStripePriceId())
+                .priceCents(entity.getPriceCents())
+                .currency(entity.getCurrency())
+                .assignmentQuota(entity.getAssignmentQuota())
+                .detectionQuota(entity.getDetectionQuota())
+                .humanizerQuota(entity.getHumanizerQuota())
+                .maxFiles(entity.getMaxFiles())
+                .maxFollowupEdits(entity.getMaxFollowupEdits())
+                .allowedOutputTypes(entity.getAllowedOutputTypes())
+                .build();
+    }
+
+    private BillingAddon toAddon(AddonPackageDefEntity entity) {
+        return BillingAddon.builder()
+                .addonCode(entity.getAddonCode())
+                .featureCode(entity.getFeatureCode())
+                .stripeProductId(entity.getStripeProductId())
+                .stripePriceId(entity.getStripePriceId())
+                .quotaAmount(entity.getQuotaAmount())
+                .validityMonths(entity.getValidityMonths())
+                .priceCents(entity.getPriceCents())
+                .currency(entity.getCurrency())
+                .build();
+    }
+
+    private SubscriptionResult toResult(UserSubscriptionEntity entity) {
+        return SubscriptionResult.builder()
+                .tier(entity.getTier())
+                .planCode(entity.getPlanCode())
+                .status(entity.getStatus())
+                .stripeCustomerId(entity.getStripeCustomerId())
+                .stripeSubscriptionId(entity.getStripeSubscriptionId())
+                .currentPeriodStart(entity.getCurrentPeriodStart())
+                .currentPeriodEnd(entity.getCurrentPeriodEnd())
+                .quotaPeriodStart(entity.getQuotaPeriodStart())
+                .quotaPeriodEnd(entity.getQuotaPeriodEnd())
+                .cancelAtPeriodEnd(Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()))
+                .pendingPlanCode(entity.getPendingPlanCode())
+                .pendingEffectiveAt(entity.getPendingEffectiveAt())
+                .build();
+    }
+
+    private SubscriptionResult freeSubscription() {
+        return SubscriptionResult.builder()
+                .tier("free")
+                .status("free")
+                .cancelAtPeriodEnd(false)
+                .build();
+    }
+
+    private String withSessionId(String url) {
+        if (url.contains("{CHECKOUT_SESSION_ID}")) {
+            return url;
+        }
+        return url + (url.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
+    }
+
+    private void requireStripeConfigured() {
+        if (stripeSecretKey == null || stripeSecretKey.isBlank() || stripeSecretKey.equals("sk_test_xxx")) {
+            throw new BillingDomainException("STRIPE_NOT_CONFIGURED", "Stripe Secret Key is not configured");
+        }
+    }
+
+    private BillingDomainException stripeFailure(String message, StripeException cause) {
+        return new BillingDomainException("STRIPE_ERROR", message + ": " + cause.getMessage(), cause);
+    }
+
+    private LocalDateTime fromEpoch(Long value) {
+        return value == null ? null : LocalDateTime.ofInstant(Instant.ofEpochSecond(value), ZoneOffset.UTC);
+    }
+
+    private int tierRank(String tier) {
+        return switch (tier) {
+            case "basic" -> 1;
+            case "plus" -> 2;
+            case "pro" -> 3;
+            default -> 0;
+        };
+    }
+
+    private String generateOrderNo() {
+        return "RO" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
+    }
+}

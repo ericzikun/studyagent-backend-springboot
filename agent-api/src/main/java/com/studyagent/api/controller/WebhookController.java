@@ -13,6 +13,7 @@ import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.studyagent.infra.service.QuotaRechargeService;
+import com.studyagent.infra.service.billing.StripeBillingWebhookService;
 import com.studyagent.api.service.robot.RobotNotifyAsyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,9 +37,13 @@ public class WebhookController {
     private final QuotaRechargeService quotaRechargeService;
     private final AnalyticsService analyticsService;
     private final RobotNotifyAsyncService robotNotifyAsyncService;
+    private final StripeBillingWebhookService stripeBillingWebhookService;
 
     @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
+
+    @Value("${stripe.allow-unsigned-webhooks:false}")
+    private boolean allowUnsignedWebhooks;
 
     @PostMapping("/stripe")
     public ResponseEntity<Map<String, String>> stripeWebhook(
@@ -47,17 +52,22 @@ public class WebhookController {
         try {
             // 验证 Webhook 签名
             Event event;
-            if (webhookSecret != null && !webhookSecret.isEmpty()) {
+            if (webhookSecret != null && !webhookSecret.isBlank() && !"whsec_xxx".equals(webhookSecret)) {
                 event = Webhook.constructEvent(payload, signature, webhookSecret);
-            } else {
-                log.warn("Webhook secret未配置，跳过签名验证（仅开发环境）");
+            } else if (allowUnsignedWebhooks) {
+                log.warn("Stripe Webhook signature verification is explicitly disabled");
                 event = new com.google.gson.Gson().fromJson(payload, Event.class);
+            } else {
+                log.error("Stripe Webhook secret is not configured");
+                return ResponseEntity.status(500).build();
             }
 
             log.info("收到 Stripe Webhook: event_type={}, event_id={}", event.getType(), event.getId());
 
             // 处理事件
-            if ("checkout.session.completed".equals(event.getType())) {
+            if (stripeBillingWebhookService.supports(event)) {
+                stripeBillingWebhookService.process(event);
+            } else if ("checkout.session.completed".equals(event.getType())) {
                 Session session = resolveSession(event);
                 if (session != null) {
                     handleCheckoutSessionCompleted(session, event.getId());
@@ -468,4 +478,3 @@ public class WebhookController {
         }
     }
 }
-

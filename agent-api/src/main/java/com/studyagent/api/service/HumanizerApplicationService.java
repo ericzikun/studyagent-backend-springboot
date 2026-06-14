@@ -16,6 +16,7 @@ import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
+import com.studyagent.service.application.verla.HumanizerTaskNameDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class HumanizerApplicationService {
     private final QuotaDomainService quotaDomainService;
     private final UserRepository userRepository;
     private final HumanizerServiceClient humanizerServiceClient;
+    private final HumanizerTaskNameDispatcher humanizerTaskNameDispatcher;
 
     /** 内测白名单用户（不限额度），通过配置 humanizer.whitelist-user-ids 设置 */
     @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
@@ -196,6 +198,10 @@ public class HumanizerApplicationService {
         entity.setUpdatedAt(DateTimeFormats.now());
 
         repository.insert(entity);
+
+        // 提交即异步生成任务标题（复用 Python ConversationTitleService，经 MQ 回写 task_name）。
+        // best-effort：dispatcher 内部已吞异常，绝不影响任务提交。
+        humanizerTaskNameDispatcher.dispatch(entity.getId(), clerkUserId, text);
 
         // 计算预估时间（分开：排队 + 处理）
         int queueAhead = repository.countQueueAhead(taskType, entity.getId());
@@ -409,6 +415,7 @@ public class HumanizerApplicationService {
         HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
+                .taskName(entity.getTaskName())
                 .inputText(entity.getInputText())
                 .status(entity.getStatus())
                 .probability(entity.getProbability())
@@ -460,6 +467,7 @@ public class HumanizerApplicationService {
         return HumanizerTaskItemResponse.builder()
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
+                .taskName(entity.getTaskName())
                 .status(entity.getStatus())
                 .inputTextPreview(preview(entity.getInputText()))
                 .probability(entity.getProbability())

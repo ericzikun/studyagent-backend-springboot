@@ -13,6 +13,7 @@ public record AiWritingRuntimeSnapshotPayloadView(
         Map<String, Object> stateEventPayload,
         Map<String, Object> progress,
         List<VerlaArtifact> artifacts,
-        String primaryIntent
+        String primaryIntent,
+        String title
 ) {
 }

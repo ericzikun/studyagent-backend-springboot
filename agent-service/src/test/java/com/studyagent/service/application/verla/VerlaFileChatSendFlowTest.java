@@ -669,6 +669,11 @@ class VerlaFileChatSendFlowTest {
             return 0;
         }
 
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
+
     }
 
     private static final class FakeMessageRepository implements VerlaMessageRepository {

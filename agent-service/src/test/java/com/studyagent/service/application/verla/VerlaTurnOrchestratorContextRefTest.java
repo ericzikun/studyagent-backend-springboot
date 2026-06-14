@@ -468,6 +468,11 @@ class VerlaTurnOrchestratorContextRefTest {
             return 0;
         }
 
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
+
         Long latestSessionId() {
             return store.keySet().stream().max(Long::compareTo).orElse(null);
         }

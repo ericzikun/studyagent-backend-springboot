@@ -42,6 +42,7 @@ public class AiWritingRuntimeSnapshotVO {
         private Map<String, Object> progress;
         private List<VerlaArtifactVO> artifacts;
         private String primaryIntent;
+        private String title;
 
         public static Payload from(AiWritingRuntimeSnapshotPayloadView view) {
             if (view == null) {
@@ -60,6 +61,7 @@ public class AiWritingRuntimeSnapshotVO {
                             ? List.of()
                             : view.artifacts().stream().map(VerlaArtifactVO::from).toList())
                     .primaryIntent(view.primaryIntent())
+                    .title(view.title())
                     .build();
         }
     }

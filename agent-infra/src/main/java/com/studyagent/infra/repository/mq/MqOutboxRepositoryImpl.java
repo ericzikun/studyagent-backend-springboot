@@ -3,6 +3,7 @@ package com.studyagent.infra.repository.mq;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.studyagent.common.verla.dispatch.CapabilityRunDispatchActions;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.infra.entity.mq.MqOutboxEntity;
 import com.studyagent.infra.mapper.mq.MqOutboxMapper;
@@ -208,6 +209,22 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
         long count = this.count(new LambdaQueryWrapper<MqOutboxEntity>()
                 .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
                 .in(MqOutboxEntity::getAction, GATED_ASSIGNMENT_RUN_ACTIONS)
+                .and(wrapper -> wrapper
+                        .lt(MqOutboxEntity::getCreatedAt, createdAt)
+                        .or(nested -> nested
+                                .eq(MqOutboxEntity::getCreatedAt, createdAt)
+                                .lt(MqOutboxEntity::getId, id))));
+        return Math.toIntExact(count);
+    }
+
+    @Override
+    public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
+        if (id == null || createdAt == null || !CapabilityRunDispatchActions.isGated(action)) {
+            return 0;
+        }
+        long count = this.count(new LambdaQueryWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getStatus, MqOutbox.STATUS_UNSENT)
+                .eq(MqOutboxEntity::getAction, action)
                 .and(wrapper -> wrapper
                         .lt(MqOutboxEntity::getCreatedAt, createdAt)
                         .or(nested -> nested

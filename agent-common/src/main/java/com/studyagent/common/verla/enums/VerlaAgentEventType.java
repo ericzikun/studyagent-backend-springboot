@@ -121,6 +121,11 @@ public enum VerlaAgentEventType {
     AGENT_FAILED(true),
     AGENT_CANCELLED(true),
 
+    /** Java 派发门控：AI Detection run 在 outbox 中等待并发 slot（非 Py 上报） */
+    AI_DETECTION_RUN_DISPATCH_QUEUED(false),
+    /** Java 派发门控：AI Humanizer run 在 outbox 中等待并发 slot（非 Py 上报） */
+    AI_HUMANIZER_RUN_DISPATCH_QUEUED(false),
+
     /** AI Detection / Humanizer 域（Py runtime 级终态；业务流内失败也可能走 AGENT_FAILED） */
     AI_DETECTION_COMPLETED(true),
     AI_DETECTION_FAILED(true),

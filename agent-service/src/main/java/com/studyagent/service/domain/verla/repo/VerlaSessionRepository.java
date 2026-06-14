@@ -38,4 +38,9 @@ public interface VerlaSessionRepository {
      * 当前占用 assignment run 派发 slot 的 session 数量（见 {@code AssignmentRunDispatchGate}）。
      */
     int countActiveAssignmentRuns();
+
+    /**
+     * 当前占用 capability run 派发 slot 的 session 数量（见 {@code CapabilityRunDispatchGate}）。
+     */
+    int countActiveCapabilityRuns(String action);
 }

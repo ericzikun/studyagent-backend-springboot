@@ -3,10 +3,13 @@ package com.studyagent.infra.mq;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.dispatch.AssignmentRunDispatchActions;
+import com.studyagent.common.verla.dispatch.CapabilityRunDispatchActions;
 import com.studyagent.service.application.verla.dispatch.AssignmentRunDispatchQueueEvents;
+import com.studyagent.service.application.verla.dispatch.CapabilityRunDispatchQueueEvents;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
+import com.studyagent.service.domain.verla.dispatch.CapabilityRunDispatchGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
@@ -42,7 +45,9 @@ public class OutboxDispatchScheduler {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final AssignmentRunDispatchGate assignmentRunDispatchGate;
+    private final CapabilityRunDispatchGate capabilityRunDispatchGate;
     private final AssignmentRunDispatchQueueEvents assignmentRunDispatchQueueEvents;
+    private final CapabilityRunDispatchQueueEvents capabilityRunDispatchQueueEvents;
     private final String workerId = "java-outbox-" + UUID.randomUUID();
 
     @Value("${mq.outbox.claim-lease-seconds:60}")
@@ -109,6 +114,24 @@ public class OutboxDispatchScheduler {
                 assignmentRunDispatchQueueEvents.notifyDeferred(message);
             } catch (Exception e) {
                 log.warn("[Verla/assignment-run-dispatch] queue notify failed outboxId={}: {}",
+                        message.getId(), e.getMessage());
+            }
+            return;
+        }
+
+        if (shouldDeferCapabilityRunDispatch(message)) {
+            log.info(
+                    "[Verla/capability-run-dispatch] deferred eventId={} action={} sessionId={} active={} max={}",
+                    message.getEventId(),
+                    message.getAction(),
+                    message.getSessionId(),
+                    capabilityRunDispatchGate.activeCount(message.getAction()),
+                    capabilityRunDispatchGate.maxConcurrency(message.getAction()));
+            mqOutboxRepository.releaseClaim(message.getId(), message.getWorkerId());
+            try {
+                capabilityRunDispatchQueueEvents.notifyDeferred(message);
+            } catch (Exception e) {
+                log.warn("[Verla/capability-run-dispatch] queue notify failed outboxId={}: {}",
                         message.getId(), e.getMessage());
             }
             return;
@@ -202,6 +225,12 @@ public class OutboxDispatchScheduler {
         return assignmentRunDispatchGate.isEnabled()
                 && AssignmentRunDispatchActions.isGated(message.getAction())
                 && !assignmentRunDispatchGate.canDispatchNow();
+    }
+
+    private boolean shouldDeferCapabilityRunDispatch(MqOutbox message) {
+        return capabilityRunDispatchGate.isEnabled(message.getAction())
+                && CapabilityRunDispatchActions.isGated(message.getAction())
+                && !capabilityRunDispatchGate.canDispatchNow(message.getAction());
     }
 
     private static String nullToDefault(String s, String def) {

@@ -55,4 +55,14 @@ public interface VerlaSessionMapper extends BaseMapper<VerlaSessionEntity> {
             + "AND (s.status = 'RUNNING' "
             + "     OR (s.status = 'DISPATCHING' AND o.status = 1))")
     int countActiveAssignmentRuns();
+
+    /**
+     * 统计占用 AI Detection / Humanizer run 派发 slot 的 session 数。
+     */
+    @Select("SELECT COUNT(DISTINCT s.id) FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "WHERE o.action = #{action} "
+            + "AND (s.status = 'RUNNING' "
+            + "     OR (s.status = 'DISPATCHING' AND o.status = 1))")
+    int countActiveCapabilityRuns(@Param("action") String action);
 }

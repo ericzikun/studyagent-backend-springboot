@@ -118,4 +118,10 @@ public class VerlaSessionRepositoryImpl
         Integer count = this.baseMapper.countActiveAssignmentRuns();
         return count == null ? 0 : count;
     }
+
+    @Override
+    public int countActiveCapabilityRuns(String action) {
+        Integer count = this.baseMapper.countActiveCapabilityRuns(action);
+        return count == null ? 0 : count;
+    }
 }

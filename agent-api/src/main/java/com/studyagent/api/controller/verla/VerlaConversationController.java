@@ -13,6 +13,7 @@ import com.studyagent.api.dto.verla.request.PatchConversationRequest;
 import com.studyagent.api.dto.verla.request.PlanConfirmRequest;
 import com.studyagent.api.dto.verla.request.SendMessageRequest;
 import com.studyagent.api.dto.verla.response.AssignmentRuntimeSnapshotVO;
+import com.studyagent.api.dto.verla.response.AiWritingRuntimeSnapshotVO;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.PlanConfirmResponseVO;
 import com.studyagent.api.dto.verla.response.SendMessageResponseVO;
@@ -28,6 +29,7 @@ import com.studyagent.infra.entity.verla.VerlaEditorPreviewEntity;
 import com.studyagent.infra.entity.verla.VerlaArtifactEntity;
 import com.studyagent.infra.mapper.verla.VerlaArtifactMapper;
 import com.studyagent.service.application.verla.AssignmentRuntimeSnapshotService;
+import com.studyagent.service.application.verla.AiWritingRuntimeSnapshotService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
 import com.studyagent.api.service.VerlaEditorPreviewService;
@@ -80,6 +82,7 @@ public class VerlaConversationController {
     private final VerlaEditorPreviewService previewService;
     private final VerlaArtifactMapper artifactMapper;
     private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
+    private final AiWritingRuntimeSnapshotService aiWritingRuntimeSnapshotService;
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final ObjectMapper objectMapper;
     private final LegacyTaskAdapter legacyTaskAdapter;
@@ -405,6 +408,21 @@ public class VerlaConversationController {
         conversationService.getOwned(clerkUserId, cid);
         return Result.success(AssignmentRuntimeSnapshotVO.from(
                 assignmentRuntimeSnapshotService.getSnapshot(cid)));
+    }
+
+    // ========================================================
+    // 6.6) GET /v1/verla/conversations/{cid}/ai-writing/runtime-snapshot
+    //      —— AI Detection / Humanizer refresh/reopen recovery snapshot
+    // ========================================================
+    @GetMapping("/{cid}/ai-writing/runtime-snapshot")
+    public Result<AiWritingRuntimeSnapshotVO> getAiWritingRuntimeSnapshot(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        rejectIfLegacy(cid);
+        conversationService.getOwned(clerkUserId, cid);
+        return Result.success(AiWritingRuntimeSnapshotVO.from(
+                aiWritingRuntimeSnapshotService.getSnapshot(cid)));
     }
 
     // ========================================================

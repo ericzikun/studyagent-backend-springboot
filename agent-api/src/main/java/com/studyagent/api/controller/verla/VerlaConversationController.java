@@ -615,7 +615,7 @@ public class VerlaConversationController {
     }
 
     /**
-     * @param raw {@code assignment} | {@code learning} | {@code ai_writing}，大小写不敏感；空则不过滤栏目
+     * @param raw {@code assignment} | {@code learning} | {@code ai_writing} | {@code ai_detection} | {@code ai_humanizer}，大小写不敏感；空则不过滤栏目
      */
     private static VerlaConversationListSegment parseSegment(String raw) {
         if (raw == null || raw.isBlank()) {

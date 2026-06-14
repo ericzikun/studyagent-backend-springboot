@@ -49,6 +49,7 @@ public class VerlaWorkforceTaskOutputRepositoryImpl
         VerlaWorkforceTaskOutputEntity existing =
                 this.baseMapper.selectBySessionAndNode(patch.getSessionId(), patch.getNodeId());
         LocalDateTime now = LocalDateTime.now();
+        boolean reset = Boolean.TRUE.equals(patch.getReset());
 
         if (existing == null) {
             VerlaWorkforceTaskOutputEntity entity = new VerlaWorkforceTaskOutputEntity()
@@ -62,6 +63,11 @@ public class VerlaWorkforceTaskOutputRepositoryImpl
                     .setUpdatedAt(now);
             this.baseMapper.insert(entity);
             return toDomain(entity);
+        }
+
+        if (reset) {
+            existing.setResultText(null);
+            existing.setDetailItemsJson(null);
         }
 
         // resultText: 追加（非空才追加）

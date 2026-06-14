@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
  * 由 {@code ASSIGNMENT_AGENT_NODE_DETAILED} 事件驱动 upsert。
  * <p>
  * {@code resultText} 追加写入（contentChunk 累积），
- * {@code detailItemsJson} 合并写入（detailChunk 数组追加）。
+ * {@code detailItemsJson} 合并写入（detailChunk 数组追加）。重试开始时事件会携带
+ * {@code reset=true}，仓储先清空上一轮失败的 Output 和 Detailed process，再应用本次增量。
  */
 @Data
 @Builder
@@ -35,6 +36,9 @@ public class VerlaWorkforceTaskOutput {
 
     /** detailChunk 数组累积（JSON 字符串）：[{type, name}] */
     private String detailItemsJson;
+
+    /** 仅写路径使用：true 表示 upsert 前先清空该节点已有 resultText/detailItemsJson */
+    private Boolean reset;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

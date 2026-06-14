@@ -70,6 +70,11 @@ public class VerlaContextCacheRepositoryConfig {
             public int countActiveAssignmentRuns() {
                 return delegate.countActiveAssignmentRuns();
             }
+
+            @Override
+            public int countActiveCapabilityRuns(String action) {
+                return delegate.countActiveCapabilityRuns(action);
+            }
         };
     }
 

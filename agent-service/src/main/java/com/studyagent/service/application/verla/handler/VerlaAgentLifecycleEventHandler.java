@@ -32,9 +32,11 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.ASSIGNMENT_INIT_STARTED,
             VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_INIT_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_INIT_CANCELLED,
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED,
             VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
+            VerlaAgentEventType.ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_FORM_READY,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED,
             VerlaAgentEventType.ASSIGNMENT_CLARIFY_COMPLETED,
@@ -142,6 +144,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 orchestrator.onAssignmentChatFailed(sessionId, payload);
             }
             case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
+                    ASSIGNMENT_INIT_CANCELLED, ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED, AI_DETECTION_CANCELLED,
                     AI_HUMANIZER_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);

@@ -86,7 +86,7 @@ public class VerlaSessionContextVO {
                             .collect(Collectors.toList()))
                 .artifacts(v.getArtifacts() == null ? List.of()
                         : v.getArtifacts().stream()
-                            .map(VerlaArtifactVO::from)
+                            .map(VerlaArtifactVO::fromInternal)
                             .collect(Collectors.toList()))
                 .toolSummaries(v.getToolSummaries() == null ? List.of()
                         : v.getToolSummaries().stream()

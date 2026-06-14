@@ -14,7 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -638,7 +638,7 @@ public class AssignmentRuntimeProgressEstimator {
             return 0.0;
         }
         long nowEpoch = System.currentTimeMillis() / 1000;
-        long startEpoch = flowStartedAt.atZone(ZoneId.systemDefault()).toEpochSecond();
+        long startEpoch = DateTimeFormats.toEpochSecond(flowStartedAt);
         long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
         long effectiveElapsed = Math.min(elapsedSeconds, SIMULATED_PROGRESS_WINDOW_SECONDS);
         double simulatedPercent =

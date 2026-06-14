@@ -5,10 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.studyagent.infra.entity.HumanizerTaskEntity;
 import com.studyagent.infra.mapper.HumanizerTaskMapper;
 import lombok.RequiredArgsConstructor;
+import com.studyagent.common.datetime.DateTimeFormats;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 
 @Repository
@@ -22,8 +22,7 @@ public class HumanizerTaskRepositoryImpl {
     }
 
     public void updateById(HumanizerTaskEntity entity) {
-        // 强制使用 UTC 时间，避免 MySQL ON UPDATE CURRENT_TIMESTAMP 写入 UTC+8
-        entity.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setUpdatedAt(DateTimeFormats.now());
         mapper.updateById(entity);
     }
 

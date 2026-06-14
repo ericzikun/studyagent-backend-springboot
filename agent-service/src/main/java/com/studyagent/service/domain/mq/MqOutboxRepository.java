@@ -105,4 +105,9 @@ public interface MqOutboxRepository {
      * 用于向前端返回 {@code queuePosition}（前方还有几条等待派发）。
      */
     int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt);
+
+    /**
+     * 统计在 FIFO 队列中排在本条 capability run 之前的 UNSENT 条数（同 action 类型）。
+     */
+    int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt);
 }

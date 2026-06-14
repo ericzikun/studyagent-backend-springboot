@@ -35,8 +35,9 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
+import com.studyagent.common.datetime.DateTimeFormats;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -232,7 +233,7 @@ public class TaskApplicationService {
         long usedToday = taskRepository.countSubmittedToday(clerkUserId);
         LocalDateTime resetLocal = LocalDate.now().plusDays(1).atStartOfDay();
         String quotaResetAt = resetLocal.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        ZoneId serverZone = ZoneId.systemDefault();
+        ZoneId serverZone = DateTimeFormats.APP_ZONE;
         String quotaResetAtUtc = ZonedDateTime.of(resetLocal, serverZone)
                 .withZoneSameInstant(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " UTC";
@@ -730,8 +731,6 @@ public class TaskApplicationService {
     private static final int TOTAL_ESTIMATED_SECONDS = 20 * 60;
     private static final int SIMULATED_PROGRESS_WINDOW_SECONDS = 120;
     private static final double SIMULATED_PROGRESS_MAX_PERCENT = 10.0;
-    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-
     /**
      * 查询任务列表（分页），含队列信息与列表项转换
      * <p>
@@ -799,14 +798,14 @@ public class TaskApplicationService {
                 .subject(task.getSubject())
                 .academicLevel(task.getAcademicLevel())
                 .priorityLevel(task.getPriorityLevel())
-                .dueDate(task.getDueDate() != null ? task.getDueDate().format(ISO_FORMATTER) : null)
+                .dueDate(DateTimeFormats.formatApi(task.getDueDate()))
                 .format(task.getFormat())
                 .citationStyle(task.getCitationStyle())
                 .pageLength(task.getPageLength())
                 .specialInstructions(task.getSpecialInstructions())
                 .status(task.getStatus().name())
-                .startTime(task.getStartTime() != null ? task.getStartTime().format(ISO_FORMATTER) : null)
-                .finishTime(task.getFinishTime() != null ? task.getFinishTime().format(ISO_FORMATTER) : null)
+                .startTime(DateTimeFormats.formatApi(task.getStartTime()))
+                .finishTime(DateTimeFormats.formatApi(task.getFinishTime()))
                 .costTime(task.getCostTime())
                 .completePercent(java.math.BigDecimal.valueOf(effectivePercent))
                 .taskCompletedSize(task.getTaskCompletedSize())
@@ -851,7 +850,7 @@ public class TaskApplicationService {
         }
 
         long nowEpoch = System.currentTimeMillis() / 1000;
-        long startEpoch = task.getStartTime().atZone(ZoneId.systemDefault()).toEpochSecond();
+        long startEpoch = DateTimeFormats.toEpochSecond(task.getStartTime());
         long elapsedSeconds = Math.max(0, nowEpoch - startEpoch);
 
         long effectiveElapsed = Math.min(elapsedSeconds, SIMULATED_PROGRESS_WINDOW_SECONDS);

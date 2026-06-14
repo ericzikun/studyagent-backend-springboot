@@ -20,12 +20,15 @@ public enum VerlaAgentEventType {
     PLAN_INTENT_STREAM_CHUNK(false),
     /** Py task_name runner：对话标题生成完成（cmd.plan.task_name session 的终态事件） */
     PLAN_TASK_NAME_RESOLVED(true),
+    /** Py task_name runner：标题生成失败（best-effort，建议作非阻断信号处理） */
+    PLAN_TASK_NAME_FAILED(true),
 
     /** Assignment 域 —— 阶段一：需求理解（Py assignment_init_service） */
     ASSIGNMENT_INIT_STARTED(false),
     ASSIGNMENT_INIT_STREAM_CHUNK(false),
     ASSIGNMENT_INIT_COMPLETED(true),
     ASSIGNMENT_INIT_FAILED(true),
+    ASSIGNMENT_INIT_CANCELLED(true),
 
     /** Assignment 域 —— 阶段二：需求深入（Py assignment_deep_understanding_service） */
     ASSIGNMENT_DEEP_UNDERSTANDING_STARTED(false),
@@ -33,6 +36,7 @@ public enum VerlaAgentEventType {
     ASSIGNMENT_CLARIFY_FORM_READY(false),
     ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED(true),
     ASSIGNMENT_DEEP_UNDERSTANDING_FAILED(true),
+    ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED(true),
 
     /** Assignment 域 —— 阶段三：需求澄清 / 表单构建 */
     ASSIGNMENT_CLARIFY_STARTED(false),
@@ -117,6 +121,11 @@ public enum VerlaAgentEventType {
     AGENT_FAILED(true),
     AGENT_CANCELLED(true),
 
+    /** Java 派发门控：AI Detection run 在 outbox 中等待并发 slot（非 Py 上报） */
+    AI_DETECTION_RUN_DISPATCH_QUEUED(false),
+    /** Java 派发门控：AI Humanizer run 在 outbox 中等待并发 slot（非 Py 上报） */
+    AI_HUMANIZER_RUN_DISPATCH_QUEUED(false),
+
     /** AI Detection / Humanizer 域（Py runtime 级终态；业务流内失败也可能走 AGENT_FAILED） */
     AI_DETECTION_COMPLETED(true),
     AI_DETECTION_FAILED(true),
@@ -140,8 +149,10 @@ public enum VerlaAgentEventType {
             AGENT_CANCELLED,
             ASSIGNMENT_INIT_COMPLETED,
             ASSIGNMENT_INIT_FAILED,
+            ASSIGNMENT_INIT_CANCELLED,
             ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED,
             ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
+            ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
             ASSIGNMENT_CLARIFY_COMPLETED,
             ASSIGNMENT_CLARIFY_FAILED,
             ASSIGNMENT_CLARIFY_CANCELLED,
@@ -159,6 +170,7 @@ public enum VerlaAgentEventType {
             ASSIGNMENT_CHAT_CANCELLED,
             MATERIALS_COMPLETED,
             PLAN_TASK_NAME_RESOLVED,
+            PLAN_TASK_NAME_FAILED,
             AI_DETECTION_COMPLETED,
             AI_DETECTION_FAILED,
             AI_DETECTION_CANCELLED,

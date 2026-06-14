@@ -5,6 +5,7 @@ import com.studyagent.api.dto.response.HumanizerSubmitResult;
 import com.studyagent.api.dto.response.HumanizerTaskItemResponse;
 import com.studyagent.api.dto.response.HumanizerTaskListResponse;
 import com.studyagent.api.dto.response.HumanizerTaskResponse;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.common.exception.InsufficientQuotaData;
 import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.quota.FeatureCode;
@@ -18,9 +19,6 @@ import com.studyagent.service.domain.humanizer.HumanizerServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -42,7 +40,6 @@ public class HumanizerApplicationService {
     @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
     private List<String> whitelistUserIds;
 
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int PREVIEW_LENGTH = 512;
 
     // ===== 预估时间参数（基于实测数据 2026-03-12） =====
@@ -123,8 +120,8 @@ public class HumanizerApplicationService {
                     if (splitTotalChunks > 0) {
                         exhaustedEntity.setTotalSentences(splitTotalChunks);
                     }
-                    exhaustedEntity.setCreatedAt(utcNow());
-                    exhaustedEntity.setUpdatedAt(utcNow());
+                    exhaustedEntity.setCreatedAt(DateTimeFormats.now());
+                    exhaustedEntity.setUpdatedAt(DateTimeFormats.now());
                     repository.insert(exhaustedEntity);
                     log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}, available={}",
                             exhaustedEntity.getId(), clerkUserId, firstChunkWords, balance.totalAvailable());
@@ -155,8 +152,8 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setTotalWords(wordCount);
                     exhaustedEntity.setConsumedWords(0);
                     exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + wordCount + " words");
-                    exhaustedEntity.setCreatedAt(utcNow());
-                    exhaustedEntity.setUpdatedAt(utcNow());
+                    exhaustedEntity.setCreatedAt(DateTimeFormats.now());
+                    exhaustedEntity.setUpdatedAt(DateTimeFormats.now());
                     repository.insert(exhaustedEntity);
                     log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}",
                             exhaustedEntity.getId(), clerkUserId, wordCount);
@@ -195,8 +192,8 @@ public class HumanizerApplicationService {
         entity.setQuotaLedgerId(quotaLedgerId);
         entity.setTotalWords(wordCount);
         entity.setConsumedWords(0);
-        entity.setCreatedAt(utcNow());
-        entity.setUpdatedAt(utcNow());
+        entity.setCreatedAt(DateTimeFormats.now());
+        entity.setUpdatedAt(DateTimeFormats.now());
 
         repository.insert(entity);
 
@@ -424,7 +421,7 @@ public class HumanizerApplicationService {
                 .errorMessage(entity.getErrorMessage())
                 .totalWords(entity.getTotalWords())
                 .consumedWords(entity.getConsumedWords())
-                .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null);
+                .createdAt(DateTimeFormats.formatApi(entity.getCreatedAt()));
 
         String status = entity.getStatus();
 
@@ -472,18 +469,13 @@ public class HumanizerApplicationService {
                 .resultTextPreview(preview(entity.getResultText()))
                 .elapsedSeconds(entity.getElapsedSeconds())
                 .errorMessage(entity.getErrorMessage())
-                .createdAt(entity.getCreatedAt() != null ? entity.getCreatedAt().format(FMT) : null)
+                .createdAt(DateTimeFormats.formatApi(entity.getCreatedAt()))
                 .build();
     }
 
     private String preview(String text) {
         if (text == null) return null;
         return text.length() <= PREVIEW_LENGTH ? text : text.substring(0, PREVIEW_LENGTH) + "...";
-    }
-
-    /** UTC 时间，与 Java 容器时区一致，避免和 MySQL NOW() 的 UTC+8 混淆 */
-    private static LocalDateTime utcNow() {
-        return LocalDateTime.now(java.time.ZoneOffset.UTC);
     }
 
     // ===== 进度百分比计算 =====
@@ -514,7 +506,7 @@ public class HumanizerApplicationService {
             if ("PROCESSING".equals(status) && entity.getStartedAt() != null) {
                 int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
                 double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
-                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), java.time.LocalDateTime.now()).getSeconds();
+                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), DateTimeFormats.now()).getSeconds();
                 if (totalEstimate > 0) {
                     int pct = (int) Math.round(elapsedSec * 100.0 / totalEstimate);
                     return Math.max(1, Math.min(95, pct));
@@ -608,7 +600,7 @@ public class HumanizerApplicationService {
             int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
             double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
             if (entity.getStartedAt() != null) {
-                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), java.time.LocalDateTime.now()).getSeconds();
+                long elapsedSec = java.time.Duration.between(entity.getStartedAt(), DateTimeFormats.now()).getSeconds();
                 return (int) Math.max(0, Math.ceil(totalEstimate - elapsedSec));
             }
             return (int) Math.ceil(totalEstimate);

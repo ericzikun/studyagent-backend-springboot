@@ -52,7 +52,7 @@ public class JacksonConfig {
         // 🆕 启用自动刷新，提高写入效率
         objectMapper.configure(JsonGenerator.Feature.FLUSH_PASSED_TO_STREAM, true);
 
-        // LocalDateTime 统一输出带 offset 的 ISO 字符串（如 2026-06-03T04:00:00Z）
+        // LocalDateTime 统一输出带 offset 的 ISO 字符串（如 2026-06-03T12:00:00+08:00）
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.registerModule(new SimpleModule()

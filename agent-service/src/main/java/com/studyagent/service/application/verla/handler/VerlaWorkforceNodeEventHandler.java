@@ -184,6 +184,7 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
                 .nodeId(p.getId())
                 .resultText(p.getContentChunk())
                 .detailItemsJson(detailJson)
+                .reset(Boolean.TRUE.equals(p.getReset()))
                 .build();
 
         VerlaWorkforceTaskOutput saved = taskOutputRepository.upsertBySessionNode(patch);

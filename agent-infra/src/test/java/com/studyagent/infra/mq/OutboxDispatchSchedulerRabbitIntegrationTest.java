@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
+import com.studyagent.service.domain.verla.dispatch.CapabilityRunDispatchGate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,9 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
                 rabbitTemplate,
                 new ObjectMapper(),
                 unlimitedAssignmentRunDispatchGate(),
+                unlimitedCapabilityRunDispatchGate(),
+                message -> {
+                },
                 message -> {
                 });
 
@@ -189,6 +193,11 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
             return 0;
         }
+
+        @Override
+        public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
+            return 0;
+        }
     }
 
     private static AssignmentRunDispatchGate unlimitedAssignmentRunDispatchGate() {
@@ -210,6 +219,30 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
 
             @Override
             public boolean canDispatchNow() {
+                return true;
+            }
+        };
+    }
+
+    private static CapabilityRunDispatchGate unlimitedCapabilityRunDispatchGate() {
+        return new CapabilityRunDispatchGate() {
+            @Override
+            public boolean isEnabled(String action) {
+                return false;
+            }
+
+            @Override
+            public int maxConcurrency(String action) {
+                return 0;
+            }
+
+            @Override
+            public int activeCount(String action) {
+                return 0;
+            }
+
+            @Override
+            public boolean canDispatchNow(String action) {
                 return true;
             }
         };

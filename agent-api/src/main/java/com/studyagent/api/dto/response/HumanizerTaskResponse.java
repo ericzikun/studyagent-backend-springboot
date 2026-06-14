@@ -28,6 +28,9 @@ public class HumanizerTaskResponse {
     /** DETECT / HUMANIZE */
     private String taskType;
 
+    /** 任务标题（ConversationTitleService 异步生成，可能为 null） */
+    private String taskName;
+
     /** 用户输入的原始文本 */
     private String inputText;
 

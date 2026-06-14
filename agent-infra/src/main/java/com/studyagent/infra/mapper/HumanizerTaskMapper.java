@@ -30,6 +30,15 @@ public interface HumanizerTaskMapper extends BaseMapper<HumanizerTaskEntity> {
     int cancelTask(@Param("id") Long id);
 
     /**
+     * 回写任务标题（ConversationTitleService 异步生成）。
+     * 仅当 task_name 仍为空时写入，避免乱序事件覆盖既有标题。
+     * 返回受影响行数。
+     */
+    @Update("UPDATE humanizer_tasks SET task_name = #{taskName}, updated_at = UTC_TIMESTAMP() " +
+            "WHERE id = #{id} AND (task_name IS NULL OR task_name = '')")
+    int updateTaskName(@Param("id") Long id, @Param("taskName") String taskName);
+
+    /**
      * 超时回收：PROCESSING 超过 timeoutMinutes 分钟的任务改回 PENDING（重试）或 FAILED（超限）
      * 返回受影响行数
      */

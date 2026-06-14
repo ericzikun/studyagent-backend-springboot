@@ -447,6 +447,11 @@ class VerlaTurnOrchestratorTest {
         public int countActiveAssignmentRuns() {
             return 0;
         }
+
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
     }
 
     private static AnalyticsService mockAnalyticsService() {
@@ -770,6 +775,11 @@ class VerlaTurnOrchestratorTest {
 
         @Override
         public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
+        }
+
+        @Override
+        public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
         }
     }

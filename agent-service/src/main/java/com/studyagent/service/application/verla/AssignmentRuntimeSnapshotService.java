@@ -36,7 +36,7 @@ import java.util.Map;
 public class AssignmentRuntimeSnapshotService {
 
     private static final int MESSAGE_LIMIT = 100;
-    private static final int EVENT_SCAN_LIMIT = 300;
+    private static final int EVENT_SCAN_LIMIT = 100;
 
     private final VerlaMessageRepository messageRepository;
     private final VerlaArtifactRepository artifactRepository;

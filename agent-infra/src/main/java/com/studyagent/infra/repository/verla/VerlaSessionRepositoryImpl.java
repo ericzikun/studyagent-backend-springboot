@@ -7,7 +7,9 @@ import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Repository
@@ -58,6 +60,31 @@ public class VerlaSessionRepositoryImpl
         }
         int rows = this.baseMapper.bindQuotaLedger(sessionId, ledgerId, amount);
         return rows > 0;
+    }
+
+    @Override
+    public List<VerlaSession> findByIds(List<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return List.of();
+        }
+        return this.listByIds(sessionIds).stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+        if (turnIds == null || turnIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = turnIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return this.baseMapper.selectByTurnIds(ids).stream()
+                .map(this::toDomain)
+                .collect(Collectors.groupingBy(VerlaSession::getTurnId, LinkedHashMap::new, Collectors.toList()));
     }
 
     private VerlaSession toDomain(VerlaSessionEntity e) {

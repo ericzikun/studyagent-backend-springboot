@@ -12,7 +12,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 文件Repository实现
@@ -37,6 +41,30 @@ public class FileRepositoryImpl implements FileRepository {
                 .eq(FileEntity::getObjectId, objectId)
         );
         return Optional.ofNullable(converter.toDomain(entity));
+    }
+
+    @Override
+    public Map<String, File> findByObjectIds(List<String> objectIds) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = objectIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<FileEntity> entities = fileMapper.selectList(
+                new LambdaQueryWrapper<FileEntity>().in(FileEntity::getObjectId, ids));
+        Map<String, File> result = new LinkedHashMap<>();
+        for (FileEntity entity : entities) {
+            if (entity == null || entity.getObjectId() == null) {
+                continue;
+            }
+            result.putIfAbsent(entity.getObjectId(), converter.toDomain(entity));
+        }
+        return result;
     }
     
     @Override

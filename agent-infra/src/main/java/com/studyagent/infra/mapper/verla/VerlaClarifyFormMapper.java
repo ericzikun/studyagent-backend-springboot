@@ -18,6 +18,14 @@ public interface VerlaClarifyFormMapper extends BaseMapper<VerlaClarifyFormEntit
             + "ORDER BY created_at ASC, id ASC")
     List<VerlaClarifyFormEntity> selectOpenByConversation(@Param("cid") Long conversationId);
 
+    @Select("<script>"
+            + "SELECT * FROM verla_clarify_forms WHERE status = 'OPEN' AND conversation_id IN "
+            + "<foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "ORDER BY conversation_id, created_at ASC, id ASC"
+            + "</script>")
+    List<VerlaClarifyFormEntity> selectOpenByConversationIds(
+            @Param("conversationIds") List<Long> conversationIds);
+
     @Update("UPDATE verla_clarify_forms SET status = 'SUBMITTED', "
             + "submitted_at = #{ts}, submitted_response_id = #{rid}, updated_at = #{ts} "
             + "WHERE form_id = #{fid} AND status = 'OPEN'")

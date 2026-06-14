@@ -397,6 +397,21 @@ class VerlaContextCacheSyncIntegrationTest {
         public int countActiveAssignmentRuns() {
             return 0;
         }
+
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
+
+        @Override
+        public List<VerlaSession> findByIds(List<Long> sessionIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+            return Map.of();
+        }
     }
 
     private static class InMemoryTurnRepository implements VerlaTurnRepository {
@@ -421,6 +436,16 @@ class VerlaContextCacheSyncIntegrationTest {
         @Override
         public List<VerlaTurn> findRecentByConversation(Long conversationId, int limit) {
             return List.of();
+        }
+
+        @Override
+        public List<VerlaTurn> findByIds(List<Long> turnIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+            return Map.of();
         }
     }
 

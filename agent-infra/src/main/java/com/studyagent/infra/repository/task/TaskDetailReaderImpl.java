@@ -72,7 +72,7 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
         List<TaskDetailDTO.ActivityInfo> activityInfoList = loadAndBuildActivities(taskId);
         List<TaskDetailDTO.AgentInfo> agentInfoList = buildAgentInfoList(agentEntities, subTaskEntities);
         List<TaskDetailDTO.OutputInfo> outputDetailInfoList = loadAndBuildOutputs(taskId);
-        TaskDetailDTO.OutputInfo outputSummaryInfo = extractMainOutput(taskId);
+        TaskDetailDTO.OutputInfo outputSummaryInfo = extractMainOutput(outputDetailInfoList);
         List<TaskDetailDTO.UploadedFileInfo> uploadedFileInfoList = loadUploadedFiles(taskId);
 
         TaskDetailDTO dto = TaskDetailDTO.builder()
@@ -433,24 +433,14 @@ public class TaskDetailReaderImpl implements TaskDetailReader {
                 .collect(Collectors.toList());
     }
 
-    private TaskDetailDTO.OutputInfo extractMainOutput(Long taskId) {
-        List<TaskOutputEntity> outputs = taskOutputMapper.selectList(
-                new LambdaQueryWrapper<TaskOutputEntity>().eq(TaskOutputEntity::getTaskId, taskId)
-        );
-        TaskOutputEntity main = outputs.stream()
+    private TaskDetailDTO.OutputInfo extractMainOutput(List<TaskDetailDTO.OutputInfo> outputs) {
+        if (outputs == null || outputs.isEmpty()) {
+            return null;
+        }
+        return outputs.stream()
                 .filter(o -> o.getOutputType() != null && o.getOutputType() == 1)
                 .findFirst()
-                .orElse(outputs.isEmpty() ? null : outputs.get(0));
-        if (main == null) return null;
-        return TaskDetailDTO.OutputInfo.builder()
-                .title(main.getTitle())
-                .desc(main.getDescription() != null ? main.getDescription() : "")
-                .url("/v1/task/output/download/" + main.getId())
-                .sizeDesc(main.getSizeDesc() != null ? main.getSizeDesc() : "")
-                .pageSize(main.getPageSize() != null ? main.getPageSize() : 0)
-                .format(main.getFormat() != null && main.getFormat() <= 4 ? main.getFormat() : 4)
-                .outputType(main.getOutputType() != null ? main.getOutputType() : 0)
-                .build();
+                .orElse(outputs.get(0));
     }
 
     private List<TaskDetailDTO.UploadedFileInfo> loadUploadedFiles(Long taskId) {

@@ -447,6 +447,21 @@ class VerlaTurnOrchestratorTest {
         public int countActiveAssignmentRuns() {
             return 0;
         }
+
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
+
+        @Override
+        public List<VerlaSession> findByIds(List<Long> sessionIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+            return Map.of();
+        }
     }
 
     private static AnalyticsService mockAnalyticsService() {
@@ -486,6 +501,16 @@ class VerlaTurnOrchestratorTest {
                 return List.of(turn);
             }
             return List.of();
+        }
+
+        @Override
+        public List<VerlaTurn> findByIds(List<Long> turnIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+            return Map.of();
         }
     }
 
@@ -770,6 +795,11 @@ class VerlaTurnOrchestratorTest {
 
         @Override
         public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
+        }
+
+        @Override
+        public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
         }
     }

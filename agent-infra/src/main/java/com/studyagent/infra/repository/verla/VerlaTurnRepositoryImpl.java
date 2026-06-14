@@ -7,7 +7,10 @@ import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Repository
@@ -37,6 +40,31 @@ public class VerlaTurnRepositoryImpl
     public List<VerlaTurn> findRecentByConversation(Long conversationId, int limit) {
         return this.baseMapper.selectRecentByConversation(conversationId, limit)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<VerlaTurn> findByIds(List<Long> turnIds) {
+        if (turnIds == null || turnIds.isEmpty()) {
+            return List.of();
+        }
+        return this.listByIds(turnIds).stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = conversationIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return this.baseMapper.selectRecentByConversationIds(ids).stream()
+                .map(this::toDomain)
+                .collect(Collectors.groupingBy(VerlaTurn::getConversationId, LinkedHashMap::new, Collectors.toList()));
     }
 
     private VerlaTurn toDomain(VerlaTurnEntity e) {

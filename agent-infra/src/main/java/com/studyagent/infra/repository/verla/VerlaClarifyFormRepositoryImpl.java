@@ -9,7 +9,9 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Repository
@@ -76,6 +78,23 @@ public class VerlaClarifyFormRepositoryImpl
     public List<VerlaClarifyForm> findOpenByConversation(Long conversationId) {
         return this.baseMapper.selectOpenByConversation(conversationId)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<Long, List<VerlaClarifyForm>> findOpenByConversationIds(List<Long> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = conversationIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return this.baseMapper.selectOpenByConversationIds(ids).stream()
+                .map(this::toDomain)
+                .collect(Collectors.groupingBy(VerlaClarifyForm::getConversationId, LinkedHashMap::new, Collectors.toList()));
     }
 
     @Override

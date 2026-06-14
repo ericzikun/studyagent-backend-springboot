@@ -10,7 +10,11 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Repository
@@ -75,6 +79,26 @@ public class VerlaEventInboxRepositoryImpl
         int safe = Math.max(1, Math.min(limit, 500));
         return this.baseMapper.selectRecentProcessed(conversationId, safe)
                 .stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public Map<Long, List<VerlaEventInbox>> findRecentProcessedByConversationIds(
+            List<Long> conversationIds, int limitPerConversation) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        int safeLimit = Math.max(1, Math.min(limitPerConversation, 100));
+        List<Long> ids = conversationIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return this.baseMapper.selectRecentProcessedByConversationIds(ids, safeLimit)
+                .stream()
+                .map(this::toDomain)
+                .collect(Collectors.groupingBy(VerlaEventInbox::getConversationId, LinkedHashMap::new, Collectors.toList()));
     }
 
     @Override

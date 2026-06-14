@@ -52,11 +52,34 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
                                              @Param("afterId") Long afterId,
                                              @Param("limit") int limit);
 
-    @Select("SELECT * FROM verla_event_inbox "
+    @Select("SELECT id, message_id, correlation_id, conversation_id, turn_id, session_id, "
+            + "event_seq, event_type, step_id, step_seq, payload_json, status, "
+            + "error_message, received_at, processed_at "
+            + "FROM verla_event_inbox "
             + "WHERE conversation_id = #{cid} AND status = 'PROCESSED' "
             + "ORDER BY id DESC LIMIT #{limit}")
     List<VerlaEventInboxEntity> selectRecentProcessed(@Param("cid") Long conversationId,
                                                       @Param("limit") int limit);
+
+    /**
+     * Dashboard 批量状态：每个 conversation 取最近 N 条 PROCESSED 事件（MySQL 8 窗口函数）。
+     */
+    @Select("<script>"
+            + "SELECT id, message_id, correlation_id, conversation_id, turn_id, session_id, "
+            + "event_seq, event_type, step_id, step_seq, payload_json, status, "
+            + "error_message, received_at, processed_at "
+            + "FROM ("
+            + "  SELECT *, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY id DESC) AS rn "
+            + "  FROM verla_event_inbox "
+            + "  WHERE status = 'PROCESSED' "
+            + "  AND conversation_id IN "
+            + "  <foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>"
+            + ") ranked WHERE rn &lt;= #{limitPerConversation} "
+            + "ORDER BY conversation_id, id DESC"
+            + "</script>")
+    List<VerlaEventInboxEntity> selectRecentProcessedByConversationIds(
+            @Param("conversationIds") List<Long> conversationIds,
+            @Param("limitPerConversation") int limitPerConversation);
 
     @Select("SELECT * FROM verla_event_inbox "
             + "WHERE session_id = #{sessionId} AND status = 'PROCESSED' "

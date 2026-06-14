@@ -3,6 +3,7 @@ package com.studyagent.service.domain.verla.repo;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla 事件 inbox 仓储接口
@@ -45,6 +46,12 @@ public interface VerlaEventInboxRepository {
      * Dashboard 状态快照：取某个 conversation 最近处理完成的 Py/SSE 事件，按 id 倒序。
      */
     List<VerlaEventInbox> findRecentProcessedByConversation(Long conversationId, int limit);
+
+    /**
+     * Dashboard 批量状态：一次查询多个 conversation 的最近 PROCESSED 事件。
+     */
+    Map<Long, List<VerlaEventInbox>> findRecentProcessedByConversationIds(
+            List<Long> conversationIds, int limitPerConversation);
 
     /**
      * 某 session 最近一条已处理事件（运维看板用）。

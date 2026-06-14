@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -328,6 +329,19 @@ class VerlaConversationDashboardStatusServiceTest {
         }
 
         @Override
+        public Map<Long, List<VerlaEventInbox>> findRecentProcessedByConversationIds(
+                List<Long> conversationIds, int limitPerConversation) {
+            Map<Long, List<VerlaEventInbox>> result = new LinkedHashMap<>();
+            if (conversationIds == null) {
+                return result;
+            }
+            for (Long conversationId : conversationIds) {
+                result.put(conversationId, findRecentProcessedByConversation(conversationId, limitPerConversation));
+            }
+            return result;
+        }
+
+        @Override
         public VerlaEventInbox findLatestProcessedBySession(Long sessionId) {
             return null;
         }
@@ -358,6 +372,26 @@ class VerlaConversationDashboardStatusServiceTest {
             return byConversation.getOrDefault(conversationId, List.of()).stream()
                     .limit(limit)
                     .toList();
+        }
+
+        @Override
+        public List<VerlaTurn> findByIds(List<Long> turnIds) {
+            if (turnIds == null) {
+                return List.of();
+            }
+            return turnIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+        }
+
+        @Override
+        public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+            Map<Long, List<VerlaTurn>> result = new LinkedHashMap<>();
+            if (conversationIds == null) {
+                return result;
+            }
+            for (Long conversationId : conversationIds) {
+                result.put(conversationId, findRecentByConversation(conversationId, 20));
+            }
+            return result;
         }
     }
 
@@ -410,6 +444,26 @@ class VerlaConversationDashboardStatusServiceTest {
         public int countActiveCapabilityRuns(String action) {
             return 0;
         }
+
+        @Override
+        public List<VerlaSession> findByIds(List<Long> sessionIds) {
+            if (sessionIds == null) {
+                return List.of();
+            }
+            return sessionIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+        }
+
+        @Override
+        public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+            Map<Long, List<VerlaSession>> result = new LinkedHashMap<>();
+            if (turnIds == null) {
+                return result;
+            }
+            for (Long turnId : turnIds) {
+                result.put(turnId, findByTurn(turnId));
+            }
+            return result;
+        }
     }
 
     private static class FakeClarifyFormRepository implements VerlaClarifyFormRepository {
@@ -433,6 +487,18 @@ class VerlaConversationDashboardStatusServiceTest {
         @Override
         public List<VerlaClarifyForm> findOpenByConversation(Long conversationId) {
             return new ArrayList<>(openByConversation.getOrDefault(conversationId, List.of()));
+        }
+
+        @Override
+        public Map<Long, List<VerlaClarifyForm>> findOpenByConversationIds(List<Long> conversationIds) {
+            Map<Long, List<VerlaClarifyForm>> result = new LinkedHashMap<>();
+            if (conversationIds == null) {
+                return result;
+            }
+            for (Long conversationId : conversationIds) {
+                result.put(conversationId, findOpenByConversation(conversationId));
+            }
+            return result;
         }
 
         @Override

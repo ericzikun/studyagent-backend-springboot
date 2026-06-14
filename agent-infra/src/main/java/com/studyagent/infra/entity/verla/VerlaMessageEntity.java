@@ -42,6 +42,9 @@ public class VerlaMessageEntity {
 
     private String metaJson;
 
+    /** 冗余列：FILE_CHAT / ASSIGNMENT_CHAT / null=主对话 */
+    private String scene;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

@@ -18,9 +18,15 @@ import com.studyagent.service.domain.verla.state.TurnStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Derives the Dashboard-facing task status for Verla conversation history.
@@ -33,6 +39,9 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class VerlaConversationDashboardStatusService {
+
+    private static final int EVENT_SCAN_LIMIT = 30;
+    private static final int TURN_SCAN_LIMIT = 20;
 
     public static final String STATUS_PROGRESSING = "progressing";
     public static final String STATUS_NEEDS_CHOICE = "needs-choice";
@@ -47,16 +56,22 @@ public class VerlaConversationDashboardStatusService {
 
     /**
      * Builds a per-conversation status map for paged Dashboard history rows.
+     * 批量预取 event/turn/session/clarify，避免 N+1（pageSize=20 时从 ~100 次 DB 降至 ~5 次）。
      */
     public Map<Long, String> resolveAll(List<VerlaConversation> conversations) {
         Map<Long, String> statuses = new LinkedHashMap<>();
-        if (conversations == null) {
+        if (conversations == null || conversations.isEmpty()) {
             return statuses;
         }
-        for (VerlaConversation conversation : conversations) {
-            if (conversation != null && conversation.getId() != null) {
-                statuses.put(conversation.getId(), resolve(conversation));
-            }
+        List<VerlaConversation> valid = conversations.stream()
+                .filter(c -> c != null && c.getId() != null)
+                .toList();
+        if (valid.isEmpty()) {
+            return statuses;
+        }
+        DashboardBatchContext batch = prefetch(valid);
+        for (VerlaConversation conversation : valid) {
+            statuses.put(conversation.getId(), resolve(conversation, batch));
         }
         return statuses;
     }
@@ -65,6 +80,13 @@ public class VerlaConversationDashboardStatusService {
      * Derives the Dashboard card status from task phase signals.
      */
     public String resolve(VerlaConversation conversation) {
+        if (conversation == null || conversation.getId() == null) {
+            return STATUS_PROGRESSING;
+        }
+        return resolve(conversation, prefetch(List.of(conversation)));
+    }
+
+    private String resolve(VerlaConversation conversation, DashboardBatchContext batch) {
         if (conversation == null) {
             return STATUS_PROGRESSING;
         }
@@ -72,25 +94,25 @@ public class VerlaConversationDashboardStatusService {
             return STATUS_NEEDS_CHOICE;
         }
 
-        String eventStatus = resolveFromLatestEvents(conversation);
+        String eventStatus = resolveFromLatestEvents(conversation.getId(), batch.eventsByConversation());
         if (eventStatus != null) {
             return eventStatus;
         }
 
-        VerlaTurn turn = findLatestTurn(conversation);
+        VerlaTurn turn = findLatestTurn(conversation, batch);
         if (turn == null) {
             return STATUS_PROGRESSING;
         }
 
         TurnStatus turnStatus = parseTurnStatus(turn.getStatus());
-        if (turnStatus == TurnStatus.AWAITING_CLARIFY || hasOpenClarifyForm(conversation.getId())) {
+        if (turnStatus == TurnStatus.AWAITING_CLARIFY || hasOpenClarifyForm(conversation.getId(), batch)) {
             return STATUS_NEEDS_CHOICE;
         }
         if (turnStatus == TurnStatus.FAILED || turnStatus == TurnStatus.CANCELLED) {
             return STATUS_FAILED;
         }
 
-        VerlaSession session = findRelevantSession(turn);
+        VerlaSession session = findRelevantSession(turn, batch);
         SessionStatus sessionStatus = parseSessionStatus(session == null ? null : session.getStatus());
         if (sessionStatus == SessionStatus.FAILED || sessionStatus == SessionStatus.CANCELLED) {
             return STATUS_FAILED;
@@ -114,13 +136,118 @@ public class VerlaConversationDashboardStatusService {
         return STATUS_PROGRESSING;
     }
 
-    private String resolveFromLatestEvents(VerlaConversation conversation) {
-        if (conversation.getId() == null) {
+    private DashboardBatchContext prefetch(List<VerlaConversation> conversations) {
+        List<Long> conversationIds = conversations.stream()
+                .map(VerlaConversation::getId)
+                .toList();
+
+        Map<Long, List<VerlaEventInbox>> eventsByConversation =
+                eventInboxRepository.findRecentProcessedByConversationIds(conversationIds, EVENT_SCAN_LIMIT);
+
+        Set<Long> lastTurnIds = conversations.stream()
+                .map(VerlaConversation::getLastTurnId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+
+        Map<Long, List<VerlaTurn>> turnsByConversation =
+                turnRepository.findRecentByConversationIds(conversationIds);
+
+        Set<Long> sessionIds = new HashSet<>();
+        for (VerlaConversation conversation : conversations) {
+            if (conversation.getLastTurnId() != null) {
+                VerlaTurn cached = findTurnById(conversation.getLastTurnId(), turnsByConversation, lastTurnIds);
+                collectSessionIds(cached, sessionIds);
+            }
+        }
+        for (List<VerlaTurn> turns : turnsByConversation.values()) {
+            for (VerlaTurn turn : limitTurns(turns, TURN_SCAN_LIMIT)) {
+                collectSessionIds(turn, sessionIds);
+            }
+        }
+
+        Map<Long, VerlaTurn> turnsById = new HashMap<>();
+        if (!lastTurnIds.isEmpty()) {
+            for (VerlaTurn turn : turnRepository.findByIds(new ArrayList<>(lastTurnIds))) {
+                if (turn != null && turn.getId() != null) {
+                    turnsById.put(turn.getId(), turn);
+                    collectSessionIds(turn, sessionIds);
+                }
+            }
+        }
+
+        Map<Long, VerlaSession> sessionsById = sessionRepository.findByIds(new ArrayList<>(sessionIds)).stream()
+                .filter(s -> s != null && s.getId() != null)
+                .collect(Collectors.toMap(VerlaSession::getId, Function.identity(), (a, b) -> a, LinkedHashMap::new));
+
+        Set<Long> turnIdsForSessions = new HashSet<>();
+        for (List<VerlaTurn> turns : turnsByConversation.values()) {
+            for (VerlaTurn turn : limitTurns(turns, TURN_SCAN_LIMIT)) {
+                if (turn.getId() != null) {
+                    turnIdsForSessions.add(turn.getId());
+                }
+            }
+        }
+        turnIdsForSessions.addAll(lastTurnIds);
+
+        Map<Long, List<VerlaSession>> sessionsByTurn = turnIdsForSessions.isEmpty()
+                ? Map.of()
+                : sessionRepository.findByTurnIds(new ArrayList<>(turnIdsForSessions));
+
+        Map<Long, List<VerlaClarifyForm>> openFormsByConversation =
+                clarifyFormRepository.findOpenByConversationIds(conversationIds);
+
+        return new DashboardBatchContext(
+                eventsByConversation,
+                turnsByConversation,
+                turnsById,
+                sessionsById,
+                sessionsByTurn,
+                openFormsByConversation);
+    }
+
+    private void collectSessionIds(VerlaTurn turn, Set<Long> sessionIds) {
+        if (turn == null) {
+            return;
+        }
+        if (turn.getActiveSessionId() != null) {
+            sessionIds.add(turn.getActiveSessionId());
+        }
+        if (turn.getAgentSessionId() != null) {
+            sessionIds.add(turn.getAgentSessionId());
+        }
+        if (turn.getPlanSessionId() != null) {
+            sessionIds.add(turn.getPlanSessionId());
+        }
+    }
+
+    private VerlaTurn findTurnById(Long turnId, Map<Long, List<VerlaTurn>> turnsByConversation,
+                                   Set<Long> lastTurnIds) {
+        if (turnId == null) {
             return null;
         }
-        List<VerlaEventInbox> events =
-                eventInboxRepository.findRecentProcessedByConversation(conversation.getId(), 30);
-        if (events == null || events.isEmpty()) {
+        for (List<VerlaTurn> turns : turnsByConversation.values()) {
+            for (VerlaTurn turn : turns) {
+                if (turnId.equals(turn.getId())) {
+                    return turn;
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<VerlaTurn> limitTurns(List<VerlaTurn> turns, int limit) {
+        if (turns == null || turns.isEmpty()) {
+            return List.of();
+        }
+        return turns.size() <= limit ? turns : turns.subList(0, limit);
+    }
+
+    private String resolveFromLatestEvents(Long conversationId, Map<Long, List<VerlaEventInbox>> eventsByConversation) {
+        if (conversationId == null) {
+            return null;
+        }
+        List<VerlaEventInbox> events = eventsByConversation.getOrDefault(conversationId, List.of());
+        if (events.isEmpty()) {
             return null;
         }
         for (VerlaEventInbox event : events) {
@@ -178,7 +305,6 @@ public class VerlaConversationDashboardStatusService {
                     FILE_CHAT_FAILED, FILE_CHAT_CANCELLED -> null;
             case ASSIGNMENT_CHAT_STARTED, ASSIGNMENT_CHAT_STREAM_CHUNK, ASSIGNMENT_CHAT_COMPLETED,
                     ASSIGNMENT_CHAT_FAILED, ASSIGNMENT_CHAT_CANCELLED -> null;
-            // write 编辑提案是 chat turn 内部子生命周期，不参与 dashboard 状态汇总。
             case ARTIFACT_EDIT_PROPOSAL_STARTED, ARTIFACT_EDIT_PROPOSAL_READY,
                     ARTIFACT_EDIT_PROPOSAL_FAILED -> null;
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
@@ -199,17 +325,20 @@ public class VerlaConversationDashboardStatusService {
         }
     }
 
-    private boolean hasOpenClarifyForm(Long conversationId) {
+    private boolean hasOpenClarifyForm(Long conversationId, DashboardBatchContext batch) {
         if (conversationId == null) {
             return false;
         }
-        List<VerlaClarifyForm> forms = clarifyFormRepository.findOpenByConversation(conversationId);
-        return forms != null && !forms.isEmpty();
+        List<VerlaClarifyForm> forms = batch.openFormsByConversation().getOrDefault(conversationId, List.of());
+        return !forms.isEmpty();
     }
 
-    private VerlaTurn findLatestTurn(VerlaConversation conversation) {
+    private VerlaTurn findLatestTurn(VerlaConversation conversation, DashboardBatchContext batch) {
         if (conversation.getLastTurnId() != null) {
-            VerlaTurn turn = turnRepository.findById(conversation.getLastTurnId());
+            VerlaTurn turn = batch.turnsById().get(conversation.getLastTurnId());
+            if (turn == null) {
+                turn = findTurnById(conversation.getLastTurnId(), batch.turnsByConversation(), Set.of());
+            }
             if (turn != null && !isFileChatTurn(turn)) {
                 return turn;
             }
@@ -217,8 +346,10 @@ public class VerlaConversationDashboardStatusService {
         if (conversation.getId() == null) {
             return null;
         }
-        List<VerlaTurn> turns = turnRepository.findRecentByConversation(conversation.getId(), 20);
-        if (turns == null || turns.isEmpty()) {
+        List<VerlaTurn> turns = limitTurns(
+                batch.turnsByConversation().getOrDefault(conversation.getId(), List.of()),
+                TURN_SCAN_LIMIT);
+        if (turns.isEmpty()) {
             return null;
         }
         for (VerlaTurn turn : turns) {
@@ -229,7 +360,7 @@ public class VerlaConversationDashboardStatusService {
         return turns.get(0);
     }
 
-    private VerlaSession findRelevantSession(VerlaTurn turn) {
+    private VerlaSession findRelevantSession(VerlaTurn turn, DashboardBatchContext batch) {
         Long[] preferredSessionIds = {
                 turn.getActiveSessionId(),
                 turn.getAgentSessionId(),
@@ -239,7 +370,7 @@ public class VerlaConversationDashboardStatusService {
             if (sessionId == null) {
                 continue;
             }
-            VerlaSession session = sessionRepository.findById(sessionId);
+            VerlaSession session = batch.sessionsById().get(sessionId);
             if (session != null) {
                 return session;
             }
@@ -247,8 +378,8 @@ public class VerlaConversationDashboardStatusService {
         if (turn.getId() == null) {
             return null;
         }
-        List<VerlaSession> sessions = sessionRepository.findByTurn(turn.getId());
-        return sessions == null || sessions.isEmpty() ? null : sessions.get(sessions.size() - 1);
+        List<VerlaSession> sessions = batch.sessionsByTurn().getOrDefault(turn.getId(), List.of());
+        return sessions.isEmpty() ? null : sessions.get(sessions.size() - 1);
     }
 
     private TurnStatus parseTurnStatus(String raw) {
@@ -295,5 +426,14 @@ public class VerlaConversationDashboardStatusService {
         } catch (IllegalArgumentException ex) {
             return null;
         }
+    }
+
+    private record DashboardBatchContext(
+            Map<Long, List<VerlaEventInbox>> eventsByConversation,
+            Map<Long, List<VerlaTurn>> turnsByConversation,
+            Map<Long, VerlaTurn> turnsById,
+            Map<Long, VerlaSession> sessionsById,
+            Map<Long, List<VerlaSession>> sessionsByTurn,
+            Map<Long, List<VerlaClarifyForm>> openFormsByConversation) {
     }
 }

@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 public class VerlaContextCacheRepositoryConfig {
@@ -45,6 +46,16 @@ public class VerlaContextCacheRepositoryConfig {
             @Override
             public List<VerlaSession> findByTurn(Long turnId) {
                 return delegate.findByTurn(turnId);
+            }
+
+            @Override
+            public List<VerlaSession> findByIds(List<Long> sessionIds) {
+                return delegate.findByIds(sessionIds);
+            }
+
+            @Override
+            public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+                return delegate.findByTurnIds(turnIds);
             }
 
             @Override
@@ -106,6 +117,16 @@ public class VerlaContextCacheRepositoryConfig {
             @Override
             public List<VerlaTurn> findRecentByConversation(Long conversationId, int limit) {
                 return delegate.findRecentByConversation(conversationId, limit);
+            }
+
+            @Override
+            public List<VerlaTurn> findByIds(List<Long> turnIds) {
+                return delegate.findByIds(turnIds);
+            }
+
+            @Override
+            public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+                return delegate.findRecentByConversationIds(conversationIds);
             }
         };
     }

@@ -49,7 +49,7 @@ server:
     connection-timeout: 300000  # 连接超时 300 秒（5分钟），增加以支持大响应传输
     max-connections: 10000      # 最大连接数
     threads:
-      max: ${SERVER_TOMCAT_THREADS_MAX:400}   # 200 → 400，支撑 Dashboard + SSE 高峰
+      max: ${SERVER_TOMCAT_THREADS_MAX:400}   # 支撑 Dashboard + SSE 高峰并发
       min-spare: 10             # 最小空闲线程数
     max-http-form-post-size: 104857600  # POST 表单最大大小 100MB (100 * 1024 * 1024)
     max-http-response-header-size: 8KB  # 响应头最大大小

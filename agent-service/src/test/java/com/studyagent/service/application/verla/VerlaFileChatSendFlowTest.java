@@ -616,6 +616,17 @@ class VerlaFileChatSendFlowTest {
                     .map(VerlaFileChatSendFlowTest::copyTurn)
                     .toList();
         }
+
+        @Override
+        public List<VerlaTurn> findByIds(List<Long> turnIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+            return com.studyagent.service.application.verla.support.VerlaRepositoryTestDoubles
+                    .batchRecentTurns(conversationIds, id -> findRecentByConversation(id, 20));
+        }
     }
 
     private static final class FakeSessionRepository implements VerlaSessionRepository {
@@ -672,6 +683,17 @@ class VerlaFileChatSendFlowTest {
         @Override
         public int countActiveCapabilityRuns(String action) {
             return 0;
+        }
+
+        @Override
+        public List<VerlaSession> findByIds(List<Long> sessionIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+            return com.studyagent.service.application.verla.support.VerlaRepositoryTestDoubles
+                    .batchSessionsByTurn(turnIds, this::findByTurn);
         }
 
     }

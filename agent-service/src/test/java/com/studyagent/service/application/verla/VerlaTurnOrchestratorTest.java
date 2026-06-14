@@ -452,6 +452,16 @@ class VerlaTurnOrchestratorTest {
         public int countActiveCapabilityRuns(String action) {
             return 0;
         }
+
+        @Override
+        public List<VerlaSession> findByIds(List<Long> sessionIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds) {
+            return Map.of();
+        }
     }
 
     private static AnalyticsService mockAnalyticsService() {
@@ -491,6 +501,16 @@ class VerlaTurnOrchestratorTest {
                 return List.of(turn);
             }
             return List.of();
+        }
+
+        @Override
+        public List<VerlaTurn> findByIds(List<Long> turnIds) {
+            return List.of();
+        }
+
+        @Override
+        public Map<Long, List<VerlaTurn>> findRecentByConversationIds(List<Long> conversationIds) {
+            return Map.of();
         }
     }
 

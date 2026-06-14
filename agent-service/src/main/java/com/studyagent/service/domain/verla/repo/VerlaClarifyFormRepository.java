@@ -3,6 +3,7 @@ package com.studyagent.service.domain.verla.repo;
 import com.studyagent.service.domain.verla.VerlaClarifyForm;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla 澄清问卷仓储接口（V2）。
@@ -24,6 +25,8 @@ public interface VerlaClarifyFormRepository {
 
     /** 当前 conversation 下尚未关闭的问卷，前端入会时可批量恢复 */
     List<VerlaClarifyForm> findOpenByConversation(Long conversationId);
+
+    Map<Long, List<VerlaClarifyForm>> findOpenByConversationIds(List<Long> conversationIds);
 
     /**
      * 关闭问卷：写 submittedAt + submittedResponseId + status=SUBMITTED。

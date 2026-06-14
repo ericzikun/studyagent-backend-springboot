@@ -386,6 +386,11 @@ class VerlaInternalControllerTest {
         public int countActiveAssignmentRuns() {
             return 0;
         }
+
+        @Override
+        public int countActiveCapabilityRuns(String action) {
+            return 0;
+        }
     }
 
     private static class NoopArtifactRepository implements VerlaArtifactRepository {

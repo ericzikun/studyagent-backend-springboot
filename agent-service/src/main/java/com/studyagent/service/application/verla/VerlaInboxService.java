@@ -105,6 +105,15 @@ public class VerlaInboxService {
         Long convId = env.getConversation().getConversationId();
         Long turnId = env.getTurn().getTurnId();
         long incomingSeq = env.getEventSeq();
+        log.info("[RDS-debug][java][inbox] ingest_received sessionId={} convId={} turnId={} seq={} type={} stepId={} stepSeq={} messageId={}",
+                sessionId,
+                convId,
+                turnId,
+                incomingSeq,
+                env.getEventType(),
+                env.getStep() == null ? null : env.getStep().getStepId(),
+                env.getStep() == null ? null : env.getStep().getStepSeq(),
+                env.getMessageId());
 
         VerlaEventCursor cursor = cursorRepository.lockOrInit(sessionId, convId, turnId);
         long expected = cursor.getNextExpectedSeq();
@@ -189,6 +198,11 @@ public class VerlaInboxService {
                 if (!isInternalCodeFileArtifactEvent(ready, env)) {
                     ssePending.add(toSsePayload(ready, env));
                 }
+                log.info("[RDS-debug][java][inbox] event_processed sessionId={} seq={} type={} inboxId={}",
+                        sessionId,
+                        ready.getEventSeq(),
+                        ready.getEventType(),
+                        ready.getId());
                 lastProcessed = seq;
                 seq++;
                 batched++;

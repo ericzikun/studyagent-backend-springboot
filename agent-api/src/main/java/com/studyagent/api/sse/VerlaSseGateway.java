@@ -198,6 +198,11 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     .id(String.valueOf(payload.getId()))
                     .name("verla")
                     .data(payload, MediaType.APPLICATION_JSON));
+            log.info("[RDS-debug][java][sse] send_success cid={} sessionId={} type={} inboxRowId={}",
+                    conversationId,
+                    payload.getSessionId(),
+                    payload.getType(),
+                    payload.getId());
         } catch (IOException ioe) {
             log.debug("[Verla/sse] send io fail (likely disconnected) cid={} id={}: {}",
                     conversationId, payload.getId(), ioe.getMessage());

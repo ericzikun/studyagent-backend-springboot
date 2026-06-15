@@ -508,4 +508,27 @@ public class WebhookController {
         }
     }
 
+    private Map<String, Object> buildBillingPaymentProps(
+            String sessionId,
+            String paymentIntentId,
+            String packageType,
+            String featureCode,
+            long quotaAmount,
+            int priceCents,
+            String currency,
+            String customerEmail) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("session_id", sessionId);
+        props.put("checkout_session_id", sessionId);
+        props.put("payment_intent_id", paymentIntentId);
+        props.put("package_type", packageType);
+        props.put("plan_id", packageType);
+        props.put("feature_code", featureCode);
+        props.put("quota_amount", quotaAmount);
+        props.put("price_cents", priceCents);
+        props.put("currency", currency);
+        props.put("customer_email", customerEmail);
+        return props;
+    }
+
 }

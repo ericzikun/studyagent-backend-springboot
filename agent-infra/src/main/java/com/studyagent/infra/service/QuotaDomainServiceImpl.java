@@ -1,7 +1,7 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.google.gson.Gson;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
 import com.studyagent.service.domain.quota.ConsumeResult;
@@ -21,6 +21,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
@@ -36,17 +38,26 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class QuotaDomainServiceImpl implements QuotaDomainService {
+    private static final Gson GSON = new Gson();
 
     private final AiFeatureDefsMapper aiFeatureDefsMapper;
     private final AiFeaturePackageMapper aiFeaturePackageMapper;
     private final UserAiQuotaMapper userAiQuotaMapper;
     private final QuotaLedgerMapper quotaLedgerMapper;
+    private final UserAddonGrantMapper userAddonGrantMapper;
+    private final QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
 
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
     private static final String LEDGER_TYPE_FREE_REFRESH = "free_refresh";
+    private static final String POOL_TYPE_FREE = "free";
+    private static final String POOL_TYPE_PLAN = "plan";
+    private static final String POOL_TYPE_ADDON = "addon";
+    private static final String POOL_TYPE_LEGACY = "legacy";
+    private static final String POOL_TYPE_COMPENSATION = "compensation";
     private static final String SOURCE_TYPE_SYSTEM = "system";
+    private static final String LEDGER_TYPE_COMPENSATION_GRANT = "compensation_grant";
     private static final String PERIOD_MONTHLY = "monthly";
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
@@ -76,7 +87,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (quota == null) {
             // 新用户：返回免费额度（尚未持久化，consume 时会创建）
             long freeBalance = freeQuotaAmount;
-            long paidBalance = 0L;
+            long nonFreeBalance = 0L;
             LocalDateTime periodEnd = computePeriodEnd(LocalDateTime.now(), featureDef.getFreeQuotaPeriod());
             return new QuotaBalance(
                     featureCode,
@@ -85,8 +96,12 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                     freeBalance,
                     freeQuotaAmount,
                     periodEnd,
-                    paidBalance,
-                    freeBalance + paidBalance
+                    0L,
+                    null,
+                    0L,
+                    List.of(),
+                    0L,
+                    freeBalance + nonFreeBalance
             );
         }
 
@@ -95,8 +110,17 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        long paidBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+        long legacyBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        List<UserAddonGrantEntity> addonGrants = findAddonGrantsForBalance(clerkUserId, featureCode);
+        long addonBalance = addonGrants.stream()
+                .filter(this::isGrantConsumable)
+                .map(UserAddonGrantEntity::getRemainingAmount)
+                .filter(value -> value != null && value > 0)
+                .mapToLong(Long::longValue)
+                .sum();
         LocalDateTime periodEnd = quota.getFreePeriodEnd();
+        long nonFreeBalance = planBalance + addonBalance + legacyBalance;
 
         return new QuotaBalance(
                 featureCode,
@@ -105,8 +129,12 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 freeBalance,
                 freeQuotaAmount,
                 periodEnd,
-                paidBalance,
-                freeBalance + paidBalance
+                planBalance,
+                quota.getPlanPeriodEnd(),
+                addonBalance,
+                addonGrants.stream().map(this::toAddonBalanceItem).collect(Collectors.toList()),
+                legacyBalance,
+                freeBalance + nonFreeBalance
         );
     }
 
@@ -167,6 +195,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             quota.setClerkUserId(clerkUserId);
             quota.setFeatureCode(featureCode);
             quota.setFreeBalance(freeQuotaAmount);
+            quota.setPlanBalance(0L);
             quota.setPaidBalance(0L);
             quota.setVersion(0);
             LocalDateTime periodStart = now;
@@ -181,37 +210,86 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         }
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        long paidBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
-        long totalAvailable = freeBalance + paidBalance;
+        long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+        long legacyBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        List<UserAddonGrantEntity> activeAddonGrants = findActiveAddonGrants(clerkUserId, featureCode, now);
+        long addonBalance = activeAddonGrants.stream()
+                .map(UserAddonGrantEntity::getRemainingAmount)
+                .filter(value -> value != null && value > 0)
+                .mapToLong(Long::longValue)
+                .sum();
+        long totalAvailable = freeBalance + planBalance + addonBalance + legacyBalance;
 
         if (totalAvailable < amount) {
             throw new IllegalStateException(
-                    String.format("Insufficient quota: need %d, available %d (free=%d, paid=%d)",
-                            amount, totalAvailable, freeBalance, paidBalance));
+                    String.format("Insufficient quota: need %d, available %d (free=%d, plan=%d, addon=%d, legacy=%d)",
+                            amount, totalAvailable, freeBalance, planBalance, addonBalance, legacyBalance));
         }
 
-        // 3. 扣减：先扣免费，再扣付费
-        long fromFree = Math.min(freeBalance, amount);
-        long fromPaid = amount - fromFree;
-
+        // 3. 扣减：free -> plan -> addon -> legacy
+        long remaining = amount;
+        long fromFree = Math.min(freeBalance, remaining);
+        remaining -= fromFree;
         long newFreeBalance = freeBalance - fromFree;
-        long newPaidBalance = paidBalance - fromPaid;
-        boolean fromFreeFlag = fromFree > 0;
+
+        long fromPlan = Math.min(planBalance, remaining);
+        remaining -= fromPlan;
+        long newPlanBalance = planBalance - fromPlan;
+
+        List<QuotaLedgerAllocationEntity> allocations = new ArrayList<>();
+        if (fromFree > 0) {
+            allocations.add(newAllocation(POOL_TYPE_FREE, null, fromFree, now, quota.getFreePeriodEnd()));
+        }
+        if (fromPlan > 0) {
+            allocations.add(newAllocation(POOL_TYPE_PLAN, null, fromPlan, now, quota.getPlanPeriodEnd()));
+        }
+
+        long addonConsumed = 0L;
+        for (UserAddonGrantEntity grant : activeAddonGrants) {
+            if (remaining <= 0) {
+                break;
+            }
+            long grantRemaining = grant.getRemainingAmount() != null ? grant.getRemainingAmount() : 0L;
+            if (grantRemaining <= 0) {
+                continue;
+            }
+            long consumeFromGrant = Math.min(grantRemaining, remaining);
+            remaining -= consumeFromGrant;
+            addonConsumed += consumeFromGrant;
+            grant.setRemainingAmount(grantRemaining - consumeFromGrant);
+            if (grant.getRemainingAmount() <= 0) {
+                grant.setRemainingAmount(0L);
+                grant.setStatus("depleted");
+            }
+            updateAddonGrantOrThrow(grant, "consume add-on grant");
+            allocations.add(newAllocation(POOL_TYPE_ADDON, grant.getId(), consumeFromGrant, now, grant.getExpiresAt()));
+        }
+
+        long fromLegacy = remaining;
+        long newLegacyBalance = legacyBalance - fromLegacy;
+        if (fromLegacy > 0) {
+            allocations.add(newAllocation(POOL_TYPE_LEGACY, null, fromLegacy, now, null));
+        }
+        if (newLegacyBalance < 0) {
+            throw new IllegalStateException("Legacy balance became negative after allocation");
+        }
+
+        long newAddonBalance = addonBalance - addonConsumed;
 
         // 4. 更新 user_ai_quotas
-        userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
-                .eq(UserAiQuotaEntity::getId, quota.getId())
-                .set(UserAiQuotaEntity::getFreeBalance, newFreeBalance)
-                .set(UserAiQuotaEntity::getPaidBalance, newPaidBalance)
-                .set(UserAiQuotaEntity::getUpdatedAt, now)
-                .setSql("version = version + 1"));
+        quota.setFreeBalance(newFreeBalance);
+        quota.setPlanBalance(newPlanBalance);
+        quota.setPaidBalance(newLegacyBalance);
+        quota.setUpdatedAt(now);
+        updateQuotaOrThrow(quota, "consume");
 
         // 5. 写入消费流水（amount 为负数表示扣减）
         Map<String, Object> ctx = bizContext != null ? new HashMap<>(bizContext) : new HashMap<>();
         ctx.put("consumed", amount);
-        ctx.put("from_free", fromFreeFlag);
         ctx.put("from_free_amount", fromFree);
-        ctx.put("from_paid_amount", fromPaid);
+        ctx.put("from_plan_amount", fromPlan);
+        ctx.put("from_addon_amount", addonConsumed);
+        ctx.put("from_paid_amount", fromLegacy);
 
         QuotaLedgerEntity ledger = new QuotaLedgerEntity();
         ledger.setLedgerNo(generateLedgerNo());
@@ -222,13 +300,20 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ledger.setSourceType(sourceType);
         ledger.setSourceId(sourceId);
         ledger.setFreeBalanceAfter(newFreeBalance);
-        ledger.setPaidBalanceAfter(newPaidBalance);
-        ledger.setBizContext(new com.google.gson.Gson().toJson(ctx));
+        ledger.setPlanBalanceAfter(newPlanBalance);
+        ledger.setAddonBalanceAfter(newAddonBalance);
+        ledger.setPaidBalanceAfter(newLegacyBalance);
+        ledger.setBizContext(GSON.toJson(ctx));
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
 
-        log.info("额度消费: clerk_user_id={}, feature={}, amount={}, from_free={}, ledger_id={}",
-                clerkUserId, featureCode, amount, fromFreeFlag, ledger.getId());
+        for (QuotaLedgerAllocationEntity allocation : allocations) {
+            allocation.setQuotaLedgerId(ledger.getId());
+            quotaLedgerAllocationMapper.insert(allocation);
+        }
+
+        log.info("额度消费: clerk_user_id={}, feature={}, amount={}, free={}, plan={}, addon={}, legacy={}, ledger_id={}",
+                clerkUserId, featureCode, amount, fromFree, fromPlan, addonConsumed, fromLegacy, ledger.getId());
         return new ConsumeResult(ledger.getId());
     }
 
@@ -243,12 +328,11 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalArgumentException("Only consume ledger can be refunded: " + ledgerId);
         }
 
-        // 幂等保护：同一 consume 流水若已生成 refund 流水（biz_context.original_ledger_id 命中），跳过。
-        // 既兼容 1.0 V1 HumanizerTaskWorker.refundQuota 的重复触发，也兼容 V2 verla 链路 fail+cancel 双回调。
+        String refundIdempotencyKey = "refund:" + ledgerId;
         QuotaLedgerEntity refundExist = quotaLedgerMapper.selectOne(
                 new LambdaQueryWrapper<QuotaLedgerEntity>()
                         .eq(QuotaLedgerEntity::getLedgerType, LEDGER_TYPE_REFUND)
-                        .like(QuotaLedgerEntity::getBizContext, "\"original_ledger_id\":" + ledgerId)
+                        .eq(QuotaLedgerEntity::getIdempotencyKey, refundIdempotencyKey)
                         .last("LIMIT 1"));
         if (refundExist != null) {
             log.info("额度已退过，幂等跳过: original_ledger_id={}, refund_ledger_id={}",
@@ -262,39 +346,6 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             return;
         }
 
-        // 解析 biz_context 判断原扣减来自 free 还是 paid
-        boolean fromFree = true;
-        Long fromFreeAmount = null;
-        Long fromPaidAmount = null;
-        if (consumeLedger.getBizContext() != null) {
-            try {
-                com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(consumeLedger.getBizContext()).getAsJsonObject();
-                if (obj.has("from_free")) {
-                    fromFree = obj.get("from_free").getAsBoolean();
-                }
-                if (obj.has("from_free_amount")) {
-                    fromFreeAmount = obj.get("from_free_amount").getAsLong();
-                }
-                if (obj.has("from_paid_amount")) {
-                    fromPaidAmount = obj.get("from_paid_amount").getAsLong();
-                }
-            } catch (Exception e) {
-                log.warn("解析 ledger biz_context 失败，默认回滚到免费额度: {}", e.getMessage());
-            }
-        }
-
-        // 计算回滚到 free 和 paid 的量
-        long addToFree = 0L;
-        long addToPaid = 0L;
-        if (fromFreeAmount != null && fromPaidAmount != null) {
-            addToFree = fromFreeAmount;
-            addToPaid = fromPaidAmount;
-        } else {
-            addToFree = fromFree ? refundAmount : 0L;
-            addToPaid = fromFree ? 0L : refundAmount;
-        }
-
-        // 更新 user_ai_quotas
         UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
                         .eq(UserAiQuotaEntity::getClerkUserId, consumeLedger.getClerkUserId())
@@ -304,15 +355,84 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalStateException("User quota not found for refund: " + consumeLedger.getClerkUserId());
         }
 
-        long newFree = (quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L) + addToFree;
-        long newPaid = (quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L) + addToPaid;
+        LocalDateTime now = LocalDateTime.now();
+        List<QuotaLedgerAllocationEntity> allocations = quotaLedgerAllocationMapper.selectList(
+                new LambdaQueryWrapper<QuotaLedgerAllocationEntity>()
+                        .eq(QuotaLedgerAllocationEntity::getQuotaLedgerId, ledgerId)
+                        .orderByAsc(QuotaLedgerAllocationEntity::getId));
 
-        userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
-                .eq(UserAiQuotaEntity::getId, quota.getId())
-                .set(UserAiQuotaEntity::getFreeBalance, newFree)
-                .set(UserAiQuotaEntity::getPaidBalance, newPaid)
-                .set(UserAiQuotaEntity::getUpdatedAt, LocalDateTime.now())
-                .setSql("version = version + 1"));
+        long addToFree = 0L;
+        long addToPlan = 0L;
+        long addToPaid = 0L;
+        List<QuotaLedgerAllocationEntity> refundAllocations = new ArrayList<>();
+        if (allocations == null || allocations.isEmpty()) {
+            JsonObject obj = parseBizContext(consumeLedger.getBizContext());
+            addToFree = obj != null && obj.has("from_free_amount") ? obj.get("from_free_amount").getAsLong() : 0L;
+            addToPlan = obj != null && obj.has("from_plan_amount") ? obj.get("from_plan_amount").getAsLong() : 0L;
+            addToPaid = obj != null && obj.has("from_paid_amount")
+                    ? obj.get("from_paid_amount").getAsLong()
+                    : Math.max(0L, refundAmount - addToFree - addToPlan);
+            if (addToFree > 0) {
+                refundAllocations.add(newAllocation(POOL_TYPE_FREE, null, addToFree, now, quota.getFreePeriodEnd()));
+            }
+            if (addToPlan > 0) {
+                refundAllocations.add(newAllocation(POOL_TYPE_PLAN, null, addToPlan, now, quota.getPlanPeriodEnd()));
+            }
+            if (addToPaid > 0) {
+                refundAllocations.add(newAllocation(POOL_TYPE_LEGACY, null, addToPaid, now, null));
+            }
+        } else {
+            for (QuotaLedgerAllocationEntity allocation : allocations) {
+                if (allocation == null || allocation.getAmount() == null || allocation.getAmount() <= 0) {
+                    continue;
+                }
+                long allocationAmount = allocation.getAmount();
+                switch (allocation.getPoolType()) {
+                    case POOL_TYPE_FREE -> {
+                        if (isAllocationExpired(allocation, now)) {
+                            refundAllocations.add(createCompensationGrant(
+                                    consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), allocationAmount, now));
+                        } else {
+                            addToFree += allocationAmount;
+                            refundAllocations.add(newAllocation(
+                                    POOL_TYPE_FREE, null, allocationAmount, now, allocation.getSourcePeriodEnd()));
+                        }
+                    }
+                    case POOL_TYPE_PLAN -> {
+                        if (isAllocationExpired(allocation, now)) {
+                            refundAllocations.add(createCompensationGrant(
+                                    consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), allocationAmount, now));
+                        } else {
+                            addToPlan += allocationAmount;
+                            refundAllocations.add(newAllocation(
+                                    POOL_TYPE_PLAN, null, allocationAmount, now, allocation.getSourcePeriodEnd()));
+                        }
+                    }
+                    case POOL_TYPE_LEGACY -> {
+                        addToPaid += allocationAmount;
+                        refundAllocations.add(newAllocation(
+                                POOL_TYPE_LEGACY, null, allocationAmount, now, allocation.getSourcePeriodEnd()));
+                    }
+                    case POOL_TYPE_ADDON, POOL_TYPE_COMPENSATION -> refundAllocations.add(
+                            restoreAddonGrantOrCompensate(
+                                    consumeLedger.getClerkUserId(),
+                                    consumeLedger.getFeatureCode(),
+                                    allocation,
+                                    now));
+                    default -> log.warn("Unknown allocation pool type on refund: ledgerId={}, poolType={}",
+                            ledgerId, allocation.getPoolType());
+                }
+            }
+        }
+
+        long newFree = (quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L) + addToFree;
+        long newPlan = (quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L) + addToPlan;
+        long newPaid = (quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L) + addToPaid;
+        quota.setFreeBalance(newFree);
+        quota.setPlanBalance(newPlan);
+        quota.setPaidBalance(newPaid);
+        quota.setUpdatedAt(now);
+        updateQuotaOrThrow(quota, "refund");
 
         // 写入回滚流水
         Map<String, Object> ctx = new HashMap<>();
@@ -328,11 +448,21 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         refundLedger.setAmount(refundAmount);
         refundLedger.setSourceType(consumeLedger.getSourceType());
         refundLedger.setSourceId(consumeLedger.getSourceId());
+        refundLedger.setIdempotencyKey(refundIdempotencyKey);
+        refundLedger.setSubscriptionId(consumeLedger.getSubscriptionId());
+        refundLedger.setInvoiceId(consumeLedger.getInvoiceId());
         refundLedger.setFreeBalanceAfter(newFree);
+        refundLedger.setPlanBalanceAfter(newPlan);
+        refundLedger.setAddonBalanceAfter(sumActiveAddonBalance(
+                consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), now));
         refundLedger.setPaidBalanceAfter(newPaid);
-        refundLedger.setBizContext(new com.google.gson.Gson().toJson(ctx));
-        refundLedger.setCreatedAt(LocalDateTime.now());
+        refundLedger.setBizContext(GSON.toJson(ctx));
+        refundLedger.setCreatedAt(now);
         quotaLedgerMapper.insert(refundLedger);
+        for (QuotaLedgerAllocationEntity allocation : refundAllocations) {
+            allocation.setQuotaLedgerId(refundLedger.getId());
+            quotaLedgerAllocationMapper.insert(allocation);
+        }
 
         log.info("额度回滚: ledger_id={}, clerk_user_id={}, feature={}, amount={}, reason={}",
                 ledgerId, consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), refundAmount, reason);
@@ -396,10 +526,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 entity.getSourceId(),
                 displayText,
                 entity.getFreeBalanceAfter(),
+                entity.getPlanBalanceAfter(),
+                entity.getAddonBalanceAfter(),
                 entity.getPaidBalanceAfter(),
                 entity.getCreatedAt(),
                 entity.getFeatureCode(),
-                quotaUnit
+                quotaUnit,
+                buildLedgerAllocations(entity.getId())
         );
     }
 
@@ -474,16 +607,11 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         LocalDateTime periodStart = now;
         LocalDateTime periodEnd = computePeriodEnd(periodStart, configuredPeriod);
 
-        userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
-                .eq(UserAiQuotaEntity::getId, quota.getId())
-                .set(UserAiQuotaEntity::getFreeBalance, freeQuotaAmount)
-                .set(UserAiQuotaEntity::getFreePeriodStart, periodStart)
-                .set(UserAiQuotaEntity::getFreePeriodEnd, periodEnd)
-                .set(UserAiQuotaEntity::getUpdatedAt, now)
-                .setSql("version = version + 1"));
         quota.setFreeBalance(freeQuotaAmount);
         quota.setFreePeriodStart(periodStart);
         quota.setFreePeriodEnd(periodEnd);
+        quota.setUpdatedAt(now);
+        updateQuotaOrThrow(quota, "free_refresh");
 
         if (delta <= 0) {
             return;
@@ -585,6 +713,199 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             case PERIOD_WEEKLY -> start.plusWeeks(1);
             default -> start.plusMonths(1);
         };
+    }
+
+    private List<UserAddonGrantEntity> findActiveAddonGrants(String clerkUserId, String featureCode, LocalDateTime now) {
+        return userAddonGrantMapper.selectList(
+                        new LambdaQueryWrapper<UserAddonGrantEntity>()
+                                .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
+                                .eq(UserAddonGrantEntity::getFeatureCode, featureCode)
+                                .in(UserAddonGrantEntity::getGrantType, List.of("addon", "compensation", "legacy"))
+                                .eq(UserAddonGrantEntity::getStatus, "active")
+                                .and(wrapper -> wrapper
+                                        .gt(UserAddonGrantEntity::getExpiresAt, now)
+                                        .or()
+                                        .isNull(UserAddonGrantEntity::getExpiresAt))
+                .gt(UserAddonGrantEntity::getRemainingAmount, 0)
+                                .orderByAsc(UserAddonGrantEntity::getExpiresAt)
+                                .orderByAsc(UserAddonGrantEntity::getId))
+                .stream()
+                .sorted(Comparator.comparing(
+                                UserAddonGrantEntity::getExpiresAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(UserAddonGrantEntity::getId))
+                .collect(Collectors.toList());
+    }
+
+    private List<UserAddonGrantEntity> findAddonGrantsForBalance(String clerkUserId, String featureCode) {
+        return userAddonGrantMapper.selectList(
+                        new LambdaQueryWrapper<UserAddonGrantEntity>()
+                                .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
+                                .eq(UserAddonGrantEntity::getFeatureCode, featureCode)
+                                .orderByAsc(UserAddonGrantEntity::getExpiresAt)
+                                .orderByAsc(UserAddonGrantEntity::getId))
+                .stream()
+                .sorted(Comparator.comparing(
+                                UserAddonGrantEntity::getExpiresAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(UserAddonGrantEntity::getId))
+                .collect(Collectors.toList());
+    }
+
+    private long sumActiveAddonBalance(String clerkUserId, String featureCode, LocalDateTime now) {
+        return findActiveAddonGrants(clerkUserId, featureCode, now).stream()
+                .map(UserAddonGrantEntity::getRemainingAmount)
+                .filter(value -> value != null && value > 0)
+                .mapToLong(Long::longValue)
+                .sum();
+    }
+
+    private boolean isAllocationExpired(QuotaLedgerAllocationEntity allocation, LocalDateTime now) {
+        return allocation.getSourcePeriodEnd() != null && !allocation.getSourcePeriodEnd().isAfter(now);
+    }
+
+    private boolean isGrantConsumable(UserAddonGrantEntity grant) {
+        if (grant == null) {
+            return false;
+        }
+        if (!"active".equals(grant.getStatus())) {
+            return false;
+        }
+        if (grant.getRemainingAmount() == null || grant.getRemainingAmount() <= 0) {
+            return false;
+        }
+        return grant.getExpiresAt() == null || grant.getExpiresAt().isAfter(LocalDateTime.now());
+    }
+
+    private Map<String, Object> toAddonBalanceItem(UserAddonGrantEntity grant) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("grant_id", grant.getId());
+        item.put("addon_code", grant.getAddonCode());
+        item.put("grant_type", grant.getGrantType());
+        item.put("status", grant.getStatus());
+        item.put("balance", grant.getRemainingAmount() != null ? grant.getRemainingAmount() : 0L);
+        item.put("expires_at", grant.getExpiresAt() != null ? grant.getExpiresAt().toString() : null);
+        return item;
+    }
+
+    private List<Map<String, Object>> buildLedgerAllocations(Long ledgerId) {
+        if (ledgerId == null) {
+            return List.of();
+        }
+        return quotaLedgerAllocationMapper.selectList(
+                        new LambdaQueryWrapper<QuotaLedgerAllocationEntity>()
+                                .eq(QuotaLedgerAllocationEntity::getQuotaLedgerId, ledgerId)
+                                .orderByAsc(QuotaLedgerAllocationEntity::getId))
+                .stream()
+                .map(allocation -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("poolType", allocation.getPoolType());
+                    item.put("grantId", allocation.getGrantId());
+                    item.put("amount", allocation.getAmount());
+                    item.put("sourcePeriodEnd",
+                            allocation.getSourcePeriodEnd() != null ? allocation.getSourcePeriodEnd().toString() : null);
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private QuotaLedgerAllocationEntity restoreAddonGrantOrCompensate(
+            String clerkUserId,
+            String featureCode,
+            QuotaLedgerAllocationEntity allocation,
+            LocalDateTime now) {
+        if (allocation.getGrantId() == null) {
+            log.warn("Skip add-on refund allocation without grant id: ledgerAllocationId={}", allocation.getId());
+            return createCompensationGrant(clerkUserId, featureCode, allocation.getAmount(), now);
+        }
+        UserAddonGrantEntity grant = userAddonGrantMapper.selectById(allocation.getGrantId());
+        if (grant == null) {
+            log.warn("Skip add-on refund allocation because grant missing: grantId={}", allocation.getGrantId());
+            return createCompensationGrant(clerkUserId, featureCode, allocation.getAmount(), now);
+        }
+        if (isAllocationExpired(allocation, now)
+                || (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now))) {
+            grant.setStatus("expired");
+            grant.setUpdatedAt(now);
+            updateAddonGrantOrThrow(grant, "expire refunded add-on grant");
+            return createCompensationGrant(clerkUserId, featureCode, allocation.getAmount(), now);
+        }
+        long currentRemaining = grant.getRemainingAmount() != null ? grant.getRemainingAmount() : 0L;
+        grant.setRemainingAmount(currentRemaining + allocation.getAmount());
+        grant.setStatus("active");
+        grant.setPausedAt(null);
+        grant.setUpdatedAt(now);
+        updateAddonGrantOrThrow(grant, "restore add-on grant");
+        return newAllocation(grant.getGrantType(), grant.getId(), allocation.getAmount(), now, grant.getExpiresAt());
+    }
+
+    private QuotaLedgerAllocationEntity createCompensationGrant(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            LocalDateTime now) {
+        UserAddonGrantEntity grant = new UserAddonGrantEntity();
+        grant.setClerkUserId(clerkUserId);
+        grant.setFeatureCode(featureCode);
+        grant.setGrantType(POOL_TYPE_COMPENSATION);
+        grant.setAddonCode(null);
+        grant.setStatus("active");
+        grant.setInitialAmount(amount);
+        grant.setRemainingAmount(amount);
+        grant.setStripeSessionId(null);
+        grant.setStripePaymentIntentId(null);
+        grant.setSourceOrderId(null);
+        grant.setMigrationKey(null);
+        grant.setPurchasedAt(now);
+        grant.setExpiresAt(now.plusDays(30));
+        grant.setPausedAt(null);
+        grant.setVersion(0);
+        grant.setCreatedAt(now);
+        grant.setUpdatedAt(now);
+        userAddonGrantMapper.insert(grant);
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_COMPENSATION_GRANT);
+        ledger.setAmount(amount);
+        ledger.setSourceType(SOURCE_TYPE_SYSTEM);
+        ledger.setSourceId(featureCode);
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, featureCode, now));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+
+        return newAllocation(POOL_TYPE_COMPENSATION, grant.getId(), amount, now, grant.getExpiresAt());
+    }
+
+    private void updateQuotaOrThrow(UserAiQuotaEntity quota, String action) {
+        int updated = userAiQuotaMapper.updateById(quota);
+        if (updated != 1) {
+            throw new IllegalStateException("Quota update conflict during " + action + ": quotaId=" + quota.getId());
+        }
+    }
+
+    private void updateAddonGrantOrThrow(UserAddonGrantEntity grant, String action) {
+        int updated = userAddonGrantMapper.updateById(grant);
+        if (updated != 1) {
+            throw new IllegalStateException("Addon grant update conflict during " + action + ": grantId=" + grant.getId());
+        }
+    }
+
+    private QuotaLedgerAllocationEntity newAllocation(
+            String poolType,
+            Long grantId,
+            long amount,
+            LocalDateTime now,
+            LocalDateTime sourcePeriodEnd) {
+        QuotaLedgerAllocationEntity allocation = new QuotaLedgerAllocationEntity();
+        allocation.setPoolType(poolType);
+        allocation.setGrantId(grantId);
+        allocation.setAmount(amount);
+        allocation.setSourcePeriodEnd(sourcePeriodEnd);
+        allocation.setCreatedAt(now);
+        return allocation;
     }
 
     private String generateLedgerNo() {

@@ -67,8 +67,8 @@ public class HumanizerApplicationService {
     /**
      * 提交任务（入库排队）
      * <p>
-     * DETECT: 只做前置校验（余额 >= 1），不预扣费，由 Worker 逐块扣费
-     * HUMANIZE: 提交时一次性按总 words 扣费（PM 要求按整体粒度判断）
+     * DETECT: 只做前置校验（余额 >= 1），不预扣费，由 Worker 启动时扣 1 次
+     * HUMANIZE: 提交时按每次启动扣 1 次
      *
      * @return 任务响应及是否发生了额度扣减
      */
@@ -92,21 +92,19 @@ public class HumanizerApplicationService {
 
         if (!isAdmin && !isWhitelisted) {
             if ("DETECT".equals(taskType)) {
-                // DETECT: 先调 Python 分句，获取第一个 chunk 的 wordCount
-                // 然后校验余额 >= 第一个 chunk 的 wordCount
+                // DETECT: 先调 Python 分句，仅用于拿总字数/总分句做展示元数据；
+                // V2 扣费口径改为每次启动扣 1 次，因此这里只校验余额 >= 1。
                 var splitResult = humanizerServiceClient.splitSentences(text);
-                int firstChunkWords = 1;
                 int splitTotalChunks = 0;
                 int splitTotalWords = 0;
                 if (splitResult != null && splitResult.getCode() == 200
                         && splitResult.getChunks() != null && !splitResult.getChunks().isEmpty()) {
-                    firstChunkWords = Math.max(1, splitResult.getChunks().get(0).getWordCount());
                     splitTotalChunks = splitResult.getTotalChunks();
                     splitTotalWords = splitResult.getTotalWords();
                 }
 
                 var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
-                if (balance.totalAvailable() < firstChunkWords) {
+                if (balance.totalAvailable() < 1) {
                     // 额度不足：入库为 QUOTA_EXHAUSTED，返回 taskId 供前端恢复
                     HumanizerTaskEntity exhaustedEntity = new HumanizerTaskEntity();
                     exhaustedEntity.setClerkUserId(clerkUserId);
@@ -118,15 +116,15 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setCompletedSentences(0);
                     exhaustedEntity.setTotalWords(splitTotalWords > 0 ? splitTotalWords : wordCount);
                     exhaustedEntity.setConsumedWords(0);
-                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + firstChunkWords + " words (first chunk)");
+                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: 1 run");
                     if (splitTotalChunks > 0) {
                         exhaustedEntity.setTotalSentences(splitTotalChunks);
                     }
                     exhaustedEntity.setCreatedAt(DateTimeFormats.now());
                     exhaustedEntity.setUpdatedAt(DateTimeFormats.now());
                     repository.insert(exhaustedEntity);
-                    log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}, available={}",
-                            exhaustedEntity.getId(), clerkUserId, firstChunkWords, balance.totalAvailable());
+                    log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required=1, available={}",
+                            exhaustedEntity.getId(), clerkUserId, balance.totalAvailable());
 
                     HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                             .id(exhaustedEntity.getId())
@@ -140,8 +138,8 @@ public class HumanizerApplicationService {
                 }
                 // DETECT 不预扣费，quotaConsumed = false
             } else {
-                // HUMANIZE: 一次性按总 words 扣费
-                if (!quotaDomainService.canConsume(clerkUserId, featureCode, wordCount)) {
+                // HUMANIZE: V2 改为每次启动扣 1 次
+                if (!quotaDomainService.canConsume(clerkUserId, featureCode, 1L)) {
                     // 额度不足：入库为 QUOTA_EXHAUSTED，返回 taskId 供前端恢复
                     HumanizerTaskEntity exhaustedEntity = new HumanizerTaskEntity();
                     exhaustedEntity.setClerkUserId(clerkUserId);
@@ -153,12 +151,12 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setCompletedSentences(0);
                     exhaustedEntity.setTotalWords(wordCount);
                     exhaustedEntity.setConsumedWords(0);
-                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: " + wordCount + " words");
+                    exhaustedEntity.setErrorMessage("Insufficient quota at submission. Required: 1 run");
                     exhaustedEntity.setCreatedAt(DateTimeFormats.now());
                     exhaustedEntity.setUpdatedAt(DateTimeFormats.now());
                     repository.insert(exhaustedEntity);
-                    log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required={}",
-                            exhaustedEntity.getId(), clerkUserId, wordCount);
+                    log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required=1",
+                            exhaustedEntity.getId(), clerkUserId);
 
                     HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                             .id(exhaustedEntity.getId())
@@ -172,12 +170,16 @@ public class HumanizerApplicationService {
                 }
 
                 ConsumeResult consumeResult = quotaDomainService.consume(
-                        clerkUserId, featureCode, wordCount,
+                        clerkUserId, featureCode, 1L,
                         "humanizer_task", null,
-                        Map.of("task_type", taskType, "word_count", wordCount));
+                        Map.of(
+                                "task_type", taskType,
+                                "word_count", wordCount,
+                                "charged_mode", "per_run",
+                                "charged_amount", 1L));
                 quotaLedgerId = consumeResult.ledgerId();
                 quotaConsumed = true;
-                log.info("HUMANIZE 额度扣减成功: userId={}, feature={}, words={}, ledgerId={}",
+                log.info("HUMANIZE 额度扣减成功: userId={}, feature={}, amount=1, words={}, ledgerId={}",
                         clerkUserId, featureCode, wordCount, quotaLedgerId);
             }
         }
@@ -305,12 +307,7 @@ public class HumanizerApplicationService {
                     : FeatureCode.HUMANIZER.getCode();
             var balance = quotaDomainService.getUserQuota(clerkUserId, featureCode);
 
-            // HUMANIZE 需要校验剩余额度 >= 任务总 words（一次性扣费）
-            int requiredWords = "HUMANIZE".equals(entity.getTaskType())
-                    ? (entity.getTotalWords() != null ? entity.getTotalWords() : 1)
-                    : 1;
-
-            if (balance.totalAvailable() < requiredWords) {
+            if (balance.totalAvailable() < 1) {
                 throw new InsufficientQuotaException(
                         "Insufficient quota to resume. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                         InsufficientQuotaData.builder()
@@ -327,16 +324,20 @@ public class HumanizerApplicationService {
             // HUMANIZE resume 时需要预扣费（原始提交时额度不足未扣费）
             if ("HUMANIZE".equals(entity.getTaskType())) {
                 ConsumeResult consumeResult = quotaDomainService.consume(
-                        clerkUserId, featureCode, requiredWords,
+                        clerkUserId, featureCode, 1L,
                         "humanizer_task", null,
-                        Map.of("task_type", entity.getTaskType(), "word_count", requiredWords));
+                        Map.of(
+                                "task_type", entity.getTaskType(),
+                                "word_count", entity.getTotalWords() != null ? entity.getTotalWords() : 0,
+                                "charged_mode", "per_run",
+                                "charged_amount", 1L));
                 // 更新 quotaLedgerId 以便后续退款
                 HumanizerTaskEntity ledgerUpdate = new HumanizerTaskEntity();
                 ledgerUpdate.setId(taskId);
                 ledgerUpdate.setQuotaLedgerId(consumeResult.ledgerId());
                 repository.updateById(ledgerUpdate);
-                log.info("HUMANIZE resume 额度扣减成功: userId={}, words={}, ledgerId={}",
-                        clerkUserId, requiredWords, consumeResult.ledgerId());
+                log.info("HUMANIZE resume 额度扣减成功: userId={}, amount=1, ledgerId={}",
+                        clerkUserId, consumeResult.ledgerId());
             }
         }
 

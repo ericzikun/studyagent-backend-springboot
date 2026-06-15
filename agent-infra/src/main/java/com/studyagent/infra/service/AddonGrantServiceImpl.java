@@ -1,6 +1,7 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.google.gson.Gson;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
@@ -142,7 +143,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
                 grant.setPausedAt(null);
             }
             grant.setUpdatedAt(now);
-            updateGrantOrThrow(grant, "resume add-on grants");
+            resumeGrantOrThrow(grant, now);
         }
         insertLifecycleLedger(clerkUserId, subscriptionId, idempotencyKey, LEDGER_TYPE_ADDON_RESUME, now);
     }
@@ -179,6 +180,23 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         int updated = userAddonGrantMapper.updateById(grant);
         if (updated != 1) {
             throw new IllegalStateException("Addon grant update conflict during " + action + ": grantId=" + grant.getId());
+        }
+    }
+
+    private void resumeGrantOrThrow(UserAddonGrantEntity grant, LocalDateTime now) {
+        Integer currentVersion = grant.getVersion();
+        UpdateWrapper<UserAddonGrantEntity> updateWrapper = new UpdateWrapper<UserAddonGrantEntity>()
+                .eq("id", grant.getId())
+                .set("status", grant.getStatus())
+                .set("paused_at", null)
+                .set("updated_at", now)
+                .setSql("version = version + 1");
+        if (currentVersion != null) {
+            updateWrapper.eq("version", currentVersion);
+        }
+        int updated = userAddonGrantMapper.update(null, updateWrapper);
+        if (updated != 1) {
+            throw new IllegalStateException("Addon grant update conflict during resume: grantId=" + grant.getId());
         }
     }
 

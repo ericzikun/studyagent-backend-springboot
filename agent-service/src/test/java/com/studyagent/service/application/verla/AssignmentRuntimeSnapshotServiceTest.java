@@ -482,6 +482,14 @@ class AssignmentRuntimeSnapshotServiceTest {
         }
 
         @Override
+        public Map<Long, List<VerlaEventInbox>> findRecentProcessedByConversationIds(
+                List<Long> conversationIds, int limitPerConversation) {
+            return com.studyagent.service.application.verla.support.VerlaRepositoryTestDoubles
+                    .batchRecentProcessedEvents(conversationIds, limitPerConversation,
+                            id -> findRecentProcessedByConversation(id, limitPerConversation));
+        }
+
+        @Override
         public VerlaEventInbox findLatestProcessedBySession(Long sessionId) {
             return null;
         }

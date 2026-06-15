@@ -63,6 +63,7 @@ public class VerlaMessageRepositoryImpl
                 .blocksJson(e.getBlocksJson())
                 .attachmentsJson(e.getAttachmentsJson())
                 .metaJson(e.getMetaJson())
+                .scene(e.getScene())
                 .createdAt(e.getCreatedAt())
                 .build();
     }
@@ -81,6 +82,35 @@ public class VerlaMessageRepositoryImpl
                 .setBlocksJson(d.getBlocksJson())
                 .setAttachmentsJson(d.getAttachmentsJson())
                 .setMetaJson(d.getMetaJson())
+                .setScene(resolveScene(d))
                 .setCreatedAt(d.getCreatedAt());
+    }
+
+    private String resolveScene(VerlaMessage message) {
+        if (message.getScene() != null && !message.getScene().isBlank()) {
+            return message.getScene();
+        }
+        String metaJson = message.getMetaJson();
+        if (metaJson == null || metaJson.isBlank()) {
+            return null;
+        }
+        int idx = metaJson.indexOf("\"scene\"");
+        if (idx < 0) {
+            return null;
+        }
+        int colon = metaJson.indexOf(':', idx);
+        if (colon < 0) {
+            return null;
+        }
+        int start = metaJson.indexOf('"', colon + 1);
+        if (start < 0) {
+            return null;
+        }
+        int end = metaJson.indexOf('"', start + 1);
+        if (end < 0) {
+            return null;
+        }
+        String scene = metaJson.substring(start + 1, end).trim();
+        return scene.isEmpty() ? null : scene;
     }
 }

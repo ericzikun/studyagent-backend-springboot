@@ -49,6 +49,7 @@ public class HumanizerTaskRepositoryImpl {
                 HumanizerTaskEntity::getId,
                 HumanizerTaskEntity::getClerkUserId,
                 HumanizerTaskEntity::getTaskType,
+                HumanizerTaskEntity::getTaskName,
                 HumanizerTaskEntity::getInputText,  // 需要截取前50字符
                 HumanizerTaskEntity::getStatus,
                 HumanizerTaskEntity::getProbability,

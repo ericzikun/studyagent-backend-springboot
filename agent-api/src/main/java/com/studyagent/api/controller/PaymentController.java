@@ -4,7 +4,10 @@ import com.studyagent.api.common.Result;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.service.domain.billing.BillingDomainException;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.payment.*;
+import com.studyagent.service.domain.user.ClerkClient;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +27,46 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentDomainService paymentDomainService;
+    private final BillingDomainService billingDomainService;
     private final AnalyticsService analyticsService;
+
+    @PostMapping("/subscription-checkout")
+    public Result<Map<String, Object>> createSubscriptionCheckout(
+            @RequestBody SubscriptionCheckoutRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
+            @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        try {
+            CheckoutSessionResult checkout = billingDomainService.createSubscriptionCheckout(
+                    clerkUserId,
+                    userInfo == null ? null : userInfo.email,
+                    request.getPlanCode());
+            return Result.success(toCheckoutData(checkout));
+        } catch (BillingDomainException e) {
+            return mapBillingException(e);
+        }
+    }
+
+    @PostMapping("/addon-checkout")
+    public Result<Map<String, Object>> createAddonCheckout(
+            @RequestBody AddonCheckoutRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
+            @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        try {
+            CheckoutSessionResult checkout = billingDomainService.createAddonCheckout(
+                    clerkUserId,
+                    userInfo == null ? null : userInfo.email,
+                    request.getAddonCode());
+            return Result.success(toCheckoutData(checkout));
+        } catch (BillingDomainException e) {
+            return mapBillingException(e);
+        }
+    }
 
     @PostMapping("/create-checkout-session")
     public Result<Map<String, Object>> createCheckoutSession(
@@ -122,10 +164,36 @@ public class PaymentController {
     @GetMapping("/config")
     public Result<Map<String, Object>> getPaymentConfig() {
         PaymentConfigResult result = paymentDomainService.getPaymentConfig();
+        var catalog = billingDomainService.getCatalog();
         Map<String, Object> data = new HashMap<>();
         data.put("stripePublishableKey", result.getStripePublishableKey());
         data.put("packages", result.getPackages());
+        data.put("plans", catalog.getPlans());
+        data.put("addons", catalog.getAddons());
         return Result.success(data);
+    }
+
+    private Map<String, Object> toCheckoutData(CheckoutSessionResult checkout) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("sessionId", checkout.getSessionId());
+        data.put("checkoutUrl", checkout.getCheckoutUrl());
+        data.put("expiresAt", checkout.getExpiresAt());
+        return data;
+    }
+
+    private Result<Map<String, Object>> mapBillingException(BillingDomainException e) {
+        return switch (e.getCode()) {
+            case "STRIPE_NOT_CONFIGURED" -> Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
+            case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED" -> Result.error(ApiCode.INVALID_PLAN, e.getMessage());
+            case "INVALID_ADDON", "ADDON_PRICE_NOT_CONFIGURED" -> Result.error(ApiCode.INVALID_ADDON, e.getMessage());
+            case "ADDON_REQUIRES_PAID_MEMBER" -> Result.error(ApiCode.ADDON_REQUIRES_PAID_MEMBER);
+            case "SUBSCRIPTION_ALREADY_EXISTS" -> Result.error(ApiCode.SUBSCRIPTION_ALREADY_EXISTS);
+            case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
+            case "INVALID_UPGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS" ->
+                    Result.error(ApiCode.SUBSCRIPTION_STATE_INVALID);
+            case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
+            default -> Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
+        };
     }
 
     private Result<Map<String, Object>> mapDomainException(PaymentDomainException e) {
@@ -164,5 +232,15 @@ public class PaymentController {
         private String packageType;
         private String successUrl;
         private String cancelUrl;
+    }
+
+    @Data
+    static class SubscriptionCheckoutRequest {
+        private String planCode;
+    }
+
+    @Data
+    static class AddonCheckoutRequest {
+        private String addonCode;
     }
 }

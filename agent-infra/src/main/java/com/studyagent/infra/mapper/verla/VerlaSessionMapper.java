@@ -17,6 +17,13 @@ public interface VerlaSessionMapper extends BaseMapper<VerlaSessionEntity> {
             + "WHERE turn_id = #{turnId} ORDER BY id ASC")
     List<VerlaSessionEntity> selectByTurn(@Param("turnId") Long turnId);
 
+    @Select("<script>"
+            + "SELECT * FROM verla_sessions WHERE turn_id IN "
+            + "<foreach item='id' collection='turnIds' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "ORDER BY turn_id, id ASC"
+            + "</script>")
+    List<VerlaSessionEntity> selectByTurnIds(@Param("turnIds") List<Long> turnIds);
+
     /**
      * 取同 turn 内已 SUCCEEDED 的兄弟 session（exclude 自身）。
      * 与 docs/verla-Java侧MVP技术方案.md §10.2 SQL B 对齐。

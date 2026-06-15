@@ -3,6 +3,7 @@ package com.studyagent.service.domain.verla.repo;
 import com.studyagent.service.domain.verla.VerlaSession;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla Session 仓储接口
@@ -16,6 +17,10 @@ public interface VerlaSessionRepository {
     VerlaSession findByIdForUpdate(Long id);
 
     List<VerlaSession> findByTurn(Long turnId);
+
+    List<VerlaSession> findByIds(List<Long> sessionIds);
+
+    Map<Long, List<VerlaSession>> findByTurnIds(List<Long> turnIds);
 
     /**
      * 取同一 turn 内已 SUCCEEDED 的兄弟 session（一般是 plan session 给 agent session 复用结果）

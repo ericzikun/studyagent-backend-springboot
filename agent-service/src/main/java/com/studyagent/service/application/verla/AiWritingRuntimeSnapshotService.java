@@ -61,6 +61,7 @@ public class AiWritingRuntimeSnapshotService {
                         .progress(resolveProgress(recentEvents, stateEvent))
                         .artifacts(artifacts == null ? List.of() : artifacts)
                         .primaryIntent(conversation == null ? null : conversation.getPrimaryIntent())
+                        .title(conversation == null ? null : conversation.getTitle())
                         .build())
                 .build();
     }

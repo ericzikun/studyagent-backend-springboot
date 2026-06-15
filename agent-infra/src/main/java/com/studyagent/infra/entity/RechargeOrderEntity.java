@@ -17,12 +17,18 @@ import java.time.LocalDateTime;
 public class RechargeOrderEntity extends BaseEntity {
     @TableField("order_no")
     private String orderNo;
+    @TableField("order_type")
+    private String orderType;
     @TableField("clerk_user_id")
     private String clerkUserId;
     @TableField("feature_code")
     private String featureCode;
     @TableField("package_code")
     private String packageCode;
+    @TableField("plan_code")
+    private String planCode;
+    @TableField("addon_code")
+    private String addonCode;
     @TableField("quota_amount")
     private Long quotaAmount;
     @TableField("price_cents")
@@ -33,6 +39,10 @@ public class RechargeOrderEntity extends BaseEntity {
     private String stripeSessionId;
     @TableField("stripe_payment_intent_id")
     private String stripePaymentIntentId;
+    @TableField("stripe_invoice_id")
+    private String stripeInvoiceId;
+    @TableField("stripe_subscription_id")
+    private String stripeSubscriptionId;
     @TableField("status")
     private String status;
     @TableField("failure_reason")

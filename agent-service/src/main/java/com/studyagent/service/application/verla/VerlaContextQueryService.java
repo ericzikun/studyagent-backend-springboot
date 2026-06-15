@@ -282,13 +282,17 @@ public class VerlaContextQueryService {
         }
 
         List<VerlaToolCall> recentToolCalls = List.of();
+        List<VerlaToolCall> visibleToolCalls = List.of();
+        if (opts.isIncludeTrace() || opts.isIncludeToolSummaries()) {
+            visibleToolCalls = toolCallRepository.listVisibleByConversation(conversationId, trLimit);
+        }
         if (opts.isIncludeTrace()) {
-            recentToolCalls = toolCallRepository.listVisibleByConversation(conversationId, trLimit);
+            recentToolCalls = visibleToolCalls;
         }
 
         List<VerlaSessionContextView.ToolCallSummaryView> summaries = List.of();
         if (opts.isIncludeToolSummaries()) {
-            summaries = toolCallRepository.listVisibleByConversation(conversationId, trLimit).stream()
+            summaries = visibleToolCalls.stream()
                     .map(VerlaContextQueryService::toSummaryView)
                     .toList();
         }

@@ -357,21 +357,7 @@ public class TaskApplicationService {
 
         // 关联文件到任务（如果提供了文件objectIds）
         if (objectIds != null && !objectIds.isEmpty()) {
-            taskFileRepository.removeByTaskId(taskId);
-            int order = 0;
-            for (String objectId : objectIds) {
-                // 根据 objectId 查找文件
-                Optional<com.studyagent.service.domain.file.File> fileOpt = fileRepository.findByObjectId(objectId);
-                if (fileOpt.isPresent()) {
-                    com.studyagent.service.domain.file.File file = fileOpt.get();
-                    // 创建任务文件关联记录
-                    taskFileRepository.associateFileToTask(taskId, file.getId().getValue(), order++);
-                    log.info("任务文件关联成功: taskId={}, fileId={}, objectId={}, order={}",
-                            taskId, file.getId().getValue(), objectId, order - 1);
-                } else {
-                    log.warn("文件不存在，跳过关联: objectId={}", objectId);
-                }
-            }
+            associateObjectIdsToTask(taskId, objectIds);
         }
 
         // 写入本地消息表
@@ -509,20 +495,27 @@ public class TaskApplicationService {
         Long draftId = savedTask.getId().getValue();
 
         if (request.getObjectIds() != null) {
-            taskFileRepository.removeByTaskId(draftId);
-            int order = 0;
-            for (String objectId : request.getObjectIds()) {
-                Optional<com.studyagent.service.domain.file.File> fileOpt = fileRepository.findByObjectId(objectId);
-                if (fileOpt.isPresent()) {
-                    com.studyagent.service.domain.file.File file = fileOpt.get();
-                    taskFileRepository.associateFileToTask(draftId, file.getId().getValue(), order++);
-                } else {
-                    log.warn("文件不存在，跳过关联: objectId={}", objectId);
-                }
-            }
+            associateObjectIdsToTask(draftId, request.getObjectIds());
         }
 
         return draftId;
+    }
+
+    private void associateObjectIdsToTask(Long taskId, List<String> objectIds) {
+        taskFileRepository.removeByTaskId(taskId);
+        Map<String, com.studyagent.service.domain.file.File> filesByObjectId =
+                fileRepository.findByObjectIds(objectIds);
+        int order = 0;
+        for (String objectId : objectIds) {
+            com.studyagent.service.domain.file.File file = filesByObjectId.get(objectId);
+            if (file != null) {
+                taskFileRepository.associateFileToTask(taskId, file.getId().getValue(), order++);
+                log.info("任务文件关联成功: taskId={}, fileId={}, objectId={}, order={}",
+                        taskId, file.getId().getValue(), objectId, order - 1);
+            } else {
+                log.warn("文件不存在，跳过关联: objectId={}", objectId);
+            }
+        }
     }
 
     private void evictExpiredSaveDraftIdemEntries() {

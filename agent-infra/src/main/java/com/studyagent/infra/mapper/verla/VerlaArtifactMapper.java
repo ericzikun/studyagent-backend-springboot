@@ -9,11 +9,16 @@ import java.util.List;
 
 public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
 
-    @Select("SELECT * FROM verla_artifacts WHERE conversation_id = #{cid} "
+    String ARTIFACT_METADATA_COLUMNS =
+            "id, artifact_uid, conversation_id, turn_id, session_id, source_message_id, "
+                    + "source_object_id, kind, mime, summary, content_ref, status, size_bytes, "
+                    + "version, meta_json, updated_at";
+
+    @Select("SELECT " + ARTIFACT_METADATA_COLUMNS + " FROM verla_artifacts WHERE conversation_id = #{cid} "
             + "ORDER BY updated_at DESC, id DESC")
     List<VerlaArtifactEntity> selectByConversation(@Param("cid") Long conversationId);
 
-    @Select("SELECT * FROM verla_artifacts WHERE session_id = #{sid} "
+    @Select("SELECT " + ARTIFACT_METADATA_COLUMNS + " FROM verla_artifacts WHERE session_id = #{sid} "
             + "ORDER BY updated_at DESC, id DESC")
     List<VerlaArtifactEntity> selectBySession(@Param("sid") Long sessionId);
 
@@ -21,7 +26,7 @@ public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
     VerlaArtifactEntity selectByUid(@Param("uid") String artifactUid);
 
     @Select("<script>" +
-            "SELECT * FROM verla_artifacts " +
+            "SELECT " + ARTIFACT_METADATA_COLUMNS + " FROM verla_artifacts " +
             "WHERE conversation_id IN " +
             "<foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>" +
             " ORDER BY updated_at DESC" +

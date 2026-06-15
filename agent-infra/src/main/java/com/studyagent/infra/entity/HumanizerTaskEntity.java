@@ -21,6 +21,10 @@ public class HumanizerTaskEntity extends BaseEntity {
     /** 任务来源: HUMANIZER_PAGE / EDITOR */
     private String source;
 
+    /** 任务标题：由 Python ConversationTitleService 经 MQ 生成（best-effort，可为 null） */
+    @TableField("task_name")
+    private String taskName;
+
     /** DETECT / HUMANIZE */
     @TableField("task_type")
     private String taskType;

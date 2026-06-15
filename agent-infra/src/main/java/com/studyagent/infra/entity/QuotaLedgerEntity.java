@@ -31,8 +31,18 @@ public class QuotaLedgerEntity {
     private String sourceType;
     @TableField("source_id")
     private String sourceId;
+    @TableField("idempotency_key")
+    private String idempotencyKey;
+    @TableField("subscription_id")
+    private String subscriptionId;
+    @TableField("invoice_id")
+    private String invoiceId;
     @TableField("free_balance_after")
     private Long freeBalanceAfter;
+    @TableField("plan_balance_after")
+    private Long planBalanceAfter;
+    @TableField("addon_balance_after")
+    private Long addonBalanceAfter;
     @TableField("paid_balance_after")
     private Long paidBalanceAfter;
     @TableField("biz_context")

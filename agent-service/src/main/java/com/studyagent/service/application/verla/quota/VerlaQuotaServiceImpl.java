@@ -113,19 +113,17 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public VerlaQuotaConsumeResult consumeForDetection(VerlaQuotaContext ctx, String text) {
-        long words = Math.max(1, wordCounter.countWords(text));
         Map<String, Object> biz = baseBizContext(ctx);
-        biz.put("word_count", words);
-        return consumeInternal(ctx, FeatureCode.AI_DETECTION, words, biz);
+        biz.put("charged_mode", "per_run");
+        return consumeInternal(ctx, FeatureCode.AI_DETECTION, 1L, biz);
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public VerlaQuotaConsumeResult consumeForHumanizer(VerlaQuotaContext ctx, String text) {
-        long words = Math.max(1, wordCounter.countWords(text));
         Map<String, Object> biz = baseBizContext(ctx);
-        biz.put("word_count", words);
-        return consumeInternal(ctx, FeatureCode.HUMANIZER, words, biz);
+        biz.put("charged_mode", "per_run");
+        return consumeInternal(ctx, FeatureCode.HUMANIZER, 1L, biz);
     }
 
     @Override

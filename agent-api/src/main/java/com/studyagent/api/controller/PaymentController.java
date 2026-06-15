@@ -83,10 +83,11 @@ public class PaymentController {
             CheckoutSessionResult result = paymentDomainService.createCheckoutSession(command);
 
             // 埋点：支付会话创建成功
-            Map<String, Object> paymentProps = new HashMap<>();
-            paymentProps.put("package_type", request.getPackageType());
-            paymentProps.put("customer_email", request.getCustomerEmail());
-            paymentProps.put("session_id", result.getSessionId());
+            Map<String, Object> paymentProps = buildCheckoutAnalyticsProps(
+                    request.getPackageType(),
+                    request.getCustomerEmail(),
+                    result.getSessionId()
+            );
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
 
@@ -97,8 +98,11 @@ public class PaymentController {
             return Result.success(data);
         } catch (PaymentDomainException e) {
             // 埋点：支付会话创建失败
-            Map<String, Object> errorProps = new HashMap<>();
-            errorProps.put("package_type", request.getPackageType());
+            Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
+                    request.getPackageType(),
+                    request.getCustomerEmail(),
+                    null
+            );
             errorProps.put("error_code", e.getCode());
             errorProps.put("error_message", e.getMessage());
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
@@ -113,8 +117,11 @@ public class PaymentController {
             log.error("创建支付会话失败: {}", e.getMessage(), e);
 
             // 埋点：支付会话创建失败（未知错误）
-            Map<String, Object> errorProps = new HashMap<>();
-            errorProps.put("package_type", request.getPackageType());
+            Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
+                    request.getPackageType(),
+                    request.getCustomerEmail(),
+                    null
+            );
             errorProps.put("error_code", "UNKNOWN");
             errorProps.put("error_message", e.getMessage());
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
@@ -202,6 +209,20 @@ public class PaymentController {
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(e.getMessage());
         };
+    }
+
+    private Map<String, Object> buildCheckoutAnalyticsProps(
+            String packageType,
+            String customerEmail,
+            String sessionId
+    ) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("package_type", packageType);
+        props.put("plan_id", packageType);
+        props.put("customer_email", customerEmail);
+        props.put("session_id", sessionId);
+        props.put("checkout_session_id", sessionId);
+        return props;
     }
 
     @Data

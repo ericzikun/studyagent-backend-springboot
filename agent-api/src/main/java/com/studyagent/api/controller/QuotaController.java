@@ -51,6 +51,17 @@ public class QuotaController {
             freeQuota.put("period_total", balance.freePeriodTotal());
             freeQuota.put("period_end", DateTimeFormats.formatApi(balance.freePeriodEnd()));
 
+            Map<String, Object> planQuota = new LinkedHashMap<>();
+            planQuota.put("balance", balance.planBalance());
+            planQuota.put("period_end", DateTimeFormats.formatApi(balance.planPeriodEnd()));
+
+            Map<String, Object> addonQuota = new LinkedHashMap<>();
+            addonQuota.put("balance", balance.addonBalance());
+            addonQuota.put("items", balance.addonItems());
+
+            Map<String, Object> legacyQuota = new LinkedHashMap<>();
+            legacyQuota.put("balance", balance.legacyBalance());
+
             Map<String, Object> paidQuota = new LinkedHashMap<>();
             paidQuota.put("balance", balance.paidBalance());
 
@@ -59,6 +70,9 @@ public class QuotaController {
             data.put("feature_name", balance.featureName());
             data.put("quota_unit", balance.quotaUnit());
             data.put("free_quota", freeQuota);
+            data.put("plan_quota", planQuota);
+            data.put("addon_quota", addonQuota);
+            data.put("legacy_quota", legacyQuota);
             data.put("paid_quota", paidQuota);
             data.put("total_available", balance.totalAvailable());
 
@@ -74,6 +88,17 @@ public class QuotaController {
                     freeQuota.put("period_total", balance.freePeriodTotal());
                     freeQuota.put("period_end", DateTimeFormats.formatApi(balance.freePeriodEnd()));
 
+                    Map<String, Object> planQuota = new LinkedHashMap<>();
+                    planQuota.put("balance", balance.planBalance());
+                    planQuota.put("period_end", DateTimeFormats.formatApi(balance.planPeriodEnd()));
+
+                    Map<String, Object> addonQuota = new LinkedHashMap<>();
+                    addonQuota.put("balance", balance.addonBalance());
+                    addonQuota.put("items", balance.addonItems());
+
+                    Map<String, Object> legacyQuota = new LinkedHashMap<>();
+                    legacyQuota.put("balance", balance.legacyBalance());
+
                     Map<String, Object> paidQuota = new LinkedHashMap<>();
                     paidQuota.put("balance", balance.paidBalance());
 
@@ -82,6 +107,9 @@ public class QuotaController {
                     m.put("feature_name", balance.featureName());
                     m.put("quota_unit", balance.quotaUnit());
                     m.put("free_quota", freeQuota);
+                    m.put("plan_quota", planQuota);
+                    m.put("addon_quota", addonQuota);
+                    m.put("legacy_quota", legacyQuota);
                     m.put("paid_quota", paidQuota);
                     m.put("total_available", balance.totalAvailable());
                     return m;
@@ -123,7 +151,11 @@ public class QuotaController {
                     m.put("sourceId", item.sourceId());
                     m.put("displayText", item.displayText());
                     m.put("freeBalanceAfter", item.freeBalanceAfter());
+                    m.put("planBalanceAfter", item.planBalanceAfter());
+                    m.put("addonBalanceAfter", item.addonBalanceAfter());
+                    m.put("legacyBalanceAfter", item.legacyBalanceAfter());
                     m.put("paidBalanceAfter", item.paidBalanceAfter());
+                    m.put("allocations", item.allocations());
                     m.put("createdAt", DateTimeFormats.formatApi(item.createdAt()));
                     m.put("feature_code", item.featureCode());
                     m.put("quota_unit", item.quotaUnit());

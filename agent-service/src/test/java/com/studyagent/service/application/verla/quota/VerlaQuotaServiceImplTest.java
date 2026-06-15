@@ -84,6 +84,10 @@ class VerlaQuotaServiceImplTest {
                 5L,
                 null,
                 Math.max(0, totalAvailable - 5),
+                null,
+                0L,
+                List.of(),
+                0L,
                 totalAvailable);
     }
 
@@ -152,26 +156,25 @@ class VerlaQuotaServiceImplTest {
     // ---------------------- 扣费成功 ----------------------
 
     @Test
-    void consumeForDetection_consumes_correctWordsAndBindsLedger() {
+    void consumeForDetection_chargesExactlyOnePerRun() {
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
-        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.AI_DETECTION.getCode()), anyLong()))
+        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L)))
                 .thenReturn(true);
         when(quotaDomainService.consume(
-                anyString(), eq(FeatureCode.AI_DETECTION.getCode()), anyLong(),
+                anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
                 eq("verla_session"), eq("33"), any()))
                 .thenReturn(new ConsumeResult(9999L));
-        when(sessionRepository.bindQuotaLedger(33L, 9999L, 4L)).thenReturn(true);
+        when(sessionRepository.bindQuotaLedger(33L, 9999L, 1L)).thenReturn(true);
 
-        // "hello world ai detection" → 4 英文词
         VerlaQuotaConsumeResult r = service.consumeForDetection(ctx(), "hello world ai detection");
 
         assertFalse(r.exempt());
         assertEquals(9999L, r.ledgerId());
-        assertEquals(4L, r.amount());
+        assertEquals(1L, r.amount());
 
         ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
         verify(quotaDomainService).consume(
-                eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(4L),
+                eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
                 eq("verla_session"), eq("33"), biz.capture());
         Map<String, Object> bz = biz.getValue();
         assertEquals(33L, bz.get("verla_session_id"));
@@ -179,11 +182,11 @@ class VerlaQuotaServiceImplTest {
         assertEquals(22L, bz.get("turn_id"));
         assertEquals(44L, bz.get("user_message_id"));
         assertEquals("ASSIGNMENT", bz.get("intent"));
-        assertEquals(4L, bz.get("word_count"));
+        assertEquals("per_run", bz.get("charged_mode"));
     }
 
     @Test
-    void consumeForHumanizer_consumesAtLeastOneWord_forBlankText() {
+    void consumeForHumanizer_chargesExactlyOnePerRun() {
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L)))
                 .thenReturn(true);
@@ -193,9 +196,14 @@ class VerlaQuotaServiceImplTest {
                 .thenReturn(new ConsumeResult(123L));
         when(sessionRepository.bindQuotaLedger(33L, 123L, 1L)).thenReturn(true);
 
-        VerlaQuotaConsumeResult r = service.consumeForHumanizer(ctx(), "   ");
+        VerlaQuotaConsumeResult r = service.consumeForHumanizer(ctx(), "many many words");
 
         assertEquals(1L, r.amount());
+        ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
+        verify(quotaDomainService).consume(
+                eq("user_abc"), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
+                eq("verla_session"), eq("33"), biz.capture());
+        assertEquals("per_run", biz.getValue().get("charged_mode"));
     }
 
     // ---------------------- 并发绑定冲突 ----------------------

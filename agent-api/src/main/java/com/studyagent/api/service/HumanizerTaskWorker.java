@@ -151,9 +151,9 @@ public class HumanizerTaskWorker {
     /**
      * 处理 DETECT 任务：调 Python /predict_stream，逐句更新
      * <p>
-     * 逐块扣费逻辑（按 PM 要求）：
-     * - 每收到一个 sentence chunk，计算该句 word 数并扣费
-     * - 如果扣费失败（余额不足），标记 QUOTA_EXHAUSTED 并中断
+     * V2 按次扣费逻辑（按 PM 要求）：
+     * - DETECT 每次启动仅扣 1 次
+     * - 如果启动扣费失败（余额不足），标记 QUOTA_EXHAUSTED 并中断
      * - admin/白名单用户跳过扣费
      * - 续跑时从 completedSentences 位置继续
      */
@@ -206,12 +206,42 @@ public class HumanizerTaskWorker {
                 }
             }
 
+            if (!skipQuota && task.getQuotaLedgerId() == null && consumedWords == 0) {
+                try {
+                    var consumeResult = quotaDomainService.consume(
+                            task.getClerkUserId(), FeatureCode.AI_DETECTION.getCode(), 1L,
+                            "humanizer_task", String.valueOf(task.getId()),
+                            Map.of(
+                                    "task_type", "DETECT",
+                                    "task_id", task.getId(),
+                                    "charged_mode", "per_run",
+                                    "charged_amount", 1L));
+                    task.setQuotaLedgerId(consumeResult.ledgerId());
+                    consumedWords = 1;
+
+                    HumanizerTaskEntity update = new HumanizerTaskEntity();
+                    update.setId(task.getId());
+                    update.setQuotaLedgerId(consumeResult.ledgerId());
+                    update.setConsumedWords(consumedWords);
+                    repository.updateById(update);
+                } catch (Exception e) {
+                    log.warn("DETECT 启动扣费失败（余额不足）: taskId={}, error={}", task.getId(), e.getMessage());
+
+                    HumanizerTaskEntity update = new HumanizerTaskEntity();
+                    update.setId(task.getId());
+                    update.setStatus("QUOTA_EXHAUSTED");
+                    update.setConsumedWords(0);
+                    update.setErrorMessage("Quota exhausted before detect started");
+                    repository.updateById(update);
+                    return;
+                }
+            }
+
             // 用 blockingIterable 消费 SSE 流，每收到一条就更新数据库
             Iterable<String> stream = humanizerServiceClientImpl.detectAIStream(task.getInputText(), relaxed)
                     .toIterable();
 
             int chunkIndex = 0;
-            boolean quotaExhausted = false;
 
             for (String rawLine : stream) {
                 try {
@@ -223,45 +253,6 @@ public class HumanizerTaskWorker {
                         // 续跑时跳过已完成的句子
                         if (chunkIndex <= alreadyCompleted) {
                             continue;
-                        }
-
-                        // 逐块扣费：计算这句的 word 数（用 fullSentence 完整句子，不是截断的 sentence 摘要）
-                        if (!skipQuota) {
-                            String sentenceText = data.get("fullSentence") != null
-                                    ? data.get("fullSentence").toString()
-                                    : (data.get("sentence") != null ? data.get("sentence").toString() : "");
-                            int sentenceWords = countWords(sentenceText);
-                            if (sentenceWords < 1) sentenceWords = 1; // 至少扣 1 word
-
-                            try {
-                                String featureCode = FeatureCode.AI_DETECTION.getCode();
-                                quotaDomainService.consume(
-                                        task.getClerkUserId(), featureCode, sentenceWords,
-                                        "humanizer_task", String.valueOf(task.getId()),
-                                        Map.of("task_type", "DETECT",
-                                                "task_id", task.getId(),
-                                                "sentence_index", chunkIndex,
-                                                "sentence_words", sentenceWords));
-                                consumedWords += sentenceWords;
-                            } catch (Exception e) {
-                                // 余额不足，标记 QUOTA_EXHAUSTED
-                                log.warn("DETECT 逐块扣费失败（余额不足）: taskId={}, sentence={}, error={}",
-                                        task.getId(), chunkIndex, e.getMessage());
-
-                                HumanizerTaskEntity update = new HumanizerTaskEntity();
-                                update.setId(task.getId());
-                                update.setStatus("QUOTA_EXHAUSTED");
-                                update.setSentencesJson(objectMapper.writeValueAsString(sentences));
-                                update.setCompletedSentences(sentences.size());
-                                update.setConsumedWords(consumedWords);
-                                update.setErrorMessage("Quota exhausted at sentence " + chunkIndex);
-                                repository.updateById(update);
-
-                                log.info("DETECT 任务因余额不足暂停: id={}, completedSentences={}, consumedWords={}",
-                                        task.getId(), sentences.size(), consumedWords);
-                                quotaExhausted = true;
-                                break;
-                            }
                         }
 
                         // chunk 数据：一句的检测结果
@@ -314,10 +305,6 @@ public class HumanizerTaskWorker {
                 } catch (JsonProcessingException e) {
                     log.warn("解析 SSE 数据失败: {}", rawLine, e);
                 }
-            }
-
-            if (quotaExhausted) {
-                return; // 已在上面处理过了
             }
 
             // 流结束但没收到 done 事件，用已有数据计算结果

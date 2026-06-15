@@ -26,6 +26,12 @@ public class UserAiQuotaEntity extends BaseEntity {
     private LocalDateTime freePeriodStart;
     @TableField("free_period_end")
     private LocalDateTime freePeriodEnd;
+    @TableField("plan_balance")
+    private Long planBalance;
+    @TableField("plan_period_start")
+    private LocalDateTime planPeriodStart;
+    @TableField("plan_period_end")
+    private LocalDateTime planPeriodEnd;
     @TableField("paid_balance")
     private Long paidBalance;
     @Version

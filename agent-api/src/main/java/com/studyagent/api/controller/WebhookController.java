@@ -231,14 +231,16 @@ public class WebhookController {
 
             // 埋点：支付完成（无论是否幂等跳过，都记录支付完成事件）
             if (success) {
-                Map<String, Object> paymentProps = new HashMap<>();
-                paymentProps.put("session_id", session.getId());
-                paymentProps.put("package_type", packageType);
-                paymentProps.put("feature_code", featureCode);
-                paymentProps.put("quota_amount", quotaAmount);
-                paymentProps.put("price_cents", priceCents);
-                paymentProps.put("currency", currency);
-                paymentProps.put("customer_email", customerEmail);
+                Map<String, Object> paymentProps = buildBillingPaymentProps(
+                        session.getId(),
+                        paymentIntentId,
+                        packageType,
+                        featureCode,
+                        quotaAmount,
+                        priceCents,
+                        currency,
+                        customerEmail
+                );
                 analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
                 analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
 
@@ -375,6 +377,20 @@ public class WebhookController {
                 failureReason
         );
         if (recorded) {
+            Map<String, Object> failedProps = buildBillingPaymentProps(
+                    null,
+                    paymentIntentId,
+                    packageType,
+                    featureCode,
+                    quotaAmount,
+                    priceCents,
+                    currency,
+                    null
+            );
+            failedProps.put("failure_reason", failureReason);
+            analyticsService.capture(clerkUserId != null && !clerkUserId.isEmpty() ? clerkUserId : "unknown",
+                    AnalyticsEvents.BILLING_PAYMENT_FAILED, failedProps);
+
             robotNotifyAsyncService.notifyPaymentFailed(
                     "payment_failed_" + paymentIntentId,
                     clerkUserId != null ? clerkUserId : "",
@@ -463,6 +479,20 @@ public class WebhookController {
                 failureReason
         );
         if (recorded) {
+            Map<String, Object> failedProps = buildBillingPaymentProps(
+                    null,
+                    paymentIntentId,
+                    packageType,
+                    featureCode,
+                    quotaAmount,
+                    priceCents,
+                    currency,
+                    null
+            );
+            failedProps.put("failure_reason", failureReason);
+            analyticsService.capture(clerkUserId != null && !clerkUserId.isEmpty() ? clerkUserId : "unknown",
+                    AnalyticsEvents.BILLING_PAYMENT_FAILED, failedProps);
+
             robotNotifyAsyncService.notifyPaymentFailed(
                     "payment_failed_" + paymentIntentId,
                     clerkUserId != null ? clerkUserId : "",
@@ -477,4 +507,28 @@ public class WebhookController {
             );
         }
     }
+
+    private Map<String, Object> buildBillingPaymentProps(
+            String sessionId,
+            String paymentIntentId,
+            String packageType,
+            String featureCode,
+            long quotaAmount,
+            int priceCents,
+            String currency,
+            String customerEmail) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("session_id", sessionId);
+        props.put("checkout_session_id", sessionId);
+        props.put("payment_intent_id", paymentIntentId);
+        props.put("package_type", packageType);
+        props.put("plan_id", packageType);
+        props.put("feature_code", featureCode);
+        props.put("quota_amount", quotaAmount);
+        props.put("price_cents", priceCents);
+        props.put("currency", currency);
+        props.put("customer_email", customerEmail);
+        return props;
+    }
+
 }

@@ -13,6 +13,7 @@ public class SubscriptionResult {
     private String status;
     private String stripeCustomerId;
     private String stripeSubscriptionId;
+    private String stripeScheduleId;
     private LocalDateTime currentPeriodStart;
     private LocalDateTime currentPeriodEnd;
     private LocalDateTime quotaPeriodStart;

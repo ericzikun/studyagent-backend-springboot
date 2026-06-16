@@ -25,5 +25,7 @@ public interface BillingDomainService {
 
     SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode);
 
+    SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode);
+
     boolean isPaidMember(String clerkUserId);
 }

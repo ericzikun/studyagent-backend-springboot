@@ -311,6 +311,9 @@ public class StripeBillingWebhookService {
         entity.setStripeCustomerId(subscription.getCustomer());
         entity.setStripeSubscriptionId(subscription.getId());
         entity.setStatus(deleted ? "canceled" : subscription.getStatus());
+        if (deleted) {
+            entity.setStripeScheduleId(null);
+        }
         if (!pendingActivationNotPaid) {
             entity.setTier(deleted ? "free" : plan.getTier());
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
@@ -320,6 +323,7 @@ public class StripeBillingWebhookService {
         entity.setCancelAtPeriodEnd(!deleted && Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()));
         if (activatePendingPlan && !deleted && entity.getPendingPlanCode() != null
                 && entity.getPendingPlanCode().equals(plan.getPlanCode())) {
+            entity.setStripeScheduleId(null);
             entity.setPendingPlanCode(null);
             entity.setPendingEffectiveAt(null);
         }
@@ -341,6 +345,7 @@ public class StripeBillingWebhookService {
                 .eq(UserSubscriptionEntity::getId, entity.getId())
                 .set(UserSubscriptionEntity::getStripeCustomerId, entity.getStripeCustomerId())
                 .set(UserSubscriptionEntity::getStripeSubscriptionId, entity.getStripeSubscriptionId())
+                .set(UserSubscriptionEntity::getStripeScheduleId, entity.getStripeScheduleId())
                 .set(UserSubscriptionEntity::getTier, entity.getTier())
                 .set(UserSubscriptionEntity::getStatus, entity.getStatus())
                 .set(UserSubscriptionEntity::getCancelAtPeriodEnd, entity.getCancelAtPeriodEnd())

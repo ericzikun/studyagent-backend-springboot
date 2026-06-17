@@ -43,4 +43,5 @@ public class VerlaAttachmentEntity {
     private String imagesJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime deletedAt;
 }

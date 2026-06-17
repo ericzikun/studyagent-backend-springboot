@@ -3,6 +3,7 @@ package com.studyagent.api.controller.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.common.analytics.AnalyticsService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaFileChatService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
@@ -151,7 +152,7 @@ class VerlaFileChatHttpBindingTest {
         private List<VerlaAttachment> attachments = List.of();
 
         StubAttachmentService() {
-            super(null, null, null, null);
+            super(null, null, null, null, mock(EntitlementService.class));
         }
 
         @Override
@@ -194,7 +195,8 @@ class VerlaFileChatHttpBindingTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, null, event -> {}, null);
+            super(null, null, null, null, null, null, null, null, null, null, null, null,
+                    mock(EntitlementService.class), event -> {}, null);
         }
 
         @Override

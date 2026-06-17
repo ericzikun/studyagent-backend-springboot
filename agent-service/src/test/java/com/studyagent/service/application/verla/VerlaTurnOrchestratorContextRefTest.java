@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
@@ -66,6 +67,7 @@ class VerlaTurnOrchestratorContextRefTest {
                 mqOutboxService,
                 new ObjectMapper(),
                 Mockito.mock(VerlaQuotaService.class),
+                Mockito.mock(EntitlementService.class),
                 event -> {},
                 Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
@@ -370,6 +372,16 @@ class VerlaTurnOrchestratorContextRefTest {
         @Override
         public List<com.studyagent.service.domain.verla.VerlaAttachment> listByTurn(Long turnId) {
             return List.of();
+        }
+
+        @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, java.time.LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            return null;
         }
 
         @Override

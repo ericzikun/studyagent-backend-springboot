@@ -7,6 +7,7 @@ import com.studyagent.api.dto.verla.response.FileChatPanelResponseVO;
 import com.studyagent.api.dto.verla.response.FileChatSendMessageResponseVO;
 import com.studyagent.api.dto.verla.response.FileChatMessageVO;
 import com.studyagent.common.analytics.AnalyticsService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.VerlaFileChatService;
 import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
@@ -136,7 +137,8 @@ class VerlaFileChatControllerTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, null, event -> {}, null);
+            super(null, null, null, null, null, null, null, null, null, null, null, null,
+                    mock(EntitlementService.class), event -> {}, null);
         }
 
         @Override

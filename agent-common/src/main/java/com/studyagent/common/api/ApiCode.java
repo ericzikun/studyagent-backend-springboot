@@ -30,10 +30,13 @@ public enum ApiCode {
     QUOTA_EXCEEDED(1010, "Daily task submission limit reached (%d times). Please try again tomorrow.", "今日任务提交次数已达上限（%d 次），请明天再试"),
     /** AI 额度不足，提示去充值 */
     INSUFFICIENT_QUOTA(1011, "Insufficient quota. Please recharge to continue.", "额度不足，请充值后继续"),
+    OUTPUT_TYPE_NOT_ALLOWED(1013, "Current plan does not support the requested output type", "当前套餐不支持目标输出类型"),
+    FILE_LIMIT_REACHED(1014, "Current plan has reached the file limit for this assignment", "当前套餐已达到该 assignment 的文件上限"),
     ADDON_REQUIRES_PAID_MEMBER(1015, "A paid subscription is required to purchase add-ons", "付费会员才能购买加量包"),
     SUBSCRIPTION_CHANGE_PENDING(1016, "A subscription change is already pending", "已有待处理的订阅变更"),
     SUBSCRIPTION_STATE_INVALID(1017, "The subscription cannot be changed in its current state", "当前订阅状态不可变更"),
     PAYMENT_PROCESSING(1018, "Payment is still processing", "支付处理中"),
+    FOLLOWUP_EDIT_LIMIT_REACHED(1019, "Current plan has reached the follow-up edit limit for this assignment", "当前套餐已达到该 assignment 的 follow-up edit 上限"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

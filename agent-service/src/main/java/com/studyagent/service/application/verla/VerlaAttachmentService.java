@@ -15,6 +15,7 @@ import com.studyagent.common.verla.envelope.VerlaTurnRef;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.common.verla.util.VerlaPseudoSessionIds;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
 import com.studyagent.service.application.verla.util.VerlaAttachmentOssKeys;
 import com.studyagent.service.domain.file.OssStorageService;
@@ -70,6 +71,7 @@ public class VerlaAttachmentService {
     private final VerlaAttachmentRepository attachmentRepository;
     private final MqOutboxService mqOutboxService;
     private final OssStorageService ossStorageService;
+    private final EntitlementService entitlementService;
 
     @Value("${verla.mq.command-exchange:" + DEFAULT_COMMAND_EXCHANGE + "}")
     private String commandExchange;
@@ -114,11 +116,13 @@ public class VerlaAttachmentService {
     public VerlaAttachmentService(VerlaConversationService conversationService,
                                   VerlaAttachmentRepository attachmentRepository,
                                   MqOutboxService mqOutboxService,
-                                  OssStorageService ossStorageService) {
+                                  OssStorageService ossStorageService,
+                                  EntitlementService entitlementService) {
         this.conversationService = conversationService;
         this.attachmentRepository = attachmentRepository;
         this.mqOutboxService = mqOutboxService;
         this.ossStorageService = ossStorageService;
+        this.entitlementService = entitlementService;
     }
 
     @PostConstruct
@@ -215,6 +219,9 @@ public class VerlaAttachmentService {
         String normalizedOrigin = normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_USER_UPLOAD);
         boolean isDocEditorImage = ORIGIN_DOC_EDITOR_IMAGE.equalsIgnoreCase(normalizedOrigin);
         boolean isEditorPreviewImage = ORIGIN_EDITOR_PREVIEW_IMAGE.equalsIgnoreCase(normalizedOrigin);
+        if (VerlaAttachment.ORIGIN_USER_UPLOAD.equals(normalizedOrigin)) {
+            entitlementService.assertCanReserveUserUpload(clerkUserId, conversationId);
+        }
 
         String ossKey;
         if (isDocEditorImage) {
@@ -453,6 +460,21 @@ public class VerlaAttachmentService {
             throw new BusinessException(ApiCode.NO_PERMISSION);
         }
         return a;
+    }
+
+    @Transactional
+    public void deleteAttachment(String clerkUserId, String objectId) {
+        VerlaAttachment attachment = getOwned(clerkUserId, objectId);
+        if (attachment.getDeletedAt() != null) {
+            return;
+        }
+        String normalizedOrigin = normalizeAttachmentOrigin(
+                attachment.getAttachmentOrigin(),
+                VerlaAttachment.ORIGIN_USER_UPLOAD);
+        if (!VerlaAttachment.ORIGIN_USER_UPLOAD.equals(normalizedOrigin)) {
+            throw new BusinessException(ApiCode.NO_PERMISSION, "only user uploads can be deleted");
+        }
+        attachmentRepository.softDeleteUserUpload(clerkUserId, objectId);
     }
 
     /** Py 内部接口：仅校验 conversation 存在（所有权由 internal 网络层约束） */

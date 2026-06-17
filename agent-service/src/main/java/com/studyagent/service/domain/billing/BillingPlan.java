@@ -19,4 +19,18 @@ public class BillingPlan {
     private Integer maxFiles;
     private Integer maxFollowupEdits;
     private String allowedOutputTypes;
+
+    public static BillingPlan freePlan() {
+        return BillingPlan.builder()
+                .planCode("free")
+                .tier("free")
+                .billingInterval("none")
+                .assignmentQuota(1L)
+                .detectionQuota(1L)
+                .humanizerQuota(1L)
+                .maxFiles(3)
+                .maxFollowupEdits(3)
+                .allowedOutputTypes("[\"writing\"]")
+                .build();
+    }
 }

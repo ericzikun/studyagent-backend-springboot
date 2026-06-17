@@ -27,5 +27,7 @@ public interface BillingDomainService {
 
     SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode);
 
+    BillingPlan getEffectivePlanOrFree(String clerkUserId);
+
     boolean isPaidMember(String clerkUserId);
 }

@@ -2,6 +2,7 @@ package com.studyagent.service.domain.verla.repo;
 
 import com.studyagent.service.domain.verla.VerlaAttachment;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -23,6 +24,10 @@ public interface VerlaAttachmentRepository {
     List<VerlaAttachment> listByConversation(Long conversationId, int limit);
 
     List<VerlaAttachment> listByTurn(Long turnId);
+
+    long countActiveUserUploadsForConversation(Long conversationId, LocalDateTime pendingCutoff);
+
+    VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId);
 
     /**
      * 推进解析状态（按 objectId 幂等）：

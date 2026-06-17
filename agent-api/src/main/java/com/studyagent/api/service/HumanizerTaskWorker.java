@@ -215,7 +215,8 @@ public class HumanizerTaskWorker {
                                     "task_type", "DETECT",
                                     "task_id", task.getId(),
                                     "charged_mode", "per_run",
-                                    "charged_amount", 1L));
+                                    "charged_amount", 1L),
+                            "detection:" + task.getId() + ":start");
                     task.setQuotaLedgerId(consumeResult.ledgerId());
                     consumedWords = 1;
 

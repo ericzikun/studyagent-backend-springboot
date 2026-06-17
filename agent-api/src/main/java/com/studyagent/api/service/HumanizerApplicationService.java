@@ -31,6 +31,11 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class HumanizerApplicationService {
+    private static final String STATUS_CHARGING = "CHARGING";
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_PROCESSING = "PROCESSING";
+    private static final String STATUS_COMPLETED = "COMPLETED";
+    private static final String STATUS_QUOTA_EXHAUSTED = "QUOTA_EXHAUSTED";
 
     private final HumanizerTaskRepositoryImpl repository;
     private final QuotaDomainService quotaDomainService;
@@ -89,6 +94,7 @@ public class HumanizerApplicationService {
 
         Long quotaLedgerId = null;
         boolean quotaConsumed = false;
+        boolean shouldChargeHumanizeAfterInsert = false;
 
         if (!isAdmin && !isWhitelisted) {
             if ("DETECT".equals(taskType)) {
@@ -111,7 +117,7 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setSource(source);
                     exhaustedEntity.setTaskType(taskType);
                     exhaustedEntity.setInputText(text);
-                    exhaustedEntity.setStatus("QUOTA_EXHAUSTED");
+                    exhaustedEntity.setStatus(STATUS_QUOTA_EXHAUSTED);
                     exhaustedEntity.setRetryCount(0);
                     exhaustedEntity.setCompletedSentences(0);
                     exhaustedEntity.setTotalWords(splitTotalWords > 0 ? splitTotalWords : wordCount);
@@ -129,7 +135,7 @@ public class HumanizerApplicationService {
                     HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                             .id(exhaustedEntity.getId())
                             .taskType(taskType)
-                            .status("QUOTA_EXHAUSTED")
+                            .status(STATUS_QUOTA_EXHAUSTED)
                             .totalWords(splitTotalWords > 0 ? splitTotalWords : wordCount)
                             .consumedWords(0)
                             .progress(0)
@@ -146,7 +152,7 @@ public class HumanizerApplicationService {
                     exhaustedEntity.setSource(source);
                     exhaustedEntity.setTaskType(taskType);
                     exhaustedEntity.setInputText(text);
-                    exhaustedEntity.setStatus("QUOTA_EXHAUSTED");
+                    exhaustedEntity.setStatus(STATUS_QUOTA_EXHAUSTED);
                     exhaustedEntity.setRetryCount(0);
                     exhaustedEntity.setCompletedSentences(0);
                     exhaustedEntity.setTotalWords(wordCount);
@@ -161,7 +167,7 @@ public class HumanizerApplicationService {
                     HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                             .id(exhaustedEntity.getId())
                             .taskType(taskType)
-                            .status("QUOTA_EXHAUSTED")
+                            .status(STATUS_QUOTA_EXHAUSTED)
                             .totalWords(wordCount)
                             .consumedWords(0)
                             .progress(0)
@@ -169,18 +175,7 @@ public class HumanizerApplicationService {
                     return new HumanizerSubmitResult(response, false);
                 }
 
-                ConsumeResult consumeResult = quotaDomainService.consume(
-                        clerkUserId, featureCode, 1L,
-                        "humanizer_task", null,
-                        Map.of(
-                                "task_type", taskType,
-                                "word_count", wordCount,
-                                "charged_mode", "per_run",
-                                "charged_amount", 1L));
-                quotaLedgerId = consumeResult.ledgerId();
-                quotaConsumed = true;
-                log.info("HUMANIZE 额度扣减成功: userId={}, feature={}, amount=1, words={}, ledgerId={}",
-                        clerkUserId, featureCode, wordCount, quotaLedgerId);
+                shouldChargeHumanizeAfterInsert = true;
             }
         }
 
@@ -190,7 +185,7 @@ public class HumanizerApplicationService {
         entity.setSource(source);
         entity.setTaskType(taskType);
         entity.setInputText(text);
-        entity.setStatus("PENDING");
+        entity.setStatus(shouldChargeHumanizeAfterInsert ? STATUS_CHARGING : STATUS_PENDING);
         entity.setRetryCount(0);
         entity.setCompletedSentences(0);
         entity.setQuotaLedgerId(quotaLedgerId);
@@ -200,6 +195,50 @@ public class HumanizerApplicationService {
         entity.setUpdatedAt(DateTimeFormats.now());
 
         repository.insert(entity);
+
+        if (shouldChargeHumanizeAfterInsert) {
+            try {
+                ConsumeResult consumeResult = quotaDomainService.consume(
+                        clerkUserId, featureCode, 1L,
+                        "humanizer_task", String.valueOf(entity.getId()),
+                        Map.of(
+                                "task_type", taskType,
+                                "task_id", entity.getId(),
+                                "word_count", wordCount,
+                                "charged_mode", "per_run",
+                                "charged_amount", 1L),
+                        "humanizer:" + entity.getId() + ":start");
+                quotaLedgerId = consumeResult.ledgerId();
+                quotaConsumed = true;
+                entity.setQuotaLedgerId(quotaLedgerId);
+
+                HumanizerTaskEntity ledgerUpdate = new HumanizerTaskEntity();
+                ledgerUpdate.setId(entity.getId());
+                ledgerUpdate.setStatus(STATUS_PENDING);
+                ledgerUpdate.setQuotaLedgerId(quotaLedgerId);
+                repository.updateById(ledgerUpdate);
+                log.info("HUMANIZE 额度扣减成功: userId={}, feature={}, amount=1, words={}, ledgerId={}, taskId={}",
+                        clerkUserId, featureCode, wordCount, quotaLedgerId, entity.getId());
+            } catch (RuntimeException ex) {
+                HumanizerTaskEntity exhaustedUpdate = new HumanizerTaskEntity();
+                exhaustedUpdate.setId(entity.getId());
+                exhaustedUpdate.setStatus(STATUS_QUOTA_EXHAUSTED);
+                exhaustedUpdate.setErrorMessage("Quota exhausted before humanize started");
+                repository.updateById(exhaustedUpdate);
+
+                log.warn("HUMANIZE 入库后启动扣费失败: taskId={}, userId={}, error={}",
+                        entity.getId(), clerkUserId, ex.getMessage());
+                HumanizerTaskResponse response = HumanizerTaskResponse.builder()
+                        .id(entity.getId())
+                        .taskType(taskType)
+                        .status(STATUS_QUOTA_EXHAUSTED)
+                        .totalWords(wordCount)
+                        .consumedWords(0)
+                        .progress(0)
+                        .build();
+                return new HumanizerSubmitResult(response, false);
+            }
+        }
 
         // 提交即异步生成任务标题（复用 Python ConversationTitleService，经 MQ 回写 task_name）。
         // best-effort：dispatcher 内部已吞异常，绝不影响任务提交。
@@ -217,7 +256,7 @@ public class HumanizerApplicationService {
         HumanizerTaskResponse response = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(taskType)
-                .status("PENDING")
+                .status(STATUS_PENDING)
                 .estimatedSeconds((int) Math.ceil(processTime))
                 .estimatedQueueSeconds((int) Math.ceil(waitTime))
                 .queuePosition(queueAhead)
@@ -231,7 +270,7 @@ public class HumanizerApplicationService {
 
     /**
      * 取消任务
-     * PENDING/PROCESSING → CANCELLED，释放资源，退还未消耗的额度
+     * CHARGING/PENDING/PROCESSING → CANCELLED，释放资源，退还未消耗的额度
      * COMPLETED/FAILED/CANCELLED/QUOTA_EXHAUSTED → 直接返回当前状态，不做操作
      */
     public HumanizerTaskResponse cancelTask(Long taskId, String clerkUserId) {
@@ -246,12 +285,13 @@ public class HumanizerApplicationService {
         String status = entity.getStatus();
 
         // 只有 PENDING/PROCESSING 才需要取消
-        if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+        if (STATUS_CHARGING.equals(status) || STATUS_PENDING.equals(status) || STATUS_PROCESSING.equals(status)) {
             boolean cancelled = repository.cancelTask(taskId);
             if (cancelled) {
                 log.info("任务已取消: taskId={}, previousStatus={}", taskId, status);
-                // HUMANIZE + PENDING：提交时已扣费但还没开始处理，退还额度
-                if ("HUMANIZE".equals(entity.getTaskType()) && "PENDING".equals(status)) {
+                // HUMANIZE + CHARGING/PENDING：提交时已扣费但还没开始处理，退还额度
+                if ("HUMANIZE".equals(entity.getTaskType())
+                        && (STATUS_CHARGING.equals(status) || STATUS_PENDING.equals(status))) {
                     refundOnCancel(entity);
                 }
             } else {
@@ -266,13 +306,13 @@ public class HumanizerApplicationService {
     }
 
     /**
-     * HUMANIZE PENDING 取消时退还额度
+     * HUMANIZE 排队态取消时退还额度
      */
     private void refundOnCancel(HumanizerTaskEntity entity) {
         if (entity.getQuotaLedgerId() == null) return;
         try {
             quotaDomainService.refund(entity.getQuotaLedgerId(), "humanizer_task_cancelled");
-            log.info("HUMANIZE PENDING 额度已退还: taskId={}, ledgerId={}", entity.getId(), entity.getQuotaLedgerId());
+            log.info("HUMANIZE 排队态额度已退还: taskId={}, ledgerId={}", entity.getId(), entity.getQuotaLedgerId());
         } catch (Exception e) {
             log.error("取消任务退还额度失败: taskId={}, ledgerId={}", entity.getId(), entity.getQuotaLedgerId(), e);
         }
@@ -290,7 +330,7 @@ public class HumanizerApplicationService {
         if (!entity.getClerkUserId().equals(clerkUserId)) {
             throw new IllegalArgumentException("Task not found: " + taskId);
         }
-        if (!"QUOTA_EXHAUSTED".equals(entity.getStatus())) {
+        if (!STATUS_QUOTA_EXHAUSTED.equals(entity.getStatus())) {
             throw new IllegalStateException("Task is not in QUOTA_EXHAUSTED status, current: " + entity.getStatus());
         }
 
@@ -325,12 +365,14 @@ public class HumanizerApplicationService {
             if ("HUMANIZE".equals(entity.getTaskType())) {
                 ConsumeResult consumeResult = quotaDomainService.consume(
                         clerkUserId, featureCode, 1L,
-                        "humanizer_task", null,
+                        "humanizer_task", String.valueOf(taskId),
                         Map.of(
                                 "task_type", entity.getTaskType(),
+                                "task_id", taskId,
                                 "word_count", entity.getTotalWords() != null ? entity.getTotalWords() : 0,
                                 "charged_mode", "per_run",
-                                "charged_amount", 1L));
+                                "charged_amount", 1L),
+                        "humanizer:" + taskId + ":start");
                 // 更新 quotaLedgerId 以便后续退款
                 HumanizerTaskEntity ledgerUpdate = new HumanizerTaskEntity();
                 ledgerUpdate.setId(taskId);
@@ -344,7 +386,7 @@ public class HumanizerApplicationService {
         // 改回 PENDING，Worker 下一轮会捡起来继续
         HumanizerTaskEntity update = new HumanizerTaskEntity();
         update.setId(taskId);
-        update.setStatus("PENDING");
+        update.setStatus(STATUS_PENDING);
         update.setErrorMessage(null);
         repository.updateById(update);
 
@@ -413,12 +455,13 @@ public class HumanizerApplicationService {
      * PENDING/PROCESSING 状态时带上预估剩余时间和进度百分比
      */
     private HumanizerTaskResponse toDetailResponse(HumanizerTaskEntity entity) {
+        String status = externalStatus(entity.getStatus());
         HumanizerTaskResponse.HumanizerTaskResponseBuilder builder = HumanizerTaskResponse.builder()
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
                 .taskName(entity.getTaskName())
                 .inputText(entity.getInputText())
-                .status(entity.getStatus())
+                .status(status)
                 .probability(entity.getProbability())
                 .label(entity.getLabel())
                 .sentencesJson(entity.getSentencesJson())
@@ -431,19 +474,17 @@ public class HumanizerApplicationService {
                 .consumedWords(entity.getConsumedWords())
                 .createdAt(DateTimeFormats.formatApi(entity.getCreatedAt()));
 
-        String status = entity.getStatus();
-
         // 计算进度百分比
         int progress = calculateProgress(entity);
         builder.progress(progress);
 
         // 未完成的任务带上预估时间
-        if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+        if (STATUS_PENDING.equals(status) || STATUS_PROCESSING.equals(status)) {
             int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
             int queueAhead = repository.countQueueAhead(entity.getTaskType(), entity.getId());
             double processTime = estimateProcessTime(entity.getTaskType(), textLen);
 
-            if ("PROCESSING".equals(status)) {
+            if (STATUS_PROCESSING.equals(status)) {
                 // 正在处理，只返回处理剩余时间，排队时间为 0
                 int remaining = estimateRemaining(entity);
                 builder.estimatedSeconds(remaining);
@@ -469,7 +510,7 @@ public class HumanizerApplicationService {
                 .id(entity.getId())
                 .taskType(entity.getTaskType())
                 .taskName(entity.getTaskName())
-                .status(entity.getStatus())
+                .status(externalStatus(entity.getStatus()))
                 .inputTextPreview(preview(entity.getInputText()))
                 .probability(entity.getProbability())
                 .label(entity.getLabel())
@@ -492,15 +533,15 @@ public class HumanizerApplicationService {
     /**
      * 计算进度百分比 (0~100)
      * - COMPLETED → 100
-     * - PENDING → 0
+     * - CHARGING/PENDING → 0
      * - PROCESSING → 根据实际进度计算，最低 1
      * - FAILED / QUOTA_EXHAUSTED → 0
      */
     private int calculateProgress(HumanizerTaskEntity entity) {
-        String status = entity.getStatus();
+        String status = externalStatus(entity.getStatus());
 
-        if ("COMPLETED".equals(status)) return 100;
-        if ("PENDING".equals(status)) return 0;
+        if (STATUS_COMPLETED.equals(status)) return 100;
+        if (STATUS_PENDING.equals(status)) return 0;
 
         if ("DETECT".equals(entity.getTaskType())) {
             Integer total = entity.getTotalSentences();
@@ -509,10 +550,10 @@ public class HumanizerApplicationService {
                 int pct = (int) Math.round(completed * 100.0 / total);
                 return Math.max(1, Math.min(99, pct));
             }
-            if ("PROCESSING".equals(status)) return 1;
+            if (STATUS_PROCESSING.equals(status)) return 1;
             return 0;
         } else {
-            if ("PROCESSING".equals(status) && entity.getStartedAt() != null) {
+            if (STATUS_PROCESSING.equals(status) && entity.getStartedAt() != null) {
                 int textLen = entity.getInputText() != null ? entity.getInputText().length() : 0;
                 double totalEstimate = estimateProcessTime("HUMANIZE", textLen);
                 long elapsedSec = java.time.Duration.between(entity.getStartedAt(), DateTimeFormats.now()).getSeconds();
@@ -522,9 +563,16 @@ public class HumanizerApplicationService {
                 }
                 return 1;
             }
-            if ("PROCESSING".equals(status)) return 1;
+            if (STATUS_PROCESSING.equals(status)) return 1;
             return 0;
         }
+    }
+
+    private String externalStatus(String status) {
+        if (STATUS_CHARGING.equals(status)) {
+            return STATUS_PENDING;
+        }
+        return status;
     }
 
     // ===== 预估时间计算 =====

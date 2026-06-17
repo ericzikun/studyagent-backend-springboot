@@ -149,7 +149,7 @@ class VerlaQuotaServiceImplTest {
         assertEquals(FeatureCode.TASK_CREATE.getCode(), ex.getData().getFeatureCode());
         assertEquals(0L, ex.getData().getTotalAvailable());
         verify(quotaDomainService, never()).consume(
-                anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
         verify(sessionRepository, never()).bindQuotaLedger(anyLong(), anyLong(), anyLong());
     }
 
@@ -162,7 +162,7 @@ class VerlaQuotaServiceImplTest {
                 .thenReturn(true);
         when(quotaDomainService.consume(
                 anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
-                eq("verla_session"), eq("33"), any()))
+                eq("verla_session"), eq("33"), any(), eq((String) null)))
                 .thenReturn(new ConsumeResult(9999L));
         when(sessionRepository.bindQuotaLedger(33L, 9999L, 1L)).thenReturn(true);
 
@@ -175,7 +175,7 @@ class VerlaQuotaServiceImplTest {
         ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
         verify(quotaDomainService).consume(
                 eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
-                eq("verla_session"), eq("33"), biz.capture());
+                eq("verla_session"), eq("33"), biz.capture(), eq((String) null));
         Map<String, Object> bz = biz.getValue();
         assertEquals(33L, bz.get("verla_session_id"));
         assertEquals(11L, bz.get("conversation_id"));
@@ -192,7 +192,7 @@ class VerlaQuotaServiceImplTest {
                 .thenReturn(true);
         when(quotaDomainService.consume(
                 anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
-                anyString(), anyString(), any()))
+                anyString(), anyString(), any(), eq((String) null)))
                 .thenReturn(new ConsumeResult(123L));
         when(sessionRepository.bindQuotaLedger(33L, 123L, 1L)).thenReturn(true);
 
@@ -202,7 +202,7 @@ class VerlaQuotaServiceImplTest {
         ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
         verify(quotaDomainService).consume(
                 eq("user_abc"), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
-                eq("verla_session"), eq("33"), biz.capture());
+                eq("verla_session"), eq("33"), biz.capture(), eq((String) null));
         assertEquals("per_run", biz.getValue().get("charged_mode"));
     }
 
@@ -224,7 +224,7 @@ class VerlaQuotaServiceImplTest {
         assertEquals(777L, r.ledgerId());
         assertEquals(1L, r.amount());
         verify(quotaDomainService, never()).consume(
-                anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -251,7 +251,7 @@ class VerlaQuotaServiceImplTest {
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(quotaDomainService.canConsume(anyString(), anyString(), anyLong())).thenReturn(true);
         when(quotaDomainService.consume(
-                anyString(), anyString(), anyLong(), anyString(), anyString(), any()))
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any(), anyString()))
                 .thenReturn(new ConsumeResult(111L));
         when(sessionRepository.bindQuotaLedger(33L, 111L, 1L)).thenReturn(false);
         // 反查 session 用于日志
@@ -260,6 +260,9 @@ class VerlaQuotaServiceImplTest {
 
         assertThrows(IllegalStateException.class,
                 () -> service.consumeForAssignmentRun(ctx()));
+        verify(quotaDomainService).consume(
+                eq("user_abc"), eq(FeatureCode.TASK_CREATE.getCode()), eq(1L),
+                eq("verla_session"), eq("33"), any(), eq("assignment:11:generate"));
     }
 
     // ---------------------- 退款 ----------------------
@@ -335,6 +338,7 @@ class VerlaQuotaServiceImplTest {
 
         assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc"));
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+        verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -347,6 +351,7 @@ class VerlaQuotaServiceImplTest {
         assertThrows(InsufficientQuotaException.class,
                 () -> service.assertSufficientForAssignmentRun("user_abc"));
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+        verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
     }
 
     // ---------------------- WordCounter ----------------------

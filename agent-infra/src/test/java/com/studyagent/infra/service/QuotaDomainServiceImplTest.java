@@ -143,6 +143,72 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void consume_returnsExistingLedger_whenIdempotencyKeyRepeated() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(1L);
+        featureDef.setIsActive(true);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(11L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(1L);
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        QuotaLedgerEntity existingLedger = new QuotaLedgerEntity();
+        existingLedger.setId(501L);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null, existingLedger);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
+            QuotaLedgerEntity ledger = invocation.getArgument(0);
+            ledger.setId(501L);
+            return 1;
+        });
+        when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = new QuotaDomainServiceImpl(
+                aiFeatureDefsMapper,
+                aiFeaturePackageMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userAddonGrantMapper,
+                quotaLedgerAllocationMapper);
+
+        ConsumeResult first = service.consume(
+                "user_1",
+                "task_create",
+                1L,
+                "verla_session",
+                "session_1",
+                Map.of("conversation_id", 123L),
+                "assignment:123:generate");
+        ConsumeResult second = service.consume(
+                "user_1",
+                "task_create",
+                1L,
+                "verla_session",
+                "session_1",
+                Map.of("conversation_id", 123L),
+                "assignment:123:generate");
+
+        assertEquals(501L, first.ledgerId());
+        assertEquals(501L, second.ledgerId());
+        verify(userAiQuotaMapper, times(1)).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, times(1)).insert(any(QuotaLedgerEntity.class));
+        verify(quotaLedgerAllocationMapper, times(1)).insert(any(QuotaLedgerAllocationEntity.class));
+    }
+
+    @Test
     void refund_restoresOriginalAllocationsPrecisely() {
         QuotaLedgerEntity consumeLedger = new QuotaLedgerEntity();
         consumeLedger.setId(501L);

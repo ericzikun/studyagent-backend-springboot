@@ -25,9 +25,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,8 +76,9 @@ class HumanizerApplicationServiceTest {
                 eq(FeatureCode.HUMANIZER.getCode()),
                 eq(1L),
                 eq("humanizer_task"),
-                eq((String) null),
-                any()))
+                eq("100"),
+                any(),
+                eq("humanizer:100:start")))
                 .thenReturn(new ConsumeResult(321L));
 
         HumanizerSubmitResult result = service.submitTask(
@@ -87,18 +90,57 @@ class HumanizerApplicationServiceTest {
         assertThat(result.quotaConsumed()).isTrue();
         assertThat(result.response().getStatus()).isEqualTo("PENDING");
 
+        ArgumentCaptor<HumanizerTaskEntity> insertCaptor = ArgumentCaptor.forClass(HumanizerTaskEntity.class);
+        ArgumentCaptor<HumanizerTaskEntity> updateCaptor = ArgumentCaptor.forClass(HumanizerTaskEntity.class);
         ArgumentCaptor<Map<String, Object>> bizCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(repository).insert(insertCaptor.capture());
+        verify(repository).updateById(updateCaptor.capture());
         verify(quotaDomainService).canConsume("user_1", FeatureCode.HUMANIZER.getCode(), 1L);
         verify(quotaDomainService).consume(
                 eq("user_1"),
                 eq(FeatureCode.HUMANIZER.getCode()),
                 eq(1L),
                 eq("humanizer_task"),
-                eq((String) null),
-                bizCaptor.capture());
+                eq("100"),
+                bizCaptor.capture(),
+                eq("humanizer:100:start"));
+        assertThat(insertCaptor.getValue().getStatus()).isEqualTo("CHARGING");
+        assertThat(updateCaptor.getValue().getStatus()).isEqualTo("PENDING");
+        assertThat(updateCaptor.getValue().getQuotaLedgerId()).isEqualTo(321L);
         assertThat(bizCaptor.getValue())
                 .containsEntry("task_type", "HUMANIZE")
+                .containsEntry("task_id", 100L)
                 .containsEntry("charged_mode", "per_run");
+    }
+
+    @Test
+    void submitHumanize_marksQuotaExhausted_whenConsumeFailsAfterInsert() {
+        when(quotaDomainService.canConsume("user_1", FeatureCode.HUMANIZER.getCode(), 1L))
+                .thenReturn(true);
+        doThrow(new RuntimeException("quota race")).when(quotaDomainService).consume(
+                eq("user_1"),
+                eq(FeatureCode.HUMANIZER.getCode()),
+                eq(1L),
+                eq("humanizer_task"),
+                eq("100"),
+                any(),
+                eq("humanizer:100:start"));
+
+        HumanizerSubmitResult result = service.submitTask(
+                "user_1",
+                "HUMANIZE",
+                "This is a fairly long humanizer text with many words.",
+                "HUMANIZER_PAGE");
+
+        ArgumentCaptor<HumanizerTaskEntity> insertCaptor = ArgumentCaptor.forClass(HumanizerTaskEntity.class);
+        ArgumentCaptor<HumanizerTaskEntity> updateCaptor = ArgumentCaptor.forClass(HumanizerTaskEntity.class);
+        verify(repository).insert(insertCaptor.capture());
+        verify(repository).updateById(updateCaptor.capture());
+
+        assertThat(result.quotaConsumed()).isFalse();
+        assertThat(result.response().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
+        assertThat(insertCaptor.getValue().getStatus()).isEqualTo("CHARGING");
+        assertThat(updateCaptor.getValue().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
     }
 
     @Test
@@ -153,8 +195,9 @@ class HumanizerApplicationServiceTest {
                 eq(FeatureCode.HUMANIZER.getCode()),
                 eq(1L),
                 eq("humanizer_task"),
-                eq((String) null),
-                any()))
+                eq("1"),
+                any(),
+                eq("humanizer:1:start")))
                 .thenReturn(new ConsumeResult(999L));
 
         HumanizerTaskResponse response = service.resumeTask(1L, "user_1");
@@ -165,8 +208,52 @@ class HumanizerApplicationServiceTest {
                 eq(FeatureCode.HUMANIZER.getCode()),
                 eq(1L),
                 eq("humanizer_task"),
-                eq((String) null),
-                any());
+                eq("1"),
+                any(),
+                eq("humanizer:1:start"));
+    }
+
+    @Test
+    void getTask_mapsChargingToPending_forExternalResponse() {
+        HumanizerTaskEntity charging = new HumanizerTaskEntity();
+        charging.setId(1L);
+        charging.setClerkUserId("user_1");
+        charging.setTaskType("HUMANIZE");
+        charging.setInputText("hello world");
+        charging.setStatus("CHARGING");
+        charging.setCreatedAt(com.studyagent.common.datetime.DateTimeFormats.now());
+
+        when(repository.findById(1L)).thenReturn(charging);
+
+        HumanizerTaskResponse response = service.getTask(1L, "user_1");
+
+        assertThat(response.getStatus()).isEqualTo("PENDING");
+        assertThat(response.getProgress()).isEqualTo(0);
+    }
+
+    @Test
+    void cancelTask_allowsChargingTask() {
+        HumanizerTaskEntity charging = new HumanizerTaskEntity();
+        charging.setId(1L);
+        charging.setClerkUserId("user_1");
+        charging.setTaskType("HUMANIZE");
+        charging.setStatus("CHARGING");
+        charging.setCreatedAt(com.studyagent.common.datetime.DateTimeFormats.now());
+
+        HumanizerTaskEntity cancelled = new HumanizerTaskEntity();
+        cancelled.setId(1L);
+        cancelled.setClerkUserId("user_1");
+        cancelled.setTaskType("HUMANIZE");
+        cancelled.setStatus("CANCELLED");
+        cancelled.setCreatedAt(com.studyagent.common.datetime.DateTimeFormats.now());
+
+        when(repository.findById(1L)).thenReturn(charging, cancelled);
+        when(repository.cancelTask(1L)).thenReturn(true);
+
+        HumanizerTaskResponse response = service.cancelTask(1L, "user_1");
+
+        assertThat(response.getStatus()).isEqualTo("CANCELLED");
+        verify(repository, times(1)).cancelTask(1L);
     }
 
     private QuotaBalance balance(long totalAvailable) {

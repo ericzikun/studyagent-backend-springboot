@@ -59,7 +59,8 @@ class HumanizerTaskWorkerTest {
                 eq(1L),
                 eq("humanizer_task"),
                 eq("77"),
-                any(Map.class)))
+                any(Map.class),
+                eq("detection:77:start")))
                 .thenReturn(new ConsumeResult(555L));
     }
 
@@ -89,7 +90,8 @@ class HumanizerTaskWorkerTest {
                 eq(1L),
                 eq("humanizer_task"),
                 eq("77"),
-                any(Map.class));
+                any(Map.class),
+                eq("detection:77:start"));
         verify(quotaDomainService, never()).consume(
                 eq("user_1"),
                 eq(FeatureCode.AI_DETECTION.getCode()),

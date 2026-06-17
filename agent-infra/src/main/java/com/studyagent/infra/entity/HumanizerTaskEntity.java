@@ -32,7 +32,7 @@ public class HumanizerTaskEntity extends BaseEntity {
     @TableField("input_text")
     private String inputText;
 
-    /** PENDING / PROCESSING / COMPLETED / FAILED */
+    /** CHARGING / PENDING / PROCESSING / COMPLETED / FAILED / QUOTA_EXHAUSTED / CANCELLED */
     private String status;
 
     /** Overall AI probability, DETECT only */

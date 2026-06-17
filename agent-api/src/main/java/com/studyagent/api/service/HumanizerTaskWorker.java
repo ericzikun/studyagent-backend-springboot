@@ -12,7 +12,6 @@ import com.studyagent.service.domain.humanizer.HumanizerServiceClient.DetectResu
 import com.studyagent.service.domain.humanizer.HumanizerServiceClient.HumanizerResult;
 import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.user.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class HumanizerTaskWorker {
 
     private final HumanizerTaskRepositoryImpl repository;
@@ -53,20 +51,58 @@ public class HumanizerTaskWorker {
     /** PROCESSING 超过这个时间（分钟）自动回收 */
     private static final int PROCESSING_TIMEOUT_MINUTES = 20;
     /** DETECT 最大并发数 */
-    private static final int DETECT_CONCURRENCY = 2;
+    private final int detectConcurrency;
     /** HUMANIZE 最大并发数（调外部 API，不占本地 CPU） */
-    private static final int HUMANIZE_CONCURRENCY = 3;
+    private final int humanizeConcurrency;
 
     /** 当前正在跑的 DETECT 任务数 */
     private final AtomicInteger detectRunningCount = new AtomicInteger(0);
     /** 当前正在跑的 HUMANIZE 任务数 */
     private final AtomicInteger humanizeRunningCount = new AtomicInteger(0);
     /** DETECT 并发线程池 */
-    private final ExecutorService detectExecutor = Executors.newFixedThreadPool(DETECT_CONCURRENCY,
-            r -> { Thread t = new Thread(r, "detect-worker"); t.setDaemon(true); return t; });
+    private final ExecutorService detectExecutor;
     /** HUMANIZE 并发线程池 */
-    private final ExecutorService humanizeExecutor = Executors.newFixedThreadPool(HUMANIZE_CONCURRENCY,
-            r -> { Thread t = new Thread(r, "humanize-worker"); t.setDaemon(true); return t; });
+    private final ExecutorService humanizeExecutor;
+
+    public HumanizerTaskWorker(
+            HumanizerTaskRepositoryImpl repository,
+            HumanizerServiceClient humanizerServiceClient,
+            HumanizerServiceClientImpl humanizerServiceClientImpl,
+            ObjectMapper objectMapper,
+            QuotaDomainService quotaDomainService,
+            UserRepository userRepository,
+            @Value("${humanizer.detect-concurrency:2}") int detectConcurrency,
+            @Value("${humanizer.humanize-concurrency:3}") int humanizeConcurrency) {
+        if (detectConcurrency <= 0 || humanizeConcurrency <= 0) {
+            throw new IllegalArgumentException("humanizer.*-concurrency must be > 0");
+        }
+        this.repository = repository;
+        this.humanizerServiceClient = humanizerServiceClient;
+        this.humanizerServiceClientImpl = humanizerServiceClientImpl;
+        this.objectMapper = objectMapper;
+        this.quotaDomainService = quotaDomainService;
+        this.userRepository = userRepository;
+        this.detectConcurrency = detectConcurrency;
+        this.humanizeConcurrency = humanizeConcurrency;
+        this.detectExecutor = Executors.newFixedThreadPool(
+                detectConcurrency,
+                r -> {
+                    Thread t = new Thread(r, "detect-worker");
+                    t.setDaemon(true);
+                    return t;
+                });
+        this.humanizeExecutor = Executors.newFixedThreadPool(
+                humanizeConcurrency,
+                r -> {
+                    Thread t = new Thread(r, "humanize-worker");
+                    t.setDaemon(true);
+                    return t;
+                });
+        log.info(
+                "HumanizerTaskWorker initialized: detectConcurrency={}, humanizeConcurrency={}",
+                detectConcurrency,
+                humanizeConcurrency);
+    }
 
     /**
      * 每 60 秒检查一次：回收卡在 PROCESSING 超过 10 分钟的任务
@@ -86,13 +122,13 @@ public class HumanizerTaskWorker {
 
     /**
      * 每 1 秒轮询一次 DETECT 任务
-     * 最多同时跑 DETECT_CONCURRENCY 个
+     * 最多同时跑 detectConcurrency 个
      */
     @Scheduled(fixedDelay = 1000)
     public void pollDetectTasks() {
         try {
             int running = detectRunningCount.get();
-            int available = DETECT_CONCURRENCY - running;
+            int available = detectConcurrency - running;
             if (available <= 0) {
                 return; // 已满载
             }
@@ -118,13 +154,13 @@ public class HumanizerTaskWorker {
 
     /**
      * 每 2 秒轮询一次 HUMANIZE 任务
-     * 最多同时跑 HUMANIZE_CONCURRENCY 个（调外部 API，不占本地 CPU）
+     * 最多同时跑 humanizeConcurrency 个（调外部 API，不占本地 CPU）
      */
     @Scheduled(fixedDelay = 2000)
     public void pollHumanizeTasks() {
         try {
             int running = humanizeRunningCount.get();
-            int available = HUMANIZE_CONCURRENCY - running;
+            int available = humanizeConcurrency - running;
             if (available <= 0) {
                 return; // 已满载
             }

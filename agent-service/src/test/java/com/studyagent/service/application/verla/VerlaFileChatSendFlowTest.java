@@ -7,9 +7,11 @@ import com.studyagent.service.application.verla.dto.FileChatPanelView;
 import com.studyagent.service.application.verla.handler.VerlaAttachmentParsedEventHandler;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
+import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -49,6 +51,7 @@ class VerlaFileChatSendFlowTest {
     private FakeAttachmentRepository attachmentRepository;
     private CapturingMqOutboxService mqOutboxService;
     private VerlaTurnOrchestrator orchestrator;
+    private EntitlementService entitlementService;
 
     @BeforeEach
     void setUp() {
@@ -58,6 +61,15 @@ class VerlaFileChatSendFlowTest {
         messageRepository = new FakeMessageRepository();
         attachmentRepository = new FakeAttachmentRepository();
         mqOutboxService = new CapturingMqOutboxService();
+        entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.reserveFollowupEdit(
+                        Mockito.anyString(),
+                        Mockito.anyLong(),
+                        Mockito.anyLong(),
+                        Mockito.anyList()))
+                .thenAnswer(invocation -> FollowupEditUsage.builder()
+                        .userMessageId(invocation.getArgument(2))
+                        .build());
 
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
@@ -77,6 +89,7 @@ class VerlaFileChatSendFlowTest {
                 mqOutboxService,
                 new ObjectMapper(),
                 Mockito.mock(VerlaQuotaService.class),
+                entitlementService,
                 event -> {},
                 Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
@@ -774,6 +787,16 @@ class VerlaFileChatSendFlowTest {
         @Override
         public List<VerlaAttachment> listByTurn(Long turnId) {
             return List.of();
+        }
+
+        @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            return byObjectId;
         }
 
         @Override

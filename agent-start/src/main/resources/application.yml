@@ -196,10 +196,6 @@ humanizer-service:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数
 
-# Humanizer/AI Detection 内测白名单（逗号分隔的 Clerk User ID，不限额度）
-humanizer:
-  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
-
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}
@@ -338,6 +334,7 @@ verla:
     skip-hmac-on-get: true
     # 生产务必 VERLA_INTERNAL_MOCK_DATA=false
     mock-data: ${VERLA_INTERNAL_MOCK_DATA:false}
+
   context-cache:
     # 生产设 VERLA_CONTEXT_CACHE_REDIS_ENABLED=true 并配置 spring.data.redis
     redis-enabled: ${VERLA_CONTEXT_CACHE_REDIS_ENABLED:false}
@@ -381,3 +378,11 @@ verla:
   quota:
     enabled: ${VERLA_QUOTA_ENABLED:true}
     whitelist-user-ids: ${VERLA_QUOTA_WHITELIST_USER_IDS:}
+
+# ============================================================
+# 1.0 Humanizer 任务 Worker 配置
+# ============================================================
+humanizer:
+  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
+  detect-concurrency: ${HUMANIZER_DETECT_CONCURRENCY:2}
+  humanize-concurrency: ${HUMANIZER_HUMANIZE_CONCURRENCY:3}

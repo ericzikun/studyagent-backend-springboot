@@ -240,14 +240,39 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode) {
+    public SubscriptionResult changeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
-        SubscriptionPlanEntity targetPlan = requirePlan(targetPlanCode);
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (targetPlanCode.equals(current.getPlanCode())) {
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
-        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
+        int targetRank = tierRank(targetPlan.getTier());
+        int currentRank = tierRank(currentPlan.getTier());
+        if (targetRank > currentRank) {
+            return upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+        }
+        if (targetRank < currentRank) {
+            return downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+        }
+        throw new BillingDomainException(
+                "SUBSCRIPTION_STATE_INVALID",
+                "Switching billing interval within the same tier is not supported");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode) {
+        requireStripeConfigured();
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
+        UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
+            return toResult(current);
+        }
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         if (tierRank(targetPlan.getTier()) <= tierRank(currentPlan.getTier())) {
             throw new BillingDomainException("INVALID_UPGRADE_TARGET", "Target plan is not an upgrade");
         }
@@ -270,29 +295,29 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                             .setPrice(targetPlan.getStripePriceId())
                             .build())
                     .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("pending_plan_code", targetPlanCode)
+                    .putMetadata("pending_plan_code", normalizedTargetPlanCode)
                     .build();
             RequestOptions options = RequestOptions.builder()
                     .setIdempotencyKey("upgrade:" + clerkUserId + ":" + current.getStripeSubscriptionId()
-                            + ":" + targetPlanCode + ":" + current.getCurrentPeriodEnd())
+                            + ":" + normalizedTargetPlanCode + ":" + current.getCurrentPeriodEnd())
                     .build();
             stripeSubscription.update(params, options);
 
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, current.getId())
                     .set(UserSubscriptionEntity::getStripeScheduleId, null)
-                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlanCode)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, normalizedTargetPlanCode)
                     .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
                     .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
             current.setStripeScheduleId(null);
-            current.setPendingPlanCode(targetPlanCode);
+            current.setPendingPlanCode(normalizedTargetPlanCode);
             current.setPendingEffectiveAt(null);
             insertPendingOrder(
                     clerkUserId,
                     "subscription_upgrade",
                     "subscription",
-                    targetPlanCode,
-                    targetPlanCode,
+                    normalizedTargetPlanCode,
+                    normalizedTargetPlanCode,
                     null,
                     0L,
                     targetPlan.getPriceCents(),
@@ -310,12 +335,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
-        SubscriptionPlanEntity targetPlan = requirePlan(targetPlanCode);
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (targetPlanCode.equals(current.getPlanCode())) {
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
-        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         if (tierRank(targetPlan.getTier()) >= tierRank(currentPlan.getTier())) {
             throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not a downgrade");
         }
@@ -346,17 +372,28 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, current.getId())
                     .set(UserSubscriptionEntity::getStripeScheduleId, schedule.getId())
-                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlanCode)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, normalizedTargetPlanCode)
                     .set(UserSubscriptionEntity::getPendingEffectiveAt, pendingEffectiveAt)
                     .set(UserSubscriptionEntity::getUpdatedAt, now));
             current.setStripeScheduleId(schedule.getId());
-            current.setPendingPlanCode(targetPlanCode);
+            current.setPendingPlanCode(normalizedTargetPlanCode);
             current.setPendingEffectiveAt(pendingEffectiveAt);
             current.setUpdatedAt(now);
             return toResult(current);
         } catch (StripeException e) {
             throw stripeFailure("Downgrade subscription failed", e);
         }
+    }
+
+    @Override
+    public BillingPlan getEffectivePlanOrFree(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        if (entity != null
+                && entity.getPlanCode() != null
+                && ("active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus()))) {
+            return toPlan(requireRuntimePlan(entity.getPlanCode()));
+        }
+        return BillingPlan.freePlan();
     }
 
     @Override
@@ -539,16 +576,110 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
+        String normalizedPlanCode = normalizePlanCode(planCode);
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
-                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .eq(SubscriptionPlanEntity::getPlanCode, normalizedPlanCode)
                         .eq(SubscriptionPlanEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (plan == null) {
-            throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + planCode);
+            throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + normalizedPlanCode);
         }
         if (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_")) {
-            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + planCode);
+            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + normalizedPlanCode);
+        }
+        return plan;
+    }
+
+    private SubscriptionPlanEntity requireCurrentPlan(UserSubscriptionEntity current) {
+        if (current == null) {
+            throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "Active subscription not found");
+        }
+        if (hasText(current.getPlanCode())) {
+            return requirePlan(current.getPlanCode());
+        }
+        if (hasText(current.getPendingPlanCode())
+                && ("active".equals(current.getStatus()) || "trialing".equals(current.getStatus()))) {
+            SubscriptionPlanEntity repairedPlan = requirePlan(current.getPendingPlanCode());
+            repairActivatedInitialSubscription(current, repairedPlan);
+            return repairedPlan;
+        }
+        throw new BillingDomainException("SUBSCRIPTION_STATE_INVALID", "Current subscription plan is missing");
+    }
+
+    private void repairActivatedInitialSubscription(UserSubscriptionEntity current, SubscriptionPlanEntity plan) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime currentPeriodStart = current.getCurrentPeriodStart();
+        LocalDateTime currentPeriodEnd = current.getCurrentPeriodEnd();
+        Boolean cancelAtPeriodEnd = current.getCancelAtPeriodEnd();
+        String status = current.getStatus();
+        try {
+            if (hasText(current.getStripeSubscriptionId())) {
+                Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+                status = subscription.getStatus();
+                cancelAtPeriodEnd = Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd());
+                if (subscription.getCurrentPeriodStart() != null) {
+                    currentPeriodStart = fromEpoch(subscription.getCurrentPeriodStart());
+                }
+                if (subscription.getCurrentPeriodEnd() != null) {
+                    currentPeriodEnd = fromEpoch(subscription.getCurrentPeriodEnd());
+                }
+            }
+        } catch (StripeException e) {
+            throw stripeFailure("Repair subscription state failed", e);
+        }
+
+        LocalDateTime quotaPeriodEnd = currentPeriodEnd;
+        if ("year".equals(plan.getBillingInterval()) && currentPeriodStart != null) {
+            quotaPeriodEnd = currentPeriodStart.plusMonths(1);
+        }
+
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getTier, plan.getTier())
+                .set(UserSubscriptionEntity::getPlanCode, plan.getPlanCode())
+                .set(UserSubscriptionEntity::getStatus, status)
+                .set(UserSubscriptionEntity::getCurrentPeriodStart, currentPeriodStart)
+                .set(UserSubscriptionEntity::getCurrentPeriodEnd, currentPeriodEnd)
+                .set(UserSubscriptionEntity::getQuotaPeriodStart, currentPeriodStart)
+                .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
+                .set(UserSubscriptionEntity::getCancelAtPeriodEnd, Boolean.TRUE.equals(cancelAtPeriodEnd))
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setTier(plan.getTier());
+        current.setPlanCode(plan.getPlanCode());
+        current.setStatus(status);
+        current.setCurrentPeriodStart(currentPeriodStart);
+        current.setCurrentPeriodEnd(currentPeriodEnd);
+        current.setQuotaPeriodStart(currentPeriodStart);
+        current.setQuotaPeriodEnd(quotaPeriodEnd);
+        current.setCancelAtPeriodEnd(Boolean.TRUE.equals(cancelAtPeriodEnd));
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
+        current.setLastSyncedAt(now);
+        current.setUpdatedAt(now);
+    }
+
+    private String normalizePlanCode(String planCode) {
+        if (planCode == null || planCode.isBlank()) {
+            throw new BillingDomainException("INVALID_PLAN", "planCode is required");
+        }
+        return planCode.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private SubscriptionPlanEntity requireRuntimePlan(String planCode) {
+        SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .last("LIMIT 1"));
+        if (plan == null) {
+            throw new BillingDomainException("INVALID_PLAN", "Unknown plan: " + planCode);
         }
         return plan;
     }

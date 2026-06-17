@@ -307,6 +307,16 @@ class VerlaFileChatServiceTest {
         }
 
         @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            return byObjectId;
+        }
+
+        @Override
         public VerlaAttachment updateParseProgress(VerlaAttachment patch) {
             return patch;
         }

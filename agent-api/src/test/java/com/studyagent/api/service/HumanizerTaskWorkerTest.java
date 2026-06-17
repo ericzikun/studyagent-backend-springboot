@@ -49,7 +49,9 @@ class HumanizerTaskWorkerTest {
                 humanizerServiceClientImpl,
                 new ObjectMapper(),
                 quotaDomainService,
-                userRepository);
+                userRepository,
+                2,
+                3);
         ReflectionTestUtils.setField(worker, "whitelistUserIds", List.of());
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(repository.existsHumanizeResultHash(anyString(), anyString())).thenReturn(false);

@@ -196,10 +196,6 @@ humanizer-service:
     detect-stream: 10  # AI 检测 SSE：每分钟最大请求数
     process: 5          # Humanizer 改写：每分钟最大请求数
 
-# Humanizer/AI Detection 内测白名单（逗号分隔的 Clerk User ID，不限额度）
-humanizer:
-  whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
-
 # Python 后端配置
 python-backend:
   url: ${PYTHON_BACKEND_URL:http://localhost:8000}

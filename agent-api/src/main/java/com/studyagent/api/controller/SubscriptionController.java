@@ -1,5 +1,6 @@
 package com.studyagent.api.controller;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.studyagent.api.common.Result;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.service.domain.billing.BillingDomainException;
@@ -41,18 +42,25 @@ public class SubscriptionController {
         return execute(clerkUserId, () -> billingDomainService.resumeSubscription(clerkUserId));
     }
 
+    @PostMapping("/change")
+    public Result<SubscriptionResult> change(
+            @RequestBody ChangePlanRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        return execute(clerkUserId, () -> billingDomainService.changeSubscription(clerkUserId, request.getResolvedPlanCode()));
+    }
+
     @PostMapping("/upgrade")
     public Result<SubscriptionResult> upgrade(
             @RequestBody ChangePlanRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        return execute(clerkUserId, () -> billingDomainService.upgradeSubscription(clerkUserId, request.getPlanCode()));
+        return execute(clerkUserId, () -> billingDomainService.upgradeSubscription(clerkUserId, request.getResolvedPlanCode()));
     }
 
     @PostMapping("/downgrade")
     public Result<SubscriptionResult> downgrade(
             @RequestBody ChangePlanRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        return execute(clerkUserId, () -> billingDomainService.downgradeSubscription(clerkUserId, request.getPlanCode()));
+        return execute(clerkUserId, () -> billingDomainService.downgradeSubscription(clerkUserId, request.getResolvedPlanCode()));
     }
 
     private Result<SubscriptionResult> execute(String clerkUserId, SubscriptionAction action) {
@@ -82,6 +90,11 @@ public class SubscriptionController {
 
     @Data
     static class ChangePlanRequest {
+        @JsonAlias({"targetPlanCode", "newPlanCode", "plan_code", "target_plan_code", "new_plan_code"})
         private String planCode;
+
+        String getResolvedPlanCode() {
+            return planCode == null ? null : planCode.trim();
+        }
     }
 }

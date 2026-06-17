@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS humanizer_tasks (
     -- Input
     input_text MEDIUMTEXT NOT NULL COMMENT 'Input text',
 
-    -- Status: PENDING / PROCESSING / COMPLETED / FAILED
+    -- Status: CHARGING / PENDING / PROCESSING / COMPLETED / FAILED / QUOTA_EXHAUSTED / CANCELLED
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'Task status',
 
     -- Detect results

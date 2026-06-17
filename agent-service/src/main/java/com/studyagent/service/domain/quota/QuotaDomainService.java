@@ -37,13 +37,25 @@ public interface QuotaDomainService {
      * @param bizContext  业务上下文
      * @return 消费结果，含 ledger_id 用于失败时回滚
      */
-    ConsumeResult consume(
+    default ConsumeResult consume(
             String clerkUserId,
             String featureCode,
             long amount,
             String sourceType,
             String sourceId,
             Map<String, Object> bizContext
+    ) {
+        return consume(clerkUserId, featureCode, amount, sourceType, sourceId, bizContext, null);
+    }
+
+    ConsumeResult consume(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            String sourceType,
+            String sourceId,
+            Map<String, Object> bizContext,
+            String idempotencyKey
     );
 
     /**

@@ -211,7 +211,8 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                 amount,
                 SOURCE_TYPE_VERLA_SESSION,
                 String.valueOf(ctx.sessionId()),
-                bizContext);
+                bizContext,
+                buildConsumeIdempotencyKey(ctx, feature));
 
         // 4) 回填 verla_sessions.quota_ledger_id（乐观锁，避免并发派发双扣）
         boolean bound = sessionRepository.bindQuotaLedger(ctx.sessionId(), cr.ledgerId(), amount);
@@ -230,6 +231,16 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                 feature.getCode(), ctx.clerkUserId(), ctx.sessionId(), amount, cr.ledgerId());
 
         return VerlaQuotaConsumeResult.of(cr.ledgerId(), amount);
+    }
+
+    private String buildConsumeIdempotencyKey(VerlaQuotaContext ctx, FeatureCode feature) {
+        if (ctx == null || feature == null) {
+            return null;
+        }
+        if (feature == FeatureCode.TASK_CREATE && ctx.conversationId() != null) {
+            return "assignment:" + ctx.conversationId() + ":generate";
+        }
+        return null;
     }
 
     // ===================================================================

@@ -165,9 +165,38 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             String sourceType,
             String sourceId,
             Map<String, Object> bizContext) {
+        return consume(clerkUserId, featureCode, amount, sourceType, sourceId, bizContext, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ConsumeResult consume(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            String sourceType,
+            String sourceId,
+            Map<String, Object> bizContext,
+            String idempotencyKey) {
 
         if (amount <= 0) {
             throw new IllegalArgumentException("consume amount must be positive");
+        }
+
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey != null) {
+            QuotaLedgerEntity existingLedger = quotaLedgerMapper.selectOne(
+                    new LambdaQueryWrapper<QuotaLedgerEntity>()
+                            .eq(QuotaLedgerEntity::getClerkUserId, clerkUserId)
+                            .eq(QuotaLedgerEntity::getFeatureCode, featureCode)
+                            .eq(QuotaLedgerEntity::getLedgerType, LEDGER_TYPE_CONSUME)
+                            .eq(QuotaLedgerEntity::getIdempotencyKey, normalizedIdempotencyKey)
+                            .last("LIMIT 1"));
+            if (existingLedger != null && existingLedger.getId() != null) {
+                log.info("额度消费幂等命中: clerk_user_id={}, feature={}, key={}, ledger_id={}",
+                        clerkUserId, featureCode, normalizedIdempotencyKey, existingLedger.getId());
+                return new ConsumeResult(existingLedger.getId());
+            }
         }
 
         // 1. 获取功能定义和用户额度（需在事务内刷新周期）
@@ -299,6 +328,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ledger.setAmount(-amount);
         ledger.setSourceType(sourceType);
         ledger.setSourceId(sourceId);
+        ledger.setIdempotencyKey(normalizedIdempotencyKey);
         ledger.setFreeBalanceAfter(newFreeBalance);
         ledger.setPlanBalanceAfter(newPlanBalance);
         ledger.setAddonBalanceAfter(newAddonBalance);
@@ -702,6 +732,14 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null) {
+            return null;
+        }
+        String normalized = idempotencyKey.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private LocalDateTime computePeriodEnd(LocalDateTime start, String period) {

@@ -248,7 +248,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
-        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         int targetRank = tierRank(targetPlan.getTier());
         int currentRank = tierRank(currentPlan.getTier());
         if (targetRank > currentRank) {
@@ -272,7 +272,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
-        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         if (tierRank(targetPlan.getTier()) <= tierRank(currentPlan.getTier())) {
             throw new BillingDomainException("INVALID_UPGRADE_TARGET", "Target plan is not an upgrade");
         }
@@ -341,7 +341,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
-        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         if (tierRank(targetPlan.getTier()) >= tierRank(currentPlan.getTier())) {
             throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not a downgrade");
         }
@@ -591,11 +591,86 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return plan;
     }
 
+    private SubscriptionPlanEntity requireCurrentPlan(UserSubscriptionEntity current) {
+        if (current == null) {
+            throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "Active subscription not found");
+        }
+        if (hasText(current.getPlanCode())) {
+            return requirePlan(current.getPlanCode());
+        }
+        if (hasText(current.getPendingPlanCode())
+                && ("active".equals(current.getStatus()) || "trialing".equals(current.getStatus()))) {
+            SubscriptionPlanEntity repairedPlan = requirePlan(current.getPendingPlanCode());
+            repairActivatedInitialSubscription(current, repairedPlan);
+            return repairedPlan;
+        }
+        throw new BillingDomainException("SUBSCRIPTION_STATE_INVALID", "Current subscription plan is missing");
+    }
+
+    private void repairActivatedInitialSubscription(UserSubscriptionEntity current, SubscriptionPlanEntity plan) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime currentPeriodStart = current.getCurrentPeriodStart();
+        LocalDateTime currentPeriodEnd = current.getCurrentPeriodEnd();
+        Boolean cancelAtPeriodEnd = current.getCancelAtPeriodEnd();
+        String status = current.getStatus();
+        try {
+            if (hasText(current.getStripeSubscriptionId())) {
+                Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+                status = subscription.getStatus();
+                cancelAtPeriodEnd = Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd());
+                if (subscription.getCurrentPeriodStart() != null) {
+                    currentPeriodStart = fromEpoch(subscription.getCurrentPeriodStart());
+                }
+                if (subscription.getCurrentPeriodEnd() != null) {
+                    currentPeriodEnd = fromEpoch(subscription.getCurrentPeriodEnd());
+                }
+            }
+        } catch (StripeException e) {
+            throw stripeFailure("Repair subscription state failed", e);
+        }
+
+        LocalDateTime quotaPeriodEnd = currentPeriodEnd;
+        if ("year".equals(plan.getBillingInterval()) && currentPeriodStart != null) {
+            quotaPeriodEnd = currentPeriodStart.plusMonths(1);
+        }
+
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getTier, plan.getTier())
+                .set(UserSubscriptionEntity::getPlanCode, plan.getPlanCode())
+                .set(UserSubscriptionEntity::getStatus, status)
+                .set(UserSubscriptionEntity::getCurrentPeriodStart, currentPeriodStart)
+                .set(UserSubscriptionEntity::getCurrentPeriodEnd, currentPeriodEnd)
+                .set(UserSubscriptionEntity::getQuotaPeriodStart, currentPeriodStart)
+                .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
+                .set(UserSubscriptionEntity::getCancelAtPeriodEnd, Boolean.TRUE.equals(cancelAtPeriodEnd))
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setTier(plan.getTier());
+        current.setPlanCode(plan.getPlanCode());
+        current.setStatus(status);
+        current.setCurrentPeriodStart(currentPeriodStart);
+        current.setCurrentPeriodEnd(currentPeriodEnd);
+        current.setQuotaPeriodStart(currentPeriodStart);
+        current.setQuotaPeriodEnd(quotaPeriodEnd);
+        current.setCancelAtPeriodEnd(Boolean.TRUE.equals(cancelAtPeriodEnd));
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
+        current.setLastSyncedAt(now);
+        current.setUpdatedAt(now);
+    }
+
     private String normalizePlanCode(String planCode) {
         if (planCode == null || planCode.isBlank()) {
             throw new BillingDomainException("INVALID_PLAN", "planCode is required");
         }
         return planCode.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private SubscriptionPlanEntity requireRuntimePlan(String planCode) {

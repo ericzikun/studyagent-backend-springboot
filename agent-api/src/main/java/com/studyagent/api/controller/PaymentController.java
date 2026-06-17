@@ -42,7 +42,9 @@ public class PaymentController {
             CheckoutSessionResult checkout = billingDomainService.createSubscriptionCheckout(
                     clerkUserId,
                     userInfo == null ? null : userInfo.email,
-                    request.getPlanCode());
+                    request.getPlanCode(),
+                    request.getSuccessUrl(),
+                    request.getCancelUrl());
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
             return mapBillingException(e);
@@ -61,7 +63,9 @@ public class PaymentController {
             CheckoutSessionResult checkout = billingDomainService.createAddonCheckout(
                     clerkUserId,
                     userInfo == null ? null : userInfo.email,
-                    request.getAddonCode());
+                    request.getAddonCode(),
+                    request.getSuccessUrl(),
+                    request.getCancelUrl());
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
             return mapBillingException(e);
@@ -189,6 +193,7 @@ public class PaymentController {
             case "ADDON_REQUIRES_PAID_MEMBER" -> Result.error(ApiCode.ADDON_REQUIRES_PAID_MEMBER);
             case "SUBSCRIPTION_ALREADY_EXISTS" -> Result.error(ApiCode.SUBSCRIPTION_ALREADY_EXISTS);
             case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
+            case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
             case "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS",
                     "SUBSCRIPTION_STATE_INVALID" ->
                     Result.error(ApiCode.SUBSCRIPTION_STATE_INVALID);
@@ -238,10 +243,14 @@ public class PaymentController {
     @Data
     static class SubscriptionCheckoutRequest {
         private String planCode;
+        private String successUrl;
+        private String cancelUrl;
     }
 
     @Data
     static class AddonCheckoutRequest {
         private String addonCode;
+        private String successUrl;
+        private String cancelUrl;
     }
 }

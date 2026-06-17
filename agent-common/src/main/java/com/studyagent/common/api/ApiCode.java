@@ -51,6 +51,7 @@ public enum ApiCode {
     PAYMENT_SESSION_CREATE_FAILED(500, "Failed to create checkout session", "创建支付会话失败"),
     SESSION_ID_REQUIRED(400, "sessionId is required", "sessionId 参数不能为空"),
     SESSION_QUERY_FAILED(9999, "Failed to query session status: %s", "查询会话状态失败"),
+    INVALID_CHECKOUT_RETURN_URL(400, "Invalid checkout return URL: %s", "无效支付回跳地址: %s"),
     INVALID_PLAN(400, "Invalid subscription plan: %s", "无效订阅套餐: %s"),
     INVALID_ADDON(400, "Invalid add-on package: %s", "无效加量包: %s"),
     SUBSCRIPTION_NOT_FOUND(404, "Subscription not found", "订阅不存在"),

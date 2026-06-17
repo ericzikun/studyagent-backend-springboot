@@ -38,11 +38,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -99,7 +102,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     public CheckoutSessionResult createSubscriptionCheckout(
             String clerkUserId,
             String customerEmail,
-            String planCode) {
+            String planCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl) {
         requireStripeConfigured();
         SubscriptionPlanEntity plan = requirePlan(planCode);
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
@@ -114,7 +119,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getPendingPlanCode, planCode)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
                 .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
-        String finalSuccessUrl = withSessionId(successUrl);
+        String finalSuccessUrl = resolveCheckoutSuccessUrl(requestedSuccessUrl);
+        String finalCancelUrl = resolveCheckoutCancelUrl(requestedCancelUrl);
         SessionCreateParams.SubscriptionData subscriptionData = SessionCreateParams.SubscriptionData.builder()
                 .putMetadata("purchase_type", "subscription")
                 .putMetadata("clerk_user_id", clerkUserId)
@@ -125,7 +131,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(finalSuccessUrl)
-                .setCancelUrl(cancelUrl)
+                .setCancelUrl(finalCancelUrl)
                 .addLineItem(SessionCreateParams.LineItem.builder()
                         .setPrice(plan.getStripePriceId())
                         .setQuantity(1L)
@@ -166,7 +172,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     public CheckoutSessionResult createAddonCheckout(
             String clerkUserId,
             String customerEmail,
-            String addonCode) {
+            String addonCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl) {
         requireStripeConfigured();
         if (!isPaidMember(clerkUserId)) {
             throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
@@ -184,8 +192,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
-                .setSuccessUrl(withSessionId(successUrl))
-                .setCancelUrl(cancelUrl)
+                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl))
+                .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
                 .addLineItem(SessionCreateParams.LineItem.builder()
                         .setPrice(addon.getStripePriceId())
                         .setQuantity(1L)
@@ -679,6 +687,78 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return url;
         }
         return url + (url.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
+    }
+
+    String resolveCheckoutSuccessUrl(String requestedUrl) {
+        return withSessionId(resolveCheckoutReturnUrl(requestedUrl, successUrl));
+    }
+
+    String resolveCheckoutCancelUrl(String requestedUrl) {
+        return resolveCheckoutReturnUrl(requestedUrl, cancelUrl);
+    }
+
+    private String resolveCheckoutReturnUrl(String requestedUrl, String fallbackUrl) {
+        if (requestedUrl == null || requestedUrl.isBlank()) {
+            return fallbackUrl;
+        }
+        String trimmed = requestedUrl.trim();
+        URI uri = parseCheckoutReturnUri(trimmed);
+        if (!isAllowedCheckoutReturnUri(uri)) {
+            throw new BillingDomainException("INVALID_RETURN_URL", trimmed);
+        }
+        return trimmed;
+    }
+
+    private URI parseCheckoutReturnUri(String url) {
+        try {
+            return new URI(url.replace("{CHECKOUT_SESSION_ID}", "CHECKOUT_SESSION_ID"));
+        } catch (URISyntaxException e) {
+            throw new BillingDomainException("INVALID_RETURN_URL", url, e);
+        }
+    }
+
+    private boolean isAllowedCheckoutReturnUri(URI uri) {
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (scheme == null || host == null) {
+            return false;
+        }
+
+        String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+        String normalizedHost = host.toLowerCase(Locale.ROOT);
+        boolean localHost = isLocalCheckoutHost(normalizedHost);
+        if (!"https".equals(normalizedScheme) && !("http".equals(normalizedScheme) && localHost)) {
+            return false;
+        }
+
+        return localHost
+                || isVerlaCheckoutHost(normalizedHost)
+                || sameOrigin(uri, successUrl)
+                || sameOrigin(uri, cancelUrl);
+    }
+
+    private boolean isLocalCheckoutHost(String host) {
+        return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host);
+    }
+
+    private boolean isVerlaCheckoutHost(String host) {
+        return "verla.io".equals(host) || host.endsWith(".verla.io");
+    }
+
+    private boolean sameOrigin(URI candidate, String configuredUrl) {
+        if (configuredUrl == null || configuredUrl.isBlank()) {
+            return false;
+        }
+        URI configured = parseCheckoutReturnUri(configuredUrl);
+        return originOf(candidate).equals(originOf(configured));
+    }
+
+    private String originOf(URI uri) {
+        int port = uri.getPort();
+        return uri.getScheme().toLowerCase(Locale.ROOT)
+                + "://"
+                + uri.getHost().toLowerCase(Locale.ROOT)
+                + (port >= 0 ? ":" + port : "");
     }
 
     private void requireStripeConfigured() {

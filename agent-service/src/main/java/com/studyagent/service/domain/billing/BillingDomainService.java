@@ -8,13 +8,17 @@ public interface BillingDomainService {
     CheckoutSessionResult createSubscriptionCheckout(
             String clerkUserId,
             String customerEmail,
-            String planCode
+            String planCode,
+            String successUrl,
+            String cancelUrl
     );
 
     CheckoutSessionResult createAddonCheckout(
             String clerkUserId,
             String customerEmail,
-            String addonCode
+            String addonCode,
+            String successUrl,
+            String cancelUrl
     );
 
     SubscriptionResult getCurrentSubscription(String clerkUserId);

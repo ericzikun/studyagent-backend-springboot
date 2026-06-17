@@ -15,6 +15,7 @@ import com.studyagent.common.verla.envelope.VerlaSessionRef;
 import com.studyagent.common.verla.envelope.VerlaTurnRef;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
@@ -24,6 +25,7 @@ import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
 import com.studyagent.service.application.verla.dto.FileChatPanelState;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
+import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -119,6 +121,7 @@ public class VerlaTurnOrchestrator {
     private final ObjectMapper objectMapper;
     /** V2 商业化额度门面（feature: task_create / ai_detection / humanizer）。 */
     private final VerlaQuotaService verlaQuotaService;
+    private final EntitlementService entitlementService;
     private final ApplicationEventPublisher eventPublisher;
     private final AnalyticsService analyticsService;
 
@@ -254,7 +257,12 @@ public class VerlaTurnOrchestrator {
         refreshConversationVersion(conv,
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
 
+        FollowupEditUsage usage = entitlementService.reserveFollowupEdit(
+                userId, conv.getId(), userMsg.getId(), resolvedUids);
         VerlaSession session = spawnAssignmentChatSession(conv, turn, message, resolvedUids);
+        entitlementService.bindFollowupEditSession(
+                usage == null ? userMsg.getId() : usage.getUserMessageId(),
+                session.getId());
 
         return SendMessageResult.builder()
                 .turnId(turn.getId())
@@ -369,8 +377,11 @@ public class VerlaTurnOrchestrator {
 
         Map<String, Object> slots = parseSlotsJson(turn.getResolvedSlotsJson());
         List<String> artifactUids = extractStringList(slots.get("artifactUids"));
+        entitlementService.reserveFollowupEdit(
+                userId, conv.getId(), turn.getUserMessageId(), artifactUids);
         VerlaSession session = spawnAssignmentChatSession(
                 conv, turn, userMessage.getTextContent(), artifactUids);
+        entitlementService.bindFollowupEditSession(turn.getUserMessageId(), session.getId());
 
         return SendMessageResult.builder()
                 .turnId(turn.getId())
@@ -1106,6 +1117,8 @@ public class VerlaTurnOrchestrator {
             turnRepository.save(turn);
         }
 
+        entitlementService.markFollowupEditCompleted(agentSessionId);
+
         if (justCompleted) {
             String reply = extractFileChatAssistantReply(safeResult);
             if (reply != null && !reply.isBlank()) {
@@ -1397,6 +1410,7 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentChatFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+        entitlementService.releaseFollowupEdit(agentSessionId, "assignment_chat_failed");
         onAgentFailed(agentSessionId, errorBlock);
     }
 
@@ -1442,6 +1456,7 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentChatCancelled(Long agentSessionId) {
+        entitlementService.releaseFollowupEdit(agentSessionId, "assignment_chat_cancelled");
         onAgentCancelled(agentSessionId);
     }
 
@@ -1658,6 +1673,10 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        entitlementService.assertAssignmentOutputAllowed(
+                conv == null ? null : conv.getUserId(),
+                requirementForm == null ? Map.of() : requirementForm);
+
         // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
         //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
         verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
@@ -1707,6 +1726,10 @@ public class VerlaTurnOrchestrator {
         turn.setUpdatedAt(LocalDateTime.now());
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
+
+        entitlementService.assertAssignmentOutputAllowed(
+                conv == null ? null : conv.getUserId(),
+                castMap(finalClarifyResult.get("requirementForm")));
 
         // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
         verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());
@@ -2373,14 +2396,23 @@ public class VerlaTurnOrchestrator {
         if (result == null) {
             return Map.of();
         }
-        if (result.get("ready") instanceof Boolean) {
-            return result;
+        Map<String, Object> normalized = new HashMap<>(result);
+        Map<String, Object> requirementForm = castMutableMap(normalized.get("requirementForm"));
+        Map<String, Object> deliverableCount = castMutableMap(requirementForm.get("deliverable_count"));
+        deliverableCount.putIfAbsent("markdown", 0);
+        deliverableCount.putIfAbsent("ppt", 0);
+        deliverableCount.putIfAbsent("code", 0);
+        requirementForm.put("deliverable_count", deliverableCount);
+        normalized.put("requirementForm", requirementForm);
+
+        if (normalized.get("ready") instanceof Boolean) {
+            return normalized;
         }
-        Boolean ready = coerceBoolean(result.get("ready"));
+        Boolean ready = coerceBoolean(normalized.get("ready"));
         if (ready != null) {
-            result.put("ready", ready);
+            normalized.put("ready", ready);
         }
-        return result;
+        return normalized;
     }
 
     private static Map<String, Object> withoutTopLevelStage(Map<String, Object> result) {
@@ -2403,6 +2435,18 @@ public class VerlaTurnOrchestrator {
     private static Map<String, Object> withEventTypeWithoutStageForFrontend(
             Map<String, Object> result, String eventType) {
         return VerlaFrontendPayloadSanitizer.sanitize(eventType, withEventTypeWithoutStage(result, eventType));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Map.of();
+    }
+
+    private static Map<String, Object> castMutableMap(Object value) {
+        return new HashMap<>(castMap(value));
     }
 
     private static Boolean coerceBoolean(Object value) {

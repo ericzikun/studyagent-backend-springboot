@@ -75,6 +75,38 @@ public class VerlaAttachmentRepositoryImpl
     }
 
     @Override
+    public long countActiveUserUploadsForConversation(Long conversationId, LocalDateTime pendingCutoff) {
+        if (conversationId == null) {
+            return 0L;
+        }
+        Long count = this.baseMapper.countActiveUserUploadsForConversation(
+                conversationId,
+                pendingCutoff == null ? LocalDateTime.MIN : pendingCutoff
+        );
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+        if (clerkUserId == null || clerkUserId.isBlank() || objectId == null || objectId.isBlank()) {
+            throw new IllegalArgumentException("clerkUserId and objectId are required");
+        }
+        VerlaAttachmentEntity existing = this.baseMapper.selectActiveUserUploadForUpdate(clerkUserId, objectId);
+        if (existing == null) {
+            return null;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int rows = this.baseMapper.softDeleteById(existing.getId(), now);
+        if (rows <= 0) {
+            return null;
+        }
+        existing.setDeletedAt(now);
+        existing.setUpdatedAt(now);
+        return toDomain(existing);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public VerlaAttachment updateParseProgress(VerlaAttachment patch) {
         if (patch == null || patch.getObjectId() == null || patch.getObjectId().isBlank()) {
@@ -179,6 +211,7 @@ public class VerlaAttachmentRepositoryImpl
                 .imagesJson(e.getImagesJson())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
+                .deletedAt(e.getDeletedAt())
                 .build();
     }
 
@@ -206,6 +239,7 @@ public class VerlaAttachmentRepositoryImpl
                 .setMarkdownContent(d.getMarkdownContent())
                 .setImagesJson(d.getImagesJson())
                 .setCreatedAt(d.getCreatedAt())
-                .setUpdatedAt(d.getUpdatedAt());
+                .setUpdatedAt(d.getUpdatedAt())
+                .setDeletedAt(d.getDeletedAt());
     }
 }

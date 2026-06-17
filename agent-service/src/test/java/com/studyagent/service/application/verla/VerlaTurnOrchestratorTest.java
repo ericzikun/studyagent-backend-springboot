@@ -4,12 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
+import com.studyagent.common.api.ApiCode;
+import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
+import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -37,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VerlaTurnOrchestratorTest {
@@ -62,6 +68,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -118,6 +125,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -163,6 +171,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -208,6 +217,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -253,6 +263,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -297,6 +308,7 @@ class VerlaTurnOrchestratorTest {
                 null,
                 new ObjectMapper(),
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 analyticsService);
 
@@ -353,6 +365,7 @@ class VerlaTurnOrchestratorTest {
                 mqOutboxService,
                 objectMapper,
                 new NoopQuotaService(),
+                mockEntitlementService(),
                 event -> {},
                 mockAnalyticsService());
 
@@ -400,9 +413,310 @@ class VerlaTurnOrchestratorTest {
         assertFalse(planCommand.getPayload().contains("cmd.assignment.deep_understanding"));
     }
 
+    @Test
+    void finalizeAssignmentClarify_rejectsUnsupportedPptBeforeQuotaConsume() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
+                .when(entitlementService)
+                .assertAssignmentOutputAllowed(Mockito.eq("free_user"), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user",
+                        74L,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
+                        List.of()));
+        Mockito.verifyNoInteractions(quotaService);
+    }
+
+    @Test
+    void startAssignmentRunFromFinalClarify_rechecksEntitlementBeforeDispatch() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
+                .when(entitlementService)
+                .assertAssignmentOutputAllowed(Mockito.eq("free_user"), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.COMPLETED.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(
+                VerlaSession.builder()
+                        .id(800L)
+                        .turnId(700L)
+                        .kind(VerlaSessionKind.ASSIGNMENT.name())
+                        .resultJson(objectMapper.writeValueAsString(Map.of(
+                                "isReadyForGeneration", true,
+                                "requirementForm", Map.of(
+                                        "deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)))))
+                        .build());
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L));
+        Mockito.verifyNoInteractions(quotaService);
+    }
+
+    @Test
+    void startAssignmentChat_rejectsWhenFollowupLimitReached() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.doThrow(new BusinessException(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED))
+                .when(entitlementService)
+                .reserveFollowupEdit(Mockito.eq("user_1"), Mockito.eq(74L), Mockito.anyLong(), Mockito.anyList());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("user_1")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.startAssignmentChat("user_1", 74L, "edit this", List.of("art_1")));
+    }
+
+    @Test
+    void retryAssignmentChat_reusesSameUsageRowForSameUserMessageId() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.reserveFollowupEdit("user_1", 74L, 901L, List.of("art_1")))
+                .thenReturn(FollowupEditUsage.builder().userMessageId(901L).build());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("user_1")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedSlotsJson("{\"artifactUids\":[\"art_1\"]}")
+                .status(TurnStatus.COMPLETED.name())
+                .build();
+        messageRepository.saved = VerlaMessage.builder()
+                .id(901L)
+                .conversationId(74L)
+                .textContent("edit this")
+                .build();
+
+        orchestrator.retryAssignmentChat("user_1", 74L, 801L);
+
+        Mockito.verify(entitlementService).reserveFollowupEdit("user_1", 74L, 901L, List.of("art_1"));
+        Mockito.verify(entitlementService).bindFollowupEditSession(901L, 1001L);
+    }
+
+    @Test
+    void onAssignmentChatFailed_releasesReservedFollowupUsage() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAssignmentChatFailed(700L, Map.of("errorMessage", "failed"));
+
+        Mockito.verify(entitlementService).releaseFollowupEdit(700L, "assignment_chat_failed");
+    }
+
+    @Test
+    void onAssignmentChatCompleted_marksUsageCompleted() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of("finalText", "done"));
+
+        Mockito.verify(entitlementService).markFollowupEditCompleted(700L);
+    }
+
     private static final class FakeSessionRepository implements VerlaSessionRepository {
         VerlaSession session;
         VerlaSession saved;
+        List<VerlaSession> sessionsByTurn = List.of();
 
         @Override
         public VerlaSession save(VerlaSession session) {
@@ -425,7 +739,10 @@ class VerlaTurnOrchestratorTest {
 
         @Override
         public List<VerlaSession> findByTurn(Long turnId) {
-            return List.of();
+            if (!sessionsByTurn.isEmpty()) {
+                return sessionsByTurn;
+            }
+            return session == null ? List.of() : List.of(session);
         }
 
         @Override
@@ -466,6 +783,10 @@ class VerlaTurnOrchestratorTest {
 
     private static AnalyticsService mockAnalyticsService() {
         return Mockito.mock(AnalyticsService.class);
+    }
+
+    private static EntitlementService mockEntitlementService() {
+        return Mockito.mock(EntitlementService.class);
     }
 
     private static final class FakeTurnRepository implements VerlaTurnRepository {
@@ -537,7 +858,13 @@ class VerlaTurnOrchestratorTest {
 
         @Override
         public VerlaMessage findById(Long id) {
-            return saved;
+            if (saved != null && id.equals(saved.getId())) {
+                return saved;
+            }
+            return savedMessages.stream()
+                    .filter(message -> id.equals(message.getId()))
+                    .findFirst()
+                    .orElse(null);
         }
 
         @Override
@@ -667,6 +994,16 @@ class VerlaTurnOrchestratorTest {
         @Override
         public java.util.List<com.studyagent.service.domain.verla.VerlaAttachment> listByTurn(Long turnId) {
             return java.util.List.of();
+        }
+
+        @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, java.time.LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public com.studyagent.service.domain.verla.VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            return null;
         }
 
         @Override

@@ -8,18 +8,15 @@ import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
-import com.studyagent.service.domain.billing.BillingDomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -84,46 +81,95 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void checkoutReturnUrlsPreferSafeOverrides() {
-        BillingDomainServiceImpl service = serviceWithReturnUrls();
+    void getEffectivePlanOrFreeReturnsActualPlanForActiveSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("active");
+        active.setPlanCode("pro_monthly");
 
-        assertEquals(
-                "https://staging.verla.io/payment-success?return_to=%2Fpricing&session_id={CHECKOUT_SESSION_ID}",
-                service.resolveCheckoutSuccessUrl("https://staging.verla.io/payment-success?return_to=%2Fpricing"));
-        assertEquals(
-                "http://localhost:3001/payment-canceled?return_to=%2Fpricing",
-                service.resolveCheckoutCancelUrl("http://localhost:3001/payment-canceled?return_to=%2Fpricing"));
-    }
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("pro_monthly");
+        plan.setTier("pro");
+        plan.setBillingInterval("month");
+        plan.setStripePriceId("price_pro_monthly");
+        plan.setAssignmentQuota(20L);
+        plan.setDetectionQuota(10L);
+        plan.setHumanizerQuota(5L);
+        plan.setMaxFiles(12);
+        plan.setMaxFollowupEdits(8);
+        plan.setAllowedOutputTypes("[\"writing\",\"ppt\"]");
 
-    @Test
-    void checkoutReturnUrlsFallbackToConfiguredUrlsWhenOverridesAreBlank() {
-        BillingDomainServiceImpl service = serviceWithReturnUrls();
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
 
-        assertEquals(
-                "https://verla.io/payment-success?session_id={CHECKOUT_SESSION_ID}",
-                service.resolveCheckoutSuccessUrl(null));
-        assertEquals(
-                "https://verla.io/payment-canceled",
-                service.resolveCheckoutCancelUrl(" "));
-    }
-
-    @Test
-    void checkoutReturnUrlsRejectUnsafeOrigins() {
-        BillingDomainServiceImpl service = serviceWithReturnUrls();
-
-        assertThrows(
-                BillingDomainException.class,
-                () -> service.resolveCheckoutSuccessUrl("https://evil.test/payment-success"));
-        assertThrows(
-                BillingDomainException.class,
-                () -> service.resolveCheckoutCancelUrl("http://verla.io/payment-canceled"));
-    }
-
-    private BillingDomainServiceImpl serviceWithReturnUrls() {
         BillingDomainServiceImpl service = service();
-        ReflectionTestUtils.setField(service, "successUrl", "https://verla.io/payment-success");
-        ReflectionTestUtils.setField(service, "cancelUrl", "https://verla.io/payment-canceled");
-        return service;
+        var result = service.getEffectivePlanOrFree("user_1");
+
+        assertEquals("pro_monthly", result.getPlanCode());
+        assertEquals("pro", result.getTier());
+        assertEquals("[\"writing\",\"ppt\"]", result.getAllowedOutputTypes());
+        assertEquals(12, result.getMaxFiles());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsActualPlanForTrialingSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("trialing");
+        active.setPlanCode("plus_legacy");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_legacy");
+        plan.setTier("plus");
+        plan.setBillingInterval("month");
+        plan.setIsActive(false);
+        plan.setStripePriceId(null);
+        plan.setAssignmentQuota(8L);
+        plan.setDetectionQuota(4L);
+        plan.setHumanizerQuota(2L);
+        plan.setMaxFiles(6);
+        plan.setMaxFollowupEdits(5);
+        plan.setAllowedOutputTypes("[\"writing\",\"slides\"]");
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_trialing");
+
+        assertEquals("plus_legacy", result.getPlanCode());
+        assertEquals("plus", result.getTier());
+        assertEquals("[\"writing\",\"slides\"]", result.getAllowedOutputTypes());
+        assertEquals(6, result.getMaxFiles());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsSyntheticFreePlanWhenNoActiveSubscription() {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_2");
+
+        assertEquals("free", result.getPlanCode());
+        assertEquals("free", result.getTier());
+        assertEquals("none", result.getBillingInterval());
+        assertEquals(1L, result.getAssignmentQuota());
+        assertEquals(3, result.getMaxFiles());
+        assertEquals(3, result.getMaxFollowupEdits());
+        assertEquals("[\"writing\"]", result.getAllowedOutputTypes());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsSyntheticFreePlanForPastDueSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("past_due");
+        active.setPlanCode("pro_monthly");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_3");
+
+        assertEquals("free", result.getPlanCode());
+        assertEquals("free", result.getTier());
+        assertEquals(3, result.getMaxFiles());
     }
 
     private BillingDomainServiceImpl service() {

@@ -122,6 +122,16 @@ class VerlaAttachmentParsedEventHandlerTest {
         }
 
         @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            return saved;
+        }
+
+        @Override
         public VerlaAttachment updateParseProgress(VerlaAttachment patch) {
             saved = VerlaAttachment.builder()
                     .id(saved.getId())

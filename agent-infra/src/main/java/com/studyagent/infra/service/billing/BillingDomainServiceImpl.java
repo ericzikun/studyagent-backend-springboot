@@ -368,6 +368,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     @Override
+    public BillingPlan getEffectivePlanOrFree(String clerkUserId) {
+        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        if (entity != null
+                && entity.getPlanCode() != null
+                && ("active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus()))) {
+            return toPlan(requireRuntimePlan(entity.getPlanCode()));
+        }
+        return BillingPlan.freePlan();
+    }
+
+    @Override
     public boolean isPaidMember(String clerkUserId) {
         UserSubscriptionEntity entity = findByUser(clerkUserId);
         if (entity == null || entity.getStripeSubscriptionId() == null) {
@@ -557,6 +568,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         if (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_")) {
             throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + planCode);
+        }
+        return plan;
+    }
+
+    private SubscriptionPlanEntity requireRuntimePlan(String planCode) {
+        SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .last("LIMIT 1"));
+        if (plan == null) {
+            throw new BillingDomainException("INVALID_PLAN", "Unknown plan: " + planCode);
         }
         return plan;
     }

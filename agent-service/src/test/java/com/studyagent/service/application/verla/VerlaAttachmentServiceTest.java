@@ -1,6 +1,9 @@
 package com.studyagent.service.application.verla;
 
+import com.studyagent.common.api.ApiCode;
+import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaAttachment;
@@ -15,12 +18,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VerlaAttachmentServiceTest {
@@ -33,6 +38,7 @@ class VerlaAttachmentServiceTest {
     VerlaConversationService conversationService;
     FakeAttachmentRepository attachmentRepository;
     OssStorageService ossStorageService;
+    EntitlementService entitlementService;
 
     VerlaAttachmentService service;
 
@@ -41,12 +47,14 @@ class VerlaAttachmentServiceTest {
         attachmentRepository = new FakeAttachmentRepository();
         conversationService = new VerlaConversationService(new FakeConversationRepository(), null, null);
         ossStorageService = new DisabledOssStorageService();
+        entitlementService = org.mockito.Mockito.mock(EntitlementService.class);
         service = new VerlaAttachmentService(
-                conversationService, attachmentRepository, new MqOutboxService(null, null, null), ossStorageService);
+                conversationService, attachmentRepository, new MqOutboxService(null, null, null), ossStorageService,
+                entitlementService);
         ReflectionTestUtils.setField(service, "maxBytes", 1024L);
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
         ReflectionTestUtils.setField(service, "ossKeyPrefix", "verla/v2/attachments");
-        ReflectionTestUtils.setField(service, "allowedMimesRaw", "application/pdf,text/plain");
+        ReflectionTestUtils.setField(service, "allowedMimesRaw", "application/pdf,text/plain,image/jpeg");
         ReflectionTestUtils.setField(service, "localFallbackEnabled", true);
         ReflectionTestUtils.setField(service, "localRoot", tempDir.toString());
         service.init();
@@ -65,6 +73,28 @@ class VerlaAttachmentServiceTest {
         assertEquals("pending://" + result.getObjectId(), saved.getStorageUri());
         assertEquals("USER_UPLOAD", saved.getAttachmentOrigin());
         assertNotNull(saved.getOssKey());
+    }
+
+    @Test
+    void sign_rejectsWhenUserUploadLimitReached() {
+        org.mockito.Mockito.doThrow(new BusinessException(ApiCode.FILE_LIMIT_REACHED))
+                .when(entitlementService).assertCanReserveUserUpload(USER_ID, 74L);
+
+        assertThrows(BusinessException.class,
+                () -> service.requestSign(USER_ID, 74L, "assignment.pdf", "application/pdf", 8L,
+                        null, null, null, null));
+        assertEquals(0, attachmentRepository.saved.size());
+    }
+
+    @Test
+    void sign_doesNotCountEditorPreviewTowardLimit() {
+        service.requestSign(
+                USER_ID, 74L, "preview.jpg", "image/jpeg", 8L,
+                null, null, "EDITOR_PREVIEW_IMAGE", null);
+
+        org.mockito.Mockito.verify(entitlementService, org.mockito.Mockito.never())
+                .assertCanReserveUserUpload(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
@@ -115,6 +145,22 @@ class VerlaAttachmentServiceTest {
 
         assertEquals(1, attachments.size());
         assertEquals("att_user", attachments.get(0).getObjectId());
+    }
+
+    @Test
+    void deleteAttachment_releasesSlotForNextSign() {
+        VerlaUploadSignResult first = service.requestSign(
+                USER_ID, 74L, "assignment.pdf", "application/pdf", 8L, null, null, null, null);
+
+        service.deleteAttachment(USER_ID, first.getObjectId());
+
+        service.requestSign(
+                USER_ID, 74L, "second.pdf", "application/pdf", 8L, null, null, null, null);
+
+        assertEquals(first.getObjectId(), attachmentRepository.lastDeletedObjectId);
+        assertNotNull(attachmentRepository.saved.get(0).getDeletedAt());
+        org.mockito.Mockito.verify(entitlementService, org.mockito.Mockito.times(2))
+                .assertCanReserveUserUpload(USER_ID, 74L);
     }
 
     @Test
@@ -252,6 +298,7 @@ class VerlaAttachmentServiceTest {
         VerlaAttachment byObjectId;
         VerlaAttachment lastPatch;
         List<VerlaAttachment> conversationAttachments = List.of();
+        String lastDeletedObjectId;
 
         @Override
         public VerlaAttachment save(VerlaAttachment attachment) {
@@ -267,7 +314,13 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public VerlaAttachment findByObjectId(String objectId) {
-            return byObjectId;
+            if (byObjectId != null && objectId.equals(byObjectId.getObjectId())) {
+                return byObjectId;
+            }
+            return saved.stream()
+                    .filter(item -> objectId.equals(item.getObjectId()))
+                    .findFirst()
+                    .orElse(null);
         }
 
         @Override
@@ -283,6 +336,22 @@ class VerlaAttachmentServiceTest {
         @Override
         public List<VerlaAttachment> listByTurn(Long turnId) {
             return List.of();
+        }
+
+        @Override
+        public long countActiveUserUploadsForConversation(Long conversationId, java.time.LocalDateTime pendingCutoff) {
+            return 0;
+        }
+
+        @Override
+        public VerlaAttachment softDeleteUserUpload(String clerkUserId, String objectId) {
+            VerlaAttachment target = findByObjectId(objectId);
+            if (target == null) {
+                return null;
+            }
+            target.setDeletedAt(LocalDateTime.now());
+            lastDeletedObjectId = objectId;
+            return target;
         }
 
         @Override

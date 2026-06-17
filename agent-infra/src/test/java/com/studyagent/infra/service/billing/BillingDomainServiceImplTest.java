@@ -80,6 +80,98 @@ class BillingDomainServiceImplTest {
         assertFalse(service.isPaidMember("user_1"));
     }
 
+    @Test
+    void getEffectivePlanOrFreeReturnsActualPlanForActiveSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("active");
+        active.setPlanCode("pro_monthly");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("pro_monthly");
+        plan.setTier("pro");
+        plan.setBillingInterval("month");
+        plan.setStripePriceId("price_pro_monthly");
+        plan.setAssignmentQuota(20L);
+        plan.setDetectionQuota(10L);
+        plan.setHumanizerQuota(5L);
+        plan.setMaxFiles(12);
+        plan.setMaxFollowupEdits(8);
+        plan.setAllowedOutputTypes("[\"writing\",\"ppt\"]");
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_1");
+
+        assertEquals("pro_monthly", result.getPlanCode());
+        assertEquals("pro", result.getTier());
+        assertEquals("[\"writing\",\"ppt\"]", result.getAllowedOutputTypes());
+        assertEquals(12, result.getMaxFiles());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsActualPlanForTrialingSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("trialing");
+        active.setPlanCode("plus_legacy");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_legacy");
+        plan.setTier("plus");
+        plan.setBillingInterval("month");
+        plan.setIsActive(false);
+        plan.setStripePriceId(null);
+        plan.setAssignmentQuota(8L);
+        plan.setDetectionQuota(4L);
+        plan.setHumanizerQuota(2L);
+        plan.setMaxFiles(6);
+        plan.setMaxFollowupEdits(5);
+        plan.setAllowedOutputTypes("[\"writing\",\"slides\"]");
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_trialing");
+
+        assertEquals("plus_legacy", result.getPlanCode());
+        assertEquals("plus", result.getTier());
+        assertEquals("[\"writing\",\"slides\"]", result.getAllowedOutputTypes());
+        assertEquals(6, result.getMaxFiles());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsSyntheticFreePlanWhenNoActiveSubscription() {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_2");
+
+        assertEquals("free", result.getPlanCode());
+        assertEquals("free", result.getTier());
+        assertEquals("none", result.getBillingInterval());
+        assertEquals(1L, result.getAssignmentQuota());
+        assertEquals(3, result.getMaxFiles());
+        assertEquals(3, result.getMaxFollowupEdits());
+        assertEquals("[\"writing\"]", result.getAllowedOutputTypes());
+    }
+
+    @Test
+    void getEffectivePlanOrFreeReturnsSyntheticFreePlanForPastDueSubscription() {
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setStatus("past_due");
+        active.setPlanCode("pro_monthly");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+
+        BillingDomainServiceImpl service = service();
+        var result = service.getEffectivePlanOrFree("user_3");
+
+        assertEquals("free", result.getPlanCode());
+        assertEquals("free", result.getTier());
+        assertEquals(3, result.getMaxFiles());
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,

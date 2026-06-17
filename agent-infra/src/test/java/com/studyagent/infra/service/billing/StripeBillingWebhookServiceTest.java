@@ -95,6 +95,40 @@ class StripeBillingWebhookServiceTest {
         assertEquals("sub_parent", service().resolveInvoiceSubscriptionId(event));
     }
 
+    @Test
+    void resolvesSubscriptionPeriodFromCloverSubscriptionItem() {
+        String json = """
+                {
+                  "id": "evt_test",
+                  "object": "event",
+                  "api_version": "2025-12-15.clover",
+                  "type": "customer.subscription.updated",
+                  "data": {
+                    "object": {
+                      "id": "sub_test",
+                      "object": "subscription",
+                      "items": {
+                        "object": "list",
+                        "data": [
+                          {
+                            "id": "si_test",
+                            "object": "subscription_item",
+                            "current_period_start": 1781696510,
+                            "current_period_end": 1813232510
+                          }
+                        ]
+                      },
+                      "status": "active"
+                    }
+                  }
+                }
+                """;
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+
+        assertEquals(1781696510L, service().resolveSubscriptionPeriodStart(event));
+        assertEquals(1813232510L, service().resolveSubscriptionPeriodEnd(event));
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,

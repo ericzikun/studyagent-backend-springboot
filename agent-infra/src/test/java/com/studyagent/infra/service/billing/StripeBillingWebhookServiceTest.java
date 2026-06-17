@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,6 +48,51 @@ class StripeBillingWebhookServiceTest {
 
         assertTrue(service().supports(addon));
         assertFalse(service().supports(legacy));
+    }
+
+    @Test
+    void resolvesInvoiceSubscriptionIdFromCloverParentDetails() {
+        String json = """
+                {
+                  "id": "evt_test",
+                  "object": "event",
+                  "api_version": "2025-12-15.clover",
+                  "type": "invoice.paid",
+                  "data": {
+                    "object": {
+                      "id": "in_test",
+                      "object": "invoice",
+                      "subscription": null,
+                      "parent": {
+                        "subscription_details": {
+                          "subscription": "sub_parent"
+                        },
+                        "type": "subscription_details"
+                      },
+                      "lines": {
+                        "object": "list",
+                        "data": [
+                          {
+                            "id": "il_test",
+                            "object": "line_item",
+                            "parent": {
+                              "subscription_item_details": {
+                                "subscription": "sub_line",
+                                "subscription_item": "si_test"
+                              },
+                              "type": "subscription_item_details"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "previous_attributes": null
+                  }
+                }
+                """;
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+
+        assertEquals("sub_parent", service().resolveInvoiceSubscriptionId(event));
     }
 
     private StripeBillingWebhookService service() {

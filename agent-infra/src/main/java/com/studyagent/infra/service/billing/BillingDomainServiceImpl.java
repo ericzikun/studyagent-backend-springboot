@@ -240,11 +240,36 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResult changeSubscription(String clerkUserId, String targetPlanCode) {
+        requireStripeConfigured();
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
+        UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
+            return toResult(current);
+        }
+        SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
+        int targetRank = tierRank(targetPlan.getTier());
+        int currentRank = tierRank(currentPlan.getTier());
+        if (targetRank > currentRank) {
+            return upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+        }
+        if (targetRank < currentRank) {
+            return downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+        }
+        throw new BillingDomainException(
+                "SUBSCRIPTION_STATE_INVALID",
+                "Switching billing interval within the same tier is not supported");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
-        SubscriptionPlanEntity targetPlan = requirePlan(targetPlanCode);
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (targetPlanCode.equals(current.getPlanCode())) {
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
         SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
@@ -270,29 +295,29 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                             .setPrice(targetPlan.getStripePriceId())
                             .build())
                     .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("pending_plan_code", targetPlanCode)
+                    .putMetadata("pending_plan_code", normalizedTargetPlanCode)
                     .build();
             RequestOptions options = RequestOptions.builder()
                     .setIdempotencyKey("upgrade:" + clerkUserId + ":" + current.getStripeSubscriptionId()
-                            + ":" + targetPlanCode + ":" + current.getCurrentPeriodEnd())
+                            + ":" + normalizedTargetPlanCode + ":" + current.getCurrentPeriodEnd())
                     .build();
             stripeSubscription.update(params, options);
 
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, current.getId())
                     .set(UserSubscriptionEntity::getStripeScheduleId, null)
-                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlanCode)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, normalizedTargetPlanCode)
                     .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
                     .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
             current.setStripeScheduleId(null);
-            current.setPendingPlanCode(targetPlanCode);
+            current.setPendingPlanCode(normalizedTargetPlanCode);
             current.setPendingEffectiveAt(null);
             insertPendingOrder(
                     clerkUserId,
                     "subscription_upgrade",
                     "subscription",
-                    targetPlanCode,
-                    targetPlanCode,
+                    normalizedTargetPlanCode,
+                    normalizedTargetPlanCode,
                     null,
                     0L,
                     targetPlan.getPriceCents(),
@@ -310,9 +335,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
-        SubscriptionPlanEntity targetPlan = requirePlan(targetPlanCode);
+        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
+        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (targetPlanCode.equals(current.getPlanCode())) {
+        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
         SubscriptionPlanEntity currentPlan = requirePlan(current.getPlanCode());
@@ -346,11 +372,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, current.getId())
                     .set(UserSubscriptionEntity::getStripeScheduleId, schedule.getId())
-                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlanCode)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, normalizedTargetPlanCode)
                     .set(UserSubscriptionEntity::getPendingEffectiveAt, pendingEffectiveAt)
                     .set(UserSubscriptionEntity::getUpdatedAt, now));
             current.setStripeScheduleId(schedule.getId());
-            current.setPendingPlanCode(targetPlanCode);
+            current.setPendingPlanCode(normalizedTargetPlanCode);
             current.setPendingEffectiveAt(pendingEffectiveAt);
             current.setUpdatedAt(now);
             return toResult(current);
@@ -550,18 +576,26 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
+        String normalizedPlanCode = normalizePlanCode(planCode);
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
-                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .eq(SubscriptionPlanEntity::getPlanCode, normalizedPlanCode)
                         .eq(SubscriptionPlanEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (plan == null) {
-            throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + planCode);
+            throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + normalizedPlanCode);
         }
         if (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_")) {
-            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + planCode);
+            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + normalizedPlanCode);
         }
         return plan;
+    }
+
+    private String normalizePlanCode(String planCode) {
+        if (planCode == null || planCode.isBlank()) {
+            throw new BillingDomainException("INVALID_PLAN", "planCode is required");
+        }
+        return planCode.trim();
     }
 
     private SubscriptionPlanEntity requireRuntimePlan(String planCode) {

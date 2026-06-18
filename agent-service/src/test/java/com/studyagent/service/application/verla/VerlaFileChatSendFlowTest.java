@@ -848,6 +848,11 @@ class VerlaFileChatSendFlowTest {
             }
             return patch;
         }
+
+        @Override
+        public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+            return 0;
+        }
     }
 
     private static final class CapturingMqOutboxService extends MqOutboxService {

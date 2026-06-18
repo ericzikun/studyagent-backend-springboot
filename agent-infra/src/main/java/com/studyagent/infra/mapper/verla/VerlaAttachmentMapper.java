@@ -47,4 +47,16 @@ public interface VerlaAttachmentMapper extends BaseMapper<VerlaAttachmentEntity>
             + "SET deleted_at = #{deletedAt}, updated_at = #{deletedAt} "
             + "WHERE id = #{id} AND deleted_at IS NULL")
     int softDeleteById(@Param("id") Long id, @Param("deletedAt") java.time.LocalDateTime deletedAt);
+
+    @Update("UPDATE verla_attachments "
+            + "SET status = 'FAILED', parse_error = #{reason}, updated_at = NOW() "
+            + "WHERE attachment_origin = 'AGENT_OUTPUT' "
+            + "AND status = 'UPLOADED' "
+            + "AND deleted_at IS NULL "
+            + "AND (storage_uri IS NULL OR storage_uri LIKE 'pending://%') "
+            + "AND created_at < #{cutoff} "
+            + "ORDER BY id ASC LIMIT #{batchSize}")
+    int markStaleUploadedAgentOutputsFailed(@Param("cutoff") java.time.LocalDateTime cutoff,
+                                            @Param("batchSize") int batchSize,
+                                            @Param("reason") String reason);
 }

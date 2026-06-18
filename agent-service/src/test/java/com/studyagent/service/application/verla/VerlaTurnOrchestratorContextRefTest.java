@@ -393,6 +393,11 @@ class VerlaTurnOrchestratorContextRefTest {
         public com.studyagent.service.domain.verla.VerlaAttachment updateByObjectIdSelective(com.studyagent.service.domain.verla.VerlaAttachment patch) {
             return patch;
         }
+
+        @Override
+        public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+            return 0;
+        }
     }
 
     private static class FakeTurnRepository implements VerlaTurnRepository {

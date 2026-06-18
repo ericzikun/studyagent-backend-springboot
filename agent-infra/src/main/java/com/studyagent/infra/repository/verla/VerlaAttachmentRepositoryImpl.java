@@ -180,6 +180,15 @@ public class VerlaAttachmentRepositoryImpl
         return toDomain(existing);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+        if (cutoff == null || batchSize <= 0) {
+            return 0;
+        }
+        return this.baseMapper.markStaleUploadedAgentOutputsFailed(cutoff, batchSize, reason);
+    }
+
     private VerlaAttachmentStatus safeStatus(String s) {
         if (s == null) return null;
         try { return VerlaAttachmentStatus.valueOf(s); } catch (IllegalArgumentException e) { return null; }

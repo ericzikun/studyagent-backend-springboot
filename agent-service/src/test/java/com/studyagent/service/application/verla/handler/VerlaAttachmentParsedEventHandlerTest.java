@@ -172,6 +172,11 @@ class VerlaAttachmentParsedEventHandlerTest {
                     .build();
             return saved;
         }
+
+        @Override
+        public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+            return 0;
+        }
     }
 
     private static final class FakeConversationRepository implements VerlaConversationRepository {

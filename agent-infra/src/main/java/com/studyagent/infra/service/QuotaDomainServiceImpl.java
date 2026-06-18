@@ -61,6 +61,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String PERIOD_MONTHLY = "monthly";
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
+    private static final long LEGACY_WORDS_PER_RUN = 10_000L;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -111,7 +112,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
-        long legacyBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
         List<UserAddonGrantEntity> addonGrants = findAddonGrantsForBalance(clerkUserId, featureCode);
         long addonBalance = addonGrants.stream()
                 .filter(this::isGrantConsumable)
@@ -240,7 +242,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
-        long legacyBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
         List<UserAddonGrantEntity> activeAddonGrants = findActiveAddonGrants(clerkUserId, featureCode, now);
         long addonBalance = activeAddonGrants.stream()
                 .map(UserAddonGrantEntity::getRemainingAmount)
@@ -295,11 +298,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         }
 
         long fromLegacy = remaining;
-        long newLegacyBalance = legacyBalance - fromLegacy;
+        long legacyRawDebit = legacyRawDebitForRuns(featureCode, legacyRawBalance, fromLegacy);
+        long newLegacyRawBalance = legacyRawBalance - legacyRawDebit;
+        long newLegacyBalance = legacyBalanceInRuns(featureCode, newLegacyRawBalance);
         if (fromLegacy > 0) {
-            allocations.add(newAllocation(POOL_TYPE_LEGACY, null, fromLegacy, now, null));
+            allocations.add(newAllocation(POOL_TYPE_LEGACY, null, legacyRawDebit, now, null));
         }
-        if (newLegacyBalance < 0) {
+        if (newLegacyRawBalance < 0) {
             throw new IllegalStateException("Legacy balance became negative after allocation");
         }
 
@@ -308,7 +313,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         // 4. 更新 user_ai_quotas
         quota.setFreeBalance(newFreeBalance);
         quota.setPlanBalance(newPlanBalance);
-        quota.setPaidBalance(newLegacyBalance);
+        quota.setPaidBalance(newLegacyRawBalance);
         quota.setUpdatedAt(now);
         updateQuotaOrThrow(quota, "consume");
 
@@ -319,6 +324,10 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ctx.put("from_plan_amount", fromPlan);
         ctx.put("from_addon_amount", addonConsumed);
         ctx.put("from_paid_amount", fromLegacy);
+        if (isLegacyWordsFeature(featureCode) && fromLegacy > 0) {
+            ctx.put("from_paid_raw_words", legacyRawDebit);
+            ctx.put("legacy_words_per_run", LEGACY_WORDS_PER_RUN);
+        }
 
         QuotaLedgerEntity ledger = new QuotaLedgerEntity();
         ledger.setLedgerNo(generateLedgerNo());
@@ -342,8 +351,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             quotaLedgerAllocationMapper.insert(allocation);
         }
 
-        log.info("额度消费: clerk_user_id={}, feature={}, amount={}, free={}, plan={}, addon={}, legacy={}, ledger_id={}",
-                clerkUserId, featureCode, amount, fromFree, fromPlan, addonConsumed, fromLegacy, ledger.getId());
+        log.info("额度消费: clerk_user_id={}, feature={}, amount={}, free={}, plan={}, addon={}, legacy={}, legacyRawDebit={}, ledger_id={}",
+                clerkUserId, featureCode, amount, fromFree, fromPlan, addonConsumed, fromLegacy, legacyRawDebit, ledger.getId());
         return new ConsumeResult(ledger.getId());
     }
 
@@ -458,6 +467,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         long newFree = (quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L) + addToFree;
         long newPlan = (quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L) + addToPlan;
         long newPaid = (quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L) + addToPaid;
+        long displayPaidAfter = legacyBalanceInRuns(consumeLedger.getFeatureCode(), newPaid);
         quota.setFreeBalance(newFree);
         quota.setPlanBalance(newPlan);
         quota.setPaidBalance(newPaid);
@@ -485,7 +495,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         refundLedger.setPlanBalanceAfter(newPlan);
         refundLedger.setAddonBalanceAfter(sumActiveAddonBalance(
                 consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), now));
-        refundLedger.setPaidBalanceAfter(newPaid);
+        refundLedger.setPaidBalanceAfter(displayPaidAfter);
         refundLedger.setBizContext(GSON.toJson(ctx));
         refundLedger.setCreatedAt(now);
         quotaLedgerMapper.insert(refundLedger);
@@ -574,6 +584,30 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             return "time";
         }
         return "count".equalsIgnoreCase(rawUnit) ? "time" : "words";
+    }
+
+    private long legacyBalanceInRuns(String featureCode, long rawPaidBalance) {
+        if (rawPaidBalance <= 0) {
+            return 0L;
+        }
+        if (!isLegacyWordsFeature(featureCode)) {
+            return rawPaidBalance;
+        }
+        return (rawPaidBalance + LEGACY_WORDS_PER_RUN - 1) / LEGACY_WORDS_PER_RUN;
+    }
+
+    private long legacyRawDebitForRuns(String featureCode, long rawPaidBalance, long runAmount) {
+        if (runAmount <= 0 || rawPaidBalance <= 0) {
+            return 0L;
+        }
+        if (!isLegacyWordsFeature(featureCode)) {
+            return runAmount;
+        }
+        return Math.min(rawPaidBalance, runAmount * LEGACY_WORDS_PER_RUN);
+    }
+
+    private boolean isLegacyWordsFeature(String featureCode) {
+        return "ai_detection".equals(featureCode) || "humanizer".equals(featureCode);
     }
 
     private String buildDisplayText(QuotaLedgerEntity entity, String featureDisplayName, String quotaUnit) {

@@ -2,6 +2,7 @@ package com.studyagent.infra.entity.verla;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -43,5 +44,12 @@ public class VerlaAttachmentEntity {
     private String imagesJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    /**
+     * DATETIME 软删除：活跃行为 NULL，删除时写入时间戳（见 SQL 063）。
+     * 用 value="null"/delval="now()" 覆盖全局整型逻辑删除配置（logic-delete-value=1/0），
+     * 让 MP 自动 CRUD 生成 {@code deleted_at IS NULL} 而非 {@code deleted_at=0}，
+     * 与本表手写 SQL 的软删除语义保持一致。
+     */
+    @TableLogic(value = "null", delval = "now()")
     private LocalDateTime deletedAt;
 }

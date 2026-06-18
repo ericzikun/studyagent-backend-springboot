@@ -22,5 +22,7 @@ public class VerlaUploadSignResponseVO {
     private String method;
     /** 上传时必须带的 Header（key → value） */
     private Map<String, String> headers;
+    /** OSS 对象 Key（Java 生成）；供 Python 直传 OSS 时定位目标对象，前端无需使用 */
+    private String ossKey;
     private long expiresInSeconds;
 }

@@ -63,6 +63,7 @@ public class VerlaV2AttachmentUploadController {
                 .uploadPath(r.getUploadPath())
                 .method(r.getMethod())
                 .headers(Map.of(VerlaAttachmentService.HDR_UPLOAD_TOKEN, r.getUploadToken()))
+                .ossKey(r.getOssKey())
                 .expiresInSeconds(r.getExpiresInSeconds())
                 .build());
     }

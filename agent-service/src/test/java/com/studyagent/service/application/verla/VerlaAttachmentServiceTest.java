@@ -364,6 +364,11 @@ class VerlaAttachmentServiceTest {
             lastPatch = patch;
             return patch;
         }
+
+        @Override
+        public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+            return 0;
+        }
     }
 
     private static class DisabledOssStorageService implements OssStorageService {

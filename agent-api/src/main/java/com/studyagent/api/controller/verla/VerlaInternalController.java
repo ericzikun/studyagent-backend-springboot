@@ -285,6 +285,7 @@ public class VerlaInternalController {
                 .uploadPath("/v1/internal/verla/v2/uploads/" + r.getObjectId() + "/content")
                 .method(r.getMethod())
                 .headers(Map.of(VerlaAttachmentService.HDR_UPLOAD_TOKEN, r.getUploadToken()))
+                .ossKey(r.getOssKey())
                 .expiresInSeconds(r.getExpiresInSeconds())
                 .build());
     }

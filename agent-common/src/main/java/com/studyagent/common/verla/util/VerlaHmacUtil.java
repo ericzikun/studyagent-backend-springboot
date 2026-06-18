@@ -21,10 +21,17 @@ public class VerlaHmacUtil {
      * 计算 HMAC-SHA256 hex
      */
     public static String sha256Hex(String secret, String body) {
+        return sha256Hex(secret, body == null ? null : body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 计算 HMAC-SHA256 hex
+     */
+    public static String sha256Hex(String secret, byte[] body) {
         try {
             Mac mac = Mac.getInstance(ALGORITHM);
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), ALGORITHM));
-            byte[] raw = mac.doFinal(body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8));
+            byte[] raw = mac.doFinal(body == null ? new byte[0] : body);
             return toHex(raw);
         } catch (NoSuchAlgorithmException | java.security.InvalidKeyException e) {
             throw new IllegalStateException("hmac compute failed", e);

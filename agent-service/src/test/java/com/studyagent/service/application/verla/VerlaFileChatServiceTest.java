@@ -325,6 +325,11 @@ class VerlaFileChatServiceTest {
         public VerlaAttachment updateByObjectIdSelective(VerlaAttachment patch) {
             return patch;
         }
+
+        @Override
+        public int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason) {
+            return 0;
+        }
     }
 
     private static final class FakeMessageRepository implements VerlaMessageRepository {

@@ -73,6 +73,12 @@ public class AuthInterceptor implements HandlerInterceptor {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
+
+        // Internal APIs are authenticated by dedicated servlet filters such as
+        // VerlaInternalAuthFilter, not by Clerk bearer tokens.
+        if (isInternalRequest(request)) {
+            return true;
+        }
         
         // 健康检查接口不需要认证
         if (request.getRequestURI().equals("/health")) {
@@ -303,6 +309,11 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         // /v1/verla/conversations/{cid}/events，cid 可为纯数字或 public id（vc_xxx）
         return uri.matches(".*/v1/verla/conversations/[^/]+/events");
+    }
+
+    private boolean isInternalRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith("/v1/internal/");
     }
 
     /**

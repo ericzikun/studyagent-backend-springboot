@@ -79,6 +79,13 @@ class VerlaConversationControllerTest {
         verify(artifactMapper).selectByConversationIds(List.of(101L));
     }
 
+    @Test
+    void mapperConversationLookup_includesArtifactBodyNeededForPreviewFiltering() {
+        assertThat(VerlaArtifactMapper.SELECT_BY_CONVERSATION_IDS_COLUMNS)
+                .isEqualTo(VerlaArtifactMapper.ARTIFACT_FULL_COLUMNS)
+                .contains("body_or_ref");
+    }
+
     private static VerlaConversation assignmentConversation() {
         LocalDateTime now = LocalDateTime.of(2026, 6, 3, 12, 0);
         return VerlaConversation.builder()

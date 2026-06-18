@@ -262,6 +262,7 @@ public class VerlaAttachmentService {
                 .uploadPath(API_V2_UPLOAD_BASE + objectId + "/content")
                 .method("PUT")
                 .uploadToken(uploadToken)
+                .ossKey(ossKey)
                 .expiresInSeconds(signTtlSeconds)
                 .build();
     }
@@ -369,7 +370,24 @@ public class VerlaAttachmentService {
             throw new BusinessException(ApiCode.PARAM_ERROR, "finalize requires UPLOADED status");
         }
         if (att.getStorageUri() == null || att.getStorageUri().startsWith("pending://")) {
-            throw new BusinessException(ApiCode.PARAM_ERROR, "upload content first");
+            // 直传路径：Python 已用静态凭证将字节直接 PUT 到 OSS 的 att.ossKey，
+            // 不经过 uploadContent 端点。此时据 ossKey 推导 storageUri 并采信客户端 checksum。
+            if (StringUtils.hasText(att.getOssKey()) && StringUtils.hasText(clientChecksumSha256)) {
+                String directUri = ossStorageService.formatVerlaStorageUri(att.getOssKey());
+                if (!StringUtils.hasText(directUri)) {
+                    throw new BusinessException(ApiCode.INTERNAL_ERROR, "could not build storage URI for direct upload");
+                }
+                attachmentRepository.updateByObjectIdSelective(VerlaAttachment.builder()
+                        .objectId(objectId)
+                        .storageUri(directUri)
+                        .checksumSha256(clientChecksumSha256.trim())
+                        .build());
+                att = attachmentRepository.findByObjectId(objectId);
+                log.info("[Verla/attachment/V2] finalize direct-upload objectId={} ossKey={} uri={}",
+                        objectId, att.getOssKey(), directUri);
+            } else {
+                throw new BusinessException(ApiCode.PARAM_ERROR, "upload content first");
+            }
         }
         if (StringUtils.hasText(clientChecksumSha256)
                 && att.getChecksumSha256() != null

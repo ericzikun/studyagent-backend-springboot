@@ -20,5 +20,7 @@ public class VerlaUploadSignResult {
     private String method;
     /** 上传时必须带的请求头：X-Verla-Upload-Token */
     private String uploadToken;
+    /** OSS 对象 Key（Java 在 sign 时生成）；供 Python 直传 OSS 时定位目标对象 */
+    private String ossKey;
     private long expiresInSeconds;
 }

@@ -45,4 +45,14 @@ public interface VerlaAttachmentRepository {
      * 上传落盘后合并字段（storageUri / checksum / turnId / status 等），不参与解析终态守卫。
      */
     VerlaAttachment updateByObjectIdSelective(VerlaAttachment patch);
+
+    /**
+     * 批量清理 Python 直传链路中 sign 后未 finalize 的 agent 输出预登记行：
+     * 将 {@code attachment_origin = AGENT_OUTPUT}、仍停留在 {@code UPLOADED}
+     * 且 storage_uri 仍为 {@code pending://}（未落盘）、创建时间早于 {@code cutoff} 的行，
+     * 限 {@code batchSize} 条标记为 {@code FAILED} 并写入 {@code reason}。
+     *
+     * @return 本批实际更新的行数
+     */
+    int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason);
 }

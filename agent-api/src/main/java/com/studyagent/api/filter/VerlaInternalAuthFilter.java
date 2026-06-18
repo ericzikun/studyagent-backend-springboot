@@ -92,9 +92,8 @@ public class VerlaInternalAuthFilter extends OncePerRequestFilter {
         }
 
         byte[] bodyBytes = request.getInputStream().readAllBytes();
-        String body = new String(bodyBytes, StandardCharsets.UTF_8);
         String secret = StringUtils.isNotBlank(hmacSecret) ? hmacSecret : token;
-        String expect = VerlaHmacUtil.sha256Hex(secret, body);
+        String expect = VerlaHmacUtil.sha256Hex(secret, bodyBytes);
         String sig = request.getHeader(HEADER_SIG);
         if (!VerlaHmacUtil.constantTimeEquals(expect, sig)) {
             log.warn("[verla-internal] bad signature from ip={}, uri={}", clientIp, uri);

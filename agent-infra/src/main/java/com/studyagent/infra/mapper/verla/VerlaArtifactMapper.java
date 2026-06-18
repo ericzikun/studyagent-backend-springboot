@@ -18,6 +18,7 @@ public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
             "id, artifact_uid, conversation_id, turn_id, session_id, source_message_id, "
                     + "source_object_id, kind, mime, summary, content_ref, body_or_ref, status, size_bytes, "
                     + "version, meta_json, updated_at";
+    String SELECT_BY_CONVERSATION_IDS_COLUMNS = ARTIFACT_FULL_COLUMNS;
 
     @Select("SELECT " + ARTIFACT_FULL_COLUMNS + " FROM verla_artifacts WHERE conversation_id = #{cid} "
             + "ORDER BY updated_at DESC, id DESC")
@@ -31,7 +32,7 @@ public interface VerlaArtifactMapper extends BaseMapper<VerlaArtifactEntity> {
     VerlaArtifactEntity selectByUid(@Param("uid") String artifactUid);
 
     @Select("<script>" +
-            "SELECT " + ARTIFACT_METADATA_COLUMNS + " FROM verla_artifacts " +
+            "SELECT " + SELECT_BY_CONVERSATION_IDS_COLUMNS + " FROM verla_artifacts " +
             "WHERE conversation_id IN " +
             "<foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>" +
             " ORDER BY updated_at DESC" +

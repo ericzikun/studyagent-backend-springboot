@@ -873,12 +873,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
         String normalizedHost = host.toLowerCase(Locale.ROOT);
-        boolean localHost = isLocalCheckoutHost(normalizedHost);
-        if (!"https".equals(normalizedScheme) && !("http".equals(normalizedScheme) && localHost)) {
+        if (!"https".equals(normalizedScheme) && !"http".equals(normalizedScheme)) {
             return false;
         }
 
-        return localHost
+        return isLocalCheckoutHost(normalizedHost)
                 || isVerlaCheckoutHost(normalizedHost)
                 || sameOrigin(uri, successUrl)
                 || sameOrigin(uri, cancelUrl);

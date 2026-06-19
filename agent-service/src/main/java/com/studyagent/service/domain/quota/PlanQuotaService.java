@@ -3,6 +3,16 @@ package com.studyagent.service.domain.quota;
 import java.time.Instant;
 
 public interface PlanQuotaService {
+    /**
+     * Idempotently refreshes plan quota state for one feature before a balance read or consume attempt.
+     */
+    void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode);
+
+    /**
+     * Idempotently refreshes all plan-backed feature quotas for one user in a single subscription/plan lookup.
+     */
+    void refreshAllPlanQuotasIfNeeded(String clerkUserId);
+
     void resetFromPaidInvoice(
             String clerkUserId,
             String subscriptionId,

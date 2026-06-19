@@ -73,5 +73,8 @@ public class HumanizerTaskResponse {
     /** 进度百分比 0~100，未完成时最低为 1，完成时为 100 */
     private Integer progress;
 
+    /** 支付后恢复当前任务的一次性 token */
+    private String resumeToken;
+
     private String createdAt;
 }

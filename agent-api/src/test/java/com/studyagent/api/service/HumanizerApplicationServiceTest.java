@@ -40,6 +40,7 @@ class HumanizerApplicationServiceTest {
     private UserRepository userRepository;
     private HumanizerServiceClient humanizerServiceClient;
     private HumanizerTaskNameDispatcher humanizerTaskNameDispatcher;
+    private PaymentResumeContextService paymentResumeContextService;
     private HumanizerApplicationService service;
 
     @BeforeEach
@@ -49,12 +50,14 @@ class HumanizerApplicationServiceTest {
         userRepository = mock(UserRepository.class);
         humanizerServiceClient = mock(HumanizerServiceClient.class);
         humanizerTaskNameDispatcher = mock(HumanizerTaskNameDispatcher.class);
+        paymentResumeContextService = mock(PaymentResumeContextService.class);
         service = new HumanizerApplicationService(
                 repository,
                 quotaDomainService,
                 userRepository,
                 humanizerServiceClient,
-                humanizerTaskNameDispatcher);
+                humanizerTaskNameDispatcher,
+                paymentResumeContextService);
         ReflectionTestUtils.setField(service, "whitelistUserIds", List.of());
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(repository.countQueueAhead(anyString(), any())).thenReturn(0);
@@ -141,6 +144,64 @@ class HumanizerApplicationServiceTest {
         assertThat(result.response().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
         assertThat(insertCaptor.getValue().getStatus()).isEqualTo("CHARGING");
         assertThat(updateCaptor.getValue().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
+    }
+
+    @Test
+    void submitHumanize_returnsResumeToken_whenQuotaExhaustedAtSubmission() {
+        when(quotaDomainService.canConsume("user_1", FeatureCode.HUMANIZER.getCode(), 1L))
+                .thenReturn(false);
+        when(paymentResumeContextService.createHumanizerResumeContext(
+                "user_1",
+                "humanizer_start",
+                100L,
+                "humanizer:100:start"))
+                .thenReturn("resume_humanize_100");
+
+        HumanizerSubmitResult result = service.submitTask(
+                "user_1",
+                "HUMANIZE",
+                "This is a fairly long humanizer text with many words.",
+                "HUMANIZER_PAGE");
+
+        assertThat(result.quotaConsumed()).isFalse();
+        assertThat(result.response().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
+        assertThat(result.response().getResumeToken()).isEqualTo("resume_humanize_100");
+        verify(paymentResumeContextService).createHumanizerResumeContext(
+                "user_1",
+                "humanizer_start",
+                100L,
+                "humanizer:100:start");
+    }
+
+    @Test
+    void submitDetect_returnsResumeToken_whenQuotaExhaustedAtSubmission() {
+        when(humanizerServiceClient.splitSentences(anyString()))
+                .thenReturn(HumanizerServiceClient.SplitSentencesResult.builder()
+                        .code(500)
+                        .build());
+        when(quotaDomainService.getUserQuota("user_1", FeatureCode.AI_DETECTION.getCode()))
+                .thenReturn(balance(0L));
+        when(paymentResumeContextService.createHumanizerResumeContext(
+                "user_1",
+                "detection_start",
+                100L,
+                "humanizer:100:start"))
+                .thenReturn("resume_detect_100");
+
+        HumanizerSubmitResult result = service.submitTask(
+                "user_1",
+                "DETECT",
+                "This detect request still only costs one launch.",
+                "HUMANIZER_PAGE");
+
+        assertThat(result.quotaConsumed()).isFalse();
+        assertThat(result.response().getStatus()).isEqualTo("QUOTA_EXHAUSTED");
+        assertThat(result.response().getResumeToken()).isEqualTo("resume_detect_100");
+        verify(paymentResumeContextService).createHumanizerResumeContext(
+                "user_1",
+                "detection_start",
+                100L,
+                "humanizer:100:start");
     }
 
     @Test

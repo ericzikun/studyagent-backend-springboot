@@ -44,7 +44,8 @@ public class PaymentController {
                     userInfo == null ? null : userInfo.email,
                     request.getPlanCode(),
                     request.getSuccessUrl(),
-                    request.getCancelUrl());
+                    request.getCancelUrl(),
+                    request.getResumeToken());
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
             return mapBillingException(e);
@@ -65,7 +66,8 @@ public class PaymentController {
                     userInfo == null ? null : userInfo.email,
                     request.getAddonCode(),
                     request.getSuccessUrl(),
-                    request.getCancelUrl());
+                    request.getCancelUrl(),
+                    request.getResumeToken());
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
             return mapBillingException(e);
@@ -182,6 +184,7 @@ public class PaymentController {
         data.put("sessionId", checkout.getSessionId());
         data.put("checkoutUrl", checkout.getCheckoutUrl());
         data.put("expiresAt", checkout.getExpiresAt());
+        data.put("resumeToken", checkout.getResumeToken());
         return data;
     }
 
@@ -245,6 +248,7 @@ public class PaymentController {
         private String planCode;
         private String successUrl;
         private String cancelUrl;
+        private String resumeToken;
     }
 
     @Data
@@ -252,5 +256,6 @@ public class PaymentController {
         private String addonCode;
         private String successUrl;
         private String cancelUrl;
+        private String resumeToken;
     }
 }

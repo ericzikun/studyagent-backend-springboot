@@ -11,6 +11,7 @@ import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
+import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -40,6 +41,7 @@ public class DefaultEntitlementService implements EntitlementService {
     private final VerlaAttachmentRepository attachmentRepository;
     private final VerlaArtifactRepository artifactRepository;
     private final FollowupEditUsageRepository followupEditUsageRepository;
+    private final VerlaSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
 
     @Value("${verla.attachment.sign-ttl-seconds:3600}")
@@ -99,6 +101,7 @@ public class DefaultEntitlementService implements EntitlementService {
         }
 
         Long assignmentSessionId = resolveAssignmentScopeSessionId(conversationId, artifactUids);
+        sessionRepository.findByIdForUpdate(assignmentSessionId);
         Integer limit = getEffectiveEntitlements(clerkUserId).maxFollowupEdits();
         if (limit != null && limit > 0) {
             long activeCount = followupEditUsageRepository.countActiveByAssignmentSessionId(assignmentSessionId);

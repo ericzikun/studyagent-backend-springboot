@@ -10,6 +10,7 @@ import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
+import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,10 +19,23 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,6 +53,8 @@ class DefaultEntitlementServiceTest {
     private VerlaArtifactRepository artifactRepository;
     @Mock
     private FollowupEditUsageRepository followupEditUsageRepository;
+    @Mock
+    private VerlaSessionRepository sessionRepository;
 
     private DefaultEntitlementService service;
 
@@ -49,6 +65,7 @@ class DefaultEntitlementServiceTest {
                 attachmentRepository,
                 artifactRepository,
                 followupEditUsageRepository,
+                sessionRepository,
                 new ObjectMapper());
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
     }
@@ -111,6 +128,7 @@ class DefaultEntitlementServiceTest {
         when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
                 VerlaArtifact.builder().artifactUid("art_1").sessionId(700L).build()
         ));
+        when(sessionRepository.findByIdForUpdate(700L)).thenReturn(null);
         when(followupEditUsageRepository.countActiveByAssignmentSessionId(700L)).thenReturn(0L);
         when(billingDomainService.getEffectivePlanOrFree("u1")).thenReturn(
                 BillingPlan.builder()
@@ -132,7 +150,122 @@ class DefaultEntitlementServiceTest {
         verify(followupEditUsageRepository).save(any(FollowupEditUsage.class));
     }
 
+    @Test
+    void reserveFollowupEdit_blocksConcurrentRequestsThatWouldExceedLimit() throws Exception {
+        Semaphore assignmentLock = new Semaphore(1);
+        CountDownLatch firstLockAcquired = new CountDownLatch(1);
+        InMemoryFollowupEditUsageRepository fakeRepository = new InMemoryFollowupEditUsageRepository();
+        VerlaSessionRepository lockingSessionRepository = org.mockito.Mockito.mock(VerlaSessionRepository.class);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            assignmentLock.acquireUninterruptibly();
+            firstLockAcquired.countDown();
+            return null;
+        }).when(lockingSessionRepository).findByIdForUpdate(700L);
+        DefaultEntitlementService concurrentService = new DefaultEntitlementService(
+                billingDomainService,
+                attachmentRepository,
+                artifactRepository,
+                fakeRepository,
+                lockingSessionRepository,
+                new ObjectMapper());
+        ReflectionTestUtils.setField(concurrentService, "signTtlSeconds", 3600L);
+
+        when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
+                VerlaArtifact.builder().artifactUid("art_1").sessionId(700L).build()
+        ));
+        when(billingDomainService.getEffectivePlanOrFree("u1")).thenReturn(
+                BillingPlan.builder()
+                        .planCode("plus_monthly")
+                        .tier("plus")
+                        .maxFollowupEdits(1)
+                        .allowedOutputTypes("[\"writing\",\"ppt\",\"coding\"]")
+                        .build());
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<FollowupEditUsage> first = executor.submit(reserveTask(concurrentService, 901L));
+            assertTrue(firstLockAcquired.await(5, TimeUnit.SECONDS), "first request should acquire assignment lock");
+            Future<FollowupEditUsage> second = executor.submit(reserveTask(concurrentService, 902L));
+
+            List<FollowupEditUsage> successes = new ArrayList<>();
+            List<Throwable> failures = new ArrayList<>();
+            successes.add(first.get(5, TimeUnit.SECONDS));
+            assignmentLock.release();
+            collectOutcome(second, successes, failures);
+
+            assertEquals(1, successes.size(), "only one follow-up edit should reserve successfully");
+            assertEquals(1, failures.size(), "one concurrent request should be rejected");
+            assertTrue(failures.get(0) instanceof BusinessException, "concurrent overflow should raise BusinessException");
+            assertEquals(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED.getCode(), ((BusinessException) failures.get(0)).getCode());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private BillingPlan freePlan() {
         return BillingPlan.freePlan();
+    }
+
+    private Callable<FollowupEditUsage> reserveTask(DefaultEntitlementService target, Long userMessageId) {
+        return () -> target.reserveFollowupEdit("u1", 74L, userMessageId, List.of("art_1"));
+    }
+
+    private void collectOutcome(
+            Future<FollowupEditUsage> future,
+            List<FollowupEditUsage> successes,
+            List<Throwable> failures) throws InterruptedException {
+        try {
+            successes.add(future.get(5, TimeUnit.SECONDS));
+        } catch (ExecutionException ex) {
+            failures.add(ex.getCause());
+        } catch (java.util.concurrent.TimeoutException ex) {
+            failures.add(ex);
+        }
+    }
+
+    private static final class InMemoryFollowupEditUsageRepository implements FollowupEditUsageRepository {
+        private final ConcurrentMap<Long, FollowupEditUsage> byUserMessageId = new ConcurrentHashMap<>();
+        private final AtomicLong ids = new AtomicLong(100);
+
+        @Override
+        public FollowupEditUsage findByUserMessageId(Long userMessageId) {
+            return byUserMessageId.get(userMessageId);
+        }
+
+        @Override
+        public FollowupEditUsage findByAssignmentChatSessionId(Long assignmentChatSessionId) {
+            return byUserMessageId.values().stream()
+                    .filter(usage -> assignmentChatSessionId.equals(usage.getAssignmentChatSessionId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        @Override
+        public long countActiveByAssignmentSessionId(Long assignmentSessionId) {
+            return byUserMessageId.values().stream()
+                    .filter(usage -> assignmentSessionId.equals(usage.getAssignmentSessionId()))
+                    .filter(usage -> FollowupEditUsage.STATE_RESERVED.equals(usage.getState())
+                            || FollowupEditUsage.STATE_COMPLETED.equals(usage.getState()))
+                    .count();
+        }
+
+        @Override
+        public FollowupEditUsage save(FollowupEditUsage usage) {
+            usage.setId(ids.incrementAndGet());
+            byUserMessageId.put(usage.getUserMessageId(), usage);
+            return usage;
+        }
+
+        @Override
+        public FollowupEditUsage updateState(Long userMessageId, String state, Long assignmentChatSessionId, String releaseReason) {
+            FollowupEditUsage existing = byUserMessageId.get(userMessageId);
+            if (existing == null) {
+                return null;
+            }
+            existing.setState(state);
+            existing.setAssignmentChatSessionId(assignmentChatSessionId);
+            existing.setReleaseReason(releaseReason);
+            return existing;
+        }
     }
 }

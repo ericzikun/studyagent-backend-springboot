@@ -8,10 +8,12 @@ import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserAiQuotaEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AiFeatureDefsMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
+import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,14 +33,33 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlanQuotaServiceImpl implements PlanQuotaService {
     private static final Gson GSON = new Gson();
+    private static final List<String> PLAN_FEATURE_CODES = List.of(
+            FeatureCode.TASK_CREATE.getCode(),
+            FeatureCode.AI_DETECTION.getCode(),
+            FeatureCode.HUMANIZER.getCode());
     private static final String LEDGER_TYPE_PLAN_RESET = "plan_reset";
     private static final String LEDGER_TYPE_UPGRADE_GRANT = "upgrade_grant";
     private static final String LEDGER_TYPE_PLAN_CLEAR = "plan_clear";
+    private static final String LEDGER_TYPE_PLAN_REFRESH = "plan_refresh";
+    private static final String LEDGER_TYPE_PLAN_EXPIRED = "plan_expired";
 
     private final SubscriptionPlanMapper subscriptionPlanMapper;
     private final AiFeatureDefsMapper aiFeatureDefsMapper;
     private final UserAiQuotaMapper userAiQuotaMapper;
     private final QuotaLedgerMapper quotaLedgerMapper;
+    private final UserSubscriptionMapper userSubscriptionMapper;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode) {
+        refreshPlanQuotaIfNeeded(clerkUserId, featureCode, LocalDateTime.now());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void refreshAllPlanQuotasIfNeeded(String clerkUserId) {
+        refreshAllPlanQuotasIfNeeded(clerkUserId, LocalDateTime.now());
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -122,6 +144,101 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode, LocalDateTime now) {
+        if (clerkUserId == null || clerkUserId.isBlank() || featureCode == null || featureCode.isBlank()) {
+            return;
+        }
+
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
+            return;
+        }
+
+        UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
+                new LambdaQueryWrapper<UserAiQuotaEntity>()
+                        .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
+                        .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
+                        .last("LIMIT 1"));
+        if (quota == null) {
+            return;
+        }
+
+        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
+        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
+        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
+        if (!missingPlanWindow && !planWindowExpired) {
+            return;
+        }
+
+        SubscriptionPlanEntity plan = requirePlan(subscription.getPlanCode());
+        String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
+        if ("year".equals(billingInterval)) {
+            refreshAnnualPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
+            return;
+        }
+
+        if ("month".equals(billingInterval) && planWindowExpired) {
+            expireMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, now);
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    void refreshAllPlanQuotasIfNeeded(String clerkUserId, LocalDateTime now) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return;
+        }
+
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
+            return;
+        }
+
+        SubscriptionPlanEntity plan = requirePlan(subscription.getPlanCode());
+        String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
+
+        Map<String, UserAiQuotaEntity> quotasByFeatureCode = userAiQuotaMapper.selectList(
+                        new LambdaQueryWrapper<UserAiQuotaEntity>()
+                                .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
+                                .in(UserAiQuotaEntity::getFeatureCode, PLAN_FEATURE_CODES))
+                .stream()
+                .filter(quota -> quota.getFeatureCode() != null)
+                .collect(LinkedHashMap::new, (map, quota) -> map.put(quota.getFeatureCode(), quota), Map::putAll);
+
+        for (String featureCode : PLAN_FEATURE_CODES) {
+            UserAiQuotaEntity quota = quotasByFeatureCode.get(featureCode);
+            if (quota == null) {
+                continue;
+            }
+            refreshResolvedPlanQuotaIfNeeded(clerkUserId, featureCode, now, subscription, plan, billingInterval, quota);
+        }
+    }
+
+    private void refreshResolvedPlanQuotaIfNeeded(
+            String clerkUserId,
+            String featureCode,
+            LocalDateTime now,
+            UserSubscriptionEntity subscription,
+            SubscriptionPlanEntity plan,
+            String billingInterval,
+            UserAiQuotaEntity quota) {
+        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
+        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
+        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
+        if (!missingPlanWindow && !planWindowExpired) {
+            return;
+        }
+
+        if ("year".equals(billingInterval)) {
+            refreshAnnualPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
+            return;
+        }
+
+        if ("month".equals(billingInterval) && planWindowExpired) {
+            expireMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, now);
+        }
+    }
+
     private void applyPlanGrant(
             String clerkUserId,
             String subscriptionId,
@@ -178,6 +295,118 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
     }
 
+    private void refreshAnnualPlanQuota(
+            String clerkUserId,
+            UserSubscriptionEntity subscription,
+            UserAiQuotaEntity quota,
+            String featureCode,
+            SubscriptionPlanEntity plan,
+            LocalDateTime now) {
+        if (subscription.getQuotaPeriodStart() == null) {
+            return;
+        }
+
+        LocalDateTime anchor = subscription.getQuotaPeriodStart();
+        LocalDateTime windowStart = anchor;
+        while (!windowStart.plusMonths(1).isAfter(now)) {
+            windowStart = windowStart.plusMonths(1);
+        }
+        LocalDateTime windowEnd = windowStart.plusMonths(1);
+
+        if (windowStart.equals(quota.getPlanPeriodStart()) && windowEnd.equals(quota.getPlanPeriodEnd())) {
+            return;
+        }
+
+        long grantAmount = featureGrantAmount(plan, featureCode);
+        String idempotencyKey = "plan-refresh:" + clerkUserId + ":" + featureCode + ":" + windowStart;
+        if (hasLedger(featureCode, LEDGER_TYPE_PLAN_REFRESH, idempotencyKey)) {
+            return;
+        }
+
+        quota.setPlanBalance(grantAmount);
+        quota.setPlanPeriodStart(windowStart);
+        quota.setPlanPeriodEnd(windowEnd);
+        quota.setUpdatedAt(now);
+        persistQuota(quota, now);
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_PLAN_REFRESH);
+        ledger.setAmount(grantAmount);
+        ledger.setSourceType("subscription");
+        ledger.setSourceId(subscription.getStripeSubscriptionId());
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setSubscriptionId(subscription.getStripeSubscriptionId());
+        ledger.setFreeBalanceAfter(quota.getFreeBalance());
+        ledger.setPlanBalanceAfter(grantAmount);
+        ledger.setPaidBalanceAfter(quota.getPaidBalance());
+        ledger.setBizContext(GSON.toJson(Map.of(
+                "plan_code", subscription.getPlanCode(),
+                "quota_period_start", windowStart.toString(),
+                "quota_period_end", windowEnd.toString(),
+                "refresh_mode", "annual_monthly_window"
+        )));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+    }
+
+    private void expireMonthlyPlanQuota(
+            String clerkUserId,
+            UserSubscriptionEntity subscription,
+            UserAiQuotaEntity quota,
+            String featureCode,
+            LocalDateTime now) {
+        long previousPlanBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+        LocalDateTime previousPlanEnd = quota.getPlanPeriodEnd();
+        String idempotencyKey = "plan-expired:" + clerkUserId + ":" + featureCode + ":" + previousPlanEnd;
+        Integer currentVersion = quota.getVersion();
+        UpdateWrapper<UserAiQuotaEntity> updateWrapper = new UpdateWrapper<UserAiQuotaEntity>()
+                .eq("id", quota.getId())
+                .set("plan_balance", 0L)
+                .set("plan_period_start", null)
+                .set("plan_period_end", null)
+                .set("updated_at", now)
+                .setSql("version = version + 1");
+        if (currentVersion != null) {
+            updateWrapper.eq("version", currentVersion);
+        }
+        int updated = userAiQuotaMapper.update(null, updateWrapper);
+        if (updated != 1) {
+            throw new IllegalStateException("Quota update conflict during expire monthly plan quota: quotaId=" + quota.getId());
+        }
+        quota.setPlanBalance(0L);
+        quota.setPlanPeriodStart(null);
+        quota.setPlanPeriodEnd(null);
+        quota.setVersion(currentVersion == null ? 1 : currentVersion + 1);
+
+        if (hasLedger(featureCode, LEDGER_TYPE_PLAN_EXPIRED, idempotencyKey)) {
+            return;
+        }
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_PLAN_EXPIRED);
+        ledger.setAmount(-previousPlanBalance);
+        ledger.setSourceType("subscription");
+        ledger.setSourceId(subscription.getStripeSubscriptionId());
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setSubscriptionId(subscription.getStripeSubscriptionId());
+        ledger.setFreeBalanceAfter(quota.getFreeBalance());
+        ledger.setPlanBalanceAfter(0L);
+        ledger.setPaidBalanceAfter(quota.getPaidBalance());
+        ledger.setBizContext(GSON.toJson(Map.of(
+                "plan_code", subscription.getPlanCode(),
+                "quota_period_end", String.valueOf(previousPlanEnd),
+                "expire_mode", "lazy_monthly_guardrail"
+        )));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+    }
+
     private SubscriptionPlanEntity requirePlan(String planCode) {
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
@@ -196,6 +425,15 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         grants.add(new FeatureGrant(FeatureCode.AI_DETECTION.getCode(), defaultLong(plan.getDetectionQuota())));
         grants.add(new FeatureGrant(FeatureCode.HUMANIZER.getCode(), defaultLong(plan.getHumanizerQuota())));
         return grants;
+    }
+
+    private long featureGrantAmount(SubscriptionPlanEntity plan, String featureCode) {
+        return switch (featureCode) {
+            case "task_create" -> defaultLong(plan.getAssignmentQuota());
+            case "ai_detection" -> defaultLong(plan.getDetectionQuota());
+            case "humanizer" -> defaultLong(plan.getHumanizerQuota());
+            default -> throw new IllegalArgumentException("Unsupported feature for plan refresh: " + featureCode);
+        };
     }
 
     private UserAiQuotaEntity findOrCreateQuota(String clerkUserId, String featureCode, LocalDateTime now) {
@@ -277,6 +515,13 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     private long defaultLong(Long value) {
         return value != null ? value : 0L;
+    }
+
+    private String normalizeBillingInterval(String billingInterval) {
+        if (billingInterval == null || billingInterval.isBlank()) {
+            return "month";
+        }
+        return billingInterval.trim().toLowerCase();
     }
 
     private LocalDateTime computePeriodEnd(LocalDateTime start, String period) {

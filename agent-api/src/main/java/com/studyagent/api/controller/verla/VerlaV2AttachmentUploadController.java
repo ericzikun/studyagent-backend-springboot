@@ -1,12 +1,14 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.response.ResumeRequiredResponse;
 import com.studyagent.api.dto.verla.request.VerlaUploadFinalizeRequest;
 import com.studyagent.api.dto.verla.request.VerlaUploadSignRequest;
 import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
 import com.studyagent.api.dto.verla.response.VerlaUploadSignResponseVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.api.service.PaymentResumeContextService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
 import com.studyagent.service.domain.file.OssStorageService;
@@ -15,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,33 +42,48 @@ public class VerlaV2AttachmentUploadController {
 
     private final VerlaAttachmentService attachmentService;
     private final OssStorageService ossStorageService;
+    private final PaymentResumeContextService paymentResumeContextService;
 
     @PostMapping("/sign")
-    public Result<VerlaUploadSignResponseVO> sign(
+    public ResponseEntity<Result<Object>> sign(
             @RequestAttribute("clerkUserId") String clerkUserId,
             @RequestBody VerlaUploadSignRequest req) {
         ensureLogin(clerkUserId);
         if (req == null || req.getConversationId() == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
         }
-        VerlaUploadSignResult r = attachmentService.requestSign(
-                clerkUserId,
-                req.getConversationId(),
-                req.getFilename(),
-                req.getMime(),
-                req.getSizeBytes() == null ? 0L : req.getSizeBytes(),
-                req.getTurnId(),
-                req.getSessionId(),
-                req.getAttachmentOrigin(),
-                req.getMetaJson());
-        return Result.success(VerlaUploadSignResponseVO.builder()
-                .objectId(r.getObjectId())
-                .uploadPath(r.getUploadPath())
-                .method(r.getMethod())
-                .headers(Map.of(VerlaAttachmentService.HDR_UPLOAD_TOKEN, r.getUploadToken()))
-                .ossKey(r.getOssKey())
-                .expiresInSeconds(r.getExpiresInSeconds())
-                .build());
+        try {
+            VerlaUploadSignResult r = attachmentService.requestSign(
+                    clerkUserId,
+                    req.getConversationId(),
+                    req.getFilename(),
+                    req.getMime(),
+                    req.getSizeBytes() == null ? 0L : req.getSizeBytes(),
+                    req.getTurnId(),
+                    req.getSessionId(),
+                    req.getAttachmentOrigin(),
+                    req.getMetaJson());
+            return ResponseEntity.ok(Result.success(VerlaUploadSignResponseVO.builder()
+                    .objectId(r.getObjectId())
+                    .uploadPath(r.getUploadPath())
+                    .method(r.getMethod())
+                    .headers(Map.of(VerlaAttachmentService.HDR_UPLOAD_TOKEN, r.getUploadToken()))
+                    .ossKey(r.getOssKey())
+                    .expiresInSeconds(r.getExpiresInSeconds())
+                    .build()));
+        } catch (BusinessException e) {
+            if (e.getCode() != ApiCode.FILE_LIMIT_REACHED.getCode()) {
+                throw e;
+            }
+            String resumeToken = paymentResumeContextService.createUploadResumeContext(clerkUserId, req);
+            Result<Object> result = new Result<>();
+            result.setMeta(com.studyagent.api.common.Meta.error(e.getCode(), e.getMessage()));
+            result.setData(ResumeRequiredResponse.builder()
+                    .scene(PaymentResumeContextService.SCENE_UPLOAD)
+                    .resumeToken(resumeToken)
+                    .build());
+            return ResponseEntity.badRequest().body(result);
+        }
     }
 
     @PutMapping(value = "/{objectId}/content", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)

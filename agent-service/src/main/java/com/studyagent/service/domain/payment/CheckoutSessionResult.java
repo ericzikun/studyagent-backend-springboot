@@ -12,4 +12,5 @@ public class CheckoutSessionResult {
     private String sessionId;
     private String checkoutUrl;
     private Long expiresAt;
+    private String resumeToken;
 }

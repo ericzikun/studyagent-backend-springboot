@@ -24,6 +24,7 @@ public enum ApiCode {
     FEEDBACK_SESSION_NOT_FOUND(1020, "Feedback session not found", "反馈会话不存在"),
     FEEDBACK_ALREADY_SUBMITTED(1021, "Feedback already submitted", "反馈已提交"),
     FEEDBACK_INVALID_REQUEST(1022, "Invalid feedback: %s", "反馈请求无效: %s"),
+    RESUME_TOKEN_INVALID(1023, "Resume token is invalid, expired, or already used", "恢复令牌无效、已过期或已使用"),
 
     // 1010 - 任务提交额度
     /** 额度超限，支持格式参数: limit */

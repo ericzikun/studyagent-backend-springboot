@@ -42,6 +42,7 @@ public class HumanizerApplicationService {
     private final UserRepository userRepository;
     private final HumanizerServiceClient humanizerServiceClient;
     private final HumanizerTaskNameDispatcher humanizerTaskNameDispatcher;
+    private final PaymentResumeContextService paymentResumeContextService;
 
     /** 内测白名单用户（不限额度），通过配置 humanizer.whitelist-user-ids 设置 */
     @org.springframework.beans.factory.annotation.Value("${humanizer.whitelist-user-ids:}")
@@ -139,6 +140,11 @@ public class HumanizerApplicationService {
                             .totalWords(splitTotalWords > 0 ? splitTotalWords : wordCount)
                             .consumedWords(0)
                             .progress(0)
+                            .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
+                                    clerkUserId,
+                                    "detection_start",
+                                    exhaustedEntity.getId(),
+                                    "humanizer:" + exhaustedEntity.getId() + ":start"))
                             .build();
                     return new HumanizerSubmitResult(response, false);
                 }
@@ -171,6 +177,11 @@ public class HumanizerApplicationService {
                             .totalWords(wordCount)
                             .consumedWords(0)
                             .progress(0)
+                            .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
+                                    clerkUserId,
+                                    "humanizer_start",
+                                    exhaustedEntity.getId(),
+                                    "humanizer:" + exhaustedEntity.getId() + ":start"))
                             .build();
                     return new HumanizerSubmitResult(response, false);
                 }
@@ -235,6 +246,11 @@ public class HumanizerApplicationService {
                         .totalWords(wordCount)
                         .consumedWords(0)
                         .progress(0)
+                        .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
+                                clerkUserId,
+                                "humanizer_start",
+                                entity.getId(),
+                                "humanizer:" + entity.getId() + ":start"))
                         .build();
                 return new HumanizerSubmitResult(response, false);
             }

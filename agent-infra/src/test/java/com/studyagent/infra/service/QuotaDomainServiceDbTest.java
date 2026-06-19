@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
 import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -89,9 +90,32 @@ class QuotaDomainServiceDbTest {
         planMapper = sqlSession.getMapper(SubscriptionPlanMapper.class);
         addonMapper = sqlSession.getMapper(AddonPackageDefMapper.class);
 
+        PlanQuotaService noOpPlanQuotaService = new PlanQuotaService() {
+            @Override
+            public void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode) {
+            }
+
+            @Override
+            public void refreshAllPlanQuotasIfNeeded(String clerkUserId) {
+            }
+
+            @Override
+            public void resetFromPaidInvoice(String clerkUserId, String subscriptionId, String planCode,
+                                             Instant quotaPeriodStart, Instant quotaPeriodEnd, String invoiceId) {
+            }
+
+            @Override
+            public void addFullPlanForUpgrade(String clerkUserId, String subscriptionId, String planCode,
+                                              Instant quotaPeriodStart, Instant quotaPeriodEnd, String invoiceId) {
+            }
+
+            @Override
+            public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
+            }
+        };
         quotaService = new QuotaDomainServiceImpl(featureDefMapper, packageMapper, quotaMapper,
-                ledgerMapper, grantMapper, allocMapper);
-        planService = new PlanQuotaServiceImpl(planMapper, featureDefMapper, quotaMapper, ledgerMapper);
+                ledgerMapper, grantMapper, allocMapper, noOpPlanQuotaService);
+        planService = new PlanQuotaServiceImpl(planMapper, featureDefMapper, quotaMapper, ledgerMapper, null);
         addonService = new AddonGrantServiceImpl(addonMapper, grantMapper, ledgerMapper);
     }
 

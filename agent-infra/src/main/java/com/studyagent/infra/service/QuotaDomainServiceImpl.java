@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
 import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.studyagent.service.domain.quota.QuotaDomainService;
 import com.studyagent.service.domain.quota.QuotaLedgerItem;
@@ -46,6 +47,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private final QuotaLedgerMapper quotaLedgerMapper;
     private final UserAddonGrantMapper userAddonGrantMapper;
     private final QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
+    private final PlanQuotaService planQuotaService;
 
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
@@ -75,6 +77,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (featureDef == null) {
             throw new IllegalArgumentException("Unknown feature_code: " + featureCode);
         }
+
+        planQuotaService.refreshPlanQuotaIfNeeded(clerkUserId, featureCode);
 
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
 
@@ -210,6 +214,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (featureDef == null) {
             throw new IllegalArgumentException("Unknown feature_code: " + featureCode);
         }
+
+        planQuotaService.refreshPlanQuotaIfNeeded(clerkUserId, featureCode);
 
         UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()

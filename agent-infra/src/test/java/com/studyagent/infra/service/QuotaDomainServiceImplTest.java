@@ -13,6 +13,7 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.service.domain.quota.ConsumeResult;
+import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,6 +58,8 @@ class QuotaDomainServiceImplTest {
     private UserAddonGrantMapper userAddonGrantMapper;
     @Mock
     private QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
+    @Mock
+    private PlanQuotaService planQuotaService;
 
     @Test
     void getUserQuota_convertsLegacyDetectionWordsToRuns() {
@@ -87,7 +90,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         QuotaBalance balance = service.getUserQuota("user_1", "ai_detection");
 
@@ -132,7 +136,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -210,7 +215,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -286,7 +292,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         ConsumeResult first = service.consume(
                 "user_1",
@@ -367,7 +374,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         service.refund(501L, "task_failed");
 
@@ -449,7 +457,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         service.refund(502L, "task_failed");
 
@@ -504,7 +513,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         service.refund(5L, "task_failed");
 
@@ -566,7 +576,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -626,7 +637,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -698,7 +710,8 @@ class QuotaDomainServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userAddonGrantMapper,
-                quotaLedgerAllocationMapper);
+                quotaLedgerAllocationMapper,
+                planQuotaService);
 
         assertThrows(IllegalStateException.class, () -> service.consume(
                 "user_1",

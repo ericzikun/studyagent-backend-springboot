@@ -445,7 +445,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SubscriptionSchedule schedule = retrieveReusableSchedule(scheduleId);
         if (schedule == null) {
             RequestOptions createOptions = RequestOptions.builder()
-                    .setIdempotencyKey("downgrade-schedule:create:" + stripeSubscription.getId())
+                    .setIdempotencyKey("downgrade-schedule:create:" + stripeSubscription.getId()
+                            + ":" + targetPlan.getPlanCode() + ":" + stripeSubscription.getCurrentPeriodEnd())
                     .build();
             schedule = SubscriptionSchedule.create(SubscriptionScheduleCreateParams.builder()
                     .setFromSubscription(stripeSubscription.getId())
@@ -455,9 +456,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .build(), createOptions);
         }
 
-        Long currentPhaseStart = schedule.getCurrentPhase() == null
-                ? stripeSubscription.getCurrentPeriodStart()
-                : schedule.getCurrentPhase().getStartDate();
+        Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
         Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
         Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
         SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
@@ -490,6 +489,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
                 .build();
         return schedule.update(updateParams, updateOptions);
+    }
+
+    private Long currentPhaseStart(SubscriptionSchedule schedule, Subscription stripeSubscription) {
+        if (schedule.getCurrentPhase() != null && schedule.getCurrentPhase().getStartDate() != null) {
+            return schedule.getCurrentPhase().getStartDate();
+        }
+        if (stripeSubscription.getCurrentPeriodStart() != null) {
+            return stripeSubscription.getCurrentPeriodStart();
+        }
+        return Instant.now().getEpochSecond();
     }
 
     private SubscriptionSchedule retrieveReusableSchedule(String scheduleId) throws StripeException {

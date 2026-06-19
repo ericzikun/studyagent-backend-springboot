@@ -8,15 +8,19 @@ import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.stripe.param.SubscriptionScheduleUpdateParams;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -170,6 +174,38 @@ class BillingDomainServiceImplTest {
         assertEquals("free", result.getPlanCode());
         assertEquals("free", result.getTier());
         assertEquals(3, result.getMaxFiles());
+    }
+
+    @Test
+    @DisplayName("Downgrade schedule create params should not carry metadata when from_subscription is used")
+    void buildDowngradeScheduleCreateParamsDoesNotIncludeMetadata() {
+        var params = BillingDomainServiceImpl.buildDowngradeScheduleCreateParams("sub_123");
+
+        assertEquals("sub_123", params.getFromSubscription());
+        assertNull(params.getMetadata());
+    }
+
+    @Test
+    void buildDowngradeScheduleUpdateParamsIncludesMetadataAndPhases() {
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("free");
+        targetPlan.setStripePriceId("price_free");
+
+        var params = BillingDomainServiceImpl.buildDowngradeScheduleUpdateParams(
+                "user_1",
+                targetPlan,
+                100L,
+                200L,
+                "price_current",
+                2L);
+
+        assertEquals(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE, params.getEndBehavior());
+        assertEquals(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE, params.getProrationBehavior());
+        assertEquals(2, params.getPhases().size());
+        assertEquals(Map.of(
+                "clerk_user_id", "user_1",
+                "pending_plan_code", "free",
+                "change_type", "downgrade"), params.getMetadata());
     }
 
     private BillingDomainServiceImpl service() {

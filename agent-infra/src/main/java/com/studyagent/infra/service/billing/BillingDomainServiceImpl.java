@@ -448,18 +448,42 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .setIdempotencyKey("downgrade-schedule:create:" + stripeSubscription.getId()
                             + ":" + targetPlan.getPlanCode() + ":" + stripeSubscription.getCurrentPeriodEnd())
                     .build();
-            schedule = SubscriptionSchedule.create(SubscriptionScheduleCreateParams.builder()
-                    .setFromSubscription(stripeSubscription.getId())
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("pending_plan_code", targetPlan.getPlanCode())
-                    .putMetadata("change_type", "downgrade")
-                    .build(), createOptions);
+            schedule = SubscriptionSchedule.create(
+                    buildDowngradeScheduleCreateParams(stripeSubscription.getId()),
+                    createOptions);
         }
 
         Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
         Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
         Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
-        SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
+        SubscriptionScheduleUpdateParams updateParams = buildDowngradeScheduleUpdateParams(
+                clerkUserId,
+                targetPlan,
+                currentPhaseStart,
+                currentPhaseEnd,
+                item.getPrice().getId(),
+                quantity);
+        RequestOptions updateOptions = RequestOptions.builder()
+                .setIdempotencyKey("downgrade-schedule:update:" + schedule.getId() + ":"
+                        + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
+                .build();
+        return schedule.update(updateParams, updateOptions);
+    }
+
+    static SubscriptionScheduleCreateParams buildDowngradeScheduleCreateParams(String stripeSubscriptionId) {
+        return SubscriptionScheduleCreateParams.builder()
+                .setFromSubscription(stripeSubscriptionId)
+                .build();
+    }
+
+    static SubscriptionScheduleUpdateParams buildDowngradeScheduleUpdateParams(
+            String clerkUserId,
+            SubscriptionPlanEntity targetPlan,
+            Long currentPhaseStart,
+            Long currentPhaseEnd,
+            String currentPriceId,
+            Long quantity) {
+        return SubscriptionScheduleUpdateParams.builder()
                 .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
                 .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
@@ -467,7 +491,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setEndDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
                         .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
-                                .setPrice(item.getPrice().getId())
+                                .setPrice(currentPriceId)
                                 .setQuantity(quantity)
                                 .build())
                         .build())
@@ -484,11 +508,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("pending_plan_code", targetPlan.getPlanCode())
                 .putMetadata("change_type", "downgrade")
                 .build();
-        RequestOptions updateOptions = RequestOptions.builder()
-                .setIdempotencyKey("downgrade-schedule:update:" + schedule.getId() + ":"
-                        + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
-                .build();
-        return schedule.update(updateParams, updateOptions);
     }
 
     private Long currentPhaseStart(SubscriptionSchedule schedule, Subscription stripeSubscription) {

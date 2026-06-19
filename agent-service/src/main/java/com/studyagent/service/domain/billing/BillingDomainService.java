@@ -10,7 +10,8 @@ public interface BillingDomainService {
             String customerEmail,
             String planCode,
             String successUrl,
-            String cancelUrl
+            String cancelUrl,
+            String resumeToken
     );
 
     CheckoutSessionResult createAddonCheckout(
@@ -18,7 +19,8 @@ public interface BillingDomainService {
             String customerEmail,
             String addonCode,
             String successUrl,
-            String cancelUrl
+            String cancelUrl,
+            String resumeToken
     );
 
     SubscriptionResult getCurrentSubscription(String clerkUserId);

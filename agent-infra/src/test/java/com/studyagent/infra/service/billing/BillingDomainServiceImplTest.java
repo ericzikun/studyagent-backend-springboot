@@ -172,6 +172,18 @@ class BillingDomainServiceImplTest {
         assertEquals(3, result.getMaxFiles());
     }
 
+    @Test
+    void resolveCheckoutSuccessUrl_appendsResumeToken() {
+        BillingDomainServiceImpl service = service();
+
+        assertEquals(
+                "http://localhost:3001/payment-success?resumeToken=resume_tok_1&session_id={CHECKOUT_SESSION_ID}",
+                service.resolveCheckoutSuccessUrl("http://localhost:3001/payment-success", "resume_tok_1"));
+        assertEquals(
+                "http://localhost:3001/payment-success?foo=bar&resumeToken=resume_tok_1&session_id={CHECKOUT_SESSION_ID}",
+                service.resolveCheckoutSuccessUrl("http://localhost:3001/payment-success?foo=bar", "resume_tok_1"));
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,

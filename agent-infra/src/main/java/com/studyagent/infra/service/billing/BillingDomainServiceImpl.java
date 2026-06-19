@@ -104,7 +104,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String customerEmail,
             String planCode,
             String requestedSuccessUrl,
-            String requestedCancelUrl) {
+            String requestedCancelUrl,
+            String resumeToken) {
         requireStripeConfigured();
         SubscriptionPlanEntity plan = requirePlan(planCode);
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
@@ -119,7 +120,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getPendingPlanCode, planCode)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
                 .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
-        String finalSuccessUrl = resolveCheckoutSuccessUrl(requestedSuccessUrl);
+        String finalSuccessUrl = resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken);
         String finalCancelUrl = resolveCheckoutCancelUrl(requestedCancelUrl);
         SessionCreateParams.SubscriptionData subscriptionData = SessionCreateParams.SubscriptionData.builder()
                 .putMetadata("purchase_type", "subscription")
@@ -161,6 +162,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .sessionId(session.getId())
                     .checkoutUrl(session.getUrl())
                     .expiresAt(session.getExpiresAt())
+                    .resumeToken(resumeToken)
                     .build();
         } catch (StripeException e) {
             throw stripeFailure("Create subscription Checkout failed", e);
@@ -174,7 +176,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String customerEmail,
             String addonCode,
             String requestedSuccessUrl,
-            String requestedCancelUrl) {
+            String requestedCancelUrl,
+            String resumeToken) {
         requireStripeConfigured();
         if (!isPaidMember(clerkUserId)) {
             throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
@@ -192,7 +195,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
-                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl))
+                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
                 .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
                 .addLineItem(SessionCreateParams.LineItem.builder()
                         .setPrice(addon.getStripePriceId())
@@ -222,6 +225,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .sessionId(session.getId())
                     .checkoutUrl(session.getUrl())
                     .expiresAt(session.getExpiresAt())
+                    .resumeToken(resumeToken)
                     .build();
         } catch (StripeException e) {
             throw stripeFailure("Create add-on Checkout failed", e);
@@ -820,12 +824,24 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return url + (url.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
     }
 
-    String resolveCheckoutSuccessUrl(String requestedUrl) {
-        return withSessionId(resolveCheckoutReturnUrl(requestedUrl, successUrl));
+    String resolveCheckoutSuccessUrl(String requestedUrl, String resumeToken) {
+        String resolved = resolveCheckoutReturnUrl(requestedUrl, successUrl);
+        String withResumeToken = appendQueryParam(resolved, "resumeToken", resumeToken);
+        return withSessionId(withResumeToken);
     }
 
     String resolveCheckoutCancelUrl(String requestedUrl) {
         return resolveCheckoutReturnUrl(requestedUrl, cancelUrl);
+    }
+
+    private String appendQueryParam(String url, String key, String value) {
+        if (!hasText(value)) {
+            return url;
+        }
+        int fragmentIndex = url.indexOf('#');
+        String fragment = fragmentIndex >= 0 ? url.substring(fragmentIndex) : "";
+        String base = fragmentIndex >= 0 ? url.substring(0, fragmentIndex) : url;
+        return base + (base.contains("?") ? "&" : "?") + key + "=" + value + fragment;
     }
 
     private String resolveCheckoutReturnUrl(String requestedUrl, String fallbackUrl) {

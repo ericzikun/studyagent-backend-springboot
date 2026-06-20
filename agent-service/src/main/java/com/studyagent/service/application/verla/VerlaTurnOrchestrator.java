@@ -15,6 +15,7 @@ import com.studyagent.common.verla.envelope.VerlaSessionRef;
 import com.studyagent.common.verla.envelope.VerlaTurnRef;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
@@ -62,10 +63,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -1645,6 +1648,11 @@ public class VerlaTurnOrchestrator {
                                                        Map<String, Object> reservedFields,
                                                        List<Map<String, Object>> appendAskAnswers,
                                                        Map<String, Object> requirementForm) {
+        Map<String, Object> normalizedRequirementForm = normalizeAssignmentRequirementForm(
+                requirementForm,
+                reservedFields,
+                appendAskAnswers,
+                null);
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -1673,9 +1681,9 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        entitlementService.assertAssignmentOutputAllowed(
-                conv == null ? null : conv.getUserId(),
-                requirementForm == null ? Map.of() : requirementForm);
+        EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
+                conv == null ? null : conv.getUserId());
+        entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
 
         // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
         //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
@@ -1690,7 +1698,8 @@ public class VerlaTurnOrchestrator {
 
         VerlaCommandEnvelope env = buildAssignmentClarifyEnvelope(
                 conv, turn, s, intent, resolvedSlots, userText,
-                objectIds, reservedFields, appendAskAnswers, requirementForm);
+                objectIds, reservedFields, appendAskAnswers, normalizedRequirementForm,
+                entitlements.allowedOutputTypes());
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_ASSIGNMENT_CLARIFY.getCode());
         return s;
@@ -1699,6 +1708,7 @@ public class VerlaTurnOrchestrator {
     private VerlaSession spawnAssignmentRunSession(VerlaConversation conv, VerlaTurn turn,
                                                    String intent,
                                                    Map<String, Object> finalClarifyResult) {
+        Map<String, Object> normalizedFinalClarifyResult = normalizeAssignmentFinalClarifyResult(finalClarifyResult);
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -1727,14 +1737,22 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
+        EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
+                conv == null ? null : conv.getUserId());
         entitlementService.assertAssignmentOutputAllowed(
-                conv == null ? null : conv.getUserId(),
-                castMap(finalClarifyResult.get("requirementForm")));
+                entitlements,
+                castMap(normalizedFinalClarifyResult.get("requirementForm")));
 
         // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
         verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());
 
-        VerlaCommandEnvelope env = buildAssignmentRunEnvelope(conv, turn, s, intent, finalClarifyResult);
+        VerlaCommandEnvelope env = buildAssignmentRunEnvelope(
+                conv,
+                turn,
+                s,
+                intent,
+                normalizedFinalClarifyResult,
+                entitlements.allowedOutputTypes());
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode());
         return s;
@@ -2083,7 +2101,8 @@ public class VerlaTurnOrchestrator {
                                                                List<String> objectIds,
                                                                Map<String, Object> reservedFields,
                                                                List<Map<String, Object>> appendAskAnswers,
-                                                               Map<String, Object> requirementForm) {
+                                                               Map<String, Object> requirementForm,
+                                                               Set<String> allowedOutputTypes) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("objectIds", objectIds == null ? List.of() : objectIds);
@@ -2098,6 +2117,7 @@ public class VerlaTurnOrchestrator {
         if (requirementForm != null) {
             payload.put("requirementForm", requirementForm);
         }
+        payload.put("allowedOutputTypes", allowedOutputTypes == null ? List.of() : List.copyOf(allowedOutputTypes));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2189,7 +2209,8 @@ public class VerlaTurnOrchestrator {
 
     private VerlaCommandEnvelope buildAssignmentRunEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                            VerlaSession session, String intent,
-                                                           Map<String, Object> finalClarifyResult) {
+                                                           Map<String, Object> finalClarifyResult,
+                                                           Set<String> allowedOutputTypes) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("requirementForm", finalClarifyResult.getOrDefault("requirementForm", Map.of()));
@@ -2197,6 +2218,7 @@ public class VerlaTurnOrchestrator {
         payload.put("appendAskAnswers", finalClarifyResult.getOrDefault("appendAskAnswers", List.of()));
         payload.put("requirementUnderstanding",
                 finalClarifyResult.getOrDefault("requirementUnderstanding", ""));
+        payload.put("allowedOutputTypes", allowedOutputTypes == null ? List.of() : List.copyOf(allowedOutputTypes));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2392,18 +2414,166 @@ public class VerlaTurnOrchestrator {
         }
     }
 
+    private static Map<String, Object> normalizeAssignmentFinalClarifyResult(Map<String, Object> result) {
+        if (result == null || result.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> normalized = new HashMap<>(result);
+        normalized.put("requirementForm", normalizeAssignmentRequirementForm(
+                castMap(normalized.get("requirementForm")),
+                castMap(normalized.get("reservedFields")),
+                castListOfMaps(normalized.get("appendAskAnswers")),
+                normalized.get("requirementUnderstanding") instanceof String text ? text : null));
+        return normalized;
+    }
+
+    private static Map<String, Object> normalizeAssignmentRequirementForm(
+            Map<String, Object> requirementForm,
+            Map<String, Object> reservedFields,
+            List<Map<String, Object>> appendAskAnswers,
+            String requirementUnderstanding) {
+        Map<String, Object> normalized = requirementForm == null ? new HashMap<>() : new HashMap<>(requirementForm);
+        Map<String, Object> deliverableCount = castMutableMap(normalized.get("deliverable_count"));
+        Set<String> inferredOutputTypes = inferAssignmentOutputTypes(
+                normalized,
+                reservedFields,
+                appendAskAnswers,
+                requirementUnderstanding);
+        putDeliverableCountFloor(deliverableCount, "markdown", 0);
+        putDeliverableCountFloor(deliverableCount, "ppt", inferredOutputTypes.contains("ppt") ? 1 : 0);
+        putDeliverableCountFloor(deliverableCount, "code", inferredOutputTypes.contains("coding") ? 1 : 0);
+        normalized.put("deliverable_count", deliverableCount);
+        return normalized;
+    }
+
+    private static Set<String> inferAssignmentOutputTypes(
+            Map<String, Object> requirementForm,
+            Map<String, Object> reservedFields,
+            List<Map<String, Object>> appendAskAnswers,
+            String requirementUnderstanding) {
+        List<String> texts = new ArrayList<>();
+        collectAssignmentOutputHintTexts(requirementForm, null, texts);
+        collectAssignmentOutputHintTexts(reservedFields, null, texts);
+        collectAssignmentOutputHintTexts(appendAskAnswers, null, texts);
+        collectAssignmentOutputHintTexts(requirementUnderstanding, "requirement_understanding", texts);
+
+        Set<String> inferred = new LinkedHashSet<>();
+        for (String text : texts) {
+            String normalized = normalizeOutputHintText(text);
+            if (containsAnyOutputHint(normalized,
+                    " powerpoint ",
+                    " ppt ",
+                    " pptx ",
+                    " presentation ",
+                    " presentation deck ",
+                    " slide deck ",
+                    " slides ",
+                    " pitch deck ",
+                    " deck ")) {
+                inferred.add("ppt");
+            }
+            if (containsAnyOutputHint(normalized,
+                    " coding ",
+                    " code ",
+                    " source code ",
+                    " program ",
+                    " programming ",
+                    " script ",
+                    " notebook ",
+                    " implementation ")) {
+                inferred.add("coding");
+            }
+        }
+        return inferred;
+    }
+
+    private static void collectAssignmentOutputHintTexts(Object value, String key, List<String> texts) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String text) {
+            if (shouldInspectOutputHintKey(key)) {
+                texts.add(text);
+            }
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                collectAssignmentOutputHintTexts(entry.getValue(), entry.getKey() == null
+                        ? null : String.valueOf(entry.getKey()), texts);
+            }
+            return;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                collectAssignmentOutputHintTexts(item, key, texts);
+            }
+        }
+    }
+
+    private static boolean shouldInspectOutputHintKey(String key) {
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+        String normalized = key.trim().toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+        return Set.of(
+                "task_title",
+                "question_content",
+                "sub_questions",
+                "input_relationship_analysis",
+                "deliverable_type",
+                "deliverabletype",
+                "output_format",
+                "outputformat",
+                "submission_type",
+                "submissiontype",
+                "format",
+                "estimated_length",
+                "requirement_understanding",
+                "answer",
+                "question").contains(normalized);
+    }
+
+    private static String normalizeOutputHintText(String text) {
+        return (" " + text.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim() + " ").replaceAll("\\s+", " ");
+    }
+
+    private static boolean containsAnyOutputHint(String text, String... hints) {
+        return Arrays.stream(hints).anyMatch(text::contains);
+    }
+
+    private static void putDeliverableCountFloor(Map<String, Object> deliverableCount, String key, int floor) {
+        deliverableCount.put(key, Math.max(intValue(deliverableCount.get(key)), floor));
+    }
+
+    private static int intValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
     private static Map<String, Object> normalizeDeepUnderstandingResult(Map<String, Object> result) {
         if (result == null) {
             return Map.of();
         }
         Map<String, Object> normalized = new HashMap<>(result);
-        Map<String, Object> requirementForm = castMutableMap(normalized.get("requirementForm"));
-        Map<String, Object> deliverableCount = castMutableMap(requirementForm.get("deliverable_count"));
-        deliverableCount.putIfAbsent("markdown", 0);
-        deliverableCount.putIfAbsent("ppt", 0);
-        deliverableCount.putIfAbsent("code", 0);
-        requirementForm.put("deliverable_count", deliverableCount);
-        normalized.put("requirementForm", requirementForm);
+        normalized.put("requirementForm", normalizeAssignmentRequirementForm(
+                castMap(normalized.get("requirementForm")),
+                Map.of(),
+                List.of(),
+                null));
 
         if (normalized.get("ready") instanceof Boolean) {
             return normalized;
@@ -2447,6 +2617,17 @@ public class VerlaTurnOrchestrator {
 
     private static Map<String, Object> castMutableMap(Object value) {
         return new HashMap<>(castMap(value));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> castListOfMaps(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .toList();
     }
 
     private static Boolean coerceBoolean(Object value) {

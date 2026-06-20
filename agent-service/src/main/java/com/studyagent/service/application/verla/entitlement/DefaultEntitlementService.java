@@ -60,7 +60,11 @@ public class DefaultEntitlementService implements EntitlementService {
 
     @Override
     public void assertAssignmentOutputAllowed(String clerkUserId, Map<String, Object> requirementForm) {
-        EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
+        assertAssignmentOutputAllowed(getEffectiveEntitlements(clerkUserId), requirementForm);
+    }
+
+    @Override
+    public void assertAssignmentOutputAllowed(EffectiveEntitlements entitlements, Map<String, Object> requirementForm) {
         Set<String> requested = requestedOutputTypes(requirementForm);
         if (!entitlements.allowedOutputTypes().containsAll(requested)) {
             throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);

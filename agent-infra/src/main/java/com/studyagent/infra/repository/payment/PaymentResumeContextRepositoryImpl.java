@@ -5,10 +5,12 @@ import com.studyagent.infra.entity.PaymentResumeContextEntity;
 import com.studyagent.infra.mapper.PaymentResumeContextMapper;
 import com.studyagent.service.domain.payment.PaymentResumeContext;
 import com.studyagent.service.domain.payment.PaymentResumeContextRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @Repository
 public class PaymentResumeContextRepositoryImpl
         extends ServiceImpl<PaymentResumeContextMapper, PaymentResumeContextEntity>
@@ -37,7 +39,10 @@ public class PaymentResumeContextRepositoryImpl
         if (id == null || resumedAt == null) {
             throw new IllegalArgumentException("id and resumedAt are required");
         }
-        this.baseMapper.markResumed(id, resumedAt);
+        int affected = this.baseMapper.markResumed(id, resumedAt);
+        if (affected == 0) {
+            log.warn("markResumed skipped because context was no longer pending: id={}, resumedAt={}", id, resumedAt);
+        }
     }
 
     private PaymentResumeContext toDomain(PaymentResumeContextEntity entity) {

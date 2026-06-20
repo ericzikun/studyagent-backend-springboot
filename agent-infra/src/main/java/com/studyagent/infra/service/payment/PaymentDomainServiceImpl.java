@@ -139,7 +139,9 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 session.getId(), command.getCustomerEmail(), command.getPackageType(), command.getClerkUserId());
 
         return CheckoutSessionResult.builder()
+                .checkoutKind("session")
                 .sessionId(session.getId())
+                .referenceId(session.getId())
                 .checkoutUrl(session.getUrl())
                 .expiresAt(session.getExpiresAt())
                 .build();

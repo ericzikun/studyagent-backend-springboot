@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
+import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
@@ -111,7 +112,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && userSubscription.getStripeSubscriptionId() != null) {
-            throw new BillingDomainException("SUBSCRIPTION_ALREADY_EXISTS", "User already has a subscription");
+            return createSubscriptionUpgradeCheckout(
+                    clerkUserId,
+                    plan,
+                    userSubscription,
+                    requestedSuccessUrl,
+                    requestedCancelUrl,
+                    resumeToken);
         }
 
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
@@ -159,7 +166,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     null,
                     session.getSubscription());
             return CheckoutSessionResult.builder()
+                    .checkoutKind("session")
                     .sessionId(session.getId())
+                    .referenceId(session.getId())
                     .checkoutUrl(session.getUrl())
                     .expiresAt(session.getExpiresAt())
                     .resumeToken(resumeToken)
@@ -222,7 +231,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     session.getPaymentIntent(),
                     userSubscription.getStripeSubscriptionId());
             return CheckoutSessionResult.builder()
+                    .checkoutKind("session")
                     .sessionId(session.getId())
+                    .referenceId(session.getId())
                     .checkoutUrl(session.getUrl())
                     .expiresAt(session.getExpiresAt())
                     .resumeToken(resumeToken)
@@ -230,6 +241,111 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure("Create add-on Checkout failed", e);
         }
+    }
+
+    private CheckoutSessionResult createSubscriptionUpgradeCheckout(
+            String clerkUserId,
+            SubscriptionPlanEntity targetPlan,
+            UserSubscriptionEntity current,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken) {
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
+        int direction = tierRank(targetPlan.getTier()) - tierRank(currentPlan.getTier());
+        if (direction == 0) {
+            throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "Switching billing interval within the same tier is not supported");
+        }
+        if (direction < 0) {
+            throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not an upgrade");
+        }
+
+        clearPendingUpgradeStateForRetry(current);
+
+        try {
+            Subscription stripeSubscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            if (stripeSubscription.getItems() == null
+                    || stripeSubscription.getItems().getData() == null
+                    || stripeSubscription.getItems().getData().size() != 1) {
+                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
+            }
+            SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
+            releasePendingScheduleIfPresent(current, stripeSubscription);
+
+            SubscriptionUpdateParams params = buildSubscriptionUpgradeParams(clerkUserId, targetPlan, item);
+            RequestOptions options = RequestOptions.builder()
+                    .setIdempotencyKey("upgrade-checkout:" + clerkUserId + ":" + current.getStripeSubscriptionId()
+                            + ":" + targetPlan.getPlanCode() + ":" + current.getCurrentPeriodEnd())
+                    .build();
+            Subscription updated = stripeSubscription.update(params, options);
+            Invoice invoice = updated.getLatestInvoiceObject();
+            String invoiceId = invoice != null ? invoice.getId() : updated.getLatestInvoice();
+            String checkoutUrl = resolveSubscriptionUpgradeCheckoutUrl(
+                    invoiceId,
+                    invoice,
+                    resolveUpgradeSuccessUrl(requestedSuccessUrl, resumeToken));
+
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, current.getId())
+                    .set(UserSubscriptionEntity::getStripeScheduleId, null)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlan.getPlanCode())
+                    .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                    .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+            current.setStripeScheduleId(null);
+            current.setPendingPlanCode(targetPlan.getPlanCode());
+            current.setPendingEffectiveAt(null);
+
+            insertPendingOrder(
+                    clerkUserId,
+                    "subscription_upgrade",
+                    "subscription",
+                    targetPlan.getPlanCode(),
+                    targetPlan.getPlanCode(),
+                    null,
+                    0L,
+                    targetPlan.getPriceCents(),
+                    targetPlan.getCurrency(),
+                    null,
+                    invoice != null ? invoice.getPaymentIntent() : null,
+                    current.getStripeSubscriptionId());
+
+            return CheckoutSessionResult.builder()
+                    .checkoutKind("invoice")
+                    .sessionId(null)
+                    .referenceId(invoiceId)
+                    .checkoutUrl(checkoutUrl)
+                    .expiresAt(null)
+                    .resumeToken(resumeToken)
+                    .build();
+        } catch (StripeException e) {
+            throw stripeFailure("Create subscription upgrade Checkout failed", e);
+        }
+    }
+
+    void clearPendingUpgradeStateForRetry(UserSubscriptionEntity current) {
+        if (current == null || !hasText(current.getClerkUserId())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getClerkUserId, current.getClerkUserId())
+                .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade")
+                .eq(RechargeOrderEntity::getStatus, "pending")
+                .set(RechargeOrderEntity::getStatus, "expired")
+                .set(RechargeOrderEntity::getFailureReason, "superseded_by_new_upgrade")
+                .set(RechargeOrderEntity::getUpdatedAt, now));
+        if (!hasText(current.getPendingPlanCode())) {
+            return;
+        }
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
+        current.setUpdatedAt(now);
     }
 
     @Override
@@ -858,6 +974,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return withSessionId(withResumeToken);
     }
 
+    String resolveUpgradeSuccessUrl(String requestedUrl, String resumeToken) {
+        String resolved = resolveCheckoutReturnUrl(requestedUrl, successUrl);
+        return appendQueryParam(resolved, "resumeToken", resumeToken);
+    }
+
     String resolveCheckoutCancelUrl(String requestedUrl) {
         return resolveCheckoutReturnUrl(requestedUrl, cancelUrl);
     }
@@ -870,6 +991,68 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String fragment = fragmentIndex >= 0 ? url.substring(fragmentIndex) : "";
         String base = fragmentIndex >= 0 ? url.substring(0, fragmentIndex) : url;
         return base + (base.contains("?") ? "&" : "?") + key + "=" + value + fragment;
+    }
+
+    static SubscriptionUpdateParams buildSubscriptionUpgradeParams(
+            String clerkUserId,
+            SubscriptionPlanEntity targetPlan,
+            SubscriptionItem item) {
+        Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
+        return SubscriptionUpdateParams.builder()
+                .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
+                .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.ALWAYS_INVOICE)
+                .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
+                .addItem(SubscriptionUpdateParams.Item.builder()
+                        .setId(item.getId())
+                        .setPrice(targetPlan.getStripePriceId())
+                        .setQuantity(quantity)
+                        .build())
+                .addExpand("latest_invoice")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("pending_plan_code", targetPlan.getPlanCode())
+                .putMetadata("change_type", "upgrade")
+                .build();
+    }
+
+    static String resolveSubscriptionUpgradeCheckoutUrl(
+            String invoiceId,
+            Invoice invoice,
+            String fallbackSuccessUrl) {
+        if (invoice != null && hasTextStatic(invoice.getHostedInvoiceUrl())) {
+            return invoice.getHostedInvoiceUrl();
+        }
+        if (hasTextStatic(invoiceId)) {
+            try {
+                Invoice refreshed = Invoice.retrieve(invoiceId);
+                if (refreshed != null && hasTextStatic(refreshed.getHostedInvoiceUrl())) {
+                    return refreshed.getHostedInvoiceUrl();
+                }
+                if (isSettledInvoice(refreshed) && hasTextStatic(fallbackSuccessUrl)) {
+                    return fallbackSuccessUrl;
+                }
+            } catch (StripeException e) {
+                throw new BillingDomainException("STRIPE_ERROR",
+                        "Retrieve subscription upgrade invoice failed: " + e.getMessage(), e);
+            }
+        }
+        if (isSettledInvoice(invoice) && hasTextStatic(fallbackSuccessUrl)) {
+            return fallbackSuccessUrl;
+        }
+        throw new BillingDomainException(
+                "STRIPE_ERROR",
+                "Stripe hosted invoice URL is unavailable for subscription upgrade");
+    }
+
+    private static boolean isSettledInvoice(Invoice invoice) {
+        if (invoice == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(invoice.getPaid())
+                || "paid".equalsIgnoreCase(invoice.getStatus());
+    }
+
+    private static boolean hasTextStatic(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String resolveCheckoutReturnUrl(String requestedUrl, String fallbackUrl) {

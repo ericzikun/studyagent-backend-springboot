@@ -9,7 +9,9 @@ import lombok.Data;
 @Data
 @Builder
 public class CheckoutSessionResult {
+    private String checkoutKind;
     private String sessionId;
+    private String referenceId;
     private String checkoutUrl;
     private Long expiresAt;
     private String resumeToken;

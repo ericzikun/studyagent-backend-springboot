@@ -177,7 +177,7 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStatus, "pending")
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
                         .last("LIMIT 1"));
-        boolean upgrade = pendingUpgrade != null || (existing != null
+        boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade) || (existing != null
                 && existing.getPlanCode() != null
                 && !plan.getPlanCode().equals(existing.getPlanCode())
                 && plan.getPlanCode().equals(existing.getPendingPlanCode()));
@@ -261,6 +261,9 @@ public class StripeBillingWebhookService {
                             "invoice.payment_action_required".equals(eventType) ? "pending" : "failed")
                     .set(RechargeOrderEntity::getFailureReason, eventType)
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+        }
+        if ("invoice.payment_failed".equals(eventType) && entity != null) {
+            clearPendingUpgradeState(entity, order, eventType);
         }
     }
 
@@ -492,10 +495,47 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getUpdatedAt, now));
     }
 
-    private String resolveInvoiceOrderType(Invoice invoice) {
+    String resolveInvoiceOrderType(Invoice invoice) {
+        if (isSubscriptionUpdateBillingReason(invoice)) {
+            return "subscription_upgrade";
+        }
         return "subscription_create".equals(invoice.getBillingReason())
                 ? "subscription_initial"
                 : "subscription_renewal";
+    }
+
+    boolean isSubscriptionUpgradeInvoice(Invoice invoice, RechargeOrderEntity order) {
+        return isSubscriptionUpdateBillingReason(invoice)
+                || (order != null && "subscription_upgrade".equals(order.getOrderType()));
+    }
+
+    void clearPendingUpgradeState(UserSubscriptionEntity entity, RechargeOrderEntity order, String reason) {
+        if (entity == null) {
+            return;
+        }
+        if (!isSubscriptionUpgradeOrder(order) && !hasText(entity.getPendingPlanCode())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, entity.getId())
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        entity.setPendingPlanCode(null);
+        entity.setPendingEffectiveAt(null);
+    }
+
+    private boolean isSubscriptionUpdateBillingReason(Invoice invoice) {
+        return invoice != null && "subscription_update".equals(invoice.getBillingReason());
+    }
+
+    private boolean isSubscriptionUpgradeOrder(RechargeOrderEntity order) {
+        return order != null && "subscription_upgrade".equals(order.getOrderType());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private SubscriptionPlanEntity requirePlanBySubscription(Subscription subscription) {

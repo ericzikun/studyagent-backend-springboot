@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS user_addon_grants (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     clerk_user_id VARCHAR(255) NOT NULL,
     feature_code VARCHAR(64) NOT NULL,
-    grant_type VARCHAR(32) NOT NULL COMMENT 'addon / legacy / compensation',
+    grant_type VARCHAR(32) NOT NULL COMMENT 'addon / compensation / legacy_migration / legacy_migration_refund',
     addon_code VARCHAR(64) NULL,
     status VARCHAR(16) NOT NULL COMMENT 'active / paused / expired / depleted / revoked',
     initial_amount BIGINT NOT NULL,

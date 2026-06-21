@@ -62,7 +62,7 @@ class QuotaDomainServiceImplTest {
     private PlanQuotaService planQuotaService;
 
     @Test
-    void getUserQuota_keepsLegacyDetectionBalanceInWords() {
+    void getUserQuota_migratesLegacyDetectionBalanceIntoAddonWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
         featureDef.setFeatureName("AI Detection");
@@ -81,8 +81,20 @@ class QuotaDomainServiceImplTest {
         quota.setVersion(0);
 
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        UserAddonGrantEntity migratedGrant = new UserAddonGrantEntity();
+        migratedGrant.setId(301L);
+        migratedGrant.setGrantType("legacy_migration");
+        migratedGrant.setStatus("active");
+        migratedGrant.setInitialAmount(210_000L);
+        migratedGrant.setRemainingAmount(210_000L);
+        migratedGrant.setExpiresAt(LocalDateTime.now().plusMonths(6));
+
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
-        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(migratedGrant));
+        when(userAddonGrantMapper.insert(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
         QuotaDomainServiceImpl service = new QuotaDomainServiceImpl(
                 aiFeatureDefsMapper,
@@ -95,7 +107,8 @@ class QuotaDomainServiceImplTest {
 
         QuotaBalance balance = service.getUserQuota("user_1", "ai_detection");
 
-        assertEquals(210_000L, balance.legacyBalance());
+        assertEquals(210_000L, balance.addonBalance());
+        assertEquals(0L, balance.legacyBalance());
         assertEquals(240_000L, balance.paidBalance());
         assertEquals(240_001L, balance.totalAvailable());
     }
@@ -119,13 +132,26 @@ class QuotaDomainServiceImplTest {
         quota.setPaidBalance(210_000L);
         quota.setVersion(0);
 
+        UserAddonGrantEntity migratedGrant = new UserAddonGrantEntity();
+        migratedGrant.setId(302L);
+        migratedGrant.setGrantType("legacy_migration");
+        migratedGrant.setStatus("active");
+        migratedGrant.setInitialAmount(210_000L);
+        migratedGrant.setRemainingAmount(210_000L);
+        migratedGrant.setExpiresAt(LocalDateTime.now().plusMonths(6));
+
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
-        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(migratedGrant));
+        when(userAddonGrantMapper.insert(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
             QuotaLedgerEntity ledger = invocation.getArgument(0);
-            ledger.setId(601L);
+            if (ledger.getId() == null) {
+                ledger.setId("consume".equals(ledger.getLedgerType()) ? 601L : 600L);
+            }
             return 1;
         });
         when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
@@ -150,19 +176,23 @@ class QuotaDomainServiceImplTest {
         assertEquals(601L, result.ledgerId());
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
-        verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
-        assertEquals(209_500L, quotaCaptor.getValue().getPaidBalance());
+        verify(userAiQuotaMapper, times(2)).updateById(quotaCaptor.capture());
+        assertEquals(0L, quotaCaptor.getAllValues().get(0).getPaidBalance());
+        assertEquals(0L, quotaCaptor.getAllValues().get(1).getPaidBalance());
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
-        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
-        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getAllValues().stream()
+                .filter(item -> "consume".equals(item.getLedgerType()))
+                .findFirst()
+                .orElseThrow();
         assertEquals(-500L, ledger.getAmount());
-        assertEquals(209_500L, ledger.getPaidBalanceAfter());
+        assertEquals(0L, ledger.getPaidBalanceAfter());
 
         ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
                 ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
         verify(quotaLedgerAllocationMapper).insert(allocationCaptor.capture());
-        assertEquals("legacy", allocationCaptor.getValue().getPoolType());
+        assertEquals("addon", allocationCaptor.getValue().getPoolType());
         assertEquals(500L, allocationCaptor.getValue().getAmount());
     }
 
@@ -242,7 +272,7 @@ class QuotaDomainServiceImplTest {
         quota.setFreeBalance(1L);
         quota.setPlanBalance(2L);
         quota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
-        quota.setPaidBalance(4L);
+        quota.setPaidBalance(0L);
         quota.setVersion(0);
 
         UserAddonGrantEntity addonGrant = new UserAddonGrantEntity();
@@ -263,7 +293,9 @@ class QuotaDomainServiceImplTest {
         when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
             QuotaLedgerEntity ledger = invocation.getArgument(0);
-            ledger.setId(501L);
+            if (ledger.getId() == null) {
+                ledger.setId(501L);
+            }
             return 1;
         });
         when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
@@ -293,7 +325,7 @@ class QuotaDomainServiceImplTest {
         assertEquals(0L, ledger.getFreeBalanceAfter());
         assertEquals(0L, ledger.getPlanBalanceAfter());
         assertEquals(1L, ledger.getAddonBalanceAfter());
-        assertEquals(4L, ledger.getPaidBalanceAfter());
+        assertEquals(0L, ledger.getPaidBalanceAfter());
 
         ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
                 ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
@@ -549,6 +581,7 @@ class QuotaDomainServiceImplTest {
         consumeLedger.setAmount(-1L);
         consumeLedger.setSourceType("verla_session");
         consumeLedger.setSourceId("session_5");
+        consumeLedger.setBizContext("{\"from_free_amount\":1,\"from_plan_amount\":0,\"from_paid_amount\":0}");
 
         UserAiQuotaEntity quota = new UserAiQuotaEntity();
         quota.setId(11L);
@@ -611,7 +644,7 @@ class QuotaDomainServiceImplTest {
 
         UserAddonGrantEntity legacyGrant = new UserAddonGrantEntity();
         legacyGrant.setId(101L);
-        legacyGrant.setGrantType("legacy");
+        legacyGrant.setGrantType("legacy_migration");
         legacyGrant.setStatus("active");
         legacyGrant.setInitialAmount(1L);
         legacyGrant.setRemainingAmount(1L);

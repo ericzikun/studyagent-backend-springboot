@@ -205,7 +205,6 @@ public class AddonGrantServiceImpl implements AddonGrantService {
                         new LambdaQueryWrapper<UserAddonGrantEntity>()
                                 .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
                                 .eq(UserAddonGrantEntity::getFeatureCode, featureCode)
-                                .in(UserAddonGrantEntity::getGrantType, List.of("addon", "compensation", "legacy"))
                                 .eq(UserAddonGrantEntity::getStatus, "active")
                                 .and(wrapper -> wrapper
                                         .gt(UserAddonGrantEntity::getExpiresAt, now)

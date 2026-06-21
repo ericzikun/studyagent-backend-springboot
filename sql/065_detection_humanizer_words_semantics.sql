@@ -5,7 +5,13 @@ USE studyagent;
 -- 兼容历史 run 口径：1 run = 10,000 words。
 
 UPDATE ai_feature_defs
+SET free_quota_period = 'monthly',
+    updated_at = NOW()
+WHERE feature_code = 'task_create';
+
+UPDATE ai_feature_defs
 SET quota_unit = 'words',
+    free_quota_period = 'monthly',
     free_quota_amount = CASE feature_code
         WHEN 'ai_detection' THEN 3000
         WHEN 'humanizer' THEN 1000

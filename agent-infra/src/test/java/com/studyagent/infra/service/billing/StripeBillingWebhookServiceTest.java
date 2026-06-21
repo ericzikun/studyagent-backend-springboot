@@ -190,6 +190,22 @@ class StripeBillingWebhookServiceTest {
                 true));
     }
 
+    @Test
+    void pendingPlanActivationIsNotTreatedAsUpgradeWithoutUpgradeSignals() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setPlanCode("plus_yearly");
+        existing.setPendingPlanCode("basic_yearly");
+
+        Invoice invoice = new Invoice();
+        invoice.setBillingReason("subscription_cycle");
+
+        assertFalse(StripeBillingWebhookService.isPendingPlanActivationUpgrade(
+                existing,
+                "basic_yearly",
+                invoice,
+                null));
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,

@@ -169,6 +169,27 @@ class StripeBillingWebhookServiceTest {
         verify(userSubscriptionMapper).update(isNull(), any());
     }
 
+    @Test
+    void resolveMirroredScheduleIdPreservesStripeScheduleUntilPendingPlanActivates() {
+        assertEquals(
+                "sub_sched_123",
+                StripeBillingWebhookService.resolveMirroredScheduleId(
+                        "sub_sched_123",
+                        false,
+                        false,
+                        false));
+        assertNull(StripeBillingWebhookService.resolveMirroredScheduleId(
+                "sub_sched_123",
+                true,
+                false,
+                false));
+        assertNull(StripeBillingWebhookService.resolveMirroredScheduleId(
+                "sub_sched_123",
+                false,
+                true,
+                true));
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,

@@ -312,6 +312,25 @@ class BillingDomainServiceImplTest {
         verify(userSubscriptionMapper).update(isNull(), any(Wrapper.class));
     }
 
+    @Test
+    void canSkipCancellationUpdateOnlyWhenNoManagedScheduleExists() {
+        assertTrue(BillingDomainServiceImpl.canSkipCancellationUpdate(
+                true,
+                true,
+                null,
+                null));
+        assertFalse(BillingDomainServiceImpl.canSkipCancellationUpdate(
+                true,
+                true,
+                "sub_sched_local",
+                null));
+        assertFalse(BillingDomainServiceImpl.canSkipCancellationUpdate(
+                false,
+                false,
+                null,
+                "sub_sched_remote"));
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,

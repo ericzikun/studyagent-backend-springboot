@@ -536,11 +536,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private SubscriptionResult setCancelAtPeriodEnd(String clerkUserId, boolean cancel) {
         requireStripeConfigured();
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (Boolean.valueOf(cancel).equals(current.getCancelAtPeriodEnd())) {
-            return toResult(current);
-        }
         try {
             Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
+            if (canSkipCancellationUpdate(current.getCancelAtPeriodEnd(), cancel, current.getStripeScheduleId(), subscription.getSchedule())) {
+                return toResult(current);
+            }
+            if (scheduleId != null) {
+                releasePendingScheduleIfPresent(current, subscription);
+                clearPendingScheduleState(current);
+                subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            }
             Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
                     .setCancelAtPeriodEnd(cancel)
                     .build());
@@ -549,6 +555,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure(cancel ? "Cancel subscription failed" : "Resume subscription failed", e);
         }
+    }
+
+    static boolean canSkipCancellationUpdate(
+            Boolean currentCancelAtPeriodEnd,
+            boolean requestedCancelAtPeriodEnd,
+            String localScheduleId,
+            String remoteScheduleId) {
+        return Boolean.valueOf(requestedCancelAtPeriodEnd).equals(currentCancelAtPeriodEnd)
+                && firstNonBlank(localScheduleId, remoteScheduleId) == null;
     }
 
     private SubscriptionSchedule upsertDowngradeSchedule(
@@ -662,7 +677,21 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
-    private String firstNonBlank(String first, String second) {
+    private void clearPendingScheduleState(UserSubscriptionEntity current) {
+        LocalDateTime now = LocalDateTime.now();
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getStripeScheduleId, null)
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setStripeScheduleId(null);
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
+        current.setUpdatedAt(now);
+    }
+
+    private static String firstNonBlank(String first, String second) {
         if (first != null && !first.isBlank()) {
             return first;
         }

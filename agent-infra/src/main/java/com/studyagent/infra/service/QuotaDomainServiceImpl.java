@@ -58,12 +58,17 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String POOL_TYPE_ADDON = "addon";
     private static final String POOL_TYPE_LEGACY = "legacy";
     private static final String POOL_TYPE_COMPENSATION = "compensation";
+    private static final String GRANT_TYPE_LEGACY_MIGRATION = "legacy_migration";
+    private static final String GRANT_TYPE_LEGACY_MIGRATION_REFUND = "legacy_migration_refund";
     private static final String SOURCE_TYPE_SYSTEM = "system";
     private static final String LEDGER_TYPE_COMPENSATION_GRANT = "compensation_grant";
+    private static final String LEDGER_TYPE_LEGACY_MIGRATION_GRANT = "legacy_migration_grant";
+    private static final String LEDGER_TYPE_LEGACY_MIGRATION_REFUND_GRANT = "legacy_migration_refund_grant";
     private static final String PERIOD_MONTHLY = "monthly";
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
     private static final long LEGACY_WORDS_PER_RUN = 10_000L;
+    private static final int LEGACY_MIGRATION_VALIDITY_MONTHS = 6;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -115,6 +120,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
         LocalDateTime now = LocalDateTime.now();
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
+        migrateLegacyBalanceToAddonIfNeeded(quota, now);
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
@@ -249,6 +255,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         } else {
             refreshFreeQuotaIfNeeded(quota, featureDef, now, "consume");
         }
+        migrateLegacyBalanceToAddonIfNeeded(quota, now);
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
@@ -428,7 +435,12 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 refundAllocations.add(newAllocation(POOL_TYPE_PLAN, null, addToPlan, now, quota.getPlanPeriodEnd()));
             }
             if (addToPaid > 0) {
-                refundAllocations.add(newAllocation(POOL_TYPE_LEGACY, null, addToPaid, now, null));
+                refundAllocations.add(createLegacyMigrationRefundGrant(
+                        consumeLedger.getClerkUserId(),
+                        consumeLedger.getFeatureCode(),
+                        addToPaid,
+                        now));
+                addToPaid = 0L;
             }
         } else {
             for (QuotaLedgerAllocationEntity allocation : allocations) {
@@ -458,9 +470,11 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         }
                     }
                     case POOL_TYPE_LEGACY -> {
-                        addToPaid += allocationAmount;
-                        refundAllocations.add(newAllocation(
-                                POOL_TYPE_LEGACY, null, allocationAmount, now, allocation.getSourcePeriodEnd()));
+                        refundAllocations.add(createLegacyMigrationRefundGrant(
+                                consumeLedger.getClerkUserId(),
+                                consumeLedger.getFeatureCode(),
+                                allocationAmount,
+                                now));
                     }
                     case POOL_TYPE_ADDON, POOL_TYPE_COMPENSATION -> refundAllocations.add(
                             restoreAddonGrantOrCompensate(
@@ -797,12 +811,69 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         };
     }
 
+    private void migrateLegacyBalanceToAddonIfNeeded(UserAiQuotaEntity quota, LocalDateTime now) {
+        if (quota == null) {
+            return;
+        }
+        long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
+        if (legacyRawBalance <= 0L) {
+            return;
+        }
+
+        String migrationKey = buildLegacyMigrationKey(quota.getClerkUserId(), quota.getFeatureCode());
+        UserAddonGrantEntity existingGrant = userAddonGrantMapper.selectOne(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getMigrationKey, migrationKey)
+                        .last("LIMIT 1"));
+        if (existingGrant == null) {
+            UserAddonGrantEntity grant = new UserAddonGrantEntity();
+            grant.setClerkUserId(quota.getClerkUserId());
+            grant.setFeatureCode(quota.getFeatureCode());
+            grant.setGrantType(GRANT_TYPE_LEGACY_MIGRATION);
+            grant.setAddonCode(null);
+            grant.setStatus("active");
+            grant.setInitialAmount(legacyRawBalance);
+            grant.setRemainingAmount(legacyRawBalance);
+            grant.setStripeSessionId(null);
+            grant.setStripePaymentIntentId(null);
+            grant.setSourceOrderId(null);
+            grant.setMigrationKey(migrationKey);
+            grant.setPurchasedAt(now);
+            grant.setExpiresAt(now.plusMonths(LEGACY_MIGRATION_VALIDITY_MONTHS));
+            grant.setPausedAt(null);
+            grant.setVersion(0);
+            grant.setCreatedAt(now);
+            grant.setUpdatedAt(now);
+            userAddonGrantMapper.insert(grant);
+
+            QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+            ledger.setLedgerNo(generateLedgerNo());
+            ledger.setClerkUserId(quota.getClerkUserId());
+            ledger.setFeatureCode(quota.getFeatureCode());
+            ledger.setLedgerType(LEDGER_TYPE_LEGACY_MIGRATION_GRANT);
+            ledger.setAmount(legacyRawBalance);
+            ledger.setSourceType(SOURCE_TYPE_SYSTEM);
+            ledger.setSourceId(quota.getFeatureCode());
+            ledger.setIdempotencyKey("legacy-migration:" + migrationKey);
+            ledger.setAddonBalanceAfter(sumActiveAddonBalance(quota.getClerkUserId(), quota.getFeatureCode(), now));
+            ledger.setCreatedAt(now);
+            quotaLedgerMapper.insert(ledger);
+        }
+
+        quota.setPaidBalance(0L);
+        quota.setUpdatedAt(now);
+        updateQuotaOrThrow(quota, "legacy migration");
+    }
+
+    private String buildLegacyMigrationKey(String clerkUserId, String featureCode) {
+        return "legacy:" + clerkUserId + ":" + featureCode;
+    }
+
     private List<UserAddonGrantEntity> findActiveAddonGrants(String clerkUserId, String featureCode, LocalDateTime now) {
         return userAddonGrantMapper.selectList(
                         new LambdaQueryWrapper<UserAddonGrantEntity>()
                                 .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
                                 .eq(UserAddonGrantEntity::getFeatureCode, featureCode)
-                                .in(UserAddonGrantEntity::getGrantType, List.of("addon", "compensation", "legacy"))
                                 .eq(UserAddonGrantEntity::getStatus, "active")
                                 .and(wrapper -> wrapper
                                         .gt(UserAddonGrantEntity::getExpiresAt, now)
@@ -959,6 +1030,46 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         quotaLedgerMapper.insert(ledger);
 
         return newAllocation(POOL_TYPE_COMPENSATION, grant.getId(), amount, now, grant.getExpiresAt());
+    }
+
+    private QuotaLedgerAllocationEntity createLegacyMigrationRefundGrant(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            LocalDateTime now) {
+        UserAddonGrantEntity grant = new UserAddonGrantEntity();
+        grant.setClerkUserId(clerkUserId);
+        grant.setFeatureCode(featureCode);
+        grant.setGrantType(GRANT_TYPE_LEGACY_MIGRATION_REFUND);
+        grant.setAddonCode(null);
+        grant.setStatus("active");
+        grant.setInitialAmount(amount);
+        grant.setRemainingAmount(amount);
+        grant.setStripeSessionId(null);
+        grant.setStripePaymentIntentId(null);
+        grant.setSourceOrderId(null);
+        grant.setMigrationKey(null);
+        grant.setPurchasedAt(now);
+        grant.setExpiresAt(now.plusMonths(LEGACY_MIGRATION_VALIDITY_MONTHS));
+        grant.setPausedAt(null);
+        grant.setVersion(0);
+        grant.setCreatedAt(now);
+        grant.setUpdatedAt(now);
+        userAddonGrantMapper.insert(grant);
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_LEGACY_MIGRATION_REFUND_GRANT);
+        ledger.setAmount(amount);
+        ledger.setSourceType(SOURCE_TYPE_SYSTEM);
+        ledger.setSourceId(featureCode);
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, featureCode, now));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+
+        return newAllocation(POOL_TYPE_ADDON, grant.getId(), amount, now, grant.getExpiresAt());
     }
 
     private void updateQuotaOrThrow(UserAiQuotaEntity quota, String action) {

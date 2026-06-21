@@ -140,6 +140,22 @@ class QuotaDomainServiceDbTest {
                     .eq(UserAddonGrantEntity::getClerkUserId, q.getClerkUserId()));
             quotaMapper.deleteById(q.getId());
         }
+        // 清理只有 grant 没有 quota 的测试用户（如 addon_grant_pause_resume）
+        List<UserAddonGrantEntity> orphanGrants = grantMapper.selectList(
+                new LambdaQueryWrapper<UserAddonGrantEntity>().likeRight(UserAddonGrantEntity::getClerkUserId, PREFIX));
+        for (UserAddonGrantEntity g : orphanGrants) {
+            String uid = g.getClerkUserId();
+            if (quotaMapper.selectCount(
+                    new LambdaQueryWrapper<UserAiQuotaEntity>().eq(UserAiQuotaEntity::getClerkUserId, uid)) == 0) {
+                allocMapper.delete(new LambdaQueryWrapper<QuotaLedgerAllocationEntity>()
+                        .inSql(QuotaLedgerAllocationEntity::getQuotaLedgerId,
+                                "SELECT id FROM quota_ledger WHERE clerk_user_id = '" + uid + "'"));
+                ledgerMapper.delete(new LambdaQueryWrapper<QuotaLedgerEntity>()
+                        .eq(QuotaLedgerEntity::getClerkUserId, uid));
+                grantMapper.delete(new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getClerkUserId, uid));
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════
@@ -177,11 +193,11 @@ class QuotaDomainServiceDbTest {
     }
 
     // ═══════════════════════════════════════════════════
-    // 场景 2: 消费顺序 free → plan → addon → legacy
+    // 场景 2: legacy 余额先迁移进 addon，再按 free → plan → addon 消费
     // ═══════════════════════════════════════════════════
     @Test
     @Order(2)
-    void consume_free_plan_addon_legacy() {
+    void consume_free_plan_addon_with_legacy_migration() {
         String uid = PREFIX + "s2";
 
         // seed: free=1, plan=2, addon grant=3, legacy(paid)=4
@@ -213,7 +229,7 @@ class QuotaDomainServiceDbTest {
         grant.setUpdatedAt(LocalDateTime.now());
         grantMapper.insert(grant);
 
-        // consume 5: free(1) + plan(2) + addon(2) = 5, legacy untouched
+        // consume 5: free(1) + plan(2) + addon(2) = 5
         ConsumeResult result = quotaService.consume(uid, "task_create", 5L,
                 "verla_session", "session_s2", Map.of("conversation_id", 1L));
         assertTrue(result.ledgerId() > 0);
@@ -222,12 +238,24 @@ class QuotaDomainServiceDbTest {
         UserAiQuotaEntity q = quotaMapper.selectById(quota.getId());
         assertEquals(0L, q.getFreeBalance());
         assertEquals(0L, q.getPlanBalance());
-        assertEquals(4L, q.getPaidBalance(), "legacy untouched");
+        assertEquals(0L, q.getPaidBalance(), "legacy migrated into add-on grants");
 
-        // verify grant
+        // verify original addon grant
         UserAddonGrantEntity g = grantMapper.selectById(grant.getId());
         assertEquals(1L, g.getRemainingAmount(), "3 - 2 = 1 remaining");
         assertEquals("active", g.getStatus());
+
+        List<UserAddonGrantEntity> grants = grantMapper.selectList(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getClerkUserId, uid)
+                        .eq(UserAddonGrantEntity::getFeatureCode, "task_create")
+                        .orderByAsc(UserAddonGrantEntity::getId));
+        UserAddonGrantEntity migratedGrant = grants.stream()
+                .filter(item -> "legacy_migration".equals(item.getGrantType()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(4L, migratedGrant.getRemainingAmount());
+        assertNotNull(migratedGrant.getExpiresAt());
 
         // verify allocations
         List<QuotaLedgerAllocationEntity> allocs = allocMapper.selectList(
@@ -243,7 +271,7 @@ class QuotaDomainServiceDbTest {
         assertEquals(2L, allocs.get(2).getAmount());
         assertEquals(g.getId(), allocs.get(2).getGrantId());
 
-        System.out.println("✅ S2 PASS — free=1 plan=2 addon=2, legacy untouched");
+        System.out.println("✅ S2 PASS — legacy migrated into add-on grant before consume");
     }
 
     // ═══════════════════════════════════════════════════
@@ -458,11 +486,11 @@ class QuotaDomainServiceDbTest {
     }
 
     // ═══════════════════════════════════════════════════
-    // balance API 返回四池
+    // balance API 不再显示 legacy，直接并入 addon
     // ═══════════════════════════════════════════════════
     @Test
     @Order(8)
-    void balance_api_returns_four_pools() {
+    void balance_api_merges_legacy_into_addon_pool() {
         String uid = PREFIX + "balance";
 
         UserAiQuotaEntity quota = new UserAiQuotaEntity();
@@ -496,14 +524,69 @@ class QuotaDomainServiceDbTest {
         QuotaBalance balance = quotaService.getUserQuota(uid, "task_create");
         assertEquals(1L, balance.freeBalance());
         assertEquals(2L, balance.planBalance());
-        assertEquals(3L, balance.addonBalance());
-        assertEquals(4L, balance.legacyBalance());
+        assertEquals(7L, balance.addonBalance());
+        assertEquals(0L, balance.legacyBalance());
         assertEquals(10L, balance.totalAvailable());
-        assertEquals(1, balance.addonItems().size());
+        assertEquals(2, balance.addonItems().size());
 
-        System.out.println("✅ balance API PASS — 4 pools: free=" + balance.freeBalance()
+        System.out.println("✅ balance API PASS — legacy merged into addon: free=" + balance.freeBalance()
                 + " plan=" + balance.planBalance() + " addon=" + balance.addonBalance()
                 + " legacy=" + balance.legacyBalance());
+    }
+
+    // ═══════════════════════════════════════════════════
+    // legacy 退款不再回写 paid_balance，而是补到 addon grant
+    // ═══════════════════════════════════════════════════
+    @Test
+    @Order(9)
+    void refund_legacy_allocation_creates_legacy_migration_refund_grant() {
+        String uid = PREFIX + "legacy_refund";
+        seedQuota(uid, "task_create", 0, 0);
+
+        QuotaLedgerEntity consumeLedger = new QuotaLedgerEntity();
+        consumeLedger.setLedgerNo("QL_MANUAL_LEGACY_REFUND");
+        consumeLedger.setClerkUserId(uid);
+        consumeLedger.setFeatureCode("task_create");
+        consumeLedger.setLedgerType("consume");
+        consumeLedger.setAmount(-2L);
+        consumeLedger.setSourceType("verla_session");
+        consumeLedger.setSourceId("session_legacy_refund");
+        consumeLedger.setFreeBalanceAfter(0L);
+        consumeLedger.setPlanBalanceAfter(0L);
+        consumeLedger.setAddonBalanceAfter(0L);
+        consumeLedger.setPaidBalanceAfter(0L);
+        consumeLedger.setCreatedAt(LocalDateTime.now());
+        ledgerMapper.insert(consumeLedger);
+
+        QuotaLedgerAllocationEntity legacyAlloc = new QuotaLedgerAllocationEntity();
+        legacyAlloc.setQuotaLedgerId(consumeLedger.getId());
+        legacyAlloc.setPoolType("legacy");
+        legacyAlloc.setGrantId(null);
+        legacyAlloc.setAmount(2L);
+        legacyAlloc.setSourcePeriodEnd(null);
+        legacyAlloc.setCreatedAt(LocalDateTime.now());
+        allocMapper.insert(legacyAlloc);
+
+        quotaService.refund(consumeLedger.getId(), "legacy_refund");
+
+        UserAiQuotaEntity quota = quotaMapper.selectOne(
+                new LambdaQueryWrapper<UserAiQuotaEntity>()
+                        .eq(UserAiQuotaEntity::getClerkUserId, uid)
+                        .eq(UserAiQuotaEntity::getFeatureCode, "task_create"));
+        assertNotNull(quota);
+        assertEquals(0L, quota.getPaidBalance(), "refund should not resurrect legacy paid balance");
+
+        List<UserAddonGrantEntity> grants = grantMapper.selectList(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getClerkUserId, uid)
+                        .eq(UserAddonGrantEntity::getFeatureCode, "task_create"));
+        UserAddonGrantEntity refundGrant = grants.stream()
+                .filter(item -> "legacy_migration_refund".equals(item.getGrantType()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("active", refundGrant.getStatus());
+        assertEquals(2L, refundGrant.getRemainingAmount());
+        assertNotNull(refundGrant.getExpiresAt());
     }
 
     // ═══════════════════════════════════════════════════

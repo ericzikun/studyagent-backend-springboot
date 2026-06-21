@@ -62,11 +62,11 @@ class QuotaDomainServiceImplTest {
     private PlanQuotaService planQuotaService;
 
     @Test
-    void getUserQuota_convertsLegacyDetectionWordsToRuns() {
+    void getUserQuota_keepsLegacyDetectionBalanceInWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
         featureDef.setFeatureName("AI Detection");
-        featureDef.setQuotaUnit("count");
+        featureDef.setQuotaUnit("words");
         featureDef.setFreeQuotaPeriod("daily");
         featureDef.setFreeQuotaAmount(1L);
         featureDef.setIsActive(true);
@@ -76,7 +76,7 @@ class QuotaDomainServiceImplTest {
         quota.setClerkUserId("user_1");
         quota.setFeatureCode("ai_detection");
         quota.setFreeBalance(1L);
-        quota.setPlanBalance(16L);
+        quota.setPlanBalance(30_000L);
         quota.setPaidBalance(210_000L);
         quota.setVersion(0);
 
@@ -95,17 +95,17 @@ class QuotaDomainServiceImplTest {
 
         QuotaBalance balance = service.getUserQuota("user_1", "ai_detection");
 
-        assertEquals(21L, balance.legacyBalance());
-        assertEquals(37L, balance.paidBalance());
-        assertEquals(38L, balance.totalAvailable());
+        assertEquals(210_000L, balance.legacyBalance());
+        assertEquals(240_000L, balance.paidBalance());
+        assertEquals(240_001L, balance.totalAvailable());
     }
 
     @Test
-    void consume_convertsOneDetectionRunToTenThousandLegacyWords() {
+    void consume_debitsDetectionLegacyBalanceByWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
         featureDef.setFeatureName("AI Detection");
-        featureDef.setQuotaUnit("count");
+        featureDef.setQuotaUnit("words");
         featureDef.setFreeQuotaPeriod("daily");
         featureDef.setFreeQuotaAmount(0L);
         featureDef.setIsActive(true);
@@ -142,7 +142,7 @@ class QuotaDomainServiceImplTest {
         ConsumeResult result = service.consume(
                 "user_1",
                 "ai_detection",
-                1L,
+                500L,
                 "verla_session",
                 "session_1",
                 Map.of());
@@ -151,19 +151,19 @@ class QuotaDomainServiceImplTest {
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
         verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
-        assertEquals(200_000L, quotaCaptor.getValue().getPaidBalance());
+        assertEquals(209_500L, quotaCaptor.getValue().getPaidBalance());
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
         verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
         QuotaLedgerEntity ledger = ledgerCaptor.getValue();
-        assertEquals(-1L, ledger.getAmount());
-        assertEquals(20L, ledger.getPaidBalanceAfter());
+        assertEquals(-500L, ledger.getAmount());
+        assertEquals(209_500L, ledger.getPaidBalanceAfter());
 
         ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
                 ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
         verify(quotaLedgerAllocationMapper).insert(allocationCaptor.capture());
         assertEquals("legacy", allocationCaptor.getValue().getPoolType());
-        assertEquals(10_000L, allocationCaptor.getValue().getAmount());
+        assertEquals(500L, allocationCaptor.getValue().getAmount());
     }
 
     @Test

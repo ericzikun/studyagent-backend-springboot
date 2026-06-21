@@ -14,8 +14,11 @@ public class BillingPlan {
     private Integer priceCents;
     private String currency;
     private Long assignmentQuota;
+    private String assignmentQuotaUnit;
     private Long detectionQuota;
+    private String detectionQuotaUnit;
     private Long humanizerQuota;
+    private String humanizerQuotaUnit;
     private Integer maxFiles;
     private Integer maxFollowupEdits;
     private String allowedOutputTypes;
@@ -26,8 +29,11 @@ public class BillingPlan {
                 .tier("free")
                 .billingInterval("none")
                 .assignmentQuota(1L)
-                .detectionQuota(1L)
-                .humanizerQuota(1L)
+                .assignmentQuotaUnit("time")
+                .detectionQuota(3_000L)
+                .detectionQuotaUnit("words")
+                .humanizerQuota(1_000L)
+                .humanizerQuotaUnit("words")
                 .maxFiles(3)
                 .maxFollowupEdits(3)
                 .allowedOutputTypes("[\"writing\"]")

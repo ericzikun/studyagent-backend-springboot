@@ -80,8 +80,12 @@ class BillingDomainServiceImplTest {
 
         assertEquals("basic_monthly", result.getPlans().get(0).getPlanCode());
         assertEquals(3L, result.getPlans().get(0).getAssignmentQuota());
+        assertEquals("time", result.getPlans().get(0).getAssignmentQuotaUnit());
+        assertEquals("words", result.getPlans().get(0).getDetectionQuotaUnit());
+        assertEquals("words", result.getPlans().get(0).getHumanizerQuotaUnit());
         assertEquals("addon_assignment_3", result.getAddons().get(0).getAddonCode());
         assertEquals(2, result.getAddons().get(0).getValidityMonths());
+        assertEquals("time", result.getAddons().get(0).getQuotaUnit());
     }
 
     @Test
@@ -170,6 +174,10 @@ class BillingDomainServiceImplTest {
         assertEquals("free", result.getTier());
         assertEquals("none", result.getBillingInterval());
         assertEquals(1L, result.getAssignmentQuota());
+        assertEquals(3000L, result.getDetectionQuota());
+        assertEquals(1000L, result.getHumanizerQuota());
+        assertEquals("words", result.getDetectionQuotaUnit());
+        assertEquals("words", result.getHumanizerQuotaUnit());
         assertEquals(3, result.getMaxFiles());
         assertEquals(3, result.getMaxFollowupEdits());
         assertEquals("[\"writing\"]", result.getAllowedOutputTypes());

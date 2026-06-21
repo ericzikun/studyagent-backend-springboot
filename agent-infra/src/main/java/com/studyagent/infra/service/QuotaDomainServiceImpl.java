@@ -613,7 +613,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     private boolean isLegacyWordsFeature(String featureCode) {
-        return "ai_detection".equals(featureCode) || "humanizer".equals(featureCode);
+        return false;
     }
 
     private String buildDisplayText(QuotaLedgerEntity entity, String featureDisplayName, String quotaUnit) {

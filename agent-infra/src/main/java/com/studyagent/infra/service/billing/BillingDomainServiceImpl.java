@@ -914,8 +914,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .priceCents(entity.getPriceCents())
                 .currency(entity.getCurrency())
                 .assignmentQuota(entity.getAssignmentQuota())
+                .assignmentQuotaUnit("time")
                 .detectionQuota(entity.getDetectionQuota())
+                .detectionQuotaUnit("words")
                 .humanizerQuota(entity.getHumanizerQuota())
+                .humanizerQuotaUnit("words")
                 .maxFiles(entity.getMaxFiles())
                 .maxFollowupEdits(entity.getMaxFollowupEdits())
                 .allowedOutputTypes(entity.getAllowedOutputTypes())
@@ -929,10 +932,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stripeProductId(entity.getStripeProductId())
                 .stripePriceId(entity.getStripePriceId())
                 .quotaAmount(entity.getQuotaAmount())
+                .quotaUnit(resolveQuotaUnit(entity.getFeatureCode()))
                 .validityMonths(entity.getValidityMonths())
                 .priceCents(entity.getPriceCents())
                 .currency(entity.getCurrency())
                 .build();
+    }
+
+    private String resolveQuotaUnit(String featureCode) {
+        if ("ai_detection".equals(featureCode) || "humanizer".equals(featureCode)) {
+            return "words";
+        }
+        return "time";
     }
 
     private SubscriptionResult toResult(UserSubscriptionEntity entity) {

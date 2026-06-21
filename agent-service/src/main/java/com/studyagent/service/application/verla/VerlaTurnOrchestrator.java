@@ -1281,7 +1281,8 @@ public class VerlaTurnOrchestrator {
         VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
 
         SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
-        if (!curSess.isTerminal()) {
+        boolean justCompleted = !curSess.isTerminal();
+        if (justCompleted) {
             SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
             s.setStatus(nextSess.name());
             s.setEndedAt(LocalDateTime.now());
@@ -1308,6 +1309,47 @@ public class VerlaTurnOrchestrator {
         }
 
         conversationRepository.incrementVersion(turn.getConversationId());
+
+        // Auto-advance: init completion declares a hand-off to deep_understanding
+        // (nextActions), so dispatch CMD_ASSIGNMENT_DEEP_UNDERSTANDING immediately
+        // instead of waiting for the user to pick between the two clarify options.
+        // justCompleted guard prevents duplicate spawning on event replay.
+        if (justCompleted && declaresDeepUnderstandingHandoff(result)) {
+            VerlaConversation conv = conversationRepository.findById(turn.getConversationId());
+            String intent = isAssignmentIntent(turn.getResolvedIntent())
+                    ? turn.getResolvedIntent() : "ASSIGNMENT";
+            Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
+            boolean userUnderstood = resolveHandoffUserUnderstood(result);
+            log.info("[Verla] init completed declares deep_understanding hand-off, "
+                            + "auto-spawn turnId={} intent={} userUnderstood={}",
+                    turn.getId(), intent, userUnderstood);
+            spawnAssignmentDeepUnderstandingSession(conv, turn, intent, resolvedSlots, userUnderstood);
+        }
+    }
+
+    /**
+     * Whether an init/clarify completion payload declares an automatic hand-off to the
+     * deep-understanding phase via {@code nextActions: ["deep_understanding", ...]}.
+     */
+    private boolean declaresDeepUnderstandingHandoff(Map<String, Object> result) {
+        return result != null
+                && result.get("nextActions") instanceof List<?> actions
+                && actions.stream().anyMatch(a -> "deep_understanding".equals(a));
+    }
+
+    /**
+     * Resolve the {@code userUnderstood} flag the hand-off should dispatch with, read from
+     * {@code nextActionParams.userUnderstood}. Defaults to {@code true} (the original
+     * "start the assignment setup" choice) when unspecified.
+     */
+    private boolean resolveHandoffUserUnderstood(Map<String, Object> result) {
+        if (result != null && result.get("nextActionParams") instanceof Map<?, ?> params) {
+            Object value = params.get("userUnderstood");
+            if (value != null) {
+                return Boolean.TRUE.equals(value) || "true".equals(String.valueOf(value));
+            }
+        }
+        return true;
     }
 
     /**

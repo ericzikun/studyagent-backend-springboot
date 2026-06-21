@@ -68,7 +68,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
     private static final long LEGACY_WORDS_PER_RUN = 10_000L;
-    private static final int LEGACY_MIGRATION_VALIDITY_MONTHS = 6;
+    private static final int LEGACY_MIGRATION_VALIDITY_MONTHS = 12;
 
     @Override
     @Transactional(rollbackFor = Exception.class)

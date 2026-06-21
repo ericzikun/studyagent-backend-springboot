@@ -1,18 +1,21 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.common.Result;
-import com.studyagent.api.dto.response.ResumeRequiredResponse;
 import com.studyagent.api.dto.verla.request.VerlaUploadFinalizeRequest;
 import com.studyagent.api.dto.verla.request.VerlaUploadSignRequest;
 import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
 import com.studyagent.api.dto.verla.response.VerlaUploadSignResponseVO;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CommercialBlockData;
 import com.studyagent.api.service.PaymentResumeContextService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.dto.VerlaUploadSignResult;
+import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaAttachment;
+import com.studyagent.common.exception.CurrentPlanData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +46,7 @@ public class VerlaV2AttachmentUploadController {
     private final VerlaAttachmentService attachmentService;
     private final OssStorageService ossStorageService;
     private final PaymentResumeContextService paymentResumeContextService;
+    private final BillingDomainService billingDomainService;
 
     @PostMapping("/sign")
     public ResponseEntity<Result<Object>> sign(
@@ -76,12 +80,10 @@ public class VerlaV2AttachmentUploadController {
                 throw e;
             }
             String resumeToken = paymentResumeContextService.createUploadResumeContext(clerkUserId, req);
+            CommercialBlockData payload = enrichFileLimitPayload(clerkUserId, e.getData(), resumeToken);
             Result<Object> result = new Result<>();
             result.setMeta(com.studyagent.api.common.Meta.error(e.getCode(), e.getMessage()));
-            result.setData(ResumeRequiredResponse.builder()
-                    .scene(PaymentResumeContextService.SCENE_UPLOAD)
-                    .resumeToken(resumeToken)
-                    .build());
+            result.setData(payload);
             return ResponseEntity.badRequest().body(result);
         }
     }
@@ -140,5 +142,49 @@ public class VerlaV2AttachmentUploadController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
         }
+    }
+
+    private CommercialBlockData enrichFileLimitPayload(String clerkUserId, Object data, String resumeToken) {
+        if (data instanceof CommercialBlockData payload) {
+            return payload.toBuilder()
+                    .scene(PaymentResumeContextService.SCENE_UPLOAD)
+                    .resumeToken(resumeToken)
+                    .build();
+        }
+        return CommercialBlockData.builder()
+                .currentPlan(resolveCurrentPlan(clerkUserId))
+                .reasonCode("file_limit_reached")
+                .purchaseProductId("assignment")
+                .blockedAction("upload_sign")
+                .scene(PaymentResumeContextService.SCENE_UPLOAD)
+                .resumeToken(resumeToken)
+                .build();
+    }
+
+    private CurrentPlanData resolveCurrentPlan(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank() || billingDomainService == null) {
+            return null;
+        }
+        BillingPlan plan = billingDomainService.getEffectivePlanOrFree(clerkUserId);
+        if (plan == null) {
+            return null;
+        }
+        return CurrentPlanData.builder()
+                .planCode(plan.getPlanCode())
+                .tier(plan.getTier())
+                .isPaid(isPaidPlan(plan))
+                .build();
+    }
+
+    private boolean isPaidPlan(BillingPlan plan) {
+        if (plan == null) {
+            return false;
+        }
+        String tier = plan.getTier();
+        if (tier != null) {
+            return !"free".equalsIgnoreCase(tier);
+        }
+        String planCode = plan.getPlanCode();
+        return planCode != null && !"free".equalsIgnoreCase(planCode);
     }
 }

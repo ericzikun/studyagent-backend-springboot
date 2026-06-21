@@ -25,6 +25,10 @@ public record QuotaLedgerItem(
         List<Map<String, Object>> allocations
 ) {
     public Long paidBalanceAfter() {
-        return legacyBalanceAfter;
+        return nullToZero(planBalanceAfter) + nullToZero(addonBalanceAfter) + nullToZero(legacyBalanceAfter);
+    }
+
+    private static long nullToZero(Long value) {
+        return value == null ? 0L : value;
     }
 }

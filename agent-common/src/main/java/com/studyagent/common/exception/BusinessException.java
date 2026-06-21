@@ -12,11 +12,17 @@ public class BusinessException extends RuntimeException {
 
     private final int code;
     private final String message;
+    private final Object data;
 
     public BusinessException(int code, String message) {
+        this(code, message, null);
+    }
+
+    public BusinessException(int code, String message, Object data) {
         super(message);
         this.code = code;
         this.message = message;
+        this.data = data;
     }
 
     public BusinessException(ApiCode apiCode) {
@@ -29,5 +35,9 @@ public class BusinessException extends RuntimeException {
 
     public BusinessException(String message) {
         this(9999, message);
+    }
+
+    public static BusinessException withData(ApiCode apiCode, Object data) {
+        return new BusinessException(apiCode.getCode(), apiCode.getMessage(), data);
     }
 }

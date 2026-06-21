@@ -133,19 +133,12 @@ public class HumanizerApplicationService {
                     log.info("DETECT 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required=1, available={}",
                             exhaustedEntity.getId(), clerkUserId, balance.totalAvailable());
 
-                    HumanizerTaskResponse response = HumanizerTaskResponse.builder()
-                            .id(exhaustedEntity.getId())
-                            .taskType(taskType)
-                            .status(STATUS_QUOTA_EXHAUSTED)
-                            .totalWords(splitTotalWords > 0 ? splitTotalWords : wordCount)
-                            .consumedWords(0)
-                            .progress(0)
-                            .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
-                                    clerkUserId,
-                                    "detection_start",
-                                    exhaustedEntity.getId(),
-                                    "humanizer:" + exhaustedEntity.getId() + ":start"))
-                            .build();
+                    HumanizerTaskResponse response = buildQuotaExhaustedResponse(
+                            exhaustedEntity,
+                            clerkUserId,
+                            taskType,
+                            "detection_start",
+                            splitTotalWords > 0 ? splitTotalWords : wordCount);
                     return new HumanizerSubmitResult(response, false);
                 }
                 // DETECT 不预扣费，quotaConsumed = false
@@ -170,19 +163,12 @@ public class HumanizerApplicationService {
                     log.info("HUMANIZE 额度不足，任务入库为 QUOTA_EXHAUSTED: id={}, userId={}, required=1",
                             exhaustedEntity.getId(), clerkUserId);
 
-                    HumanizerTaskResponse response = HumanizerTaskResponse.builder()
-                            .id(exhaustedEntity.getId())
-                            .taskType(taskType)
-                            .status(STATUS_QUOTA_EXHAUSTED)
-                            .totalWords(wordCount)
-                            .consumedWords(0)
-                            .progress(0)
-                            .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
-                                    clerkUserId,
-                                    "humanizer_start",
-                                    exhaustedEntity.getId(),
-                                    "humanizer:" + exhaustedEntity.getId() + ":start"))
-                            .build();
+                    HumanizerTaskResponse response = buildQuotaExhaustedResponse(
+                            exhaustedEntity,
+                            clerkUserId,
+                            taskType,
+                            "humanizer_start",
+                            wordCount);
                     return new HumanizerSubmitResult(response, false);
                 }
 
@@ -239,19 +225,12 @@ public class HumanizerApplicationService {
 
                 log.warn("HUMANIZE 入库后启动扣费失败: taskId={}, userId={}, error={}",
                         entity.getId(), clerkUserId, ex.getMessage());
-                HumanizerTaskResponse response = HumanizerTaskResponse.builder()
-                        .id(entity.getId())
-                        .taskType(taskType)
-                        .status(STATUS_QUOTA_EXHAUSTED)
-                        .totalWords(wordCount)
-                        .consumedWords(0)
-                        .progress(0)
-                        .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
-                                clerkUserId,
-                                "humanizer_start",
-                                entity.getId(),
-                                "humanizer:" + entity.getId() + ":start"))
-                        .build();
+                HumanizerTaskResponse response = buildQuotaExhaustedResponse(
+                        entity,
+                        clerkUserId,
+                        taskType,
+                        "humanizer_start",
+                        wordCount);
                 return new HumanizerSubmitResult(response, false);
             }
         }
@@ -367,8 +346,11 @@ public class HumanizerApplicationService {
                 throw new InsufficientQuotaException(
                         "Insufficient quota to resume. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                         InsufficientQuotaData.builder()
+                                .clerkUserId(clerkUserId)
                                 .featureCode(balance.featureCode())
                                 .featureName(balance.featureName())
+                                .purchaseProductId("DETECT".equals(entity.getTaskType()) ? "ai_detection" : "humanizer")
+                                .blockedAction("DETECT".equals(entity.getTaskType()) ? "ai_detection_start" : "humanizer_start")
                                 .quotaUnit(balance.quotaUnit())
                                 .freeBalance(balance.freeBalance())
                                 .freePeriodTotal(balance.freePeriodTotal())
@@ -536,6 +518,27 @@ public class HumanizerApplicationService {
                 .elapsedSeconds(entity.getElapsedSeconds())
                 .errorMessage(entity.getErrorMessage())
                 .createdAt(DateTimeFormats.formatApi(entity.getCreatedAt()))
+                .build();
+    }
+
+    private HumanizerTaskResponse buildQuotaExhaustedResponse(
+            HumanizerTaskEntity entity,
+            String clerkUserId,
+            String taskType,
+            String scene,
+            int totalWords) {
+        return HumanizerTaskResponse.builder()
+                .id(entity.getId())
+                .taskType(taskType)
+                .status(STATUS_QUOTA_EXHAUSTED)
+                .totalWords(totalWords)
+                .consumedWords(0)
+                .progress(0)
+                .resumeToken(paymentResumeContextService.createHumanizerResumeContext(
+                        clerkUserId,
+                        scene,
+                        entity.getId(),
+                        "humanizer:" + entity.getId() + ":start"))
                 .build();
     }
 

@@ -181,7 +181,9 @@ public class PaymentController {
 
     private Map<String, Object> toCheckoutData(CheckoutSessionResult checkout) {
         Map<String, Object> data = new HashMap<>();
+        data.put("checkoutKind", checkout.getCheckoutKind());
         data.put("sessionId", checkout.getSessionId());
+        data.put("referenceId", checkout.getReferenceId());
         data.put("checkoutUrl", checkout.getCheckoutUrl());
         data.put("expiresAt", checkout.getExpiresAt());
         data.put("resumeToken", checkout.getResumeToken());

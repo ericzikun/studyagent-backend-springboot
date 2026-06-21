@@ -11,6 +11,7 @@ public class BillingAddon {
     private String stripeProductId;
     private String stripePriceId;
     private Long quotaAmount;
+    private String quotaUnit;
     private Integer validityMonths;
     private Integer priceCents;
     private String currency;

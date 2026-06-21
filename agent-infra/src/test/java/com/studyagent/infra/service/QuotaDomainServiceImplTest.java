@@ -62,11 +62,11 @@ class QuotaDomainServiceImplTest {
     private PlanQuotaService planQuotaService;
 
     @Test
-    void getUserQuota_convertsLegacyDetectionWordsToRuns() {
+    void getUserQuota_migratesLegacyDetectionBalanceIntoAddonWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
         featureDef.setFeatureName("AI Detection");
-        featureDef.setQuotaUnit("count");
+        featureDef.setQuotaUnit("words");
         featureDef.setFreeQuotaPeriod("daily");
         featureDef.setFreeQuotaAmount(1L);
         featureDef.setIsActive(true);
@@ -76,13 +76,25 @@ class QuotaDomainServiceImplTest {
         quota.setClerkUserId("user_1");
         quota.setFeatureCode("ai_detection");
         quota.setFreeBalance(1L);
-        quota.setPlanBalance(16L);
+        quota.setPlanBalance(30_000L);
         quota.setPaidBalance(210_000L);
         quota.setVersion(0);
 
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        UserAddonGrantEntity migratedGrant = new UserAddonGrantEntity();
+        migratedGrant.setId(301L);
+        migratedGrant.setGrantType("legacy_migration");
+        migratedGrant.setStatus("active");
+        migratedGrant.setInitialAmount(210_000L);
+        migratedGrant.setRemainingAmount(210_000L);
+        migratedGrant.setExpiresAt(LocalDateTime.now().plusMonths(6));
+
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
-        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(migratedGrant));
+        when(userAddonGrantMapper.insert(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
         QuotaDomainServiceImpl service = new QuotaDomainServiceImpl(
                 aiFeatureDefsMapper,
@@ -95,17 +107,18 @@ class QuotaDomainServiceImplTest {
 
         QuotaBalance balance = service.getUserQuota("user_1", "ai_detection");
 
-        assertEquals(21L, balance.legacyBalance());
-        assertEquals(37L, balance.paidBalance());
-        assertEquals(38L, balance.totalAvailable());
+        assertEquals(210_000L, balance.addonBalance());
+        assertEquals(0L, balance.legacyBalance());
+        assertEquals(240_000L, balance.paidBalance());
+        assertEquals(240_001L, balance.totalAvailable());
     }
 
     @Test
-    void consume_convertsOneDetectionRunToTenThousandLegacyWords() {
+    void consume_debitsDetectionLegacyBalanceByWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
         featureDef.setFeatureName("AI Detection");
-        featureDef.setQuotaUnit("count");
+        featureDef.setQuotaUnit("words");
         featureDef.setFreeQuotaPeriod("daily");
         featureDef.setFreeQuotaAmount(0L);
         featureDef.setIsActive(true);
@@ -119,13 +132,26 @@ class QuotaDomainServiceImplTest {
         quota.setPaidBalance(210_000L);
         quota.setVersion(0);
 
+        UserAddonGrantEntity migratedGrant = new UserAddonGrantEntity();
+        migratedGrant.setId(302L);
+        migratedGrant.setGrantType("legacy_migration");
+        migratedGrant.setStatus("active");
+        migratedGrant.setInitialAmount(210_000L);
+        migratedGrant.setRemainingAmount(210_000L);
+        migratedGrant.setExpiresAt(LocalDateTime.now().plusMonths(6));
+
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
-        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(migratedGrant));
+        when(userAddonGrantMapper.insert(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
             QuotaLedgerEntity ledger = invocation.getArgument(0);
-            ledger.setId(601L);
+            if (ledger.getId() == null) {
+                ledger.setId("consume".equals(ledger.getLedgerType()) ? 601L : 600L);
+            }
             return 1;
         });
         when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
@@ -142,7 +168,7 @@ class QuotaDomainServiceImplTest {
         ConsumeResult result = service.consume(
                 "user_1",
                 "ai_detection",
-                1L,
+                500L,
                 "verla_session",
                 "session_1",
                 Map.of());
@@ -150,20 +176,83 @@ class QuotaDomainServiceImplTest {
         assertEquals(601L, result.ledgerId());
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
-        verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
-        assertEquals(200_000L, quotaCaptor.getValue().getPaidBalance());
+        verify(userAiQuotaMapper, times(2)).updateById(quotaCaptor.capture());
+        assertEquals(0L, quotaCaptor.getAllValues().get(0).getPaidBalance());
+        assertEquals(0L, quotaCaptor.getAllValues().get(1).getPaidBalance());
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
-        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
-        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
-        assertEquals(-1L, ledger.getAmount());
-        assertEquals(20L, ledger.getPaidBalanceAfter());
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getAllValues().stream()
+                .filter(item -> "consume".equals(item.getLedgerType()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(-500L, ledger.getAmount());
+        assertEquals(0L, ledger.getPaidBalanceAfter());
 
         ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
                 ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
         verify(quotaLedgerAllocationMapper).insert(allocationCaptor.capture());
-        assertEquals("legacy", allocationCaptor.getValue().getPoolType());
-        assertEquals(10_000L, allocationCaptor.getValue().getAmount());
+        assertEquals("addon", allocationCaptor.getValue().getPoolType());
+        assertEquals(500L, allocationCaptor.getValue().getAmount());
+    }
+
+    @Test
+    void getAllUserQuotas_refreshesPlanQuotasOnceBeforeBuildingBalances() {
+        AiFeatureDefsEntity assignment = new AiFeatureDefsEntity();
+        assignment.setFeatureCode("task_create");
+        assignment.setFeatureName("Assignment");
+        assignment.setQuotaUnit("count");
+        assignment.setFreeQuotaPeriod("monthly");
+        assignment.setFreeQuotaAmount(1L);
+        assignment.setIsActive(true);
+        assignment.setDisplayOrder(1);
+
+        AiFeatureDefsEntity detection = new AiFeatureDefsEntity();
+        detection.setFeatureCode("ai_detection");
+        detection.setFeatureName("AI Detection");
+        detection.setQuotaUnit("words");
+        detection.setFreeQuotaPeriod("monthly");
+        detection.setFreeQuotaAmount(3000L);
+        detection.setIsActive(true);
+        detection.setDisplayOrder(2);
+
+        UserAiQuotaEntity assignmentQuota = new UserAiQuotaEntity();
+        assignmentQuota.setId(11L);
+        assignmentQuota.setClerkUserId("user_1");
+        assignmentQuota.setFeatureCode("task_create");
+        assignmentQuota.setFreeBalance(1L);
+        assignmentQuota.setPlanBalance(0L);
+        assignmentQuota.setPaidBalance(0L);
+        assignmentQuota.setVersion(0);
+
+        UserAiQuotaEntity detectionQuota = new UserAiQuotaEntity();
+        detectionQuota.setId(12L);
+        detectionQuota.setClerkUserId("user_1");
+        detectionQuota.setFeatureCode("ai_detection");
+        detectionQuota.setFreeBalance(3000L);
+        detectionQuota.setPlanBalance(0L);
+        detectionQuota.setPaidBalance(0L);
+        detectionQuota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment, detection));
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignment, detection);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentQuota, detectionQuota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = new QuotaDomainServiceImpl(
+                aiFeatureDefsMapper,
+                aiFeaturePackageMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userAddonGrantMapper,
+                quotaLedgerAllocationMapper,
+                planQuotaService);
+
+        List<QuotaBalance> balances = service.getAllUserQuotas("user_1");
+
+        assertEquals(2, balances.size());
+        verify(planQuotaService, times(1)).refreshAllPlanQuotasIfNeeded("user_1");
+        verify(planQuotaService, never()).refreshPlanQuotaIfNeeded(any(), any());
     }
 
     @Test
@@ -183,7 +272,7 @@ class QuotaDomainServiceImplTest {
         quota.setFreeBalance(1L);
         quota.setPlanBalance(2L);
         quota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
-        quota.setPaidBalance(4L);
+        quota.setPaidBalance(0L);
         quota.setVersion(0);
 
         UserAddonGrantEntity addonGrant = new UserAddonGrantEntity();
@@ -204,7 +293,9 @@ class QuotaDomainServiceImplTest {
         when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
             QuotaLedgerEntity ledger = invocation.getArgument(0);
-            ledger.setId(501L);
+            if (ledger.getId() == null) {
+                ledger.setId(501L);
+            }
             return 1;
         });
         when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
@@ -234,7 +325,7 @@ class QuotaDomainServiceImplTest {
         assertEquals(0L, ledger.getFreeBalanceAfter());
         assertEquals(0L, ledger.getPlanBalanceAfter());
         assertEquals(1L, ledger.getAddonBalanceAfter());
-        assertEquals(4L, ledger.getPaidBalanceAfter());
+        assertEquals(0L, ledger.getPaidBalanceAfter());
 
         ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
                 ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
@@ -490,6 +581,7 @@ class QuotaDomainServiceImplTest {
         consumeLedger.setAmount(-1L);
         consumeLedger.setSourceType("verla_session");
         consumeLedger.setSourceId("session_5");
+        consumeLedger.setBizContext("{\"from_free_amount\":1,\"from_plan_amount\":0,\"from_paid_amount\":0}");
 
         UserAiQuotaEntity quota = new UserAiQuotaEntity();
         quota.setId(11L);
@@ -552,7 +644,7 @@ class QuotaDomainServiceImplTest {
 
         UserAddonGrantEntity legacyGrant = new UserAddonGrantEntity();
         legacyGrant.setId(101L);
-        legacyGrant.setGrantType("legacy");
+        legacyGrant.setGrantType("legacy_migration");
         legacyGrant.setStatus("active");
         legacyGrant.setInitialAmount(1L);
         legacyGrant.setRemainingAmount(1L);

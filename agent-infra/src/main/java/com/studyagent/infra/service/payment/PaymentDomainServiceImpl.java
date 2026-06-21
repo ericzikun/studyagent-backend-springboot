@@ -139,7 +139,9 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 session.getId(), command.getCustomerEmail(), command.getPackageType(), command.getClerkUserId());
 
         return CheckoutSessionResult.builder()
+                .checkoutKind("session")
                 .sessionId(session.getId())
+                .referenceId(session.getId())
                 .checkoutUrl(session.getUrl())
                 .expiresAt(session.getExpiresAt())
                 .build();
@@ -178,6 +180,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             m.put("type", e.getPackageCode());
             m.put("name", e.getPackageName());
             m.put("credits", e.getQuotaAmount() != null ? e.getQuotaAmount().intValue() : 0);
+            m.put("unit", resolveQuotaUnit(e.getFeatureCode()));
             m.put("priceId", e.getStripePriceId() != null ? e.getStripePriceId() : "");
             m.put("featureCode", e.getFeatureCode());
             m.put("priceCents", e.getPriceCents());
@@ -203,5 +206,12 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 new LambdaQueryWrapper<AiFeaturePackageEntity>()
                         .eq(AiFeaturePackageEntity::getPackageCode, packageCode)
                         .eq(AiFeaturePackageEntity::getIsActive, true));
+    }
+
+    private String resolveQuotaUnit(String featureCode) {
+        if ("ai_detection".equals(featureCode) || "humanizer".equals(featureCode)) {
+            return "words";
+        }
+        return "time";
     }
 }

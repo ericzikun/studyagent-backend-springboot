@@ -20,4 +20,4 @@ CREATE UNIQUE INDEX uk_quota_ledger_feature_type_idempotency
 UPDATE ai_feature_defs
 SET quota_unit = 'count',
     free_quota_amount = 1
-WHERE feature_code IN ('ai_detection', 'humanizer');
+WHERE feature_code IN ('task_create', 'ai_detection', 'humanizer');

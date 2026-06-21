@@ -237,6 +237,13 @@ payment:
   success-url: ${PAYMENT_SUCCESS_URL:http://localhost:3000/payment-success}
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/payment-canceled}
 
+billing:
+  upgrade-pending-cleanup:
+    enabled: ${BILLING_UPGRADE_PENDING_CLEANUP_ENABLED:true}
+    retention-hours: ${BILLING_UPGRADE_PENDING_CLEANUP_RETENTION_HOURS:24}
+    batch-size: ${BILLING_UPGRADE_PENDING_CLEANUP_BATCH_SIZE:100}
+    cron: ${BILLING_UPGRADE_PENDING_CLEANUP_CRON:0 25 * * * ?}
+
 # PostHog 分析配置
 posthog:
   # 是否启用埋点

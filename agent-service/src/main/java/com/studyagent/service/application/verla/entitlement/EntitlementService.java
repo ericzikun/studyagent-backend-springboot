@@ -11,6 +11,8 @@ public interface EntitlementService {
 
     void assertAssignmentOutputAllowed(String clerkUserId, Map<String, Object> requirementForm);
 
+    void assertAssignmentOutputAllowed(EffectiveEntitlements entitlements, Map<String, Object> requirementForm);
+
     void assertCanReserveUserUpload(String clerkUserId, Long conversationId);
 
     FollowupEditUsage reserveFollowupEdit(String clerkUserId, Long conversationId,

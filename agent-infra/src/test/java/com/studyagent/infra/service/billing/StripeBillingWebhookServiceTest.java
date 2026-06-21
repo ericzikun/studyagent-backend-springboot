@@ -1,12 +1,17 @@
 package com.studyagent.infra.service.billing;
 
 import com.stripe.model.Event;
+import com.stripe.model.Invoice;
+import com.studyagent.infra.entity.RechargeOrderEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.StripeWebhookEventMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -16,10 +21,20 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class StripeBillingWebhookServiceTest {
+    @BeforeAll
+    static void initTableInfo() {
+        MybatisPlusTableInfoTestHelper.initTableInfo(RechargeOrderEntity.class);
+        MybatisPlusTableInfoTestHelper.initTableInfo(UserSubscriptionEntity.class);
+    }
+
     @Mock
     private StripeWebhookEventMapper webhookEventMapper;
     @Mock
@@ -127,6 +142,31 @@ class StripeBillingWebhookServiceTest {
 
         assertEquals(1781696510L, service().resolveSubscriptionPeriodStart(event));
         assertEquals(1813232510L, service().resolveSubscriptionPeriodEnd(event));
+    }
+
+    @Test
+    void resolvesSubscriptionUpdateBillingReasonAsUpgrade() {
+        Invoice invoice = new Invoice();
+        invoice.setBillingReason("subscription_update");
+
+        assertEquals("subscription_upgrade", service().resolveInvoiceOrderType(invoice));
+        assertTrue(service().isSubscriptionUpgradeInvoice(invoice, null));
+    }
+
+    @Test
+    void clearPendingUpgradeStateResetsPendingPlanCode() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setId(20L);
+        entity.setPendingPlanCode("plus_monthly");
+
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderType("subscription_upgrade");
+
+        StripeBillingWebhookService service = service();
+        service.clearPendingUpgradeState(entity, order, "invoice.payment_failed");
+
+        assertNull(entity.getPendingPlanCode());
+        verify(userSubscriptionMapper).update(isNull(), any());
     }
 
     private StripeBillingWebhookService service() {

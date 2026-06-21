@@ -2,27 +2,45 @@ package com.studyagent.infra.service.billing;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
+import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
+import com.stripe.model.Invoice;
+import com.stripe.model.SubscriptionItem;
+import com.stripe.param.SubscriptionScheduleUpdateParams;
+import com.stripe.param.SubscriptionUpdateParams;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BillingDomainServiceImplTest {
+    @BeforeAll
+    static void initTableInfo() {
+        MybatisPlusTableInfoTestHelper.initTableInfo(RechargeOrderEntity.class);
+        MybatisPlusTableInfoTestHelper.initTableInfo(UserSubscriptionEntity.class);
+    }
+
     @Mock
     private SubscriptionPlanMapper subscriptionPlanMapper;
     @Mock
@@ -62,8 +80,12 @@ class BillingDomainServiceImplTest {
 
         assertEquals("basic_monthly", result.getPlans().get(0).getPlanCode());
         assertEquals(3L, result.getPlans().get(0).getAssignmentQuota());
+        assertEquals("time", result.getPlans().get(0).getAssignmentQuotaUnit());
+        assertEquals("words", result.getPlans().get(0).getDetectionQuotaUnit());
+        assertEquals("words", result.getPlans().get(0).getHumanizerQuotaUnit());
         assertEquals("addon_assignment_3", result.getAddons().get(0).getAddonCode());
         assertEquals(2, result.getAddons().get(0).getValidityMonths());
+        assertEquals("time", result.getAddons().get(0).getQuotaUnit());
     }
 
     @Test
@@ -152,6 +174,10 @@ class BillingDomainServiceImplTest {
         assertEquals("free", result.getTier());
         assertEquals("none", result.getBillingInterval());
         assertEquals(1L, result.getAssignmentQuota());
+        assertEquals(3000L, result.getDetectionQuota());
+        assertEquals(1000L, result.getHumanizerQuota());
+        assertEquals("words", result.getDetectionQuotaUnit());
+        assertEquals("words", result.getHumanizerQuotaUnit());
         assertEquals(3, result.getMaxFiles());
         assertEquals(3, result.getMaxFollowupEdits());
         assertEquals("[\"writing\"]", result.getAllowedOutputTypes());
@@ -182,6 +208,108 @@ class BillingDomainServiceImplTest {
         assertEquals(
                 "http://localhost:3001/payment-success?foo=bar&resumeToken=resume_tok_1&session_id={CHECKOUT_SESSION_ID}",
                 service.resolveCheckoutSuccessUrl("http://localhost:3001/payment-success?foo=bar", "resume_tok_1"));
+    }
+
+    @Test
+    @DisplayName("Downgrade schedule create params should not carry metadata when from_subscription is used")
+    void buildDowngradeScheduleCreateParamsDoesNotIncludeMetadata() {
+        var params = BillingDomainServiceImpl.buildDowngradeScheduleCreateParams("sub_123");
+
+        assertEquals("sub_123", params.getFromSubscription());
+        assertNull(params.getMetadata());
+    }
+
+    @Test
+    void buildDowngradeScheduleUpdateParamsIncludesMetadataAndPhases() {
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("free");
+        targetPlan.setStripePriceId("price_free");
+
+        var params = BillingDomainServiceImpl.buildDowngradeScheduleUpdateParams(
+                "user_1",
+                targetPlan,
+                100L,
+                200L,
+                "price_current",
+                2L);
+
+        assertEquals(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE, params.getEndBehavior());
+        assertEquals(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE, params.getProrationBehavior());
+        assertEquals(2, params.getPhases().size());
+        assertEquals(Map.of(
+                "clerk_user_id", "user_1",
+                "pending_plan_code", "free",
+                "change_type", "downgrade"), params.getMetadata());
+    }
+
+    @Test
+    void buildSubscriptionUpgradeParamsResetsAnchorAndRequiresLatestInvoiceExpansion() {
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("pro_yearly");
+        targetPlan.setStripePriceId("price_pro_yearly");
+
+        SubscriptionItem item = new SubscriptionItem();
+        item.setId("si_123");
+        item.setQuantity(2L);
+
+        var params = BillingDomainServiceImpl.buildSubscriptionUpgradeParams(
+                "user_1",
+                targetPlan,
+                item);
+
+        assertEquals(SubscriptionUpdateParams.BillingCycleAnchor.NOW, params.getBillingCycleAnchor());
+        assertEquals(SubscriptionUpdateParams.ProrationBehavior.ALWAYS_INVOICE, params.getProrationBehavior());
+        assertEquals(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE, params.getPaymentBehavior());
+        assertEquals(List.of("latest_invoice"), params.getExpand());
+        assertEquals(Map.of(
+                "clerk_user_id", "user_1",
+                "pending_plan_code", "pro_yearly",
+                "change_type", "upgrade"), params.getMetadata());
+        assertEquals(1, params.getItems().size());
+        assertEquals("si_123", params.getItems().get(0).getId());
+        assertEquals("price_pro_yearly", params.getItems().get(0).getPrice());
+        assertEquals(2L, params.getItems().get(0).getQuantity());
+    }
+
+    @Test
+    void resolveUpgradeSuccessUrlDoesNotAppendCheckoutSessionPlaceholder() {
+        BillingDomainServiceImpl service = service();
+
+        assertEquals(
+                "http://localhost:3001/payment-success?foo=bar&resumeToken=resume_tok_1",
+                service.resolveUpgradeSuccessUrl(
+                        "http://localhost:3001/payment-success?foo=bar",
+                        "resume_tok_1"));
+    }
+
+    @Test
+    void resolveSubscriptionUpgradeCheckoutUrlFallsBackToAppSuccessUrlWhenInvoiceAlreadyPaid() {
+        Invoice invoice = new Invoice();
+        invoice.setPaid(true);
+        invoice.setStatus("paid");
+
+        assertEquals(
+                "http://localhost:3001/payment-success?resumeToken=resume_tok_1",
+                BillingDomainServiceImpl.resolveSubscriptionUpgradeCheckoutUrl(
+                        null,
+                        invoice,
+                        "http://localhost:3001/payment-success?resumeToken=resume_tok_1"));
+    }
+
+    @Test
+    void clearPendingUpgradeStateForRetryExpiresPendingOrdersAndResetsSubscriptionFlag() {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(10L);
+        current.setClerkUserId("user_1");
+        current.setPendingPlanCode("plus_monthly");
+
+        BillingDomainServiceImpl service = service();
+        service.clearPendingUpgradeStateForRetry(current);
+
+        assertNull(current.getPendingPlanCode());
+        assertNull(current.getPendingEffectiveAt());
+        verify(rechargeOrderMapper).update(isNull(), any(Wrapper.class));
+        verify(userSubscriptionMapper).update(isNull(), any(Wrapper.class));
     }
 
     private BillingDomainServiceImpl service() {

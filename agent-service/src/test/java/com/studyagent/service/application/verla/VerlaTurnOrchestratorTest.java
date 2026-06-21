@@ -8,6 +8,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.service.application.MqOutboxService;
+import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
@@ -37,6 +38,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -426,9 +429,11 @@ class VerlaTurnOrchestratorTest {
                 conversationRepository, messageRepository, new ConversationStateMachine());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
         Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
                 .when(entitlementService)
-                .assertAssignmentOutputAllowed(Mockito.eq("free_user"), Mockito.anyMap());
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
                 conversationRepository,
@@ -484,9 +489,11 @@ class VerlaTurnOrchestratorTest {
                 conversationRepository, messageRepository, new ConversationStateMachine());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
         Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
                 .when(entitlementService)
-                .assertAssignmentOutputAllowed(Mockito.eq("free_user"), Mockito.anyMap());
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
                 conversationRepository,
@@ -530,6 +537,205 @@ class VerlaTurnOrchestratorTest {
         assertThrows(BusinessException.class,
                 () -> orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L));
         Mockito.verifyNoInteractions(quotaService);
+    }
+
+    @Test
+    void startAssignmentRunFromFinalClarify_infersSlidesDeliverableBeforeEntitlementCheck() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        Mockito.doAnswer(invocation -> {
+            Map<String, Object> requirementForm = invocation.getArgument(1);
+            Object deliverableCountRaw = requirementForm.get("deliverable_count");
+            Map<String, Object> deliverableCount = deliverableCountRaw instanceof Map<?, ?> rawMap
+                    ? rawMap.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null)
+                    .collect(Collectors.toMap(
+                            entry -> String.valueOf(entry.getKey()),
+                            Map.Entry::getValue))
+                    : Map.of();
+            Number ppt = deliverableCount.get("ppt") instanceof Number number ? number : Integer.valueOf(0);
+            if (ppt.intValue() > 0) {
+                throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+            }
+            return null;
+        }).when(entitlementService).assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.COMPLETED.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(
+                VerlaSession.builder()
+                        .id(800L)
+                        .turnId(700L)
+                        .kind(VerlaSessionKind.ASSIGNMENT.name())
+                        .resultJson(objectMapper.writeValueAsString(Map.of(
+                                "isReadyForGeneration", true,
+                                "requirementForm", Map.of(
+                                        "task_title", "Build a presentation deck for the client pitch"))))
+                        .build());
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L));
+        Mockito.verifyNoInteractions(quotaService);
+    }
+
+    @Test
+    void startAssignmentRunFromFinalClarify_passesAllowedOutputTypesToPythonPayload() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.COMPLETED.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(
+                VerlaSession.builder()
+                        .id(800L)
+                        .turnId(700L)
+                        .kind(VerlaSessionKind.ASSIGNMENT.name())
+                        .resultJson(objectMapper.writeValueAsString(Map.of(
+                                "isReadyForGeneration", true,
+                                "requirementForm", Map.of(
+                                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)))))
+                        .build());
+
+        orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
+
+        MqOutbox runCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.run");
+        Map<String, Object> envelope = objectMapper.readValue(runCommand.getPayload(), Map.class);
+        Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
+        assertEquals(List.of("writing"), payload.get("allowedOutputTypes"));
+    }
+
+    @Test
+    void finalizeAssignmentClarify_passesAllowedOutputTypesToPythonPayload() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        orchestrator.finalizeAssignmentClarify(
+                "free_user",
+                74L,
+                null,
+                Map.of(),
+                List.of(),
+                Map.of("deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
+                List.of());
+
+        MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.clarify");
+        Map<String, Object> envelope = objectMapper.readValue(clarifyCommand.getPayload(), Map.class);
+        Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
+        assertEquals(List.of("writing"), payload.get("allowedOutputTypes"));
     }
 
     @Test

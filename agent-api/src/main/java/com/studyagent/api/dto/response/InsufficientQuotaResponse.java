@@ -1,6 +1,7 @@
 package com.studyagent.api.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.studyagent.common.exception.CurrentPlanData;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +17,10 @@ import lombok.NoArgsConstructor;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class InsufficientQuotaResponse {
 
+    private CurrentPlanData currentPlan;
+    private String reasonCode;
+    private String purchaseProductId;
+    private String blockedAction;
     private String featureCode;
     private String featureName;
     private String quotaUnit;

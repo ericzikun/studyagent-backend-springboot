@@ -140,8 +140,11 @@ public class TaskApplicationService {
                     throw new InsufficientQuotaException(
                             "Insufficient quota. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                             InsufficientQuotaData.builder()
+                                    .clerkUserId(userInfo.clerkUserId)
                                     .featureCode(balance.featureCode())
                                     .featureName(balance.featureName())
+                                    .purchaseProductId("assignment")
+                                    .blockedAction("assignment_generate")
                                     .quotaUnit(balance.quotaUnit())
                                     .freeBalance(balance.freeBalance())
                                     .freePeriodTotal(balance.freePeriodTotal())
@@ -271,8 +274,11 @@ public class TaskApplicationService {
                         "Insufficient quota for clarify. Free: " + balance.freeBalance() + ", Paid: "
                                 + balance.paidBalance(),
                         InsufficientQuotaData.builder()
+                                .clerkUserId(clerkUserId)
                                 .featureCode(balance.featureCode())
                                 .featureName(balance.featureName())
+                                .purchaseProductId("assignment")
+                                .blockedAction("task_clarify")
                                 .quotaUnit(balance.quotaUnit())
                                 .freeBalance(balance.freeBalance())
                                 .freePeriodTotal(balance.freePeriodTotal())

@@ -8,6 +8,9 @@ import org.apache.ibatis.annotations.Select;
 import java.util.List;
 
 public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntity> {
+    @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1")
+    UserSubscriptionEntity selectByUser(@Param("clerkUserId") String clerkUserId);
+
     @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1 FOR UPDATE")
     UserSubscriptionEntity selectByUserForUpdate(@Param("clerkUserId") String clerkUserId);
 

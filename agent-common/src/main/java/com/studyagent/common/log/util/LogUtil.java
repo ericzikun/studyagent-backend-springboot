@@ -59,15 +59,10 @@ public class LogUtil {
                 json = maskSensitiveFields(json, DEFAULT_SENSITIVE_FIELDS.toArray(new String[0]));
             }
             
-            // 截断处理
-            if (maxLength > 0 && json.length() > maxLength) {
-                json = json.substring(0, maxLength) + "...[TRUNCATED, total=" + json.length() + "]";
-            }
-            
-            return json;
+            return truncateForLog(normalizeForSingleLine(json), maxLength);
         } catch (Exception e) {
             log.warn("Failed to serialize object to JSON: {}", e.getMessage());
-            return obj.toString();
+            return truncateForLog(normalizeForSingleLine(String.valueOf(obj)), maxLength);
         }
     }
     
@@ -111,6 +106,31 @@ public class LogUtil {
         }
         
         return json;
+    }
+
+    private static String normalizeForSingleLine(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\r' -> sb.append("\\r");
+                case '\n' -> sb.append("\\n");
+                case '\u2028' -> sb.append("\\u2028");
+                case '\u2029' -> sb.append("\\u2029");
+                default -> sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String truncateForLog(String value, int maxLength) {
+        if (value == null || maxLength <= 0 || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...[TRUNCATED, total=" + value.length() + "]";
     }
     
     /**
@@ -210,4 +230,3 @@ public class LogUtil {
         }
     }
 }
-

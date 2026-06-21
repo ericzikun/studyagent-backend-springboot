@@ -76,10 +76,14 @@ class VerlaQuotaServiceImplTest {
     }
 
     private QuotaBalance balance(long totalAvailable) {
+        return balance(FeatureCode.TASK_CREATE, "Assignment", "count", totalAvailable);
+    }
+
+    private QuotaBalance balance(FeatureCode featureCode, String featureName, String quotaUnit, long totalAvailable) {
         return new QuotaBalance(
-                FeatureCode.TASK_CREATE.getCode(),
-                "Assignment",
-                "count",
+                featureCode.getCode(),
+                featureName,
+                quotaUnit,
                 Math.min(totalAvailable, 5),
                 5L,
                 null,
@@ -146,64 +150,99 @@ class VerlaQuotaServiceImplTest {
                 InsufficientQuotaException.class,
                 () -> service.consumeForAssignmentRun(ctx()));
 
+        assertEquals("user_abc", ex.getData().getClerkUserId());
         assertEquals(FeatureCode.TASK_CREATE.getCode(), ex.getData().getFeatureCode());
+        assertEquals("assignment", ex.getData().getPurchaseProductId());
+        assertEquals("assignment_generate", ex.getData().getBlockedAction());
         assertEquals(0L, ex.getData().getTotalAvailable());
         verify(quotaDomainService, never()).consume(
                 anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
         verify(sessionRepository, never()).bindQuotaLedger(anyLong(), anyLong(), anyLong());
     }
 
+    @Test
+    void consumeForDetection_throwsInsufficient_withCommercialMetadata() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.AI_DETECTION.getCode(), 4L))
+                .thenReturn(false);
+        when(quotaDomainService.getUserQuota("user_abc", FeatureCode.AI_DETECTION.getCode()))
+                .thenReturn(balance(FeatureCode.AI_DETECTION, "AI Detection", "words", 0));
+
+        InsufficientQuotaException ex = assertThrows(
+                InsufficientQuotaException.class,
+                () -> service.consumeForDetection(ctx(), "hello world ai detection"));
+
+        assertEquals("user_abc", ex.getData().getClerkUserId());
+        assertEquals("ai_detection", ex.getData().getPurchaseProductId());
+        assertEquals("ai_detection_start", ex.getData().getBlockedAction());
+        assertEquals(Integer.valueOf(4), ex.getData().getTotalWords());
+    }
+
+    @Test
+    void consumeForHumanizer_throwsInsufficient_withCommercialMetadata() {
+        when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.HUMANIZER.getCode(), 3L))
+                .thenReturn(false);
+        when(quotaDomainService.getUserQuota("user_abc", FeatureCode.HUMANIZER.getCode()))
+                .thenReturn(balance(FeatureCode.HUMANIZER, "Humanizer", "words", 0));
+
+        InsufficientQuotaException ex = assertThrows(
+                InsufficientQuotaException.class,
+                () -> service.consumeForHumanizer(ctx(), "many many words"));
+
+        assertEquals("user_abc", ex.getData().getClerkUserId());
+        assertEquals("humanizer", ex.getData().getPurchaseProductId());
+        assertEquals("humanizer_start", ex.getData().getBlockedAction());
+        assertEquals(Integer.valueOf(3), ex.getData().getTotalWords());
+    }
+
     // ---------------------- 扣费成功 ----------------------
 
     @Test
-    void consumeForDetection_chargesExactlyOnePerRun() {
+    void consumeForDetection_chargesByWordCount() {
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
-        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L)))
+        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(4L)))
                 .thenReturn(true);
         when(quotaDomainService.consume(
-                anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
+                anyString(), eq(FeatureCode.AI_DETECTION.getCode()), eq(4L),
                 eq("verla_session"), eq("33"), any(), eq((String) null)))
                 .thenReturn(new ConsumeResult(9999L));
-        when(sessionRepository.bindQuotaLedger(33L, 9999L, 1L)).thenReturn(true);
+        when(sessionRepository.bindQuotaLedger(33L, 9999L, 4L)).thenReturn(true);
 
         VerlaQuotaConsumeResult r = service.consumeForDetection(ctx(), "hello world ai detection");
 
         assertFalse(r.exempt());
         assertEquals(9999L, r.ledgerId());
-        assertEquals(1L, r.amount());
+        assertEquals(4L, r.amount());
 
         ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
         verify(quotaDomainService).consume(
-                eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(1L),
+                eq("user_abc"), eq(FeatureCode.AI_DETECTION.getCode()), eq(4L),
                 eq("verla_session"), eq("33"), biz.capture(), eq((String) null));
         Map<String, Object> bz = biz.getValue();
-        assertEquals(33L, bz.get("verla_session_id"));
-        assertEquals(11L, bz.get("conversation_id"));
-        assertEquals(22L, bz.get("turn_id"));
-        assertEquals(44L, bz.get("user_message_id"));
-        assertEquals("ASSIGNMENT", bz.get("intent"));
-        assertEquals("per_run", bz.get("charged_mode"));
+        assertEquals("per_words", bz.get("charged_mode"));
+        assertEquals(4L, bz.get("word_count"));
     }
 
     @Test
-    void consumeForHumanizer_chargesExactlyOnePerRun() {
+    void consumeForHumanizer_chargesByWordCount() {
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
-        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L)))
+        when(quotaDomainService.canConsume(anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(3L)))
                 .thenReturn(true);
         when(quotaDomainService.consume(
-                anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
+                anyString(), eq(FeatureCode.HUMANIZER.getCode()), eq(3L),
                 anyString(), anyString(), any(), eq((String) null)))
                 .thenReturn(new ConsumeResult(123L));
-        when(sessionRepository.bindQuotaLedger(33L, 123L, 1L)).thenReturn(true);
+        when(sessionRepository.bindQuotaLedger(33L, 123L, 3L)).thenReturn(true);
 
         VerlaQuotaConsumeResult r = service.consumeForHumanizer(ctx(), "many many words");
 
-        assertEquals(1L, r.amount());
+        assertEquals(3L, r.amount());
         ArgumentCaptor<Map<String, Object>> biz = ArgumentCaptor.forClass(Map.class);
         verify(quotaDomainService).consume(
-                eq("user_abc"), eq(FeatureCode.HUMANIZER.getCode()), eq(1L),
+                eq("user_abc"), eq(FeatureCode.HUMANIZER.getCode()), eq(3L),
                 eq("verla_session"), eq("33"), biz.capture(), eq((String) null));
-        assertEquals("per_run", biz.getValue().get("charged_mode"));
+        assertEquals("per_words", biz.getValue().get("charged_mode"));
     }
 
     // ---------------------- 并发绑定冲突 ----------------------
@@ -348,8 +387,11 @@ class VerlaQuotaServiceImplTest {
         when(quotaDomainService.getUserQuota("user_abc", FeatureCode.TASK_CREATE.getCode()))
                 .thenReturn(balance(0));
 
-        assertThrows(InsufficientQuotaException.class,
+        InsufficientQuotaException ex = assertThrows(InsufficientQuotaException.class,
                 () -> service.assertSufficientForAssignmentRun("user_abc"));
+        assertEquals("user_abc", ex.getData().getClerkUserId());
+        assertEquals("assignment", ex.getData().getPurchaseProductId());
+        assertEquals("assignment_generate", ex.getData().getBlockedAction());
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
     }

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CommercialBlockData;
+import com.studyagent.common.exception.CurrentPlanData;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
@@ -67,7 +69,20 @@ public class DefaultEntitlementService implements EntitlementService {
     public void assertAssignmentOutputAllowed(EffectiveEntitlements entitlements, Map<String, Object> requirementForm) {
         Set<String> requested = requestedOutputTypes(requirementForm);
         if (!entitlements.allowedOutputTypes().containsAll(requested)) {
-            throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+            List<String> requestedTypes = List.copyOf(requested);
+            List<String> allowedTypes = entitlements.allowedOutputTypes().stream().sorted().toList();
+            List<String> unsupportedTypes = requested.stream()
+                    .filter(type -> !entitlements.allowedOutputTypes().contains(type))
+                    .toList();
+            throw BusinessException.withData(ApiCode.OUTPUT_TYPE_NOT_ALLOWED, CommercialBlockData.builder()
+                    .currentPlan(currentPlanData(entitlements))
+                    .reasonCode("output_type_not_allowed")
+                    .purchaseProductId("assignment")
+                    .blockedAction("assignment_generate")
+                    .allowedOutputTypes(allowedTypes)
+                    .requestedOutputTypes(requestedTypes)
+                    .unsupportedOutputTypes(unsupportedTypes)
+                    .build());
         }
     }
 
@@ -84,7 +99,14 @@ public class DefaultEntitlementService implements EntitlementService {
         LocalDateTime pendingCutoff = LocalDateTime.now().minusSeconds(Math.max(60L, signTtlSeconds));
         long activeCount = attachmentRepository.countActiveUserUploadsForConversation(conversationId, pendingCutoff);
         if (activeCount >= limit) {
-            throw new BusinessException(ApiCode.FILE_LIMIT_REACHED);
+            throw BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
+                    .currentPlan(currentPlanData(entitlements))
+                    .reasonCode("file_limit_reached")
+                    .purchaseProductId("assignment")
+                    .blockedAction("upload_sign")
+                    .maxFiles(limit)
+                    .activeFiles(activeCount)
+                    .build());
         }
     }
 
@@ -106,11 +128,19 @@ public class DefaultEntitlementService implements EntitlementService {
 
         Long assignmentSessionId = resolveAssignmentScopeSessionId(conversationId, artifactUids);
         sessionRepository.findByIdForUpdate(assignmentSessionId);
-        Integer limit = getEffectiveEntitlements(clerkUserId).maxFollowupEdits();
+        EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
+        Integer limit = entitlements.maxFollowupEdits();
         if (limit != null && limit > 0) {
             long activeCount = followupEditUsageRepository.countActiveByAssignmentSessionId(assignmentSessionId);
             if (activeCount >= limit) {
-                throw new BusinessException(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED);
+                throw BusinessException.withData(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED, CommercialBlockData.builder()
+                        .currentPlan(currentPlanData(entitlements))
+                        .reasonCode("followup_edit_limit_reached")
+                        .purchaseProductId("assignment")
+                        .blockedAction("assignment_followup_edit")
+                        .maxFollowupEdits(limit)
+                        .usedFollowupEdits(activeCount)
+                        .build());
             }
         }
 
@@ -253,6 +283,17 @@ public class DefaultEntitlementService implements EntitlementService {
             return "coding";
         }
         return rawValue;
+    }
+
+    private CurrentPlanData currentPlanData(EffectiveEntitlements entitlements) {
+        if (entitlements == null) {
+            return null;
+        }
+        return CurrentPlanData.builder()
+                .planCode(entitlements.planCode())
+                .tier(entitlements.tier())
+                .isPaid(entitlements.tier() != null && !"free".equalsIgnoreCase(entitlements.tier()))
+                .build();
     }
 
     @SuppressWarnings("unchecked")

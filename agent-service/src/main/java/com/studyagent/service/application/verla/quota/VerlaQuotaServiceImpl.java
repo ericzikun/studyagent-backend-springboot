@@ -87,8 +87,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                     "Insufficient quota for assignment clarify, required=1, available="
                             + balance.totalAvailable(),
                     InsufficientQuotaData.builder()
+                            .clerkUserId(clerkUserId)
                             .featureCode(balance.featureCode())
                             .featureName(balance.featureName())
+                            .purchaseProductId("assignment")
+                            .blockedAction("assignment_generate")
                             .quotaUnit(balance.quotaUnit())
                             .freeBalance(balance.freeBalance())
                             .freePeriodTotal(balance.freePeriodTotal())
@@ -197,8 +200,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                             + ", required=" + amount
                             + ", available=" + balance.totalAvailable(),
                     InsufficientQuotaData.builder()
+                            .clerkUserId(ctx.clerkUserId())
                             .featureCode(balance.featureCode())
                             .featureName(balance.featureName())
+                            .purchaseProductId(purchaseProductId(feature))
+                            .blockedAction(blockedAction(feature))
                             .quotaUnit(balance.quotaUnit())
                             .freeBalance(balance.freeBalance())
                             .freePeriodTotal(balance.freePeriodTotal())
@@ -250,6 +256,26 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
             return "assignment:" + ctx.conversationId() + ":generate";
         }
         return null;
+    }
+
+    private String purchaseProductId(FeatureCode feature) {
+        if (feature == FeatureCode.AI_DETECTION) {
+            return "ai_detection";
+        }
+        if (feature == FeatureCode.HUMANIZER) {
+            return "humanizer";
+        }
+        return "assignment";
+    }
+
+    private String blockedAction(FeatureCode feature) {
+        if (feature == FeatureCode.AI_DETECTION) {
+            return "ai_detection_start";
+        }
+        if (feature == FeatureCode.HUMANIZER) {
+            return "humanizer_start";
+        }
+        return "assignment_generate";
     }
 
     // ===================================================================

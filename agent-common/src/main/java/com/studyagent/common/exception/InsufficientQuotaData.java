@@ -14,8 +14,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class InsufficientQuotaData {
 
+    private String clerkUserId;
     private String featureCode;
     private String featureName;
+    private String purchaseProductId;
+    private String blockedAction;
+    private CurrentPlanData currentPlan;
     private String quotaUnit;
     private Long freeBalance;
     private Long freePeriodTotal;

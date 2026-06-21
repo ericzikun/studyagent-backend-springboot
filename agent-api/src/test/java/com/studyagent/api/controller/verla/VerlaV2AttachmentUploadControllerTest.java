@@ -4,7 +4,11 @@ import com.studyagent.api.exception.GlobalExceptionHandler;
 import com.studyagent.api.service.PaymentResumeContextService;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CommercialBlockData;
+import com.studyagent.common.exception.CurrentPlanData;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
+import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.file.OssStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,25 +29,39 @@ class VerlaV2AttachmentUploadControllerTest {
 
     private VerlaAttachmentService attachmentService;
     private PaymentResumeContextService paymentResumeContextService;
+    private BillingDomainService billingDomainService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         attachmentService = mock(VerlaAttachmentService.class);
         paymentResumeContextService = mock(PaymentResumeContextService.class);
+        billingDomainService = mock(BillingDomainService.class);
         OssStorageService ossStorageService = mock(OssStorageService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new VerlaV2AttachmentUploadController(
                                 attachmentService,
                                 ossStorageService,
-                                paymentResumeContextService))
-                .setControllerAdvice(new GlobalExceptionHandler())
+                                paymentResumeContextService,
+                                billingDomainService))
+                .setControllerAdvice(new GlobalExceptionHandler(mock(BillingDomainService.class)))
                 .build();
     }
 
     @Test
     void sign_returnsResumeToken_whenFileLimitReached() throws Exception {
-        doThrow(new BusinessException(ApiCode.FILE_LIMIT_REACHED))
+        doThrow(BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
+                .reasonCode("file_limit_reached")
+                .purchaseProductId("assignment")
+                .blockedAction("upload_sign")
+                .currentPlan(CurrentPlanData.builder()
+                        .planCode("free")
+                        .tier("free")
+                        .isPaid(false)
+                        .build())
+                .maxFiles(3)
+                .activeFiles(3L)
+                .build()))
                 .when(attachmentService).requestSign(
                         anyString(),
                         anyLong(),
@@ -72,7 +90,49 @@ class VerlaV2AttachmentUploadControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.meta.statusCode").value(ApiCode.FILE_LIMIT_REACHED.getCode()))
+                .andExpect(jsonPath("$.data.reasonCode").value("file_limit_reached"))
+                .andExpect(jsonPath("$.data.currentPlan.tier").value("free"))
                 .andExpect(jsonPath("$.data.resumeToken").value("resume_upload_74"))
+                .andExpect(jsonPath("$.data.scene").value("upload"));
+    }
+
+    @Test
+    void sign_returnsCurrentPlan_whenLegacyFileLimitExceptionHasNoPayload() throws Exception {
+        doThrow(new BusinessException(ApiCode.FILE_LIMIT_REACHED))
+                .when(attachmentService).requestSign(
+                        anyString(),
+                        anyLong(),
+                        anyString(),
+                        anyString(),
+                        anyLong(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull());
+        when(paymentResumeContextService.createUploadResumeContext(
+                org.mockito.ArgumentMatchers.eq("user_1"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn("resume_upload_legacy");
+        when(billingDomainService.getEffectivePlanOrFree("user_1"))
+                .thenReturn(BillingPlan.freePlan());
+
+        mockMvc.perform(post("/v1/verla/v2/uploads/sign")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "conversationId": 74,
+                                  "filename": "assignment.pdf",
+                                  "mime": "application/pdf",
+                                  "sizeBytes": 8
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.meta.statusCode").value(ApiCode.FILE_LIMIT_REACHED.getCode()))
+                .andExpect(jsonPath("$.data.reasonCode").value("file_limit_reached"))
+                .andExpect(jsonPath("$.data.currentPlan.planCode").value("free"))
+                .andExpect(jsonPath("$.data.currentPlan.isPaid").value(false))
+                .andExpect(jsonPath("$.data.resumeToken").value("resume_upload_legacy"))
                 .andExpect(jsonPath("$.data.scene").value("upload"));
     }
 }

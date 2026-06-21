@@ -5,6 +5,7 @@ import com.studyagent.api.dto.response.HumanizerTaskResponse;
 import com.studyagent.api.dto.verla.response.VerlaUploadSignResponseVO;
 import com.studyagent.api.exception.GlobalExceptionHandler;
 import com.studyagent.api.service.PaymentResumeApplicationService;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,7 +27,7 @@ class PaymentResumeControllerTest {
         paymentResumeApplicationService = mock(PaymentResumeApplicationService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new PaymentResumeController(paymentResumeApplicationService))
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(mock(BillingDomainService.class)))
                 .build();
     }
 

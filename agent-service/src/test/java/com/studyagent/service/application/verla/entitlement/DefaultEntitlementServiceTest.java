@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla.entitlement;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CommercialBlockData;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
@@ -35,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -75,9 +77,13 @@ class DefaultEntitlementServiceTest {
         when(billingDomainService.getEffectivePlanOrFree("free_user"))
                 .thenReturn(freePlan());
 
-        assertThrows(BusinessException.class, () -> service.assertAssignmentOutputAllowed(
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.assertAssignmentOutputAllowed(
                 "free_user",
                 Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0))));
+
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals(List.of("ppt"), data.getUnsupportedOutputTypes());
+        assertEquals("free", data.getCurrentPlan().getTier());
     }
 
     @Test
@@ -91,6 +97,30 @@ class DefaultEntitlementServiceTest {
                 () -> service.assertCanReserveUserUpload("free_user", 74L));
 
         assertEquals(ApiCode.FILE_LIMIT_REACHED.getCode(), ex.getCode());
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals("file_limit_reached", data.getReasonCode());
+        assertEquals(Integer.valueOf(3), data.getMaxFiles());
+        assertEquals(Long.valueOf(3L), data.getActiveFiles());
+    }
+
+    @Test
+    void reserveFollowupEditReturnsStructuredDataWhenLimitReached() {
+        when(followupEditUsageRepository.findByUserMessageId(901L)).thenReturn(null);
+        when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
+                VerlaArtifact.builder().artifactUid("art_1").sessionId(700L).build()
+        ));
+        when(sessionRepository.findByIdForUpdate(700L)).thenReturn(null);
+        when(followupEditUsageRepository.countActiveByAssignmentSessionId(700L)).thenReturn(3L);
+        when(billingDomainService.getEffectivePlanOrFree("free_user")).thenReturn(freePlan());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.reserveFollowupEdit("free_user", 74L, 901L, List.of("art_1")));
+
+        assertEquals(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED.getCode(), ex.getCode());
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals("followup_edit_limit_reached", data.getReasonCode());
+        assertEquals(Integer.valueOf(3), data.getMaxFollowupEdits());
+        assertEquals(Long.valueOf(3L), data.getUsedFollowupEdits());
     }
 
     @Test

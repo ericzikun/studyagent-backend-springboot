@@ -6,8 +6,12 @@ import com.studyagent.api.dto.response.InsufficientQuotaResponse;
 import com.studyagent.api.dto.response.SubmitQuotaExceededResponse;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CurrentPlanData;
 import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.exception.QuotaExceededException;
+import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingPlan;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
@@ -27,7 +31,10 @@ import java.util.Map;
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final BillingDomainService billingDomainService;
     
     /**
      * 参数验证异常
@@ -51,9 +58,12 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Result<Void> handleBusinessException(BusinessException ex) {
+    public Result<Object> handleBusinessException(BusinessException ex) {
         log.warn("业务异常: code={}, message={}", ex.getCode(), ex.getMessage());
-        return Result.error(ex.getCode(), ex.getMessage());
+        Result<Object> result = new Result<>();
+        result.setMeta(Meta.error(ex.getCode(), ex.getMessage()));
+        result.setData(ex.getData());
+        return result;
     }
 
     /**
@@ -69,6 +79,10 @@ public class GlobalExceptionHandler {
         log.warn("AI 额度不足: {}", ex.getMessage());
         var data = ex.getData();
         InsufficientQuotaResponse response = data != null ? InsufficientQuotaResponse.builder()
+                .currentPlan(resolveCurrentPlan(data))
+                .reasonCode("insufficient_quota")
+                .purchaseProductId(data.getPurchaseProductId())
+                .blockedAction(data.getBlockedAction())
                 .featureCode(data.getFeatureCode())
                 .featureName(data.getFeatureName())
                 .quotaUnit(data.getQuotaUnit())
@@ -84,6 +98,40 @@ public class GlobalExceptionHandler {
         result.setMeta(Meta.error(InsufficientQuotaException.CODE, ex.getMessage()));
         result.setData(response);
         return result;
+    }
+
+    private CurrentPlanData resolveCurrentPlan(com.studyagent.common.exception.InsufficientQuotaData data) {
+        if (data == null) {
+            return null;
+        }
+        if (data.getCurrentPlan() != null) {
+            return data.getCurrentPlan();
+        }
+        String clerkUserId = data.getClerkUserId();
+        if (clerkUserId == null || clerkUserId.isBlank() || billingDomainService == null) {
+            return null;
+        }
+        BillingPlan plan = billingDomainService.getEffectivePlanOrFree(clerkUserId);
+        if (plan == null) {
+            return null;
+        }
+        return CurrentPlanData.builder()
+                .planCode(plan.getPlanCode())
+                .tier(plan.getTier())
+                .isPaid(isPaidPlan(plan))
+                .build();
+    }
+
+    private boolean isPaidPlan(BillingPlan plan) {
+        if (plan == null) {
+            return false;
+        }
+        String tier = plan.getTier();
+        if (tier != null) {
+            return !"free".equalsIgnoreCase(tier);
+        }
+        String planCode = plan.getPlanCode();
+        return planCode != null && !"free".equalsIgnoreCase(planCode);
     }
 
     /**
@@ -226,4 +274,3 @@ public class GlobalExceptionHandler {
         return Result.error(ApiCode.UNKNOWN_ERROR_WITH_MSG, "System error: " + ex.getMessage());
     }
 }
-

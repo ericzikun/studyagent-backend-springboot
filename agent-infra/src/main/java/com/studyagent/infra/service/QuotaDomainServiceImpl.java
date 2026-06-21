@@ -68,7 +68,10 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public QuotaBalance getUserQuota(String clerkUserId, String featureCode) {
-        // 1. 获取功能定义
+        return getUserQuota(clerkUserId, featureCode, true);
+    }
+
+    private QuotaBalance getUserQuota(String clerkUserId, String featureCode, boolean refreshPlanQuota) {
         AiFeatureDefsEntity featureDef = aiFeatureDefsMapper.selectOne(
                 new LambdaQueryWrapper<AiFeatureDefsEntity>()
                         .eq(AiFeatureDefsEntity::getFeatureCode, featureCode)
@@ -78,11 +81,12 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalArgumentException("Unknown feature_code: " + featureCode);
         }
 
-        planQuotaService.refreshPlanQuotaIfNeeded(clerkUserId, featureCode);
+        if (refreshPlanQuota) {
+            planQuotaService.refreshPlanQuotaIfNeeded(clerkUserId, featureCode);
+        }
 
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
 
-        // 2. 获取或初始化用户额度
         UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
@@ -90,7 +94,6 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         .last("LIMIT 1"));
 
         if (quota == null) {
-            // 新用户：返回免费额度（尚未持久化，consume 时会创建）
             long freeBalance = freeQuotaAmount;
             long nonFreeBalance = 0L;
             LocalDateTime periodEnd = computePeriodEnd(LocalDateTime.now(), featureDef.getFreeQuotaPeriod());
@@ -110,7 +113,6 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             );
         }
 
-        // 3. 懒刷新：周期过期或功能周期配置变更时持久化，并写 free_refresh 流水
         LocalDateTime now = LocalDateTime.now();
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
 
@@ -153,12 +155,14 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<QuotaBalance> getAllUserQuotas(String clerkUserId) {
+        planQuotaService.refreshAllPlanQuotasIfNeeded(clerkUserId);
+
         List<AiFeatureDefsEntity> featureDefs = aiFeatureDefsMapper.selectList(
                 new LambdaQueryWrapper<AiFeatureDefsEntity>()
                         .eq(AiFeatureDefsEntity::getIsActive, true)
                         .orderByAsc(AiFeatureDefsEntity::getDisplayOrder));
         return featureDefs.stream()
-                .map(def -> getUserQuota(clerkUserId, def.getFeatureCode()))
+                .map(def -> getUserQuota(clerkUserId, def.getFeatureCode(), false))
                 .collect(Collectors.toList());
     }
 

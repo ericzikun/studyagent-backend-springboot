@@ -947,10 +947,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private SubscriptionResult toResult(UserSubscriptionEntity entity) {
+        String status = entity.getStatus();
+        if ("canceled".equalsIgnoreCase(status)) {
+            status = "free";
+        }
         return SubscriptionResult.builder()
                 .tier(entity.getTier())
                 .planCode(entity.getPlanCode())
-                .status(entity.getStatus())
+                .status(status)
                 .stripeCustomerId(entity.getStripeCustomerId())
                 .stripeSubscriptionId(entity.getStripeSubscriptionId())
                 .stripeScheduleId(entity.getStripeScheduleId())

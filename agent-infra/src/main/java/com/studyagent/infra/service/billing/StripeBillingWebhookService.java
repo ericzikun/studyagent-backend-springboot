@@ -342,9 +342,6 @@ public class StripeBillingWebhookService {
         entity.setStripeCustomerId(subscription.getCustomer());
         entity.setStripeSubscriptionId(subscription.getId());
         entity.setStatus(deleted ? "canceled" : subscription.getStatus());
-        if (deleted) {
-            entity.setStripeScheduleId(null);
-        }
         if (!pendingActivationNotPaid) {
             entity.setTier(deleted ? "free" : plan.getTier());
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
@@ -352,9 +349,13 @@ public class StripeBillingWebhookService {
             entity.setCurrentPeriodEnd(fromEpoch(firstNonNull(subscription.getCurrentPeriodEnd(), periodEndOverride)));
         }
         entity.setCancelAtPeriodEnd(!deleted && Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()));
+        entity.setStripeScheduleId(resolveMirroredScheduleId(
+                subscription.getSchedule(),
+                deleted,
+                activatePendingPlan,
+                entity.getPendingPlanCode() != null && entity.getPendingPlanCode().equals(plan.getPlanCode())));
         if (activatePendingPlan && !deleted && entity.getPendingPlanCode() != null
                 && entity.getPendingPlanCode().equals(plan.getPlanCode())) {
-            entity.setStripeScheduleId(null);
             entity.setPendingPlanCode(null);
             entity.setPendingEffectiveAt(null);
         }
@@ -371,6 +372,20 @@ public class StripeBillingWebhookService {
         }
         entity.setLastSyncedAt(now);
         entity.setUpdatedAt(now);
+    }
+
+    static String resolveMirroredScheduleId(
+            String remoteScheduleId,
+            boolean deleted,
+            boolean activatePendingPlan,
+            boolean pendingPlanMatchesResolvedPlan) {
+        if (deleted) {
+            return null;
+        }
+        if (activatePendingPlan && pendingPlanMatchesResolvedPlan) {
+            return null;
+        }
+        return remoteScheduleId == null || remoteScheduleId.isBlank() ? null : remoteScheduleId;
     }
 
     private void updateSubscriptionEntity(UserSubscriptionEntity entity, boolean deleted) {

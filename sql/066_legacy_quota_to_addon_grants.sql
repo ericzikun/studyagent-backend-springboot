@@ -4,7 +4,7 @@
 USE studyagent;
 
 SET @legacy_migration_now = NOW();
-SET @legacy_migration_expires_at = DATE_ADD(@legacy_migration_now, INTERVAL 6 MONTH);
+SET @legacy_migration_expires_at = DATE_ADD(@legacy_migration_now, INTERVAL 12 MONTH);
 
 INSERT INTO user_addon_grants (
     clerk_user_id,

@@ -441,7 +441,7 @@ public class VerlaTurnOrchestrator {
         messageRepository.save(userMsg);
 
         if (intent != null && !intent.isBlank()) {
-            if (!intent.equals(conv.getPrimaryIntent())) {
+            if (shouldOverwritePrimaryIntent(conv.getPrimaryIntent(), intent)) {
                 conv.setPrimaryIntent(intent);
             }
             conv.setIntentLifecycle(IntentLifecycle.COMMITTED.getDbValue());
@@ -2400,6 +2400,29 @@ public class VerlaTurnOrchestrator {
                 .replace('-', '_')
                 .replace(' ', '_');
         return "AI_HUMANIZER".equals(normalized);
+    }
+
+    /**
+     * forceIntent 派发 capability 时是否更新 conversation.primaryIntent。
+     * Detection/Humanizer 在同一 conversation 内交叉调用时保留原始任务类型（Dashboard 列表依赖 primaryIntent）。
+     */
+    static boolean shouldOverwritePrimaryIntent(String existingPrimaryIntent, String incomingIntent) {
+        if (incomingIntent == null || incomingIntent.isBlank()) {
+            return false;
+        }
+        if (existingPrimaryIntent == null || existingPrimaryIntent.isBlank()) {
+            return true;
+        }
+        if (incomingIntent.equals(existingPrimaryIntent)) {
+            return false;
+        }
+        if (isAiDetectionIntent(existingPrimaryIntent) && isAiHumanizerIntent(incomingIntent)) {
+            return false;
+        }
+        if (isAiHumanizerIntent(existingPrimaryIntent) && isAiDetectionIntent(incomingIntent)) {
+            return false;
+        }
+        return true;
     }
 
     private String serializeJson(Object obj) {

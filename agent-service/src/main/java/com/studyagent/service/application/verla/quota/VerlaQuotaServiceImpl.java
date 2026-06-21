@@ -114,16 +114,20 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     @Transactional(propagation = Propagation.MANDATORY)
     public VerlaQuotaConsumeResult consumeForDetection(VerlaQuotaContext ctx, String text) {
         Map<String, Object> biz = baseBizContext(ctx);
-        biz.put("charged_mode", "per_run");
-        return consumeInternal(ctx, FeatureCode.AI_DETECTION, 1L, biz);
+        long words = resolveChargeableWords(text);
+        biz.put("charged_mode", "per_words");
+        biz.put("word_count", words);
+        return consumeInternal(ctx, FeatureCode.AI_DETECTION, words, biz);
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public VerlaQuotaConsumeResult consumeForHumanizer(VerlaQuotaContext ctx, String text) {
         Map<String, Object> biz = baseBizContext(ctx);
-        biz.put("charged_mode", "per_run");
-        return consumeInternal(ctx, FeatureCode.HUMANIZER, 1L, biz);
+        long words = resolveChargeableWords(text);
+        biz.put("charged_mode", "per_words");
+        biz.put("word_count", words);
+        return consumeInternal(ctx, FeatureCode.HUMANIZER, words, biz);
     }
 
     @Override
@@ -231,6 +235,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                 feature.getCode(), ctx.clerkUserId(), ctx.sessionId(), amount, cr.ledgerId());
 
         return VerlaQuotaConsumeResult.of(cr.ledgerId(), amount);
+    }
+
+    private long resolveChargeableWords(String text) {
+        long words = wordCounter.countWords(text);
+        return Math.max(words, 1L);
     }
 
     private String buildConsumeIdempotencyKey(VerlaQuotaContext ctx, FeatureCode feature) {

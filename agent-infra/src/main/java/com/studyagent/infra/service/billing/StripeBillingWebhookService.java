@@ -177,10 +177,8 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStatus, "pending")
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
                         .last("LIMIT 1"));
-        boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade) || (existing != null
-                && existing.getPlanCode() != null
-                && !plan.getPlanCode().equals(existing.getPlanCode())
-                && plan.getPlanCode().equals(existing.getPendingPlanCode()));
+        boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade)
+                || isPendingPlanActivationUpgrade(existing, plan.getPlanCode(), invoice, pendingUpgrade);
 
         Long periodStartEpoch = firstNonNull(subscription.getCurrentPeriodStart(), resolveInvoicePeriodStart(invoice));
         Long periodEndEpoch = firstNonNull(subscription.getCurrentPeriodEnd(), resolveInvoicePeriodEnd(invoice));
@@ -522,6 +520,23 @@ public class StripeBillingWebhookService {
     boolean isSubscriptionUpgradeInvoice(Invoice invoice, RechargeOrderEntity order) {
         return isSubscriptionUpdateBillingReason(invoice)
                 || (order != null && "subscription_upgrade".equals(order.getOrderType()));
+    }
+
+    static boolean isPendingPlanActivationUpgrade(
+            UserSubscriptionEntity existing,
+            String resolvedPlanCode,
+            Invoice invoice,
+            RechargeOrderEntity pendingUpgrade) {
+        if (existing == null
+                || existing.getPlanCode() == null
+                || existing.getPendingPlanCode() == null
+                || resolvedPlanCode == null
+                || resolvedPlanCode.equals(existing.getPlanCode())
+                || !resolvedPlanCode.equals(existing.getPendingPlanCode())) {
+            return false;
+        }
+        return invoice != null && "subscription_update".equals(invoice.getBillingReason())
+                || (pendingUpgrade != null && "subscription_upgrade".equals(pendingUpgrade.getOrderType()));
     }
 
     void clearPendingUpgradeState(UserSubscriptionEntity entity, RechargeOrderEntity order, String reason) {

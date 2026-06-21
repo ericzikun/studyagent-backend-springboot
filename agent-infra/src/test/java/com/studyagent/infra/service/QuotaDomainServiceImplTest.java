@@ -167,6 +167,65 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void getAllUserQuotas_refreshesPlanQuotasOnceBeforeBuildingBalances() {
+        AiFeatureDefsEntity assignment = new AiFeatureDefsEntity();
+        assignment.setFeatureCode("task_create");
+        assignment.setFeatureName("Assignment");
+        assignment.setQuotaUnit("count");
+        assignment.setFreeQuotaPeriod("monthly");
+        assignment.setFreeQuotaAmount(1L);
+        assignment.setIsActive(true);
+        assignment.setDisplayOrder(1);
+
+        AiFeatureDefsEntity detection = new AiFeatureDefsEntity();
+        detection.setFeatureCode("ai_detection");
+        detection.setFeatureName("AI Detection");
+        detection.setQuotaUnit("words");
+        detection.setFreeQuotaPeriod("monthly");
+        detection.setFreeQuotaAmount(3000L);
+        detection.setIsActive(true);
+        detection.setDisplayOrder(2);
+
+        UserAiQuotaEntity assignmentQuota = new UserAiQuotaEntity();
+        assignmentQuota.setId(11L);
+        assignmentQuota.setClerkUserId("user_1");
+        assignmentQuota.setFeatureCode("task_create");
+        assignmentQuota.setFreeBalance(1L);
+        assignmentQuota.setPlanBalance(0L);
+        assignmentQuota.setPaidBalance(0L);
+        assignmentQuota.setVersion(0);
+
+        UserAiQuotaEntity detectionQuota = new UserAiQuotaEntity();
+        detectionQuota.setId(12L);
+        detectionQuota.setClerkUserId("user_1");
+        detectionQuota.setFeatureCode("ai_detection");
+        detectionQuota.setFreeBalance(3000L);
+        detectionQuota.setPlanBalance(0L);
+        detectionQuota.setPaidBalance(0L);
+        detectionQuota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment, detection));
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignment, detection);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentQuota, detectionQuota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = new QuotaDomainServiceImpl(
+                aiFeatureDefsMapper,
+                aiFeaturePackageMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userAddonGrantMapper,
+                quotaLedgerAllocationMapper,
+                planQuotaService);
+
+        List<QuotaBalance> balances = service.getAllUserQuotas("user_1");
+
+        assertEquals(2, balances.size());
+        verify(planQuotaService, times(1)).refreshAllPlanQuotasIfNeeded("user_1");
+        verify(planQuotaService, never()).refreshPlanQuotaIfNeeded(any(), any());
+    }
+
+    @Test
     void consume_prefersFree_thenPlan_thenAddon_thenLegacy() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");

@@ -150,7 +150,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
             return;
         }
@@ -164,23 +164,34 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
-        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
-        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
-        if (!missingPlanWindow && !planWindowExpired) {
+        if (!needsPlanRefresh(quota, now)) {
             return;
         }
 
-        SubscriptionPlanEntity plan = requirePlan(subscription.getPlanCode());
+        UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (lockedSubscription == null || lockedSubscription.getPlanCode() == null || lockedSubscription.getPlanCode().isBlank()) {
+            return;
+        }
+
+        UserAiQuotaEntity lockedQuota = userAiQuotaMapper.selectOne(
+                new LambdaQueryWrapper<UserAiQuotaEntity>()
+                        .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
+                        .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
+                        .last("LIMIT 1"));
+        if (lockedQuota == null || !needsPlanRefresh(lockedQuota, now)) {
+            return;
+        }
+
+        SubscriptionPlanEntity plan = requirePlan(lockedSubscription.getPlanCode());
         String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
-        if ("year".equals(billingInterval)) {
-            refreshAnnualPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
-            return;
-        }
-
-        if ("month".equals(billingInterval) && planWindowExpired) {
-            expireMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, now);
-        }
+        refreshResolvedPlanQuotaIfNeeded(
+                clerkUserId,
+                featureCode,
+                now,
+                lockedSubscription,
+                plan,
+                billingInterval,
+                lockedQuota);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -189,29 +200,44 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
             return;
         }
 
-        SubscriptionPlanEntity plan = requirePlan(subscription.getPlanCode());
+        Map<String, UserAiQuotaEntity> quotasByFeatureCode = quotasByFeatureCode(clerkUserId);
+        boolean anyQuotaNeedsRefresh = quotasByFeatureCode.values().stream()
+                .anyMatch(quota -> needsPlanRefresh(quota, now));
+        if (!anyQuotaNeedsRefresh) {
+            return;
+        }
+
+        UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (lockedSubscription == null || lockedSubscription.getPlanCode() == null || lockedSubscription.getPlanCode().isBlank()) {
+            return;
+        }
+
+        SubscriptionPlanEntity plan = requirePlan(lockedSubscription.getPlanCode());
         String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
 
-        Map<String, UserAiQuotaEntity> quotasByFeatureCode = userAiQuotaMapper.selectList(
-                        new LambdaQueryWrapper<UserAiQuotaEntity>()
-                                .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
-                                .in(UserAiQuotaEntity::getFeatureCode, PLAN_FEATURE_CODES))
-                .stream()
-                .filter(quota -> quota.getFeatureCode() != null)
-                .collect(LinkedHashMap::new, (map, quota) -> map.put(quota.getFeatureCode(), quota), Map::putAll);
-
+        Map<String, UserAiQuotaEntity> lockedQuotasByFeatureCode = quotasByFeatureCode(clerkUserId);
         for (String featureCode : PLAN_FEATURE_CODES) {
-            UserAiQuotaEntity quota = quotasByFeatureCode.get(featureCode);
+            UserAiQuotaEntity quota = lockedQuotasByFeatureCode.get(featureCode);
             if (quota == null) {
                 continue;
             }
-            refreshResolvedPlanQuotaIfNeeded(clerkUserId, featureCode, now, subscription, plan, billingInterval, quota);
+            refreshResolvedPlanQuotaIfNeeded(clerkUserId, featureCode, now, lockedSubscription, plan, billingInterval, quota);
         }
+    }
+
+    private Map<String, UserAiQuotaEntity> quotasByFeatureCode(String clerkUserId) {
+        return userAiQuotaMapper.selectList(
+                new LambdaQueryWrapper<UserAiQuotaEntity>()
+                        .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
+                        .in(UserAiQuotaEntity::getFeatureCode, PLAN_FEATURE_CODES))
+                .stream()
+                .filter(quota -> quota.getFeatureCode() != null)
+                .collect(LinkedHashMap::new, (map, quota) -> map.put(quota.getFeatureCode(), quota), Map::putAll);
     }
 
     private void refreshResolvedPlanQuotaIfNeeded(
@@ -222,13 +248,12 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             SubscriptionPlanEntity plan,
             String billingInterval,
             UserAiQuotaEntity quota) {
-        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
-        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
-        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
-        if (!missingPlanWindow && !planWindowExpired) {
+        if (!needsPlanRefresh(quota, now)) {
             return;
         }
 
+        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
+        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
         if ("year".equals(billingInterval)) {
             refreshAnnualPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
             return;
@@ -515,6 +540,13 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     private long defaultLong(Long value) {
         return value != null ? value : 0L;
+    }
+
+    private boolean needsPlanRefresh(UserAiQuotaEntity quota, LocalDateTime now) {
+        LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
+        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
+        boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
+        return missingPlanWindow || planWindowExpired;
     }
 
     private String normalizeBillingInterval(String billingInterval) {

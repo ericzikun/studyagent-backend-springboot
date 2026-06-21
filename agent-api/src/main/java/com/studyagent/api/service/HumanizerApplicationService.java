@@ -346,8 +346,11 @@ public class HumanizerApplicationService {
                 throw new InsufficientQuotaException(
                         "Insufficient quota to resume. Free: " + balance.freeBalance() + ", Paid: " + balance.paidBalance(),
                         InsufficientQuotaData.builder()
+                                .clerkUserId(clerkUserId)
                                 .featureCode(balance.featureCode())
                                 .featureName(balance.featureName())
+                                .purchaseProductId("DETECT".equals(entity.getTaskType()) ? "ai_detection" : "humanizer")
+                                .blockedAction("DETECT".equals(entity.getTaskType()) ? "ai_detection_start" : "humanizer_start")
                                 .quotaUnit(balance.quotaUnit())
                                 .freeBalance(balance.freeBalance())
                                 .freePeriodTotal(balance.freePeriodTotal())

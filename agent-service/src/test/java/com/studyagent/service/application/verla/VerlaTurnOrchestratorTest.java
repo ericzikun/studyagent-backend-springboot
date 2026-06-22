@@ -10,6 +10,7 @@ import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
+import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
@@ -414,6 +415,116 @@ class VerlaTurnOrchestratorTest {
         assertTrue(planCommand.getPayload().contains("No, let’s keep chatting."));
         assertTrue(planCommand.getPayload().contains("\"planConfirmRejected\":true"));
         assertFalse(planCommand.getPayload().contains("cmd.assignment.deep_understanding"));
+    }
+
+    @Test
+    void startAssignmentClarifyFromLatestPlan_allowsClarifyWithoutQuotaPrecheck() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(
+                mqOutboxRepository,
+                event -> { },
+                objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository,
+                messageRepository,
+                new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                mockEntitlementService(),
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(99L)
+                .userId("user_1")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(7L)
+                .conversationId(99L)
+                .userMessageId(8L)
+                .planSessionId(9L)
+                .status(TurnStatus.DISPATCHING.name())
+                .resolvedIntent("ASSIGNMENT")
+                .build();
+
+        var result = orchestrator.startAssignmentClarifyFromLatestPlan("user_1", 99L);
+
+        assertEquals(1001L, result.getAgentSessionId());
+        MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.init");
+        assertNotNull(clarifyCommand);
+        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun("user_1");
+    }
+
+    @Test
+    void onUserMessage_forceAssignment_skipsQuotaPrecheckBeforeClarify() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(
+                mqOutboxRepository,
+                event -> { },
+                objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository,
+                messageRepository,
+                new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                mockEntitlementService(),
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("user_1")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+
+        var result = orchestrator.onUserMessage(SendMessageCommand.builder()
+                .conversationId(74L)
+                .userId("user_1")
+                .text("Help me finish this assignment.")
+                .forceIntent("ASSIGNMENT")
+                .build());
+
+        assertEquals("forced_capability", result.getSkipPlanReason());
+        assertEquals(1001L, result.getAgentSessionId());
+        MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.init");
+        assertNotNull(clarifyCommand);
+        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun("user_1");
     }
 
     @Test

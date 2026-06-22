@@ -180,8 +180,8 @@ public class StripeBillingWebhookService {
         boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade)
                 || isPendingPlanActivationUpgrade(existing, plan.getPlanCode(), invoice, pendingUpgrade);
 
-        Long periodStartEpoch = firstNonNull(subscription.getCurrentPeriodStart(), resolveInvoicePeriodStart(invoice));
-        Long periodEndEpoch = firstNonNull(subscription.getCurrentPeriodEnd(), resolveInvoicePeriodEnd(invoice));
+        Long periodStartEpoch = resolvePeriodEpoch(resolveInvoicePeriodStart(invoice), subscription.getCurrentPeriodStart());
+        Long periodEndEpoch = resolvePeriodEpoch(resolveInvoicePeriodEnd(invoice), subscription.getCurrentPeriodEnd());
         Instant periodStart = instant(periodStartEpoch);
         Instant quotaPeriodEnd = "year".equals(plan.getBillingInterval())
                 ? periodStart.atZone(ZoneOffset.UTC).plusMonths(1).toInstant()
@@ -343,8 +343,8 @@ public class StripeBillingWebhookService {
         if (!pendingActivationNotPaid) {
             entity.setTier(deleted ? "free" : plan.getTier());
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
-            entity.setCurrentPeriodStart(fromEpoch(firstNonNull(subscription.getCurrentPeriodStart(), periodStartOverride)));
-            entity.setCurrentPeriodEnd(fromEpoch(firstNonNull(subscription.getCurrentPeriodEnd(), periodEndOverride)));
+            entity.setCurrentPeriodStart(fromEpoch(resolvePeriodEpoch(periodStartOverride, subscription.getCurrentPeriodStart())));
+            entity.setCurrentPeriodEnd(fromEpoch(resolvePeriodEpoch(periodEndOverride, subscription.getCurrentPeriodEnd())));
         }
         entity.setCancelAtPeriodEnd(!deleted && Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()));
         entity.setStripeScheduleId(resolveMirroredScheduleId(
@@ -358,8 +358,8 @@ public class StripeBillingWebhookService {
             entity.setPendingEffectiveAt(null);
         }
         if (!deleted && !pendingActivationNotPaid) {
-            LocalDateTime quotaPeriodStart = fromEpoch(firstNonNull(subscription.getCurrentPeriodStart(), periodStartOverride));
-            LocalDateTime subscriptionPeriodEnd = fromEpoch(firstNonNull(subscription.getCurrentPeriodEnd(), periodEndOverride));
+            LocalDateTime quotaPeriodStart = fromEpoch(resolvePeriodEpoch(periodStartOverride, subscription.getCurrentPeriodStart()));
+            LocalDateTime subscriptionPeriodEnd = fromEpoch(resolvePeriodEpoch(periodEndOverride, subscription.getCurrentPeriodEnd()));
             entity.setQuotaPeriodStart(quotaPeriodStart);
             entity.setQuotaPeriodEnd("year".equals(plan.getBillingInterval())
                     ? quotaPeriodStart.plusMonths(1)
@@ -906,8 +906,8 @@ public class StripeBillingWebhookService {
         return first != null && !first.isBlank() ? first : second;
     }
 
-    private Long firstNonNull(Long first, Long second) {
-        return first != null ? first : second;
+    static Long resolvePeriodEpoch(Long override, Long fallback) {
+        return override != null ? override : fallback;
     }
 
     private Instant instant(Long epochSecond) {

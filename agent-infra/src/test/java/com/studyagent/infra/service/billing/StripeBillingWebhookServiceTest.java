@@ -206,6 +206,13 @@ class StripeBillingWebhookServiceTest {
                 null));
     }
 
+    @Test
+    void resolvePeriodEpochPrefersExplicitOverrideOverSubscriptionValue() {
+        assertEquals(200L, StripeBillingWebhookService.resolvePeriodEpoch(200L, 100L));
+        assertEquals(100L, StripeBillingWebhookService.resolvePeriodEpoch(null, 100L));
+        assertNull(StripeBillingWebhookService.resolvePeriodEpoch(null, null));
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,

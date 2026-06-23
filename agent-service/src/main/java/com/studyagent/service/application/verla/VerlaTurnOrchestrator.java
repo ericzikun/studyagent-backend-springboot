@@ -1265,7 +1265,11 @@ public class VerlaTurnOrchestrator {
             analyticsService.capture(conv.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_STARTED, Map.of(
                     "conversation_id", turn.getConversationId(),
                     "task_type", "assignment"));
-            spawnAssignmentRunSession(conv, turn, intent, result);
+            try {
+                spawnAssignmentRunSession(conv, turn, intent, result);
+            } catch (RuntimeException ex) {
+                handleAssignmentAutoRunSetupFailure(conv, turn, result, ex);
+            }
         }
     }
 
@@ -1439,6 +1443,81 @@ public class VerlaTurnOrchestrator {
                     analyticsService.capture(conversation.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_FAILED, props);
                 }
             }
+        }
+    }
+
+    private void handleAssignmentAutoRunSetupFailure(VerlaConversation conv,
+                                                     VerlaTurn turn,
+                                                     Map<String, Object> finalClarifyResult,
+                                                     RuntimeException ex) {
+        Long runSessionId = turn.getAgentSessionId();
+        VerlaSession runSession = runSessionId == null ? null : sessionRepository.findByIdForUpdate(runSessionId);
+        Map<String, Object> normalizedFinalClarifyResult = safeNormalizeAssignmentFinalClarifyResult(finalClarifyResult);
+        EffectiveEntitlements entitlements = conv == null
+                ? null
+                : entitlementService.getEffectiveEntitlements(conv.getUserId());
+        Map<String, Object> diagnostics = buildAssignmentAutoRunDiagnostics(
+                finalClarifyResult,
+                normalizedFinalClarifyResult,
+                entitlements == null ? Set.of() : entitlements.allowedOutputTypes());
+        Map<String, Object> errorBlock = buildAssignmentAutoRunFailureBlock(ex, diagnostics);
+        log.warn("[Verla] assignment auto-run setup failed conversationId={} turnId={} sessionId={} diagnostics={}",
+                turn.getConversationId(), turn.getId(), runSessionId, diagnostics, ex);
+
+        if (runSession != null) {
+            SessionStatus curSess = SessionStatus.valueOf(runSession.getStatus());
+            if (!curSess.isTerminal()) {
+                SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_FAILED);
+                runSession.setStatus(nextSess.name());
+                runSession.setEndedAt(LocalDateTime.now());
+                runSession.setUpdatedAt(LocalDateTime.now());
+                runSession.setErrorJson(serializeJson(errorBlock));
+                sessionRepository.save(runSession);
+            }
+        }
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (!curTurn.isTerminal()) {
+            TurnStatus nextTurn = turnStateMachine.next(curTurn, TurnEvent.AGENT_FAIL);
+            turn.setStatus(nextTurn.name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turn.setErrorJson(serializeJson(errorBlock));
+            turnRepository.save(turn);
+        }
+
+        String reply = extractFailureReply(errorBlock);
+        if (reply != null && !reply.isBlank()) {
+            VerlaMessage message = VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(runSessionId)
+                    .textContent(reply)
+                    .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
+                            errorBlock, "ASSIGNMENT_FAILED")))
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            messageRepository.save(message);
+        }
+
+        conversationRepository.incrementVersion(turn.getConversationId());
+
+        if (runSessionId != null) {
+            verlaQuotaService.refundBySessionId(runSessionId, "assignment_auto_run_setup_failed");
+            publishAssignmentRunSlotReleased(runSessionId);
+        }
+
+        if (conv != null && conv.getUserId() != null) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("conversation_id", turn.getConversationId());
+            props.put("task_type", "assignment");
+            props.put("failure_stage", "assignment_auto_run_setup");
+            props.put("error_message", ex.getMessage());
+            if (errorBlock.get("code") != null) {
+                props.put("error_code", String.valueOf(errorBlock.get("code")));
+            }
+            analyticsService.capture(conv.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_FAILED, props);
         }
     }
 
@@ -1775,6 +1854,12 @@ public class VerlaTurnOrchestrator {
 
         EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
                 conv == null ? null : conv.getUserId());
+        Map<String, Object> diagnostics = buildAssignmentAutoRunDiagnostics(
+                finalClarifyResult,
+                normalizedFinalClarifyResult,
+                entitlements.allowedOutputTypes());
+        log.info("[Verla] assignment auto-run entitlement check conversationId={} turnId={} sessionId={} diagnostics={}",
+                turn.getConversationId(), turn.getId(), s.getId(), diagnostics);
         entitlementService.assertAssignmentOutputAllowed(
                 entitlements,
                 castMap(normalizedFinalClarifyResult.get("requirementForm")));
@@ -2484,6 +2569,90 @@ public class VerlaTurnOrchestrator {
                 castListOfMaps(normalized.get("appendAskAnswers")),
                 normalized.get("requirementUnderstanding") instanceof String text ? text : null));
         return normalized;
+    }
+
+    private static Map<String, Object> safeNormalizeAssignmentFinalClarifyResult(Map<String, Object> result) {
+        try {
+            return normalizeAssignmentFinalClarifyResult(result);
+        } catch (RuntimeException ex) {
+            return Map.of(
+                    "requirementForm", castMap(result == null ? null : result.get("requirementForm")));
+        }
+    }
+
+    private static Map<String, Object> buildAssignmentAutoRunDiagnostics(
+            Map<String, Object> rawFinalClarifyResult,
+            Map<String, Object> normalizedFinalClarifyResult,
+            Set<String> allowedOutputTypes) {
+        Map<String, Object> rawRequirementForm = castMap(rawFinalClarifyResult == null
+                ? null
+                : rawFinalClarifyResult.get("requirementForm"));
+        Map<String, Object> normalizedRequirementForm = castMap(normalizedFinalClarifyResult.get("requirementForm"));
+        Set<String> inferredOutputTypes = inferAssignmentOutputTypes(
+                rawRequirementForm,
+                castMap(rawFinalClarifyResult == null ? null : rawFinalClarifyResult.get("reservedFields")),
+                castListOfMaps(rawFinalClarifyResult == null ? null : rawFinalClarifyResult.get("appendAskAnswers")),
+                rawFinalClarifyResult != null && rawFinalClarifyResult.get("requirementUnderstanding") instanceof String text
+                        ? text : null);
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("rawDeliverableCount", summarizeDeliverableCount(
+                castMap(rawRequirementForm.get("deliverable_count"))));
+        diagnostics.put("normalizedDeliverableCount", summarizeDeliverableCount(
+                castMap(normalizedRequirementForm.get("deliverable_count"))));
+        diagnostics.put("inferredOutputTypes", inferredOutputTypes.stream().sorted().toList());
+        diagnostics.put("requestedOutputTypes", requestedAssignmentOutputTypes(normalizedRequirementForm).stream().sorted().toList());
+        diagnostics.put("allowedOutputTypes", allowedOutputTypes == null
+                ? List.of()
+                : allowedOutputTypes.stream().sorted().toList());
+        return diagnostics;
+    }
+
+    private static Map<String, Object> summarizeDeliverableCount(Map<String, Object> deliverableCount) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("markdown", intValue(deliverableCount.get("markdown")));
+        summary.put("ppt", intValue(deliverableCount.get("ppt")));
+        summary.put("code", intValue(deliverableCount.get("code")));
+        return summary;
+    }
+
+    private static Set<String> requestedAssignmentOutputTypes(Map<String, Object> requirementForm) {
+        Map<String, Object> deliverableCount = castMap(requirementForm == null
+                ? null
+                : requirementForm.get("deliverable_count"));
+        Set<String> requested = new LinkedHashSet<>();
+        if (intValue(deliverableCount.get("markdown")) > 0) {
+            requested.add("writing");
+        }
+        if (intValue(deliverableCount.get("ppt")) > 0) {
+            requested.add("ppt");
+        }
+        if (intValue(deliverableCount.get("code")) > 0) {
+            requested.add("coding");
+        }
+        return requested.isEmpty() ? Set.of("writing") : requested;
+    }
+
+    private static Map<String, Object> buildAssignmentAutoRunFailureBlock(RuntimeException ex,
+                                                                          Map<String, Object> diagnostics) {
+        Map<String, Object> errorBlock = new LinkedHashMap<>();
+        errorBlock.put("eventType", "ASSIGNMENT_FAILED");
+        errorBlock.put("runStatus", "failed");
+        errorBlock.put("failureStage", "assignment_auto_run_setup");
+        errorBlock.put("diagnostics", diagnostics);
+        errorBlock.put("role", "assistant");
+        String reply = "Assignment setup failed before the workflow started. Please review the requested output type and try again.";
+        errorBlock.put("errorMessage", reply);
+        errorBlock.put("message", reply);
+        if (ex instanceof BusinessException businessException) {
+            errorBlock.put("code", businessException.getCode());
+            if (businessException.getData() != null) {
+                errorBlock.put("data", businessException.getData());
+            }
+        }
+        if (ex.getMessage() != null && !ex.getMessage().isBlank()) {
+            errorBlock.put("internalErrorMessage", ex.getMessage());
+        }
+        return errorBlock;
     }
 
     private static Map<String, Object> normalizeAssignmentRequirementForm(

@@ -321,8 +321,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .setPaymentIntentData(paymentIntentData)
                     .build();
             RequestOptions options = RequestOptions.builder()
-                    .setIdempotencyKey("manual-upgrade-checkout:" + clerkUserId + ":" + current.getStripeSubscriptionId()
-                            + ":" + targetPlan.getPlanCode() + ":" + current.getCurrentPeriodEnd())
+                    .setIdempotencyKey(buildManualUpgradeCheckoutIdempotencyKey(orderNo))
                     .build();
             Session session = Session.create(params, options);
             insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
@@ -1032,6 +1031,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         current.setPendingUpgradeOrderNo(orderNo);
         current.setPendingUpgradeExpiresAt(expiresAt);
         current.setUpdatedAt(now);
+    }
+
+    static String buildManualUpgradeCheckoutIdempotencyKey(String orderNo) {
+        return "manual-upgrade-checkout:" + orderNo;
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

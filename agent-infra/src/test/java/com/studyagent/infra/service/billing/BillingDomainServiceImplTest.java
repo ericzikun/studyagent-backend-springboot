@@ -301,6 +301,16 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void buildManualUpgradeCheckoutIdempotencyKeyUsesOrderNumber() {
+        assertEquals(
+                "manual-upgrade-checkout:RO202606230001",
+                BillingDomainServiceImpl.buildManualUpgradeCheckoutIdempotencyKey("RO202606230001"));
+        assertFalse(
+                BillingDomainServiceImpl.buildManualUpgradeCheckoutIdempotencyKey("RO202606230001")
+                        .equals(BillingDomainServiceImpl.buildManualUpgradeCheckoutIdempotencyKey("RO202606230002")));
+    }
+
+    @Test
     void resolveUpgradeSuccessUrlDoesNotAppendCheckoutSessionPlaceholder() {
         BillingDomainServiceImpl service = service();
 

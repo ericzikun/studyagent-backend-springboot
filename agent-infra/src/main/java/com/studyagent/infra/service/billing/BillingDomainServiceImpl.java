@@ -2,6 +2,7 @@ package com.studyagent.infra.service.billing;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.google.gson.Gson;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
@@ -47,6 +48,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -57,6 +59,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private static final Set<String> BLOCKING_SUBSCRIPTION_STATUSES = Set.of(
             "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
     );
+    private static final Gson GSON = new Gson();
 
     enum PlanChangeAction {
         NOOP,
@@ -119,8 +122,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && userSubscription.getStripeSubscriptionId() != null) {
-            return createSubscriptionUpgradeCheckout(
+            return createManualUpgradeCheckout(
                     clerkUserId,
+                    customerEmail,
                     plan,
                     userSubscription,
                     requestedSuccessUrl,
@@ -250,8 +254,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
-    private CheckoutSessionResult createSubscriptionUpgradeCheckout(
+    private CheckoutSessionResult createManualUpgradeCheckout(
             String clerkUserId,
+            String customerEmail,
             SubscriptionPlanEntity targetPlan,
             UserSubscriptionEntity current,
             String requestedSuccessUrl,
@@ -273,64 +278,69 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
 
         clearPendingUpgradeStateForRetry(current);
+        String customerId = ensureStripeCustomer(current, clerkUserId, customerEmail);
+        UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
+                currentPlan,
+                targetPlan,
+                current.getQuotaPeriodStart() != null ? current.getQuotaPeriodStart() : current.getCurrentPeriodStart(),
+                current.getCurrentPeriodEnd(),
+                LocalDateTime.now());
+        String orderNo = generateOrderNo();
 
         try {
-            Subscription stripeSubscription = Subscription.retrieve(current.getStripeSubscriptionId());
-            if (stripeSubscription.getItems() == null
-                    || stripeSubscription.getItems().getData() == null
-                    || stripeSubscription.getItems().getData().size() != 1) {
-                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
-            }
-            SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
-            releasePendingScheduleIfPresent(current, stripeSubscription);
-
-            SubscriptionUpdateParams params = buildSubscriptionUpgradeParams(clerkUserId, targetPlan, item);
+            SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
+                    .putMetadata("purchase_type", "subscription_upgrade_manual")
+                    .putMetadata("upgrade_order_no", orderNo)
+                    .putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                    .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                    .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                    .build();
+            SessionCreateParams params = SessionCreateParams.builder()
+                    .setMode(SessionCreateParams.Mode.PAYMENT)
+                    .setCustomer(customerId)
+                    .setClientReferenceId(clerkUserId)
+                    .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
+                    .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
+                    .addLineItem(SessionCreateParams.LineItem.builder()
+                            .setQuantity(1L)
+                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                    .setCurrency(normalizeCurrency(targetPlan.getCurrency()))
+                                    .setUnitAmount((long) quote.getAmountCents())
+                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                            .setName("Subscription upgrade to " + targetPlan.getPlanCode())
+                                            .build())
+                                    .build())
+                            .build())
+                    .putMetadata("purchase_type", "subscription_upgrade_manual")
+                    .putMetadata("upgrade_order_no", orderNo)
+                    .putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                    .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                    .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                    .setPaymentIntentData(paymentIntentData)
+                    .build();
             RequestOptions options = RequestOptions.builder()
-                    .setIdempotencyKey("upgrade-checkout:" + clerkUserId + ":" + current.getStripeSubscriptionId()
+                    .setIdempotencyKey("manual-upgrade-checkout:" + clerkUserId + ":" + current.getStripeSubscriptionId()
                             + ":" + targetPlan.getPlanCode() + ":" + current.getCurrentPeriodEnd())
                     .build();
-            Subscription updated = stripeSubscription.update(params, options);
-            Invoice invoice = updated.getLatestInvoiceObject();
-            String invoiceId = invoice != null ? invoice.getId() : updated.getLatestInvoice();
-            String checkoutUrl = resolveSubscriptionUpgradeCheckoutUrl(
-                    invoiceId,
-                    invoice,
-                    resolveUpgradeSuccessUrl(requestedSuccessUrl, resumeToken));
-
-            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                    .eq(UserSubscriptionEntity::getId, current.getId())
-                    .set(UserSubscriptionEntity::getStripeScheduleId, null)
-                    .set(UserSubscriptionEntity::getPendingPlanCode, targetPlan.getPlanCode())
-                    .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
-                    .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
-            current.setStripeScheduleId(null);
-            current.setPendingPlanCode(targetPlan.getPlanCode());
-            current.setPendingEffectiveAt(null);
-
-            insertPendingOrder(
-                    clerkUserId,
-                    "subscription_upgrade",
-                    "subscription",
-                    targetPlan.getPlanCode(),
-                    targetPlan.getPlanCode(),
-                    null,
-                    0L,
-                    targetPlan.getPriceCents(),
-                    targetPlan.getCurrency(),
-                    null,
-                    invoice != null ? invoice.getPaymentIntent() : null,
-                    current.getStripeSubscriptionId());
+            Session session = Session.create(params, options);
+            insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
+            markPendingUpgradeCheckout(current, orderNo, session);
 
             return CheckoutSessionResult.builder()
-                    .checkoutKind("invoice")
-                    .sessionId(null)
-                    .referenceId(invoiceId)
-                    .checkoutUrl(checkoutUrl)
-                    .expiresAt(null)
+                    .checkoutKind("session")
+                    .sessionId(session.getId())
+                    .referenceId(session.getId())
+                    .checkoutUrl(session.getUrl())
+                    .expiresAt(session.getExpiresAt())
                     .resumeToken(resumeToken)
+                    .quotedAmountCents(quote.getAmountCents())
+                    .upgradeChargeType(quote.getChargeType())
+                    .targetPlanCode(targetPlan.getPlanCode())
                     .build();
         } catch (StripeException e) {
-            throw stripeFailure("Create subscription upgrade Checkout failed", e);
+            throw stripeFailure("Create manual subscription upgrade Checkout failed", e);
         }
     }
 
@@ -341,21 +351,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         LocalDateTime now = LocalDateTime.now();
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getClerkUserId, current.getClerkUserId())
-                .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade")
-                .eq(RechargeOrderEntity::getStatus, "pending")
-                .set(RechargeOrderEntity::getStatus, "expired")
+                .in(RechargeOrderEntity::getOrderType, List.of("subscription_upgrade", "subscription_upgrade_manual"))
+                .in(RechargeOrderEntity::getStatus, List.of("pending", "pending_checkout", "checkout_created"))
+                .set(RechargeOrderEntity::getStatus, "checkout_expired")
                 .set(RechargeOrderEntity::getFailureReason, "superseded_by_new_upgrade")
                 .set(RechargeOrderEntity::getUpdatedAt, now));
-        if (!hasText(current.getPendingPlanCode())) {
+        if (!hasText(current.getPendingPlanCode()) && !hasText(current.getPendingUpgradeOrderNo())) {
             return;
         }
         userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                 .eq(UserSubscriptionEntity::getId, current.getId())
                 .set(UserSubscriptionEntity::getPendingPlanCode, null)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
                 .set(UserSubscriptionEntity::getUpdatedAt, now));
         current.setPendingPlanCode(null);
         current.setPendingEffectiveAt(null);
+        current.setPendingUpgradeOrderNo(null);
+        current.setPendingUpgradeExpiresAt(null);
         current.setUpdatedAt(now);
     }
 
@@ -886,6 +900,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return value != null && !value.isBlank();
     }
 
+    private String normalizeCurrency(String currency) {
+        return hasText(currency) ? currency.toLowerCase(Locale.ROOT) : "usd";
+    }
+
     private SubscriptionPlanEntity requireRuntimePlan(String planCode) {
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
@@ -959,6 +977,61 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         rechargeOrderMapper.insert(order);
+    }
+
+    private void insertPendingUpgradeOrder(
+            String orderNo,
+            String clerkUserId,
+            SubscriptionPlanEntity currentPlan,
+            SubscriptionPlanEntity targetPlan,
+            UserSubscriptionEntity current,
+            UpgradeChargeQuote quote,
+            Session session) {
+        LocalDateTime now = LocalDateTime.now();
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderNo(orderNo);
+        order.setOrderType("subscription_upgrade_manual");
+        order.setClerkUserId(clerkUserId);
+        order.setFeatureCode("subscription");
+        order.setPackageCode(targetPlan.getPlanCode());
+        order.setPlanCode(currentPlan.getPlanCode());
+        order.setTargetPlanCode(targetPlan.getPlanCode());
+        order.setQuotaAmount(0L);
+        order.setPriceCents(quote.getAmountCents());
+        order.setQuotedAmountCents(quote.getAmountCents());
+        order.setUpgradeChargeType(quote.getChargeType());
+        order.setCurrency(normalizeCurrency(targetPlan.getCurrency()));
+        order.setStripeSessionId(session.getId());
+        order.setStripePaymentIntentId(session.getPaymentIntent());
+        order.setStripeSubscriptionId(current.getStripeSubscriptionId());
+        order.setStatus("checkout_created");
+        order.setSwitchAttempts(0);
+        order.setBizContext(GSON.toJson(Map.of(
+                "current_tier", currentPlan.getTier(),
+                "target_tier", targetPlan.getTier(),
+                "current_interval", currentPlan.getBillingInterval(),
+                "target_interval", targetPlan.getBillingInterval(),
+                "remaining_annual_months_excluding_current", quote.getRemainingAnnualMonthsExcludingCurrent(),
+                "pricing_formula", quote.getPricingFormula(),
+                "old_period_start", String.valueOf(current.getCurrentPeriodStart()),
+                "old_period_end", String.valueOf(current.getCurrentPeriodEnd())
+        )));
+        order.setCreatedAt(now);
+        order.setUpdatedAt(now);
+        rechargeOrderMapper.insert(order);
+    }
+
+    private void markPendingUpgradeCheckout(UserSubscriptionEntity current, String orderNo, Session session) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = fromEpoch(session.getExpiresAt());
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, orderNo)
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, expiresAt)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setPendingUpgradeOrderNo(orderNo);
+        current.setPendingUpgradeExpiresAt(expiresAt);
+        current.setUpdatedAt(now);
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

@@ -110,6 +110,11 @@ class QuotaDomainServiceDbTest {
             }
 
             @Override
+            public void grantUpgradeFromCheckout(String clerkUserId, String subscriptionId, String planCode,
+                                                 Instant quotaPeriodStart, Instant quotaPeriodEnd, String upgradeOrderNo) {
+            }
+
+            @Override
             public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
             }
         };

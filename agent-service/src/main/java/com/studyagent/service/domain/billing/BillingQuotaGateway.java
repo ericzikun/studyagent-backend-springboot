@@ -25,6 +25,15 @@ public interface BillingQuotaGateway {
             String invoiceId
     );
 
+    void grantUpgradeFromCheckout(
+            String clerkUserId,
+            String subscriptionId,
+            String planCode,
+            Instant periodStart,
+            Instant periodEnd,
+            String upgradeOrderNo
+    );
+
     void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey);
 
     void grantAddonFromCheckout(

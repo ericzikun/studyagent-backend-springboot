@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -272,6 +273,34 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void manualUpgradeQuote_monthlyToMonthlyChargesTargetMonthlyFullPrice() {
+        UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
+                plan("basic_monthly", "basic", "month", 999),
+                plan("plus_monthly", "plus", "month", 1999),
+                LocalDateTime.parse("2026-06-23T10:00:00"),
+                LocalDateTime.parse("2026-07-23T10:00:00"),
+                LocalDateTime.parse("2026-06-23T10:00:00"));
+
+        assertEquals(1999, quote.getAmountCents());
+        assertEquals("monthly_full", quote.getChargeType());
+        assertEquals(0, quote.getRemainingAnnualMonthsExcludingCurrent());
+    }
+
+    @Test
+    void manualUpgradeQuote_annualToAnnualLastMonthChargesFullTargetAnnualPrice() {
+        UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
+                plan("basic_yearly", "basic", "year", 11988),
+                plan("pro_yearly", "pro", "year", 23988),
+                LocalDateTime.parse("2025-12-23T10:00:00"),
+                LocalDateTime.parse("2026-12-23T10:00:00"),
+                LocalDateTime.parse("2026-11-23T10:00:00"));
+
+        assertEquals(23988, quote.getAmountCents());
+        assertEquals("annual_diff", quote.getChargeType());
+        assertEquals(0, quote.getRemainingAnnualMonthsExcludingCurrent());
+    }
+
+    @Test
     void resolveUpgradeSuccessUrlDoesNotAppendCheckoutSessionPlaceholder() {
         BillingDomainServiceImpl service = service();
 
@@ -302,12 +331,15 @@ class BillingDomainServiceImplTest {
         current.setId(10L);
         current.setClerkUserId("user_1");
         current.setPendingPlanCode("plus_monthly");
+        current.setPendingUpgradeOrderNo("RO202606230001");
 
         BillingDomainServiceImpl service = service();
         service.clearPendingUpgradeStateForRetry(current);
 
         assertNull(current.getPendingPlanCode());
         assertNull(current.getPendingEffectiveAt());
+        assertNull(current.getPendingUpgradeOrderNo());
+        assertNull(current.getPendingUpgradeExpiresAt());
         verify(rechargeOrderMapper).update(isNull(), any(Wrapper.class));
         verify(userSubscriptionMapper).update(isNull(), any(Wrapper.class));
     }
@@ -365,5 +397,14 @@ class BillingDomainServiceImplTest {
                 addonPackageDefMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper);
+    }
+
+    private SubscriptionPlanEntity plan(String planCode, String tier, String billingInterval, int priceCents) {
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode(planCode);
+        plan.setTier(tier);
+        plan.setBillingInterval(billingInterval);
+        plan.setPriceCents(priceCents);
+        return plan;
     }
 }

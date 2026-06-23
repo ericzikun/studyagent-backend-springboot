@@ -38,4 +38,15 @@ class BillingQuotaGatewayImplTest {
 
         verify(addonGrantService).grantFromPaidCheckout("user_1", "addon_assignment_3", "cs_1", "pi_1", paidAt);
     }
+
+    @Test
+    void delegatesCheckoutUpgradeGrantToPlanQuotaService() {
+        Instant start = Instant.parse("2026-06-15T00:00:00Z");
+        Instant end = Instant.parse("2026-07-15T00:00:00Z");
+
+        BillingQuotaGatewayImpl gateway = new BillingQuotaGatewayImpl(planQuotaService, addonGrantService);
+        gateway.grantUpgradeFromCheckout("user_1", "sub_1", "pro_yearly", start, end, "upgrade_ord_1");
+
+        verify(planQuotaService).grantUpgradeFromCheckout("user_1", "sub_1", "pro_yearly", start, end, "upgrade_ord_1");
+    }
 }

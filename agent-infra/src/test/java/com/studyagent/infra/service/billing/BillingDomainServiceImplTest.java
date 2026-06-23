@@ -10,8 +10,14 @@ import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
+import com.studyagent.service.domain.billing.BillingDomainException;
+import com.stripe.exception.InvalidRequestException;
+import com.stripe.model.Customer;
 import com.stripe.model.Invoice;
+import com.stripe.model.checkout.Session;
 import com.stripe.model.SubscriptionItem;
+import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.checkout.SessionCreateParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
 import com.stripe.param.SubscriptionUpdateParams;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,9 +34,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -401,12 +409,161 @@ class BillingDomainServiceImplTest {
                 BillingDomainServiceImpl.classifyPlanChange("basic", "year", "plus", "month"));
     }
 
+    @Test
+    void createSubscriptionCheckoutRetriesWithFreshCustomerWhenStoredCustomerWasDeleted() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(12L);
+        subscription.setClerkUserId("user_1");
+        subscription.setTier("free");
+        subscription.setStatus("canceled");
+        subscription.setStripeCustomerId("cus_deleted");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+        plan.setStripePriceId("price_plus_yearly");
+        plan.setPriceCents(19999);
+        plan.setCurrency("usd");
+        plan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_1",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_1");
+
+        assertEquals("cs_test_retried", result.getSessionId());
+        assertEquals("cus_recreated", subscription.getStripeCustomerId());
+        assertEquals(2, service.checkoutAttempts);
+        assertEquals(1, service.createdCustomers);
+        verify(userSubscriptionMapper, times(3)).update(isNull(), any(Wrapper.class));
+    }
+
+    @Test
+    void createSubscriptionCheckoutSurfacesCustomerRecreationFailureAfterMissingCustomerRetry() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(13L);
+        subscription.setClerkUserId("user_2");
+        subscription.setTier("free");
+        subscription.setStatus("canceled");
+        subscription.setStripeCustomerId("cus_deleted");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+        plan.setStripePriceId("price_plus_yearly");
+        plan.setPriceCents(19999);
+        plan.setCurrency("usd");
+        plan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.customerCreationFailure = new InvalidRequestException(
+                "No such customer during recreation",
+                "customer",
+                "req_456",
+                "resource_missing",
+                404,
+                null);
+        setStripeSecretKey(service, "sk_test_123");
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createSubscriptionCheckout(
+                        "user_2",
+                        "user@example.com",
+                        "plus_yearly",
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        "resume_tok_2"));
+
+        assertEquals("STRIPE_ERROR", exception.getCode());
+        assertTrue(exception.getMessage().contains("Create Stripe customer failed"));
+        assertEquals(1, service.checkoutAttempts);
+        assertEquals(1, service.createdCustomers);
+    }
+
+    @Test
+    void clearStoredStripeCustomerLeavesInMemoryCustomerWhenCompareAndClearDidNotMatch() {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(14L);
+        subscription.setStripeCustomerId("cus_stale");
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
+
+        BillingDomainServiceImpl service = service();
+        boolean cleared = service.clearStoredStripeCustomer(subscription);
+
+        assertFalse(cleared);
+        assertEquals("cus_stale", subscription.getStripeCustomerId());
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper);
+    }
+
+    private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
+        var field = BillingDomainServiceImpl.class.getDeclaredField("stripeSecretKey");
+        field.setAccessible(true);
+        field.set(service, value);
+    }
+
+    private final class TestBillingDomainService extends BillingDomainServiceImpl {
+        private int checkoutAttempts;
+        private int createdCustomers;
+        private com.stripe.exception.StripeException customerCreationFailure;
+
+        private TestBillingDomainService() {
+            super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper);
+        }
+
+        @Override
+        Customer createStripeCustomer(CustomerCreateParams params) throws com.stripe.exception.StripeException {
+            createdCustomers++;
+            if (customerCreationFailure != null) {
+                throw customerCreationFailure;
+            }
+            Customer customer = new Customer();
+            customer.setId("cus_recreated");
+            return customer;
+        }
+
+        @Override
+        Session createStripeCheckoutSession(SessionCreateParams params) throws com.stripe.exception.StripeException {
+            checkoutAttempts++;
+            if (checkoutAttempts == 1) {
+                throw new InvalidRequestException(
+                        "No such customer: 'cus_deleted'",
+                        "customer",
+                        "req_123",
+                        "resource_missing",
+                        404,
+                        null);
+            }
+            Session session = new Session();
+            session.setId("cs_test_retried");
+            session.setUrl("https://checkout.stripe.com/c/pay/cs_test_retried");
+            session.setExpiresAt(123456789L);
+            session.setSubscription("sub_new");
+            return session;
+        }
     }
 
     private SubscriptionPlanEntity plan(String planCode, String tier, String billingInterval, int priceCents) {

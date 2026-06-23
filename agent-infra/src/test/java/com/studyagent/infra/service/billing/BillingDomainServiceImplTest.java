@@ -331,6 +331,34 @@ class BillingDomainServiceImplTest {
                 "sub_sched_remote"));
     }
 
+    @Test
+    void classifyPlanChangeBlocksAnnualToMonthlyDowngrade() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange("pro", "year", "basic", "month"));
+    }
+
+    @Test
+    void classifyPlanChangeSchedulesMonthlyToYearlySameTierSwitch() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.DEFERRED_CHANGE,
+                BillingDomainServiceImpl.classifyPlanChange("basic", "month", "basic", "year"));
+    }
+
+    @Test
+    void classifyPlanChangeRejectsYearlyToMonthlySameTierSwitch() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange("basic", "year", "basic", "month"));
+    }
+
+    @Test
+    void classifyPlanChangeRejectsYearlyToMonthlyEvenWhenTierWouldUpgrade() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange("basic", "year", "plus", "month"));
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,

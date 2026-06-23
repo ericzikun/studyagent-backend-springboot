@@ -58,6 +58,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
     );
 
+    enum PlanChangeAction {
+        NOOP,
+        IMMEDIATE_UPGRADE,
+        DEFERRED_CHANGE,
+        UNSUPPORTED
+    }
+
     private final SubscriptionPlanMapper subscriptionPlanMapper;
     private final AddonPackageDefMapper addonPackageDefMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
@@ -251,13 +258,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedCancelUrl,
             String resumeToken) {
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
-        int direction = tierRank(targetPlan.getTier()) - tierRank(currentPlan.getTier());
-        if (direction == 0) {
+        PlanChangeAction action = classifyPlanChange(
+                currentPlan.getTier(),
+                currentPlan.getBillingInterval(),
+                targetPlan.getTier(),
+                targetPlan.getBillingInterval());
+        if (action == PlanChangeAction.UNSUPPORTED) {
             throw new BillingDomainException(
                     "SUBSCRIPTION_STATE_INVALID",
-                    "Switching billing interval within the same tier is not supported");
+                    "This plan change is not supported");
         }
-        if (direction < 0) {
+        if (action != PlanChangeAction.IMMEDIATE_UPGRADE) {
             throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not an upgrade");
         }
 
@@ -377,17 +388,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return toResult(current);
         }
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
-        int targetRank = tierRank(targetPlan.getTier());
-        int currentRank = tierRank(currentPlan.getTier());
-        if (targetRank > currentRank) {
-            return upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
-        }
-        if (targetRank < currentRank) {
-            return downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
-        }
-        throw new BillingDomainException(
-                "SUBSCRIPTION_STATE_INVALID",
-                "Switching billing interval within the same tier is not supported");
+        return switch (classifyPlanChange(
+                currentPlan.getTier(),
+                currentPlan.getBillingInterval(),
+                targetPlan.getTier(),
+                targetPlan.getBillingInterval())) {
+            case NOOP -> toResult(current);
+            case IMMEDIATE_UPGRADE -> upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+            case DEFERRED_CHANGE -> downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+            case UNSUPPORTED -> throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "This plan change is not supported");
+        };
     }
 
     @Override
@@ -401,7 +413,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return toResult(current);
         }
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
-        if (tierRank(targetPlan.getTier()) <= tierRank(currentPlan.getTier())) {
+        PlanChangeAction action = classifyPlanChange(
+                currentPlan.getTier(),
+                currentPlan.getBillingInterval(),
+                targetPlan.getTier(),
+                targetPlan.getBillingInterval());
+        if (action == PlanChangeAction.UNSUPPORTED) {
+            throw new BillingDomainException("SUBSCRIPTION_STATE_INVALID", "This plan change is not supported");
+        }
+        if (action != PlanChangeAction.IMMEDIATE_UPGRADE) {
             throw new BillingDomainException("INVALID_UPGRADE_TARGET", "Target plan is not an upgrade");
         }
 
@@ -470,7 +490,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return toResult(current);
         }
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
-        if (tierRank(targetPlan.getTier()) >= tierRank(currentPlan.getTier())) {
+        PlanChangeAction action = classifyPlanChange(
+                currentPlan.getTier(),
+                currentPlan.getBillingInterval(),
+                targetPlan.getTier(),
+                targetPlan.getBillingInterval());
+        if (action == PlanChangeAction.UNSUPPORTED) {
+            throw new BillingDomainException("SUBSCRIPTION_STATE_INVALID", "This plan change is not supported");
+        }
+        if (action == PlanChangeAction.IMMEDIATE_UPGRADE) {
             throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not a downgrade");
         }
         if (current.getCurrentPeriodEnd() == null) {
@@ -1177,6 +1205,51 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private int tierRank(String tier) {
+        return switch (tier) {
+            case "basic" -> 1;
+            case "plus" -> 2;
+            case "pro" -> 3;
+            default -> 0;
+        };
+    }
+
+    static PlanChangeAction classifyPlanChange(
+            String currentTier,
+            String currentInterval,
+            String targetTier,
+            String targetInterval) {
+        if (currentTier == null || currentInterval == null || targetTier == null || targetInterval == null) {
+            return PlanChangeAction.UNSUPPORTED;
+        }
+        if (currentTier.equals(targetTier) && currentInterval.equals(targetInterval)) {
+            return PlanChangeAction.NOOP;
+        }
+        if (isAnnualToMonthlySwitch(currentInterval, targetInterval)) {
+            return PlanChangeAction.UNSUPPORTED;
+        }
+        if (isSameTierIntervalSwitch(currentTier, targetTier)) {
+            return isMonthlyToAnnualSwitch(currentInterval, targetInterval)
+                    ? PlanChangeAction.DEFERRED_CHANGE
+                    : PlanChangeAction.UNSUPPORTED;
+        }
+        return tierRankStatic(targetTier) > tierRankStatic(currentTier)
+                ? PlanChangeAction.IMMEDIATE_UPGRADE
+                : PlanChangeAction.DEFERRED_CHANGE;
+    }
+
+    private static boolean isSameTierIntervalSwitch(String currentTier, String targetTier) {
+        return currentTier.equals(targetTier);
+    }
+
+    private static boolean isAnnualToMonthlySwitch(String currentInterval, String targetInterval) {
+        return "year".equals(currentInterval) && "month".equals(targetInterval);
+    }
+
+    private static boolean isMonthlyToAnnualSwitch(String currentInterval, String targetInterval) {
+        return "month".equals(currentInterval) && "year".equals(targetInterval);
+    }
+
+    private static int tierRankStatic(String tier) {
         return switch (tier) {
             case "basic" -> 1;
             case "plus" -> 2;

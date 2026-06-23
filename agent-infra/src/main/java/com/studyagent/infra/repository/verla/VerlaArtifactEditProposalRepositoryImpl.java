@@ -67,6 +67,14 @@ public class VerlaArtifactEditProposalRepositoryImpl
     }
 
     @Override
+    public VerlaArtifactEditProposal findLatestByTurnId(Long turnId) {
+        if (turnId == null) {
+            return null;
+        }
+        return toDomain(this.baseMapper.selectLatestByTurnId(turnId));
+    }
+
+    @Override
     public List<VerlaArtifactEditProposal> findActiveByConversation(Long conversationId) {
         if (conversationId == null) {
             return List.of();

@@ -195,7 +195,7 @@ class VerlaFileChatHttpBindingTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, null,
+            super(null, null, null, null, null, null, null, null, null, null, null, null, null,
                     mock(EntitlementService.class), event -> {}, null);
         }
 

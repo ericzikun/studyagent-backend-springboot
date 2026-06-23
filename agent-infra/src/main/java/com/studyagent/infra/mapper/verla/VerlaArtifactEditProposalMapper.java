@@ -14,6 +14,11 @@ public interface VerlaArtifactEditProposalMapper extends BaseMapper<VerlaArtifac
     @Select("SELECT * FROM verla_artifact_edit_proposals WHERE proposal_id = #{pid} LIMIT 1")
     VerlaArtifactEditProposalEntity selectByProposalId(@Param("pid") String proposalId);
 
+    @Select("SELECT * FROM verla_artifact_edit_proposals "
+            + "WHERE turn_id = #{turnId} "
+            + "ORDER BY updated_at DESC, id DESC LIMIT 1")
+    VerlaArtifactEditProposalEntity selectLatestByTurnId(@Param("turnId") Long turnId);
+
     /** 当前 conversation 下尚未终结（GENERATING / REVIEWING）的提案，供快照恢复，取最新一条。 */
     @Select("SELECT * FROM verla_artifact_edit_proposals "
             + "WHERE conversation_id = #{cid} AND state IN ('GENERATING','REVIEWING') "

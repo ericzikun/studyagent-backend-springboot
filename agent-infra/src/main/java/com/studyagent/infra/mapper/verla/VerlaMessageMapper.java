@@ -52,4 +52,13 @@ public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
                                                     @Param("objectId") String objectId,
                                                     @Param("cursor") Long cursor,
                                                     @Param("limit") int limit);
+
+    @Select("SELECT * FROM verla_messages "
+            + "WHERE turn_id = #{turnId} "
+            + "AND role = #{role} "
+            + "AND COALESCE(scene, JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')), '') = #{scene} "
+            + "ORDER BY id ASC LIMIT 1")
+    VerlaMessageEntity selectByTurnRoleScene(@Param("turnId") Long turnId,
+                                             @Param("role") String role,
+                                             @Param("scene") String scene);
 }

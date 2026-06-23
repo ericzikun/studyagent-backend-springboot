@@ -32,4 +32,11 @@ public interface VerlaMessageRepository {
     default List<VerlaMessage> findAssignmentChatByCursor(Long conversationId, Long cursor, int limit) {
         return List.of();
     }
+
+    /**
+     * Find an isolated scene message by turn and role for idempotent terminal writeback.
+     */
+    default VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {
+        return null;
+    }
 }

@@ -2,18 +2,26 @@ package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
+import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
+import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,13 +29,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class VerlaAssignmentChatHttpBindingTest {
 
     private StubVerlaTurnOrchestrator turnOrchestrator;
+    private VerlaConversationService conversationService;
+    private VerlaMessageRepository messageRepository;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         turnOrchestrator = new StubVerlaTurnOrchestrator();
+        conversationService = mock(VerlaConversationService.class);
+        messageRepository = mock(VerlaMessageRepository.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new VerlaAssignmentChatController(turnOrchestrator))
+                        new VerlaAssignmentChatController(
+                                turnOrchestrator, conversationService, messageRepository))
                 .build();
     }
 
@@ -76,6 +89,52 @@ class VerlaAssignmentChatHttpBindingTest {
         assertThat(turnOrchestrator.lastRetriedTurnId).isEqualTo(456L);
     }
 
+    @Test
+    void assignmentChatHistoryEndpoint_shouldAuthorizeAndReturnPagedMessages() throws Exception {
+        when(messageRepository.findAssignmentChatByCursor(24L, 300L, 2)).thenReturn(List.of(
+                VerlaMessage.builder()
+                        .id(201L)
+                        .conversationId(24L)
+                        .turnId(456L)
+                        .role("assistant")
+                        .sourceSessionId(789L)
+                        .textContent("Done")
+                        .blocksJson("{\"eventType\":\"ASSIGNMENT_CHAT_COMPLETED\",\"finalText\":\"Done\"}")
+                        .scene("ASSIGNMENT_CHAT")
+                        .createdAt(LocalDateTime.parse("2026-06-22T10:15:30"))
+                        .build(),
+                VerlaMessage.builder()
+                        .id(200L)
+                        .conversationId(24L)
+                        .turnId(455L)
+                        .role("user")
+                        .textContent("Please review it")
+                        .scene("ASSIGNMENT_CHAT")
+                        .createdAt(LocalDateTime.parse("2026-06-22T10:14:30"))
+                        .build()));
+
+        mockMvc.perform(get("/v1/verla/conversations/24/assignment-chat/messages")
+                        .requestAttr("clerkUserId", "user_1")
+                        .param("cursor", "300")
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data.items[0].messageId").value(
+                        VerlaPublicIdVoSupport.message(201L, true)))
+                .andExpect(jsonPath("$.data.items[0].turnId").value(
+                        VerlaPublicIdVoSupport.turn(456L, true)))
+                .andExpect(jsonPath("$.data.items[0].role").value("assistant"))
+                .andExpect(jsonPath("$.data.items[0].sourceSessionId").value(
+                        VerlaPublicIdVoSupport.session(789L, true)))
+                .andExpect(jsonPath("$.data.items[0].text").value("Done"))
+                .andExpect(jsonPath("$.data.items[0].blocksJson").value(
+                        "{\"eventType\":\"ASSIGNMENT_CHAT_COMPLETED\",\"finalText\":\"Done\"}"))
+                .andExpect(jsonPath("$.data.nextCursor").value(200));
+
+        verify(conversationService).getOwned("user_1", 24L);
+        verify(messageRepository).findAssignmentChatByCursor(eq(24L), eq(300L), eq(2));
+    }
+
     private static final class StubVerlaTurnOrchestrator extends VerlaTurnOrchestrator {
         private String lastUserId;
         private Long lastConversationId;
@@ -86,7 +145,7 @@ class VerlaAssignmentChatHttpBindingTest {
         private SendMessageResult result;
 
         StubVerlaTurnOrchestrator() {
-            super(null, null, null, null, null, null, null, null, null, null, null, null,
+            super(null, null, null, null, null, null, null, null, null, null, null, null, null,
                     mock(EntitlementService.class), event -> {}, null);
         }
 

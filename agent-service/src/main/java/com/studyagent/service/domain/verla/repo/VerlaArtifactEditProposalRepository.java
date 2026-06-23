@@ -20,6 +20,11 @@ public interface VerlaArtifactEditProposalRepository {
 
     VerlaArtifactEditProposal findByProposalId(String proposalId);
 
+    /** 最新一条由指定 assignment-chat turn 产生的提案，用于终态 assistant 历史快照聚合。 */
+    default VerlaArtifactEditProposal findLatestByTurnId(Long turnId) {
+        return null;
+    }
+
     /** 当前 conversation 下尚未终结（GENERATING / REVIEWING）的提案，最新优先；快照恢复用。 */
     List<VerlaArtifactEditProposal> findActiveByConversation(Long conversationId);
 

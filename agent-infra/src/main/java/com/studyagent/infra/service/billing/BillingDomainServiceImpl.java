@@ -1224,17 +1224,29 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (currentTier.equals(targetTier) && currentInterval.equals(targetInterval)) {
             return PlanChangeAction.NOOP;
         }
-        if ("year".equals(currentInterval) && "month".equals(targetInterval)) {
+        if (isAnnualToMonthlySwitch(currentInterval, targetInterval)) {
             return PlanChangeAction.UNSUPPORTED;
         }
-        if (currentTier.equals(targetTier)) {
-            return "month".equals(currentInterval) && "year".equals(targetInterval)
+        if (isSameTierIntervalSwitch(currentTier, targetTier)) {
+            return isMonthlyToAnnualSwitch(currentInterval, targetInterval)
                     ? PlanChangeAction.DEFERRED_CHANGE
                     : PlanChangeAction.UNSUPPORTED;
         }
         return tierRankStatic(targetTier) > tierRankStatic(currentTier)
                 ? PlanChangeAction.IMMEDIATE_UPGRADE
                 : PlanChangeAction.DEFERRED_CHANGE;
+    }
+
+    private static boolean isSameTierIntervalSwitch(String currentTier, String targetTier) {
+        return currentTier.equals(targetTier);
+    }
+
+    private static boolean isAnnualToMonthlySwitch(String currentInterval, String targetInterval) {
+        return "year".equals(currentInterval) && "month".equals(targetInterval);
+    }
+
+    private static boolean isMonthlyToAnnualSwitch(String currentInterval, String targetInterval) {
+        return "month".equals(currentInterval) && "year".equals(targetInterval);
     }
 
     private static int tierRankStatic(String tier) {

@@ -27,6 +27,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -329,6 +330,27 @@ class BillingDomainServiceImplTest {
                 false,
                 null,
                 "sub_sched_remote"));
+    }
+
+    @Test
+    void classifyPlanChangeBlocksAnnualToMonthlyDowngrade() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange("pro", "year", "basic", "month"));
+    }
+
+    @Test
+    void classifyPlanChangeSchedulesMonthlyToYearlySameTierSwitch() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.DEFERRED_CHANGE,
+                BillingDomainServiceImpl.classifyPlanChange("basic", "month", "basic", "year"));
+    }
+
+    @Test
+    void classifyPlanChangeRejectsYearlyToMonthlySameTierSwitch() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange("basic", "year", "basic", "month"));
     }
 
     private BillingDomainServiceImpl service() {

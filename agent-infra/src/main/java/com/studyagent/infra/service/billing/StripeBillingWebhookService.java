@@ -514,7 +514,7 @@ public class StripeBillingWebhookService {
         }
     }
 
-    private void applySubscription(
+    void applySubscription(
             UserSubscriptionEntity entity,
             Subscription subscription,
             SubscriptionPlanEntity plan,
@@ -528,10 +528,16 @@ public class StripeBillingWebhookService {
                 && entity.getPendingPlanCode() != null
                 && entity.getPendingPlanCode().equals(plan.getPlanCode())
                 && !plan.getPlanCode().equals(entity.getPlanCode());
-        entity.setStripeCustomerId(subscription.getCustomer());
-        entity.setStripeSubscriptionId(subscription.getId());
+        if (!deleted || hasText(subscription.getCustomer())) {
+            entity.setStripeCustomerId(subscription.getCustomer());
+        }
         entity.setStatus(deleted ? "canceled" : subscription.getStatus());
-        if (!pendingActivationNotPaid) {
+        if (deleted) {
+            normalizeDeletedSubscriptionState(entity);
+        } else {
+            entity.setStripeSubscriptionId(subscription.getId());
+        }
+        if (!deleted && !pendingActivationNotPaid) {
             entity.setTier(deleted ? "free" : plan.getTier());
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
             entity.setCurrentPeriodStart(fromEpoch(resolvePeriodEpoch(periodStartOverride, subscription.getCurrentPeriodStart())));
@@ -563,6 +569,23 @@ public class StripeBillingWebhookService {
         entity.setUpdatedAt(now);
     }
 
+    static void normalizeDeletedSubscriptionState(UserSubscriptionEntity entity) {
+        entity.setTier("free");
+        entity.setPlanCode(null);
+        entity.setStripeSubscriptionId(null);
+        entity.setStripeScheduleId(null);
+        entity.setCurrentPeriodStart(null);
+        entity.setCurrentPeriodEnd(null);
+        entity.setQuotaPeriodStart(null);
+        entity.setQuotaPeriodEnd(null);
+        entity.setCancelAtPeriodEnd(false);
+        entity.setPendingPlanCode(null);
+        entity.setPendingEffectiveAt(null);
+        entity.setPendingUpgradeOrderNo(null);
+        entity.setPendingUpgradeExpiresAt(null);
+        entity.setGraceEndAt(null);
+    }
+
     static String resolveMirroredScheduleId(
             String remoteScheduleId,
             boolean deleted,
@@ -591,6 +614,9 @@ public class StripeBillingWebhookService {
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, entity.getQuotaPeriodStart())
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, entity.getQuotaPeriodEnd())
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, entity.getPendingEffectiveAt())
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, entity.getPendingUpgradeOrderNo())
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, entity.getPendingUpgradeExpiresAt())
+                .set(UserSubscriptionEntity::getGraceEndAt, entity.getGraceEndAt())
                 .set(UserSubscriptionEntity::getLastSyncedAt, entity.getLastSyncedAt())
                 .set(UserSubscriptionEntity::getUpdatedAt, entity.getUpdatedAt());
         if (deleted) {

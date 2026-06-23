@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.google.gson.Gson;
 import com.stripe.Stripe;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Invoice;
@@ -145,7 +146,61 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .build();
-        SessionCreateParams params = SessionCreateParams.builder()
+        SessionCreateParams params = buildSubscriptionCheckoutParams(
+                clerkUserId,
+                customerId,
+                planCode,
+                plan,
+                finalSuccessUrl,
+                finalCancelUrl,
+                subscriptionData);
+
+        try {
+            return createInitialSubscriptionCheckout(
+                    clerkUserId,
+                    planCode,
+                    plan,
+                    resumeToken,
+                    params);
+        } catch (StripeException e) {
+            if (shouldRetrySubscriptionCheckoutWithFreshCustomer(userSubscription, e)) {
+                UserSubscriptionEntity retrySubscription = userSubscription;
+                if (!clearStoredStripeCustomer(userSubscription)) {
+                    retrySubscription = getOrCreateUserSubscription(clerkUserId);
+                }
+                String retriedCustomerId = ensureStripeCustomer(retrySubscription, clerkUserId, customerEmail);
+                SessionCreateParams retriedParams = buildSubscriptionCheckoutParams(
+                        clerkUserId,
+                        retriedCustomerId,
+                        planCode,
+                        plan,
+                        finalSuccessUrl,
+                        finalCancelUrl,
+                        subscriptionData);
+                try {
+                    return createInitialSubscriptionCheckout(
+                            clerkUserId,
+                            planCode,
+                            plan,
+                            resumeToken,
+                            retriedParams);
+                } catch (StripeException retryException) {
+                    throw stripeFailure("Create subscription Checkout failed", retryException);
+                }
+            }
+            throw stripeFailure("Create subscription Checkout failed", e);
+        }
+    }
+
+    private SessionCreateParams buildSubscriptionCheckoutParams(
+            String clerkUserId,
+            String customerId,
+            String planCode,
+            SubscriptionPlanEntity plan,
+            String finalSuccessUrl,
+            String finalCancelUrl,
+            SessionCreateParams.SubscriptionData subscriptionData) {
+        return SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
@@ -160,33 +215,36 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData)
                 .build();
+    }
 
-        try {
-            Session session = Session.create(params);
-            insertPendingOrder(
-                    clerkUserId,
-                    "subscription_initial",
-                    "subscription",
-                    planCode,
-                    planCode,
-                    null,
-                    0L,
-                    plan.getPriceCents(),
-                    plan.getCurrency(),
-                    session.getId(),
-                    null,
-                    session.getSubscription());
-            return CheckoutSessionResult.builder()
-                    .checkoutKind("session")
-                    .sessionId(session.getId())
-                    .referenceId(session.getId())
-                    .checkoutUrl(session.getUrl())
-                    .expiresAt(session.getExpiresAt())
-                    .resumeToken(resumeToken)
-                    .build();
-        } catch (StripeException e) {
-            throw stripeFailure("Create subscription Checkout failed", e);
-        }
+    private CheckoutSessionResult createInitialSubscriptionCheckout(
+            String clerkUserId,
+            String planCode,
+            SubscriptionPlanEntity plan,
+            String resumeToken,
+            SessionCreateParams params) throws StripeException {
+        Session session = createStripeCheckoutSession(params);
+        insertPendingOrder(
+                clerkUserId,
+                "subscription_initial",
+                "subscription",
+                planCode,
+                planCode,
+                null,
+                0L,
+                plan.getPriceCents(),
+                plan.getCurrency(),
+                session.getId(),
+                null,
+                session.getSubscription());
+        return CheckoutSessionResult.builder()
+                .checkoutKind("session")
+                .sessionId(session.getId())
+                .referenceId(session.getId())
+                .checkoutUrl(session.getUrl())
+                .expiresAt(session.getExpiresAt())
+                .resumeToken(resumeToken)
+                .build();
     }
 
     @Override
@@ -788,7 +846,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             builder.setEmail(customerEmail);
         }
         try {
-            Customer customer = Customer.create(builder.build());
+            Customer customer = createStripeCustomer(builder.build());
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, userSubscription.getId())
                     .isNull(UserSubscriptionEntity::getStripeCustomerId)
@@ -799,6 +857,55 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure("Create Stripe customer failed", e);
         }
+    }
+
+    Session createStripeCheckoutSession(SessionCreateParams params) throws StripeException {
+        return Session.create(params);
+    }
+
+    Customer createStripeCustomer(CustomerCreateParams params) throws StripeException {
+        return Customer.create(params);
+    }
+
+    boolean clearStoredStripeCustomer(UserSubscriptionEntity userSubscription) {
+        if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
+            return false;
+        }
+        String oldCustomerId = userSubscription.getStripeCustomerId();
+        int updated = userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, userSubscription.getId())
+                .eq(UserSubscriptionEntity::getStripeCustomerId, oldCustomerId)
+                .set(UserSubscriptionEntity::getStripeCustomerId, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+        if (updated == 1) {
+            userSubscription.setStripeCustomerId(null);
+            return true;
+        }
+        return false;
+    }
+
+    static boolean shouldRetrySubscriptionCheckoutWithFreshCustomer(
+            UserSubscriptionEntity userSubscription,
+            StripeException exception) {
+        if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
+            return false;
+        }
+        String status = normalizeNullableText(userSubscription.getStatus());
+        String tier = normalizeNullableText(userSubscription.getTier());
+        boolean freeLikeState = userSubscription.getPlanCode() == null
+                && ("free".equals(tier) || "free".equals(status) || "canceled".equals(status));
+        return freeLikeState && isMissingStripeCustomer(exception);
+    }
+
+    static boolean isMissingStripeCustomer(StripeException exception) {
+        if (!(exception instanceof InvalidRequestException)) {
+            return false;
+        }
+        String message = normalizeNullableText(exception.getMessage());
+        String code = normalizeNullableText(exception.getCode());
+        return message.contains("no such customer")
+                || ("resource_missing".equals(code) && message.contains("customer"))
+                || message.contains("permanently deleted");
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
@@ -895,8 +1002,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return planCode.trim();
     }
 
-    private boolean hasText(String value) {
+    private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static String normalizeNullableText(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeCurrency(String currency) {

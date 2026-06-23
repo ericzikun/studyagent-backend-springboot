@@ -2,7 +2,9 @@ package com.studyagent.infra.service.billing;
 
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
+import com.stripe.model.Subscription;
 import com.studyagent.infra.entity.RechargeOrderEntity;
+import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -226,6 +229,99 @@ class StripeBillingWebhookServiceTest {
         assertEquals(200L, StripeBillingWebhookService.resolvePeriodEpoch(200L, 100L));
         assertEquals(100L, StripeBillingWebhookService.resolvePeriodEpoch(null, 100L));
         assertNull(StripeBillingWebhookService.resolvePeriodEpoch(null, null));
+    }
+
+    @Test
+    void applySubscriptionDeletedClearsResidualSubscriptionState() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setTier("plus");
+        entity.setPlanCode("plus_yearly");
+        entity.setStatus("active");
+        entity.setStripeCustomerId("cus_123");
+        entity.setStripeSubscriptionId("sub_123");
+        entity.setStripeScheduleId("sub_sched_123");
+        entity.setCurrentPeriodStart(java.time.LocalDateTime.parse("2026-06-23T14:58:10"));
+        entity.setCurrentPeriodEnd(java.time.LocalDateTime.parse("2027-06-23T14:58:10"));
+        entity.setQuotaPeriodStart(java.time.LocalDateTime.parse("2026-06-23T14:58:10"));
+        entity.setQuotaPeriodEnd(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
+        entity.setCancelAtPeriodEnd(true);
+        entity.setPendingPlanCode("free");
+        entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2027-06-23T14:58:10"));
+        entity.setPendingUpgradeOrderNo("RO202606230001");
+        entity.setPendingUpgradeExpiresAt(java.time.LocalDateTime.parse("2026-06-23T15:58:10"));
+        entity.setGraceEndAt(java.time.LocalDateTime.parse("2026-06-24T14:58:10"));
+
+        Subscription subscription = new Subscription();
+        subscription.setCustomer("cus_123");
+        subscription.setId("sub_123");
+        subscription.setStatus("canceled");
+        subscription.setCurrentPeriodStart(1782226690L);
+        subscription.setCurrentPeriodEnd(1813762690L);
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+
+        service().applySubscription(
+                entity,
+                subscription,
+                plan,
+                true,
+                false,
+                null,
+                null,
+                java.time.LocalDateTime.parse("2026-06-23T15:11:00"));
+
+        assertEquals("free", entity.getTier());
+        assertNull(entity.getPlanCode());
+        assertEquals("canceled", entity.getStatus());
+        assertNull(entity.getStripeSubscriptionId());
+        assertNull(entity.getStripeScheduleId());
+        assertNull(entity.getCurrentPeriodStart());
+        assertNull(entity.getCurrentPeriodEnd());
+        assertNull(entity.getQuotaPeriodStart());
+        assertNull(entity.getQuotaPeriodEnd());
+        assertFalse(Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()));
+        assertNull(entity.getPendingPlanCode());
+        assertNull(entity.getPendingEffectiveAt());
+        assertNull(entity.getPendingUpgradeOrderNo());
+        assertNull(entity.getPendingUpgradeExpiresAt());
+        assertNull(entity.getGraceEndAt());
+        assertEquals("cus_123", entity.getStripeCustomerId());
+    }
+
+    @Test
+    void applySubscriptionDeletedPreservesExistingCustomerWhenDeletedPayloadHasNoCustomer() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setTier("basic");
+        entity.setPlanCode("basic_yearly");
+        entity.setStatus("active");
+        entity.setStripeCustomerId("cus_existing");
+        entity.setStripeSubscriptionId("sub_existing");
+
+        Subscription subscription = new Subscription();
+        subscription.setCustomer(null);
+        subscription.setId("sub_existing");
+        subscription.setStatus("canceled");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("basic_yearly");
+        plan.setTier("basic");
+        plan.setBillingInterval("year");
+
+        service().applySubscription(
+                entity,
+                subscription,
+                plan,
+                true,
+                false,
+                null,
+                null,
+                java.time.LocalDateTime.parse("2026-06-23T15:11:00"));
+
+        assertEquals("cus_existing", entity.getStripeCustomerId());
+        assertNull(entity.getStripeSubscriptionId());
     }
 
     private StripeBillingWebhookService service() {

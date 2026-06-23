@@ -850,6 +850,88 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
+    void onAssignmentClarifyCompleted_marksRunFailedAndPersistsDiagnosticsWhenAutoRunSetupFails() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
+                .when(entitlementService)
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        sessionRepository.session = VerlaSession.builder()
+                .id(800L)
+                .conversationId(74L)
+                .turnId(700L)
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .status(SessionStatus.RUNNING.name())
+                .build();
+
+        orchestrator.onAssignmentClarifyCompleted(800L, Map.of(
+                "isReadyForGeneration", true,
+                "requirementForm", Map.of(
+                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0),
+                        "task_title", "Write a short report"),
+                "reservedFields", Map.of(
+                        "question", "Please do not create slides"),
+                "appendAskAnswers", List.of(Map.of(
+                        "question", "Desired output",
+                        "answer", "Writing only"))));
+
+        assertEquals(SessionStatus.FAILED.name(), sessionRepository.saved.getStatus());
+        assertEquals(TurnStatus.FAILED.name(), turnRepository.saved.getStatus());
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.run"));
+        VerlaMessage failureMessage = messageRepository.savedMessages.get(messageRepository.savedMessages.size() - 1);
+        assertEquals("assistant", failureMessage.getRole());
+        Map<String, Object> failureBlock = objectMapper.readValue(failureMessage.getBlocksJson(), Map.class);
+        assertEquals("ASSIGNMENT_FAILED", failureBlock.get("eventType"));
+        assertEquals("failed", failureBlock.get("runStatus"));
+        Map<String, Object> diagnostics = (Map<String, Object>) failureBlock.get("diagnostics");
+        assertNotNull(diagnostics);
+        assertEquals(Map.of("markdown", 1, "ppt", 0, "code", 0), diagnostics.get("rawDeliverableCount"));
+        assertEquals(Map.of("markdown", 1, "ppt", 1, "code", 0), diagnostics.get("normalizedDeliverableCount"));
+        assertEquals(List.of("ppt"), diagnostics.get("inferredOutputTypes"));
+        assertEquals(List.of("ppt", "writing"), diagnostics.get("requestedOutputTypes"));
+    }
+
+    @Test
     void startAssignmentChat_rejectsWhenFollowupLimitReached() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
@@ -1041,6 +1123,7 @@ class VerlaTurnOrchestratorTest {
                 session.setId(1001L);
             }
             this.saved = session;
+            this.session = session;
             return session;
         }
 

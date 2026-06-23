@@ -15,4 +15,7 @@ public class CheckoutSessionResult {
     private String checkoutUrl;
     private Long expiresAt;
     private String resumeToken;
+    private Integer quotedAmountCents;
+    private String upgradeChargeType;
+    private String targetPlanCode;
 }

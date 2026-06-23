@@ -120,6 +120,43 @@ class PlanQuotaServiceImplTest {
     }
 
     @Test
+    void grantUpgradeFromCheckout_addsRemainingBalancePlusNewFullPlan() {
+        SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
+        UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
+        UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
+        UserAiQuotaEntity humanizer = quota(13L, "humanizer", 1L, 0L, 0L);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(assignment, detection, humanizer);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.grantUpgradeFromCheckout(
+                "user_1",
+                "sub_1",
+                "basic_monthly",
+                Instant.parse("2026-06-15T00:00:00Z"),
+                Instant.parse("2026-07-15T00:00:00Z"),
+                "upgrade_ord_1");
+
+        ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
+        verify(userAiQuotaMapper, times(3)).updateById(quotaCaptor.capture());
+        List<UserAiQuotaEntity> updated = quotaCaptor.getAllValues();
+        assertEquals(5L, updated.get(0).getPlanBalance());
+        assertEquals(4L, updated.get(1).getPlanBalance());
+        assertEquals(2L, updated.get(2).getPlanBalance());
+    }
+
+    @Test
     void clearPlanQuota_isIdempotent_andClearsPlanWindow() {
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
         assignment.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));

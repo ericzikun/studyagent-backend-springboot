@@ -38,6 +38,10 @@ public class UserSubscriptionEntity extends BaseEntity {
     private String pendingPlanCode;
     @TableField("pending_effective_at")
     private LocalDateTime pendingEffectiveAt;
+    @TableField("pending_upgrade_order_no")
+    private String pendingUpgradeOrderNo;
+    @TableField("pending_upgrade_expires_at")
+    private LocalDateTime pendingUpgradeExpiresAt;
     @TableField("grace_end_at")
     private LocalDateTime graceEndAt;
     @TableField("last_synced_at")

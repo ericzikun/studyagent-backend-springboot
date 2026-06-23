@@ -11,7 +11,11 @@ import com.stripe.model.InvoiceLineItem;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
+import com.stripe.model.SubscriptionSchedule;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.SubscriptionScheduleReleaseParams;
+import com.stripe.param.SubscriptionUpdateParams;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.StripeWebhookEventEntity;
@@ -35,6 +39,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -72,7 +77,9 @@ public class StripeBillingWebhookService {
             return false;
         }
         String purchaseType = session.getMetadata().get("purchase_type");
-        return "subscription".equals(purchaseType) || "addon".equals(purchaseType);
+        return "subscription".equals(purchaseType)
+                || "addon".equals(purchaseType)
+                || "subscription_upgrade_manual".equals(purchaseType);
     }
 
     public void process(Event event) {
@@ -135,15 +142,136 @@ public class StripeBillingWebhookService {
                     throw new IllegalStateException("Retrieve subscription failed: " + session.getSubscription(), e);
                 }
             }
+            return;
+        }
+
+        if ("subscription_upgrade_manual".equals(purchaseType)) {
+            handleManualUpgradeCheckoutCompleted(session, clerkUserId);
         }
     }
 
     private void handleCheckoutExpired(Session session) {
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
-                .eq(RechargeOrderEntity::getStatus, "pending")
-                .set(RechargeOrderEntity::getStatus, "expired")
+                .in(RechargeOrderEntity::getStatus, List.of("pending", "pending_checkout", "checkout_created"))
+                .set(RechargeOrderEntity::getStatus, "checkout_expired")
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+        clearPendingUpgradeCheckoutBySession(session.getId());
+    }
+
+    private void handleManualUpgradeCheckoutCompleted(Session session, String clerkUserId) {
+        if (!"paid".equals(session.getPaymentStatus())) {
+            log.info("Manual subscription upgrade checkout is not paid yet: session={}, payment_status={}",
+                    session.getId(), session.getPaymentStatus());
+            return;
+        }
+        String orderNo = session.getMetadata().get("upgrade_order_no");
+        RechargeOrderEntity order = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getOrderNo, orderNo)
+                        .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade_manual")
+                        .last("LIMIT 1"));
+        if (order == null || "completed".equals(order.getStatus())) {
+            return;
+        }
+        attemptManualUpgradeSwitch(order, clerkUserId, session.getId(), session.getPaymentIntent());
+    }
+
+    public void retryManualUpgradeSwitch(String orderNo) {
+        if (!hasText(orderNo)) {
+            return;
+        }
+        RechargeOrderEntity order = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getOrderNo, orderNo)
+                        .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade_manual")
+                        .last("LIMIT 1"));
+        if (order == null || "completed".equals(order.getStatus())) {
+            return;
+        }
+        attemptManualUpgradeSwitch(
+                order,
+                order.getClerkUserId(),
+                order.getStripeSessionId(),
+                order.getStripePaymentIntentId());
+    }
+
+    private void attemptManualUpgradeSwitch(
+            RechargeOrderEntity order,
+            String clerkUserId,
+            String stripeSessionId,
+            String stripePaymentIntentId) {
+        if (!hasText(clerkUserId)) {
+            throw new IllegalStateException("Manual subscription upgrade order has no clerk user id: " + order.getOrderNo());
+        }
+        if (!markManualUpgradeOrderSwitching(order, stripeSessionId, stripePaymentIntentId)) {
+            return;
+        }
+        UserSubscriptionEntity current = findByUser(clerkUserId);
+        Subscription subscription;
+        try {
+            subscription = Subscription.retrieve(order.getStripeSubscriptionId());
+            if (current != null) {
+                releasePendingScheduleIfPresent(current, subscription);
+            }
+            if (subscription.getItems() == null
+                    || subscription.getItems().getData() == null
+                    || subscription.getItems().getData().size() != 1) {
+                throw new IllegalStateException("Subscription must contain one item");
+            }
+            SubscriptionItem item = subscription.getItems().getData().get(0);
+            SubscriptionPlanEntity targetPlan = requirePlan(order.getTargetPlanCode());
+            Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
+                    .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
+                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
+                    .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
+                    .addItem(SubscriptionUpdateParams.Item.builder()
+                            .setId(item.getId())
+                            .setPrice(targetPlan.getStripePriceId())
+                            .setQuantity(item.getQuantity() == null ? 1L : item.getQuantity())
+                            .build())
+                    .putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("change_type", "upgrade")
+                    .build(), RequestOptions.builder()
+                    .setIdempotencyKey("manual-upgrade-switch:" + order.getOrderNo())
+                    .build());
+            Long periodStartEpoch = resolvePeriodEpoch(null, updated.getCurrentPeriodStart());
+            Long periodEndEpoch = resolvePeriodEpoch(null, updated.getCurrentPeriodEnd());
+            Instant periodStart = instant(periodStartEpoch);
+            Instant quotaPeriodEnd = "year".equals(targetPlan.getBillingInterval())
+                    ? periodStart.atZone(ZoneOffset.UTC).plusMonths(1).toInstant()
+                    : instant(periodEndEpoch);
+
+            syncSubscription(updated, false, false, periodStartEpoch, periodEndEpoch);
+            rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                    .eq(RechargeOrderEntity::getId, order.getId())
+                    .set(RechargeOrderEntity::getStatus, "switched")
+                    .set(RechargeOrderEntity::getUpgradeEffectiveAt, fromEpoch(periodStartEpoch))
+                    .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+            quotaGateway().grantUpgradeFromCheckout(
+                    clerkUserId,
+                    updated.getId(),
+                    targetPlan.getPlanCode(),
+                    periodStart,
+                    quotaPeriodEnd,
+                    order.getOrderNo());
+            completeManualUpgradeOrder(order, updated, stripeSessionId, stripePaymentIntentId, periodStartEpoch);
+        } catch (StripeException | IllegalStateException e) {
+            rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                    .eq(RechargeOrderEntity::getId, order.getId())
+                    .set(RechargeOrderEntity::getStatus, "switch_failed")
+                    .set(RechargeOrderEntity::getFailureReason, e.getMessage())
+                    .setSql("switch_attempts = switch_attempts + 1")
+                    .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+            throw new IllegalStateException("Manual subscription upgrade switch failed", e);
+        } catch (RuntimeException e) {
+            rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                    .eq(RechargeOrderEntity::getId, order.getId())
+                    .set(RechargeOrderEntity::getStatus, "quota_failed")
+                    .set(RechargeOrderEntity::getFailureReason, e.getMessage())
+                    .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+            throw e;
+        }
     }
 
     private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId) {
@@ -263,6 +391,69 @@ public class StripeBillingWebhookService {
         if ("invoice.payment_failed".equals(eventType) && entity != null) {
             clearPendingUpgradeState(entity, order, eventType);
         }
+    }
+
+    boolean markManualUpgradeOrderSwitching(
+            RechargeOrderEntity order,
+            String stripeSessionId,
+            String stripePaymentIntentId) {
+        LocalDateTime now = LocalDateTime.now();
+        return rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getId, order.getId())
+                .in(RechargeOrderEntity::getStatus, List.of(
+                        "pending",
+                        "pending_checkout",
+                        "checkout_created",
+                        "payment_failed",
+                        "paid",
+                        "switch_failed"))
+                .set(RechargeOrderEntity::getStatus, "switching")
+                .set(hasText(stripeSessionId), RechargeOrderEntity::getStripeSessionId, stripeSessionId)
+                .set(hasText(stripePaymentIntentId), RechargeOrderEntity::getStripePaymentIntentId, stripePaymentIntentId)
+                .set(order.getPaidAt() == null, RechargeOrderEntity::getPaidAt, now)
+                .set(RechargeOrderEntity::getFailureReason, null)
+                .set(RechargeOrderEntity::getUpdatedAt, now)) == 1;
+    }
+
+    private void completeManualUpgradeOrder(
+            RechargeOrderEntity order,
+            Subscription updated,
+            String stripeSessionId,
+            String stripePaymentIntentId,
+            Long periodStartEpoch) {
+        LocalDateTime now = LocalDateTime.now();
+        rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getId, order.getId())
+                .set(RechargeOrderEntity::getStatus, "completed")
+                .set(RechargeOrderEntity::getStripeSubscriptionId, updated.getId())
+                .set(hasText(stripeSessionId), RechargeOrderEntity::getStripeSessionId, stripeSessionId)
+                .set(hasText(stripePaymentIntentId), RechargeOrderEntity::getStripePaymentIntentId, stripePaymentIntentId)
+                .set(RechargeOrderEntity::getUpgradeEffectiveAt, fromEpoch(periodStartEpoch))
+                .set(RechargeOrderEntity::getFailureReason, null)
+                .set(RechargeOrderEntity::getUpdatedAt, now));
+        clearPendingUpgradeCheckoutByOrderNo(order.getOrderNo());
+    }
+
+    private void clearPendingUpgradeCheckoutBySession(String stripeSessionId) {
+        RechargeOrderEntity order = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeSessionId, stripeSessionId)
+                        .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade_manual")
+                        .last("LIMIT 1"));
+        if (order != null) {
+            clearPendingUpgradeCheckoutByOrderNo(order.getOrderNo());
+        }
+    }
+
+    private void clearPendingUpgradeCheckoutByOrderNo(String orderNo) {
+        if (orderNo == null || orderNo.isBlank()) {
+            return;
+        }
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getPendingUpgradeOrderNo, orderNo)
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
     private void syncSubscription(Subscription subscription, boolean deleted, boolean activatePendingPlan) {
@@ -543,7 +734,9 @@ public class StripeBillingWebhookService {
         if (entity == null) {
             return;
         }
-        if (!isSubscriptionUpgradeOrder(order) && !hasText(entity.getPendingPlanCode())) {
+        if (!isSubscriptionUpgradeOrder(order)
+                && !hasText(entity.getPendingPlanCode())
+                && !hasText(entity.getPendingUpgradeOrderNo())) {
             return;
         }
         LocalDateTime now = LocalDateTime.now();
@@ -551,9 +744,13 @@ public class StripeBillingWebhookService {
                 .eq(UserSubscriptionEntity::getId, entity.getId())
                 .set(UserSubscriptionEntity::getPendingPlanCode, null)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
                 .set(UserSubscriptionEntity::getUpdatedAt, now));
         entity.setPendingPlanCode(null);
         entity.setPendingEffectiveAt(null);
+        entity.setPendingUpgradeOrderNo(null);
+        entity.setPendingUpgradeExpiresAt(null);
     }
 
     private boolean isSubscriptionUpdateBillingReason(Invoice invoice) {
@@ -561,11 +758,40 @@ public class StripeBillingWebhookService {
     }
 
     private boolean isSubscriptionUpgradeOrder(RechargeOrderEntity order) {
-        return order != null && "subscription_upgrade".equals(order.getOrderType());
+        return order != null
+                && ("subscription_upgrade".equals(order.getOrderType())
+                || "subscription_upgrade_manual".equals(order.getOrderType()));
     }
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private SubscriptionPlanEntity requirePlan(String planCode) {
+        SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .eq(SubscriptionPlanEntity::getIsActive, true)
+                        .last("LIMIT 1"));
+        if (plan == null) {
+            throw new IllegalStateException("Unknown or inactive plan code: " + planCode);
+        }
+        return plan;
+    }
+
+    private void releasePendingScheduleIfPresent(
+            UserSubscriptionEntity current,
+            Subscription stripeSubscription) throws StripeException {
+        String scheduleId = firstNonBlank(current.getStripeScheduleId(), stripeSubscription.getSchedule());
+        if (scheduleId == null) {
+            return;
+        }
+        SubscriptionSchedule schedule = SubscriptionSchedule.retrieve(scheduleId);
+        if ("active".equals(schedule.getStatus()) || "not_started".equals(schedule.getStatus())) {
+            schedule.release(SubscriptionScheduleReleaseParams.builder()
+                    .setPreserveCancelDate(false)
+                    .build());
+        }
     }
 
     private SubscriptionPlanEntity requirePlanBySubscription(Subscription subscription) {

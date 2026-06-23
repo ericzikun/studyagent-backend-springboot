@@ -103,6 +103,28 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void grantUpgradeFromCheckout(
+            String clerkUserId,
+            String subscriptionId,
+            String planCode,
+            Instant quotaPeriodStart,
+            Instant quotaPeriodEnd,
+            String upgradeOrderNo) {
+        applyPlanGrantFromSource(
+                clerkUserId,
+                subscriptionId,
+                planCode,
+                quotaPeriodStart,
+                quotaPeriodEnd,
+                upgradeOrderNo,
+                "checkout_upgrade",
+                "checkout-upgrade",
+                LEDGER_TYPE_UPGRADE_GRANT,
+                true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
         List<UserAiQuotaEntity> quotas = userAiQuotaMapper.selectList(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
@@ -273,13 +295,37 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             String invoiceId,
             String ledgerType,
             boolean additive) {
+        applyPlanGrantFromSource(
+                clerkUserId,
+                subscriptionId,
+                planCode,
+                quotaPeriodStart,
+                quotaPeriodEnd,
+                invoiceId,
+                "invoice",
+                "invoice",
+                ledgerType,
+                additive);
+    }
+
+    private void applyPlanGrantFromSource(
+            String clerkUserId,
+            String subscriptionId,
+            String planCode,
+            Instant quotaPeriodStart,
+            Instant quotaPeriodEnd,
+            String sourceId,
+            String sourceType,
+            String idempotencyPrefix,
+            String ledgerType,
+            boolean additive) {
         SubscriptionPlanEntity plan = requirePlan(planCode);
         LocalDateTime periodStart = LocalDateTime.ofInstant(quotaPeriodStart, ZoneOffset.UTC);
         LocalDateTime periodEnd = LocalDateTime.ofInstant(quotaPeriodEnd, ZoneOffset.UTC);
         LocalDateTime now = LocalDateTime.now();
 
         for (FeatureGrant featureGrant : featureGrants(plan)) {
-            String idempotencyKey = "invoice:" + invoiceId + ":"
+            String idempotencyKey = idempotencyPrefix + ":" + sourceId + ":"
                     + (additive ? "upgrade" : "plan") + ":" + featureGrant.featureCode();
             if (hasLedger(featureGrant.featureCode(), ledgerType, idempotencyKey)) {
                 continue;
@@ -301,11 +347,11 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             ledger.setFeatureCode(featureGrant.featureCode());
             ledger.setLedgerType(ledgerType);
             ledger.setAmount(additive ? featureGrant.amount() : newPlanBalance);
-            ledger.setSourceType("invoice");
-            ledger.setSourceId(invoiceId);
+            ledger.setSourceType(sourceType);
+            ledger.setSourceId(sourceId);
             ledger.setIdempotencyKey(idempotencyKey);
             ledger.setSubscriptionId(subscriptionId);
-            ledger.setInvoiceId(invoiceId);
+            ledger.setInvoiceId("invoice".equals(sourceType) ? sourceId : null);
             ledger.setFreeBalanceAfter(quota.getFreeBalance());
             ledger.setPlanBalanceAfter(newPlanBalance);
             ledger.setPaidBalanceAfter(quota.getPaidBalance());

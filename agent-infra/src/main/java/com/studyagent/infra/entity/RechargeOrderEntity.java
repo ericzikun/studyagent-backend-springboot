@@ -27,12 +27,18 @@ public class RechargeOrderEntity extends BaseEntity {
     private String packageCode;
     @TableField("plan_code")
     private String planCode;
+    @TableField("target_plan_code")
+    private String targetPlanCode;
     @TableField("addon_code")
     private String addonCode;
     @TableField("quota_amount")
     private Long quotaAmount;
     @TableField("price_cents")
     private Integer priceCents;
+    @TableField("quoted_amount_cents")
+    private Integer quotedAmountCents;
+    @TableField("upgrade_charge_type")
+    private String upgradeChargeType;
     @TableField("currency")
     private String currency;
     @TableField("stripe_session_id")
@@ -49,4 +55,10 @@ public class RechargeOrderEntity extends BaseEntity {
     private String failureReason;
     @TableField("paid_at")
     private LocalDateTime paidAt;
+    @TableField("upgrade_effective_at")
+    private LocalDateTime upgradeEffectiveAt;
+    @TableField("switch_attempts")
+    private Integer switchAttempts;
+    @TableField("biz_context")
+    private String bizContext;
 }

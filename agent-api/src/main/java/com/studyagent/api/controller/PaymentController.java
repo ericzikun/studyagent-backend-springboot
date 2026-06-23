@@ -187,6 +187,9 @@ public class PaymentController {
         data.put("checkoutUrl", checkout.getCheckoutUrl());
         data.put("expiresAt", checkout.getExpiresAt());
         data.put("resumeToken", checkout.getResumeToken());
+        data.put("quotedAmountCents", checkout.getQuotedAmountCents());
+        data.put("upgradeChargeType", checkout.getUpgradeChargeType());
+        data.put("targetPlanCode", checkout.getTargetPlanCode());
         return data;
     }
 

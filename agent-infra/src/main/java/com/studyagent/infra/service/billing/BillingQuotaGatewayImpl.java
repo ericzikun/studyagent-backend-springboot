@@ -39,6 +39,18 @@ public class BillingQuotaGatewayImpl implements BillingQuotaGateway {
     }
 
     @Override
+    public void grantUpgradeFromCheckout(
+            String clerkUserId,
+            String subscriptionId,
+            String planCode,
+            Instant periodStart,
+            Instant periodEnd,
+            String upgradeOrderNo) {
+        planQuotaService.grantUpgradeFromCheckout(
+                clerkUserId, subscriptionId, planCode, periodStart, periodEnd, upgradeOrderNo);
+    }
+
+    @Override
     public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
         planQuotaService.clearPlanQuota(clerkUserId, subscriptionId, idempotencyKey);
     }

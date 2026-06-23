@@ -59,9 +59,11 @@ class StripeBillingWebhookServiceTest {
     @Test
     void supportsOnlyV2CheckoutMetadata() {
         Event addon = event("checkout.session.completed", "checkout.session", "addon");
+        Event manualUpgrade = event("checkout.session.completed", "checkout.session", "subscription_upgrade_manual");
         Event legacy = event("checkout.session.completed", "checkout.session", null);
 
         assertTrue(service().supports(addon));
+        assertTrue(service().supports(manualUpgrade));
         assertFalse(service().supports(legacy));
     }
 
@@ -158,15 +160,28 @@ class StripeBillingWebhookServiceTest {
         UserSubscriptionEntity entity = new UserSubscriptionEntity();
         entity.setId(20L);
         entity.setPendingPlanCode("plus_monthly");
+        entity.setPendingUpgradeOrderNo("RO202606230001");
 
         RechargeOrderEntity order = new RechargeOrderEntity();
-        order.setOrderType("subscription_upgrade");
+        order.setOrderType("subscription_upgrade_manual");
 
         StripeBillingWebhookService service = service();
         service.clearPendingUpgradeState(entity, order, "invoice.payment_failed");
 
         assertNull(entity.getPendingPlanCode());
+        assertNull(entity.getPendingUpgradeOrderNo());
         verify(userSubscriptionMapper).update(isNull(), any());
+    }
+
+    @Test
+    void markManualUpgradeOrderSwitching_marksOrderSwitchingInsteadOfPaid() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(30L);
+
+        StripeBillingWebhookService service = service();
+        service.markManualUpgradeOrderSwitching(order, "cs_test_123", "pi_test_123");
+
+        verify(rechargeOrderMapper).update(isNull(), any());
     }
 
     @Test

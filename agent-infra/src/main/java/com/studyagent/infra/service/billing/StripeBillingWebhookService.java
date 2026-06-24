@@ -307,6 +307,11 @@ public class StripeBillingWebhookService {
                         .last("LIMIT 1"));
         boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade)
                 || isPendingPlanActivationUpgrade(existing, plan.getPlanCode(), invoice, pendingUpgrade);
+        RechargeOrderEntity matchingManualUpgradeOrder = findMatchingManualUpgradeOrder(
+                clerkUserId,
+                subscriptionId,
+                invoice.getPaymentIntent(),
+                plan.getPlanCode());
 
         Long periodStartEpoch = resolvePeriodEpoch(resolveInvoicePeriodStart(invoice), subscription.getCurrentPeriodStart());
         Long periodEndEpoch = resolvePeriodEpoch(resolveInvoicePeriodEnd(invoice), subscription.getCurrentPeriodEnd());
@@ -314,7 +319,12 @@ public class StripeBillingWebhookService {
         Instant quotaPeriodEnd = "year".equals(plan.getBillingInterval())
                 ? periodStart.atZone(ZoneOffset.UTC).plusMonths(1).toInstant()
                 : instant(periodEndEpoch);
-        if (upgrade) {
+        if (!shouldApplyQuotaGrantForInvoice(upgrade, matchingManualUpgradeOrder)) {
+            log.info("Skip duplicate manual-upgrade quota grant for invoice={}, subscription={}, orderNo={}",
+                    invoice.getId(),
+                    subscriptionId,
+                    matchingManualUpgradeOrder == null ? null : matchingManualUpgradeOrder.getOrderNo());
+        } else if (upgrade) {
             quotaGateway().addFullPlanForUpgrade(
                     clerkUserId,
                     subscription.getId(),
@@ -739,6 +749,17 @@ public class StripeBillingWebhookService {
                 || (order != null && "subscription_upgrade".equals(order.getOrderType()));
     }
 
+    static boolean shouldApplyQuotaGrantForInvoice(boolean upgrade, RechargeOrderEntity matchingManualUpgradeOrder) {
+        if (!upgrade || matchingManualUpgradeOrder == null) {
+            return true;
+        }
+        if (!"subscription_upgrade_manual".equals(matchingManualUpgradeOrder.getOrderType())) {
+            return true;
+        }
+        return !Set.of("paid", "switching", "switched", "completed")
+                .contains(matchingManualUpgradeOrder.getStatus());
+    }
+
     static boolean isPendingPlanActivationUpgrade(
             UserSubscriptionEntity existing,
             String resolvedPlanCode,
@@ -791,6 +812,30 @@ public class StripeBillingWebhookService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private RechargeOrderEntity findMatchingManualUpgradeOrder(
+            String clerkUserId,
+            String subscriptionId,
+            String paymentIntentId,
+            String targetPlanCode) {
+        if (!hasText(clerkUserId) || !hasText(targetPlanCode)) {
+            return null;
+        }
+        LambdaQueryWrapper<RechargeOrderEntity> query = new LambdaQueryWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade_manual")
+                .eq(RechargeOrderEntity::getTargetPlanCode, targetPlanCode);
+        if (hasText(paymentIntentId)) {
+            query.eq(RechargeOrderEntity::getStripePaymentIntentId, paymentIntentId);
+        } else if (hasText(subscriptionId)) {
+            query.eq(RechargeOrderEntity::getStripeSubscriptionId, subscriptionId);
+        } else {
+            return null;
+        }
+        return rechargeOrderMapper.selectOne(query
+                .orderByDesc(RechargeOrderEntity::getUpdatedAt)
+                .last("LIMIT 1"));
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {

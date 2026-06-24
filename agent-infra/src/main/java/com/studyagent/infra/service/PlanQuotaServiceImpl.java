@@ -384,6 +384,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
         LocalDateTime windowEnd = windowStart.plusMonths(1);
 
+        syncAnnualSubscriptionQuotaWindow(subscription, windowStart, windowEnd, now);
+
         if (windowStart.equals(quota.getPlanPeriodStart()) && windowEnd.equals(quota.getPlanPeriodEnd())) {
             return;
         }
@@ -421,6 +423,35 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         )));
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
+    }
+
+    private void syncAnnualSubscriptionQuotaWindow(
+            UserSubscriptionEntity subscription,
+            LocalDateTime windowStart,
+            LocalDateTime windowEnd,
+            LocalDateTime now) {
+        if (subscription == null || subscription.getClerkUserId() == null || subscription.getClerkUserId().isBlank()) {
+            return;
+        }
+        if (windowStart.equals(subscription.getQuotaPeriodStart()) && windowEnd.equals(subscription.getQuotaPeriodEnd())) {
+            return;
+        }
+
+        int updated = userSubscriptionMapper.update(
+                null,
+                new UpdateWrapper<UserSubscriptionEntity>()
+                        .eq("clerk_user_id", subscription.getClerkUserId())
+                        .set("quota_period_start", windowStart)
+                        .set("quota_period_end", windowEnd)
+                        .set("updated_at", now));
+        if (updated != 1) {
+            throw new IllegalStateException("Subscription update conflict during annual quota window sync: clerkUserId="
+                    + subscription.getClerkUserId());
+        }
+
+        subscription.setQuotaPeriodStart(windowStart);
+        subscription.setQuotaPeriodEnd(windowEnd);
+        subscription.setUpdatedAt(now);
     }
 
     private void expireMonthlyPlanQuota(

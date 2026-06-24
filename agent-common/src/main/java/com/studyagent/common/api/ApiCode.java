@@ -25,6 +25,10 @@ public enum ApiCode {
     FEEDBACK_ALREADY_SUBMITTED(1021, "Feedback already submitted", "反馈已提交"),
     FEEDBACK_INVALID_REQUEST(1022, "Invalid feedback: %s", "反馈请求无效: %s"),
     RESUME_TOKEN_INVALID(1023, "Resume token is invalid, expired, or already used", "恢复令牌无效、已过期或已使用"),
+    SUBSCRIPTION_UPGRADE_REQUIRES_CHECKOUT(
+            1024,
+            "Immediate upgrades must use checkout. Start with /v1/payment/subscription-checkout",
+            "立即升级必须先创建 Checkout 会话"),
 
     // 1010 - 任务提交额度
     /** 额度超限，支持格式参数: limit */

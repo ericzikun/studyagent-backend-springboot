@@ -1,6 +1,7 @@
 package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.common.api.ApiCode;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.SubscriptionResult;
@@ -65,7 +66,8 @@ class SubscriptionControllerTest {
 
         Result<SubscriptionResult> result = controller.change(request, "user_1");
 
-        assertThat(result.getMeta().getStatusCode()).isEqualTo(400);
+        assertThat(result.getMeta().getStatusCode())
+                .isEqualTo(ApiCode.SUBSCRIPTION_UPGRADE_REQUIRES_CHECKOUT.getCode());
         assertThat(result.getMeta().getStatusMsg()).contains("/v1/payment/subscription-checkout");
     }
 }

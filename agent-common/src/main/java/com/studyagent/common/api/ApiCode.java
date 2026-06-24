@@ -42,6 +42,7 @@ public enum ApiCode {
     SUBSCRIPTION_STATE_INVALID(1017, "The subscription cannot be changed in its current state", "当前订阅状态不可变更"),
     PAYMENT_PROCESSING(1018, "Payment is still processing", "支付处理中"),
     FOLLOWUP_EDIT_LIMIT_REACHED(1019, "Current plan has reached the follow-up edit limit for this assignment", "当前套餐已达到该 assignment 的 follow-up edit 上限"),
+    BILLING_CUSTOMER_NOT_FOUND(1025, "No Stripe billing customer found for this user", "当前用户暂无 Stripe 账单客户"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

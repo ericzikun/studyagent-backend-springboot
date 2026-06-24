@@ -31,8 +31,11 @@ import com.studyagent.service.domain.billing.BillingCatalogResult;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
+import com.studyagent.service.domain.billing.BillingPortalSessionResult;
+import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
+import com.studyagent.service.domain.quota.PlanQuotaService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -72,6 +77,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final AddonPackageDefMapper addonPackageDefMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
+    private final PlanQuotaService planQuotaService;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -81,6 +87,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Value("${payment.cancel-url:http://localhost:3000/payment-canceled}")
     private String cancelUrl;
+
+    @Value("${billing.portal.mock-url:}")
+    private String billingPortalMockUrl;
+
+    @Value("${billing.checkout.mock-enabled:false}")
+    private boolean billingCheckoutMockEnabled;
 
     @PostConstruct
     public void initializeStripe() {
@@ -117,9 +129,20 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedSuccessUrl,
             String requestedCancelUrl,
             String resumeToken) {
-        requireStripeConfigured();
-        SubscriptionPlanEntity plan = requirePlan(planCode);
+        boolean mockCheckout = shouldUseMockCheckout();
+        if (!mockCheckout) {
+            requireStripeConfigured();
+        }
+        SubscriptionPlanEntity plan = requirePlan(planCode, !mockCheckout);
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
+        if (mockCheckout) {
+            return createMockSubscriptionCheckout(
+                    clerkUserId,
+                    plan,
+                    userSubscription,
+                    requestedSuccessUrl,
+                    resumeToken);
+        }
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && userSubscription.getStripeSubscriptionId() != null) {
             return createManualUpgradeCheckout(
@@ -191,6 +214,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
+    private boolean shouldUseMockCheckout() {
+        return billingCheckoutMockEnabled && !isStripeConfigured();
+    }
+
     private SessionCreateParams buildSubscriptionCheckoutParams(
             String clerkUserId,
             String customerId,
@@ -242,6 +269,86 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .referenceId(session.getId())
                 .checkoutUrl(session.getUrl())
                 .expiresAt(session.getExpiresAt())
+                .resumeToken(resumeToken)
+                .build();
+    }
+
+    private CheckoutSessionResult createMockSubscriptionCheckout(
+            String clerkUserId,
+            SubscriptionPlanEntity plan,
+            UserSubscriptionEntity current,
+            String requestedSuccessUrl,
+            String resumeToken) {
+        LocalDateTime now = LocalDateTime.now();
+        String sessionId = "mock_cs_" + UUID.randomUUID().toString().replace("-", "");
+        String customerId = hasText(current.getStripeCustomerId())
+                ? current.getStripeCustomerId()
+                : "mock_cus_" + UUID.randomUUID().toString().replace("-", "");
+        String subscriptionId = hasText(current.getStripeSubscriptionId())
+                ? current.getStripeSubscriptionId()
+                : "mock_sub_" + UUID.randomUUID().toString().replace("-", "");
+        LocalDateTime currentPeriodEnd = "year".equals(plan.getBillingInterval())
+                ? now.plusYears(1)
+                : now.plusMonths(1);
+        LocalDateTime quotaPeriodEnd = "year".equals(plan.getBillingInterval())
+                ? now.plusMonths(1)
+                : currentPeriodEnd;
+
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getTier, plan.getTier())
+                .set(UserSubscriptionEntity::getPlanCode, plan.getPlanCode())
+                .set(UserSubscriptionEntity::getStatus, "active")
+                .set(UserSubscriptionEntity::getStripeCustomerId, customerId)
+                .set(UserSubscriptionEntity::getStripeSubscriptionId, subscriptionId)
+                .set(UserSubscriptionEntity::getStripeScheduleId, null)
+                .set(UserSubscriptionEntity::getCurrentPeriodStart, now)
+                .set(UserSubscriptionEntity::getCurrentPeriodEnd, currentPeriodEnd)
+                .set(UserSubscriptionEntity::getQuotaPeriodStart, now)
+                .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
+                .set(UserSubscriptionEntity::getCancelAtPeriodEnd, false)
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
+                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        current.setTier(plan.getTier());
+        current.setPlanCode(plan.getPlanCode());
+        current.setStatus("active");
+        current.setStripeCustomerId(customerId);
+        current.setStripeSubscriptionId(subscriptionId);
+        current.setStripeScheduleId(null);
+        current.setCurrentPeriodStart(now);
+        current.setCurrentPeriodEnd(currentPeriodEnd);
+        current.setQuotaPeriodStart(now);
+        current.setQuotaPeriodEnd(quotaPeriodEnd);
+        current.setCancelAtPeriodEnd(false);
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
+        current.setPendingUpgradeOrderNo(null);
+        current.setPendingUpgradeExpiresAt(null);
+        current.setLastSyncedAt(now);
+        current.setUpdatedAt(now);
+
+        insertCompletedMockSubscriptionOrder(clerkUserId, plan, sessionId, subscriptionId, now);
+        planQuotaService.resetFromPaidInvoice(
+                clerkUserId,
+                subscriptionId,
+                plan.getPlanCode(),
+                now.toInstant(ZoneOffset.UTC),
+                quotaPeriodEnd.toInstant(ZoneOffset.UTC),
+                sessionId);
+
+        String checkoutUrl = resolveMockCheckoutSuccessUrl(
+                resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken),
+                sessionId);
+        return CheckoutSessionResult.builder()
+                .checkoutKind("session")
+                .sessionId(sessionId)
+                .referenceId(sessionId)
+                .checkoutUrl(checkoutUrl)
+                .expiresAt(now.plusMinutes(30).toEpochSecond(ZoneOffset.UTC))
                 .resumeToken(resumeToken)
                 .build();
     }
@@ -309,6 +416,74 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure("Create add-on Checkout failed", e);
         }
+    }
+
+    @Override
+    public BillingPortalSessionResult createBillingPortalSession(String clerkUserId, String requestedReturnUrl) {
+        UserSubscriptionEntity current = findByUser(clerkUserId);
+        if (current == null || !hasText(current.getStripeCustomerId())) {
+            throw new BillingDomainException(
+                    "STRIPE_CUSTOMER_NOT_FOUND",
+                    "No Stripe billing customer found for user");
+        }
+
+        String returnUrl = resolveBillingPortalReturnUrl(requestedReturnUrl);
+        if (!isStripeConfigured() && hasText(billingPortalMockUrl)) {
+            return BillingPortalSessionResult.builder()
+                    .url(resolveMockBillingPortalUrl(returnUrl, current.getStripeCustomerId()))
+                    .build();
+        }
+        requireStripeConfigured();
+        com.stripe.param.billingportal.SessionCreateParams params =
+                com.stripe.param.billingportal.SessionCreateParams.builder()
+                        .setCustomer(current.getStripeCustomerId())
+                        .setReturnUrl(returnUrl)
+                        .build();
+        try {
+            com.stripe.model.billingportal.Session session = createStripeBillingPortalSession(params);
+            return BillingPortalSessionResult.builder()
+                    .url(session.getUrl())
+                    .build();
+        } catch (StripeException e) {
+            throw stripeFailure("Create billing portal session failed", e);
+        }
+    }
+
+    @Override
+    public List<BillingRecordResult> getBillingRecords(String clerkUserId) {
+        return rechargeOrderMapper.selectList(
+                        new LambdaQueryWrapper<RechargeOrderEntity>()
+                                .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                                .gt(RechargeOrderEntity::getPriceCents, 0)
+                                .orderByDesc(RechargeOrderEntity::getPaidAt)
+                                .orderByDesc(RechargeOrderEntity::getCreatedAt)
+                                .last("LIMIT 50"))
+                .stream()
+                .map(this::toBillingRecord)
+                .toList();
+    }
+
+    private BillingRecordResult toBillingRecord(RechargeOrderEntity order) {
+        return BillingRecordResult.builder()
+                .id(hasText(order.getOrderNo())
+                        ? order.getOrderNo()
+                        : String.valueOf(order.getId()))
+                .paidAt(firstNonNull(order.getPaidAt(), order.getCreatedAt(), order.getUpdatedAt()))
+                .amountCents(order.getPriceCents() == null ? 0 : order.getPriceCents())
+                .currency(normalizeCurrency(order.getCurrency()))
+                .status(order.getStatus())
+                .orderType(order.getOrderType())
+                .build();
+    }
+
+    @SafeVarargs
+    private static <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private CheckoutSessionResult createManualUpgradeCheckout(
@@ -800,6 +975,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Customer.create(params);
     }
 
+    com.stripe.model.billingportal.Session createStripeBillingPortalSession(
+            com.stripe.param.billingportal.SessionCreateParams params) throws StripeException {
+        return com.stripe.model.billingportal.Session.create(params);
+    }
+
     boolean clearStoredStripeCustomer(UserSubscriptionEntity userSubscription) {
         if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
             return false;
@@ -842,6 +1022,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
+        return requirePlan(planCode, true);
+    }
+
+    private SubscriptionPlanEntity requirePlan(String planCode, boolean requireStripePrice) {
         String normalizedPlanCode = normalizePlanCode(planCode);
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
@@ -851,7 +1035,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (plan == null) {
             throw new BillingDomainException("INVALID_PLAN", "Unknown or inactive plan: " + normalizedPlanCode);
         }
-        if (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_")) {
+        if (requireStripePrice
+                && (plan.getStripePriceId() == null || !plan.getStripePriceId().startsWith("price_"))) {
             throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + normalizedPlanCode);
         }
         return plan;
@@ -1019,6 +1204,31 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         order.setStatus("pending");
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
+        rechargeOrderMapper.insert(order);
+    }
+
+    private void insertCompletedMockSubscriptionOrder(
+            String clerkUserId,
+            SubscriptionPlanEntity plan,
+            String stripeSessionId,
+            String subscriptionId,
+            LocalDateTime paidAt) {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderNo(generateOrderNo());
+        order.setOrderType("subscription_initial");
+        order.setClerkUserId(clerkUserId);
+        order.setFeatureCode("subscription");
+        order.setPackageCode(plan.getPlanCode());
+        order.setPlanCode(plan.getPlanCode());
+        order.setQuotaAmount(0L);
+        order.setPriceCents(plan.getPriceCents());
+        order.setCurrency(normalizeCurrency(plan.getCurrency()));
+        order.setStripeSessionId(stripeSessionId);
+        order.setStripeSubscriptionId(subscriptionId);
+        order.setStatus("completed");
+        order.setPaidAt(paidAt);
+        order.setCreatedAt(paidAt);
+        order.setUpdatedAt(paidAt);
         rechargeOrderMapper.insert(order);
     }
 
@@ -1217,6 +1427,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return withSessionId(withResumeToken);
     }
 
+    String resolveMockCheckoutSuccessUrl(String successUrl, String sessionId) {
+        return successUrl.replace("{CHECKOUT_SESSION_ID}", sessionId);
+    }
+
     String resolveUpgradeSuccessUrl(String requestedUrl, String resumeToken) {
         String resolved = resolveCheckoutReturnUrl(requestedUrl, successUrl);
         return appendQueryParam(resolved, "resumeToken", resumeToken);
@@ -1224,6 +1438,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     String resolveCheckoutCancelUrl(String requestedUrl) {
         return resolveCheckoutReturnUrl(requestedUrl, cancelUrl);
+    }
+
+    String resolveBillingPortalReturnUrl(String requestedUrl) {
+        if (!hasText(requestedUrl)) {
+            throw new BillingDomainException("INVALID_RETURN_URL", "returnUrl is required");
+        }
+        return resolveCheckoutReturnUrl(requestedUrl, successUrl);
+    }
+
+    String resolveMockBillingPortalUrl(String returnUrl, String stripeCustomerId) {
+        String configured = billingPortalMockUrl == null ? "" : billingPortalMockUrl.trim();
+        if ("return-url".equalsIgnoreCase(configured)) {
+            if (returnUrl.contains("mockBillingPortal=stripe")) {
+                return returnUrl;
+            }
+            return appendQueryParam(returnUrl, "mockBillingPortal", "stripe");
+        }
+        String withReturn = appendEncodedQueryParam(configured, "returnUrl", returnUrl);
+        return appendEncodedQueryParam(withReturn, "customer", stripeCustomerId);
     }
 
     private String appendQueryParam(String url, String key, String value) {
@@ -1234,6 +1467,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String fragment = fragmentIndex >= 0 ? url.substring(fragmentIndex) : "";
         String base = fragmentIndex >= 0 ? url.substring(0, fragmentIndex) : url;
         return base + (base.contains("?") ? "&" : "?") + key + "=" + value + fragment;
+    }
+
+    private String appendEncodedQueryParam(String url, String key, String value) {
+        if (!hasText(value)) {
+            return url;
+        }
+        return appendQueryParam(url, key, URLEncoder.encode(value, StandardCharsets.UTF_8));
     }
 
     private String resolveCheckoutReturnUrl(String requestedUrl, String fallbackUrl) {
@@ -1300,9 +1540,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private void requireStripeConfigured() {
-        if (stripeSecretKey == null || stripeSecretKey.isBlank() || stripeSecretKey.equals("sk_test_xxx")) {
+        if (!isStripeConfigured()) {
             throw new BillingDomainException("STRIPE_NOT_CONFIGURED", "Stripe Secret Key is not configured");
         }
+    }
+
+    private boolean isStripeConfigured() {
+        return stripeSecretKey != null && !stripeSecretKey.isBlank() && !stripeSecretKey.equals("sk_test_xxx");
     }
 
     private BillingDomainException stripeFailure(String message, StripeException cause) {

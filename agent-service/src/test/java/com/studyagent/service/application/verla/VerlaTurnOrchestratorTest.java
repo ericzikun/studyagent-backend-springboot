@@ -1290,6 +1290,104 @@ class VerlaTurnOrchestratorTest {
         assertNotNull(blocks.get("perFile"));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void onAssignmentChatCompleted_truncatesOversizedHunkTextKeepingIdentity() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                proposalRepository,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                objectMapper,
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        // Two hunk bodies of 300k chars each push the blocks past the 512KB budget.
+        String bigOriginal = "o".repeat(300_000);
+        String bigProposed = "p".repeat(300_000);
+        proposalRepository.proposal = VerlaArtifactEditProposal.builder()
+                .proposalId("ep_74_801")
+                .conversationId(74L)
+                .turnId(801L)
+                .state(VerlaArtifactEditProposal.STATE_REVIEWING)
+                .targetsJson("""
+                        [
+                          {
+                            "artifactUid": "art_doc",
+                            "kind": "document",
+                            "editMode": "review"
+                          }
+                        ]
+                        """)
+                .changesJson(objectMapper.writeValueAsString(Map.of(
+                        "art_doc", List.of(Map.of(
+                                "id", "h1",
+                                "anchor", "BODY",
+                                "originalText", bigOriginal,
+                                "proposedText", bigProposed)))))
+                .build();
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of(
+                "finalText", "I prepared review suggestions."));
+
+        VerlaMessage assistant = messageRepository.savedMessages.stream()
+                .filter(message -> "assistant".equals(message.getRole()))
+                .findFirst()
+                .orElseThrow();
+        // Persisted blocksJson stays under the byte budget after truncation.
+        assertTrue(assistant.getBlocksJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                <= 512 * 1024);
+
+        Map<String, Object> blocks =
+                objectMapper.readValue(assistant.getBlocksJson(), Map.class);
+        Map<String, Object> proposal =
+                (Map<String, Object>) blocks.get("artifactEditProposal");
+        List<Map<String, Object>> targets =
+                (List<Map<String, Object>>) proposal.get("targets");
+        Map<String, Object> hunk =
+                ((List<Map<String, Object>>) targets.get(0).get("changes")).get(0);
+
+        // Hunk identity preserved — commit semantics key off these, must not change.
+        assertEquals("h1", hunk.get("id"));
+        assertEquals("BODY", hunk.get("anchor"));
+        // Text bodies truncated to the cap with marker + length flags.
+        assertEquals(Boolean.TRUE, blocks.get("blocksTruncated"));
+        assertEquals(Boolean.TRUE, hunk.get("originalTextTruncated"));
+        assertEquals(300_000, hunk.get("originalTextLength"));
+        assertEquals(8000, ((String) hunk.get("originalText")).indexOf("\n\n[Truncated"));
+        assertTrue(((String) hunk.get("originalText")).endsWith("full change.]"));
+        assertEquals(Boolean.TRUE, hunk.get("proposedTextTruncated"));
+        assertEquals(8000, ((String) hunk.get("proposedText")).indexOf("\n\n[Truncated"));
+    }
+
     private static final class FakeSessionRepository implements VerlaSessionRepository {
         VerlaSession session;
         VerlaSession saved;

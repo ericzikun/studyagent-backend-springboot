@@ -61,6 +61,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -97,6 +98,12 @@ public class VerlaTurnOrchestrator {
     private static final TypeReference<List<Object>> LIST_OBJECT =
             new TypeReference<>() {};
     private static final int MAX_ASSISTANT_TEXT_CONTENT_CHARS = 32000;
+    // assignment-chat assistant blocksJson 截断预算（task 1.5）。blocks_json 是 MySQL JSON 列，
+    // 真实上限是 max_allowed_packet；这里取远低于它的预算，避免大行拖慢回放、撑爆包。
+    private static final int MAX_BLOCKS_JSON_BYTES = 512 * 1024;
+    private static final int MAX_HUNK_TEXT_CHARS = 8000;
+    private static final String HUNK_TRUNCATED_TAIL =
+            "\n\n[Truncated. Open the artifact to view the full change.]";
     private static final String GENERATED_ARTIFACT_READY_TEXT =
             "Assignment output is ready. Open the generated artifact to view the full result.";
     private static final String AGENT_WORKFORCE_ROLE = "agent_workforce";
@@ -1131,8 +1138,8 @@ public class VerlaTurnOrchestrator {
                         .role("assistant")
                         .sourceSessionId(agentSessionId)
                         .textContent(reply)
-                        .blocksJson(serializeJson(buildAssignmentChatAssistantBlocks(
-                                safeResult, turn.getId())))
+                        .blocksJson(serializeAssignmentChatBlocks(
+                                buildAssignmentChatAssistantBlocks(safeResult, turn.getId())))
                         .scene(FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT)
                         .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
                                 FileChatMessageMeta.builder()
@@ -2864,6 +2871,78 @@ public class VerlaTurnOrchestrator {
         blocks.putIfAbsent("proposalId", proposal.getProposalId());
         blocks.putIfAbsent("targets", targets);
         return blocks;
+    }
+
+    /**
+     * Serializes assignment-chat assistant blocks, truncating oversized review hunks
+     * before persistence (task 1.5; design "截断超大 hunk，与 attachment truncate 同策略").
+     * <p>
+     * Common case serializes once. Only when the payload exceeds {@link #MAX_BLOCKS_JSON_BYTES}
+     * do we shrink {@code artifactEditProposal.targets[].changes[].originalText/proposedText}
+     * — never the hunk identity fields ({@code id}/{@code anchor}/{@code displayAnchor}), so
+     * commit semantics and display re-anchoring stay intact.
+     */
+    @SuppressWarnings("unchecked")
+    private String serializeAssignmentChatBlocks(Map<String, Object> blocks) {
+        String json = serializeJson(blocks);
+        if (json == null || json.getBytes(StandardCharsets.UTF_8).length <= MAX_BLOCKS_JSON_BYTES) {
+            return json;
+        }
+
+        List<Map<String, Object>> targets = proposalTargets(blocks);
+        // 第 1 级：逐 hunk 截 originalText / proposedText 文本体，保身份。
+        for (Map<String, Object> target : targets) {
+            if (target.get("changes") instanceof List<?> hunks) {
+                for (Object h : hunks) {
+                    if (h instanceof Map) {
+                        Map<String, Object> hunk = (Map<String, Object>) h;
+                        truncateHunkField(hunk, "originalText");
+                        truncateHunkField(hunk, "proposedText");
+                    }
+                }
+            }
+        }
+        if (!targets.isEmpty()) {
+            blocks.put("blocksTruncated", true);
+        }
+
+        json = serializeJson(blocks);
+        if (json == null || json.getBytes(StandardCharsets.UTF_8).length <= MAX_BLOCKS_JSON_BYTES) {
+            return json;
+        }
+
+        // 第 2 级：病态多 hunk，截完仍超预算 → 丢 changes 体，留 target 头与计数。
+        for (Map<String, Object> target : targets) {
+            if (target.get("changes") instanceof List<?> hunks) {
+                target.put("changesCount", hunks.size());
+                target.put("changes", List.of());
+                target.put("changesTruncated", true);
+            }
+        }
+        return serializeJson(blocks);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> proposalTargets(Map<String, Object> blocks) {
+        if (blocks.get("artifactEditProposal") instanceof Map<?, ?> proposal
+                && proposal.get("targets") instanceof List<?> targets) {
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Object t : targets) {
+                if (t instanceof Map) {
+                    out.add((Map<String, Object>) t);
+                }
+            }
+            return out;
+        }
+        return List.of();
+    }
+
+    private static void truncateHunkField(Map<String, Object> hunk, String key) {
+        if (hunk.get(key) instanceof String text && text.length() > MAX_HUNK_TEXT_CHARS) {
+            hunk.put(key, text.substring(0, MAX_HUNK_TEXT_CHARS) + HUNK_TRUNCATED_TAIL);
+            hunk.put(key + "Truncated", true);
+            hunk.put(key + "Length", text.length());
+        }
     }
 
     private List<Map<String, Object>> mergeProposalTargetsWithChanges(VerlaArtifactEditProposal proposal) {

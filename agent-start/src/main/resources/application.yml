@@ -363,8 +363,15 @@ verla:
     redis-circuit-failure-threshold: 3
     redis-circuit-open-duration: 5s
   sse:
-    emitter-timeout-ms: 0
-    heartbeat-interval-ms: 15000
+    # SseEmitter 绝对超时（毫秒）；0=不超时。生产可设 1800000（30min）作兜底。
+    emitter-timeout-ms: ${VERLA_SSE_EMITTER_TIMEOUT_MS:0}
+    heartbeat-interval-ms: ${VERLA_SSE_HEARTBEAT_INTERVAL_MS:15000}
+    # 无业务 verla 事件超过该时长则服务端主动断开；0=关闭 idle 清扫。
+    idle-timeout-ms: ${VERLA_SSE_IDLE_TIMEOUT_MS:600000}
+    idle-sweep-interval-ms: ${VERLA_SSE_IDLE_SWEEP_INTERVAL_MS:60000}
+    max-emitters-per-conversation: ${VERLA_SSE_MAX_EMITTERS_PER_CONV:8}
+    # 单用户全局 SSE 上限；0=不限制。HTTP/1.1 多 Tab 场景建议 12~20。
+    max-emitters-per-user: ${VERLA_SSE_MAX_EMITTERS_PER_USER:16}
   watchdog:
     turn-timeout-seconds: 120
     session-progress-timeout-seconds: 60

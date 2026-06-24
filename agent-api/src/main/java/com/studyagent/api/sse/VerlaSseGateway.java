@@ -1,6 +1,8 @@
 package com.studyagent.api.sse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.api.config.VerlaSseProperties;
+import com.studyagent.common.exception.RateLimitExceededException;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.VerlaFrontendPayloadSanitizer;
 import com.studyagent.service.application.verla.sse.VerlaSseEventPayload;
@@ -24,36 +26,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Verla SSE 网关（PR-16）
  * <p>
- * 详见 docs/verla-Java侧MVP技术方案.md §13。\
- * <ul>
- *     <li>{@link #register(Long, Long)}：按 conversationId 注册 SseEmitter，并按 Last-Event-ID 补发</li>
- *     <li>{@link #publish(Long, VerlaSseEventPayload)}：广播一条事件到该 conversation 全部连接</li>
- *     <li>定时心跳（{@link #heartbeat()}）：每 15s 发 {@code event:ping}，避免被前置代理切线</li>
- * </ul>
- * <p>
- * 同一 tab 一个连接，承载该 tab 所有 turn / session 的事件；连接级别的所有权校验由 controller 完成。\
+ * 详见 docs/verla-Java侧MVP技术方案.md §13 / docs/V2/SSE多Tab连接瓶颈分析与修复方案.md
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class VerlaSseGateway implements VerlaSsePublisher {
 
-    /** 单个 conversation 的最大并发连接数，防一个 tab 滥开 */
-    private static final int MAX_EMITTERS_PER_CONV = 8;
-    /** 补发批次大小，避免回放过久 */
     private static final int REPLAY_BATCH = 200;
-    /** SSE 写入超时：0 表示永不超时（依赖前端断开 + 心跳维持） */
-    private static final long EMITTER_TIMEOUT_MS = 0L;
 
     private final VerlaEventInboxRepository inboxRepository;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final VerlaSseProperties sseProperties;
 
-    private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final Map<Long, CopyOnWriteArrayList<EmitterRegistration>> emitters = new ConcurrentHashMap<>();
+    private final AtomicLong registrationsTotal = new AtomicLong();
+    private final AtomicLong idleClosedTotal = new AtomicLong();
+    private final AtomicLong userLimitRejectedTotal = new AtomicLong();
 
     @PostConstruct
     void registerGauge() {
@@ -61,17 +56,19 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 g -> g.emitters.values().stream().mapToInt(List::size).sum());
         meterRegistry.gauge("verla.sse.conversations.total", Tags.empty(), this,
                 g -> g.emitters.size());
+        meterRegistry.gauge("verla.sse.registrations.total", Tags.empty(), registrationsTotal,
+                AtomicLong::get);
+        meterRegistry.gauge("verla.sse.idle_closed.total", Tags.empty(), idleClosedTotal,
+                AtomicLong::get);
+        meterRegistry.gauge("verla.sse.user_limit_rejected.total", Tags.empty(), userLimitRejectedTotal,
+                AtomicLong::get);
     }
 
     @PreDestroy
     void closeAll() {
         emitters.forEach((cid, list) -> {
-            for (SseEmitter e : list) {
-                try {
-                    e.complete();
-                } catch (Exception ignored) {
-                    // ignored
-                }
+            for (EmitterRegistration reg : list) {
+                completeQuietly(reg.emitter);
             }
         });
         emitters.clear();
@@ -80,37 +77,36 @@ public class VerlaSseGateway implements VerlaSsePublisher {
     /**
      * 注册一个新的 SseEmitter；补发该 conv 中 inbox.id &gt; lastEventId（或 lastEventId 缺失时从 0）的已 PROCESSED 事件。
      */
-    public SseEmitter register(Long conversationId, Long lastEventId) {
-        SseEmitter em = new SseEmitter(EMITTER_TIMEOUT_MS);
-        CopyOnWriteArrayList<SseEmitter> list = emitters.computeIfAbsent(
+    public SseEmitter register(Long conversationId, Long lastEventId, String clerkUserId) {
+        enforceUserConnectionLimit(clerkUserId);
+
+        long now = System.currentTimeMillis();
+        SseEmitter em = new SseEmitter(sseProperties.getEmitterTimeoutMs());
+        EmitterRegistration reg = new EmitterRegistration(em, clerkUserId, now);
+        CopyOnWriteArrayList<EmitterRegistration> list = emitters.computeIfAbsent(
                 conversationId, k -> new CopyOnWriteArrayList<>());
-        if (list.size() >= MAX_EMITTERS_PER_CONV) {
-            // 强制踢掉最老的连接，防内存堆积
-            try {
-                SseEmitter old = list.remove(0);
-                old.complete();
-            } catch (Exception ignored) {
-                // ignored
-            }
-        }
-        list.add(em);
-        em.onCompletion(() -> remove(conversationId, em));
-        em.onTimeout(() -> remove(conversationId, em));
-        em.onError(t -> remove(conversationId, em));
+        evictOldestIfNeeded(conversationId, list);
+        list.add(reg);
+        registrationsTotal.incrementAndGet();
+
+        em.onCompletion(() -> remove(conversationId, reg));
+        em.onTimeout(() -> {
+            log.debug("[Verla/sse] emitter timeout cid={} user={}", conversationId, clerkUserId);
+            remove(conversationId, reg);
+        });
+        em.onError(t -> remove(conversationId, reg));
 
         try {
             em.send(SseEmitter.event().name("ready").data("ok"));
         } catch (Exception e) {
             log.warn("[Verla/sse] initial ready frame failed cid={}: {}", conversationId, e.getMessage());
-            remove(conversationId, em);
+            remove(conversationId, reg);
             return em;
         }
 
-        // 补发：lastEventId>0 时只补该游标之后的事件；否则从 0 回放本会话已 PROCESSED 记录。
-        // 避免「事件先于 SSE 连接落库」时 live publish 因无 emitter 被丢弃、客户端永远收不到（如 Humanizer 很快结束）。
         long replayAfter = (lastEventId != null && lastEventId > 0) ? lastEventId : 0L;
         try {
-            replay(conversationId, replayAfter, em);
+            replay(conversationId, replayAfter, reg);
         } catch (Exception e) {
             log.warn("[Verla/sse] replay failed cid={} after={}: {}",
                     conversationId, replayAfter, e.getMessage());
@@ -123,7 +119,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         if (conversationId == null || payload == null) {
             return;
         }
-        CopyOnWriteArrayList<SseEmitter> list = emitters.get(conversationId);
+        CopyOnWriteArrayList<EmitterRegistration> list = emitters.get(conversationId);
         if (list == null || list.isEmpty()) {
             log.warn(
                     "[Verla/sse] publish skipped — no SSE subscribers (event already in inbox): cid={} type={} inboxRowId={}",
@@ -132,31 +128,93 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     payload.getId());
             return;
         }
-        Iterator<SseEmitter> it = list.iterator();
+        Iterator<EmitterRegistration> it = list.iterator();
         while (it.hasNext()) {
-            SseEmitter em = it.next();
-            sendOne(em, payload, conversationId);
+            EmitterRegistration reg = it.next();
+            if (sendOne(reg, payload, conversationId)) {
+                reg.touchBusinessWrite();
+            }
         }
     }
 
-    /** 心跳：每 15s 给所有 emitter 发一个 ping，保活 + 探活。 */
-    @Scheduled(fixedDelay = 15_000L)
+    @Scheduled(fixedDelayString = "${verla.sse.heartbeat-interval-ms:15000}")
     public void heartbeat() {
         if (emitters.isEmpty()) {
             return;
         }
         emitters.forEach((cid, list) -> {
-            for (SseEmitter em : list) {
+            for (EmitterRegistration reg : list) {
                 try {
-                    em.send(SseEmitter.event().name("ping").data("h"));
+                    reg.emitter.send(SseEmitter.event().name("ping").data("h"));
                 } catch (Exception e) {
-                    remove(cid, em);
+                    remove(cid, reg);
                 }
             }
         });
     }
 
-    private void replay(Long conversationId, long afterId, SseEmitter em) {
+    /** 关闭长时间无业务事件的 SSE 连接，释放 Tomcat 连接与内存。 */
+    @Scheduled(fixedDelayString = "${verla.sse.idle-sweep-interval-ms:60000}")
+    public void sweepIdleConnections() {
+        long idleTimeoutMs = sseProperties.getIdleTimeoutMs();
+        if (idleTimeoutMs <= 0L || emitters.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        emitters.forEach((cid, list) -> {
+            for (EmitterRegistration reg : list) {
+                if (now - reg.lastBusinessWriteAtMs >= idleTimeoutMs) {
+                    log.info("[Verla/sse] idle close cid={} user={} idleMs={}",
+                            cid, reg.clerkUserId, now - reg.lastBusinessWriteAtMs);
+                    idleClosedTotal.incrementAndGet();
+                    completeQuietly(reg.emitter);
+                    remove(cid, reg);
+                }
+            }
+        });
+    }
+
+    private void enforceUserConnectionLimit(String clerkUserId) {
+        int maxPerUser = sseProperties.getMaxEmittersPerUser();
+        if (maxPerUser <= 0 || clerkUserId == null || clerkUserId.isBlank()) {
+            return;
+        }
+        int active = countUserConnections(clerkUserId);
+        if (active >= maxPerUser) {
+            userLimitRejectedTotal.incrementAndGet();
+            log.warn("[Verla/sse] user connection limit reached user={} active={} max={}",
+                    clerkUserId, active, maxPerUser);
+            throw new RateLimitExceededException("verla-sse-subscribe");
+        }
+    }
+
+    private int countUserConnections(String clerkUserId) {
+        int count = 0;
+        for (CopyOnWriteArrayList<EmitterRegistration> list : emitters.values()) {
+            for (EmitterRegistration reg : list) {
+                if (clerkUserId.equals(reg.clerkUserId)) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private void evictOldestIfNeeded(Long conversationId, CopyOnWriteArrayList<EmitterRegistration> list) {
+        int maxPerConv = Math.max(1, sseProperties.getMaxEmittersPerConversation());
+        if (list.size() < maxPerConv) {
+            return;
+        }
+        try {
+            EmitterRegistration old = list.remove(0);
+            completeQuietly(old.emitter);
+            log.debug("[Verla/sse] evicted oldest emitter cid={} user={}", conversationId, old.clerkUserId);
+        } catch (Exception ignored) {
+            // ignored
+        }
+    }
+
+    private void replay(Long conversationId, long afterId, EmitterRegistration reg) {
         long cursor = afterId;
         boolean fullCatchUp = afterId == 0L;
         while (true) {
@@ -171,7 +229,9 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     continue;
                 }
                 VerlaSseEventPayload p = toReplayPayload(row);
-                sendOne(em, p, conversationId);
+                if (sendOne(reg, p, conversationId)) {
+                    reg.touchBusinessWrite();
+                }
                 cursor = row.getId();
             }
             if (page.size() < REPLAY_BATCH) {
@@ -180,10 +240,6 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         }
     }
 
-    /**
-     * 首轮全量补发（afterId=0）时跳过已在 /messages 历史里的 Plan 流式/收敛事件，减轻与 hydrate 重复；
-     * Agent/Humanizer 等仍原样补发。
-     */
     private static boolean shouldOmitPlanIntentReplay(String eventType) {
         if (eventType == null) {
             return false;
@@ -192,20 +248,24 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 || "PLAN_INTENT_RESOLVED".equals(eventType);
     }
 
-    private void sendOne(SseEmitter em, VerlaSseEventPayload payload, Long conversationId) {
+    /** @return true when send succeeded */
+    private boolean sendOne(EmitterRegistration reg, VerlaSseEventPayload payload, Long conversationId) {
         try {
-            em.send(SseEmitter.event()
+            reg.emitter.send(SseEmitter.event()
                     .id(String.valueOf(payload.getId()))
                     .name("verla")
                     .data(payload, MediaType.APPLICATION_JSON));
+            return true;
         } catch (IOException ioe) {
             log.debug("[Verla/sse] send io fail (likely disconnected) cid={} id={}: {}",
                     conversationId, payload.getId(), ioe.getMessage());
-            remove(conversationId, em);
+            remove(conversationId, reg);
+            return false;
         } catch (Exception e) {
             log.warn("[Verla/sse] send unexpected fail cid={} id={}: {}",
                     conversationId, payload.getId(), e.getMessage());
-            remove(conversationId, em);
+            remove(conversationId, reg);
+            return false;
         }
     }
 
@@ -232,14 +292,38 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 .build();
     }
 
-    private void remove(Long conversationId, SseEmitter em) {
-        CopyOnWriteArrayList<SseEmitter> list = emitters.get(conversationId);
+    private void remove(Long conversationId, EmitterRegistration reg) {
+        CopyOnWriteArrayList<EmitterRegistration> list = emitters.get(conversationId);
         if (list == null) {
             return;
         }
-        list.remove(em);
+        list.remove(reg);
         if (list.isEmpty()) {
             emitters.remove(conversationId, list);
+        }
+    }
+
+    private static void completeQuietly(SseEmitter em) {
+        try {
+            em.complete();
+        } catch (Exception ignored) {
+            // ignored
+        }
+    }
+
+    private static final class EmitterRegistration {
+        private final SseEmitter emitter;
+        private final String clerkUserId;
+        private volatile long lastBusinessWriteAtMs;
+
+        private EmitterRegistration(SseEmitter emitter, String clerkUserId, long registeredAtMs) {
+            this.emitter = emitter;
+            this.clerkUserId = clerkUserId;
+            this.lastBusinessWriteAtMs = registeredAtMs;
+        }
+
+        private void touchBusinessWrite() {
+            lastBusinessWriteAtMs = System.currentTimeMillis();
         }
     }
 }

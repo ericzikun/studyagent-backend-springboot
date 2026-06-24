@@ -410,6 +410,43 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void changeSubscriptionRejectsImmediateUpgradeAndPointsToCheckoutEndpoint() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setPlanCode("basic_yearly");
+        current.setTier("basic");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_123");
+
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("plus_yearly");
+        targetPlan.setTier("plus");
+        targetPlan.setBillingInterval("year");
+        targetPlan.setStripePriceId("price_plus_yearly");
+        targetPlan.setIsActive(true);
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setPlanCode("basic_yearly");
+        currentPlan.setTier("basic");
+        currentPlan.setBillingInterval("year");
+        currentPlan.setStripePriceId("price_basic_yearly");
+        currentPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_123");
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.changeSubscription("user_1", "plus_yearly"));
+
+        assertEquals("UPGRADE_REQUIRES_CHECKOUT", exception.getCode());
+        assertTrue(exception.getMessage().contains("/v1/payment/subscription-checkout"));
+    }
+
+    @Test
     void createSubscriptionCheckoutRetriesWithFreshCustomerWhenStoredCustomerWasDeleted() throws Exception {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(12L);

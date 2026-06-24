@@ -465,7 +465,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 targetPlan.getTier(),
                 targetPlan.getBillingInterval())) {
             case NOOP -> toResult(current);
-            case IMMEDIATE_UPGRADE -> upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+            case IMMEDIATE_UPGRADE -> throw new BillingDomainException(
+                    "UPGRADE_REQUIRES_CHECKOUT",
+                    "Immediate upgrades must use /v1/payment/subscription-checkout");
             case DEFERRED_CHANGE -> downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
             case UNSUPPORTED -> throw new BillingDomainException(
                     "SUBSCRIPTION_STATE_INVALID",

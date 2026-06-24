@@ -80,6 +80,8 @@ public class SubscriptionController {
                 case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
                 case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED" ->
                         Result.error(ApiCode.INVALID_PLAN, e.getMessage());
+                case "UPGRADE_REQUIRES_CHECKOUT" ->
+                        Result.error(ApiCode.BAD_REQUEST, e.getMessage());
                 case "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS",
                         "SUBSCRIPTION_STATE_INVALID" ->
                         Result.error(ApiCode.SUBSCRIPTION_STATE_INVALID);

@@ -1,6 +1,7 @@
 package com.studyagent.api.controller;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,5 +52,20 @@ class SubscriptionControllerTest {
         assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
         assertThat(result.getData()).isSameAs(subscriptionResult);
         verify(billingDomainService).changeSubscription("user_1", "plus_yearly");
+    }
+
+    @Test
+    void change_shouldSurfaceCheckoutMessageForImmediateUpgradeRequests() {
+        SubscriptionController.ChangePlanRequest request = new SubscriptionController.ChangePlanRequest();
+        request.setPlanCode("plus_yearly");
+        when(billingDomainService.changeSubscription("user_1", "plus_yearly"))
+                .thenThrow(new BillingDomainException(
+                        "UPGRADE_REQUIRES_CHECKOUT",
+                        "Immediate upgrades must use /v1/payment/subscription-checkout"));
+
+        Result<SubscriptionResult> result = controller.change(request, "user_1");
+
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(400);
+        assertThat(result.getMeta().getStatusMsg()).contains("/v1/payment/subscription-checkout");
     }
 }

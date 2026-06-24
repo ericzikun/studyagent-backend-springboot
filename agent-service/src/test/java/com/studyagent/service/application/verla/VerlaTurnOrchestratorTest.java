@@ -891,6 +891,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                new FakeArtifactEditProposalRepository(),
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,

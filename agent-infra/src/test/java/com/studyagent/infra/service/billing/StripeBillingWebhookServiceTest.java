@@ -222,6 +222,43 @@ class StripeBillingWebhookServiceTest {
         assertFalse(StripeBillingWebhookService.isPendingPlanActivationUpgrade(
                 existing,
                 "basic_yearly",
+                "basic",
+                invoice,
+                null));
+    }
+
+    @Test
+    void pendingPlanActivationDowngradeIsNotTreatedAsUpgradeEvenWithSubscriptionUpdateInvoice() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setTier("plus");
+        existing.setPlanCode("plus_monthly");
+        existing.setPendingPlanCode("basic_yearly");
+
+        Invoice invoice = new Invoice();
+        invoice.setBillingReason("subscription_update");
+
+        assertFalse(StripeBillingWebhookService.isPendingPlanActivationUpgrade(
+                existing,
+                "basic_yearly",
+                "basic",
+                invoice,
+                null));
+    }
+
+    @Test
+    void pendingPlanActivationHigherTierIsTreatedAsUpgradeWhenInvoiceSignalsSubscriptionUpdate() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setTier("basic");
+        existing.setPlanCode("basic_monthly");
+        existing.setPendingPlanCode("plus_yearly");
+
+        Invoice invoice = new Invoice();
+        invoice.setBillingReason("subscription_update");
+
+        assertTrue(StripeBillingWebhookService.isPendingPlanActivationUpgrade(
+                existing,
+                "plus_yearly",
+                "plus",
                 invoice,
                 null));
     }

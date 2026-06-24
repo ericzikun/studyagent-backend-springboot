@@ -208,6 +208,7 @@ class PlanQuotaServiceImplTest {
 
         when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota, quota);
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
@@ -229,6 +230,87 @@ class PlanQuotaServiceImplTest {
         assertEquals(3L, updated.getPlanBalance());
         assertEquals(LocalDateTime.parse("2026-03-15T00:00:00"), updated.getPlanPeriodStart());
         assertEquals(LocalDateTime.parse("2026-04-15T00:00:00"), updated.getPlanPeriodEnd());
+    }
+
+    @Test
+    void refreshPlanQuotaIfNeeded_resetsTrialingYearlyUpgradeCarryoverAfterFirstMonth() {
+        SubscriptionPlanEntity plan = plan("pro_yearly", 16L, 100_000L, 60_000L);
+        plan.setBillingInterval("year");
+
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "pro_yearly",
+                "trialing",
+                LocalDateTime.parse("2026-06-24T14:29:25"),
+                LocalDateTime.parse("2027-06-24T14:29:25"));
+
+        UserAiQuotaEntity quota = quota(11L, "task_create", 0L, 19L, 0L);
+        quota.setPlanPeriodStart(LocalDateTime.parse("2026-06-24T14:29:25"));
+        quota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-24T14:29:25"));
+
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota, quota);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.refreshPlanQuotaIfNeeded("user_1", "task_create", LocalDateTime.parse("2026-07-25T12:00:00"));
+
+        ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
+        verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
+        UserAiQuotaEntity updated = quotaCaptor.getValue();
+        assertEquals(16L, updated.getPlanBalance());
+        assertEquals(LocalDateTime.parse("2026-07-24T14:29:25"), updated.getPlanPeriodStart());
+        assertEquals(LocalDateTime.parse("2026-08-24T14:29:25"), updated.getPlanPeriodEnd());
+    }
+
+    @Test
+    void refreshPlanQuotaIfNeeded_advancesAnnualSubscriptionQuotaWindowForScheduler() {
+        SubscriptionPlanEntity plan = plan("pro_yearly", 16L, 100_000L, 60_000L);
+        plan.setBillingInterval("year");
+
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "pro_yearly",
+                "trialing",
+                LocalDateTime.parse("2026-06-24T14:29:25"),
+                LocalDateTime.parse("2027-06-24T14:29:25"));
+
+        UserAiQuotaEntity quota = quota(11L, "task_create", 0L, 19L, 0L);
+        quota.setPlanPeriodStart(LocalDateTime.parse("2026-06-24T14:29:25"));
+        quota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-24T14:29:25"));
+
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota, quota);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.refreshPlanQuotaIfNeeded("user_1", "task_create", LocalDateTime.parse("2026-07-25T12:00:00"));
+
+        verify(userSubscriptionMapper).update(any(), any(Wrapper.class));
+        assertEquals(LocalDateTime.parse("2026-07-24T14:29:25"), subscription.getQuotaPeriodStart());
+        assertEquals(LocalDateTime.parse("2026-08-24T14:29:25"), subscription.getQuotaPeriodEnd());
     }
 
     @Test
@@ -330,6 +412,7 @@ class PlanQuotaServiceImplTest {
 
         when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(userAiQuotaMapper.selectList(any(Wrapper.class)))
                 .thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota))

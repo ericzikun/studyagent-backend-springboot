@@ -245,8 +245,8 @@ public class StripeBillingWebhookService {
                     strategy), RequestOptions.builder()
                     .setIdempotencyKey("manual-upgrade-switch:" + order.getOrderNo())
                     .build());
-            Long periodStartEpoch = resolvePeriodEpoch(null, updated.getCurrentPeriodStart());
-            Long periodEndEpoch = resolvePeriodEpoch(null, updated.getCurrentPeriodEnd());
+            Long periodStartEpoch = resolvePeriodEpoch(null, resolveSubscriptionPeriodStart(updated));
+            Long periodEndEpoch = resolvePeriodEpoch(null, resolveSubscriptionPeriodEnd(updated));
             Instant periodStart = instant(periodStartEpoch);
             Instant quotaPeriodEnd = "year".equals(targetPlan.getBillingInterval())
                     ? periodStart.atZone(ZoneOffset.UTC).plusMonths(1).toInstant()
@@ -379,7 +379,12 @@ public class StripeBillingWebhookService {
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
                         .last("LIMIT 1"));
         boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade)
-                || isPendingPlanActivationUpgrade(existing, plan.getPlanCode(), invoice, pendingUpgrade);
+                || isPendingPlanActivationUpgrade(
+                existing,
+                plan.getPlanCode(),
+                plan.getTier(),
+                invoice,
+                pendingUpgrade);
         RechargeOrderEntity matchingManualUpgradeOrder = findMatchingManualUpgradeOrder(
                 clerkUserId,
                 subscriptionId,
@@ -623,8 +628,8 @@ public class StripeBillingWebhookService {
         if (!deleted && !pendingActivationNotPaid) {
             entity.setTier(deleted ? "free" : plan.getTier());
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
-            entity.setCurrentPeriodStart(fromEpoch(resolvePeriodEpoch(periodStartOverride, subscription.getCurrentPeriodStart())));
-            entity.setCurrentPeriodEnd(fromEpoch(resolvePeriodEpoch(periodEndOverride, subscription.getCurrentPeriodEnd())));
+            entity.setCurrentPeriodStart(fromEpoch(resolvePeriodEpoch(periodStartOverride, resolveSubscriptionPeriodStart(subscription))));
+            entity.setCurrentPeriodEnd(fromEpoch(resolvePeriodEpoch(periodEndOverride, resolveSubscriptionPeriodEnd(subscription))));
         }
         entity.setCancelAtPeriodEnd(!deleted && Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()));
         entity.setStripeScheduleId(resolveMirroredScheduleId(
@@ -638,8 +643,8 @@ public class StripeBillingWebhookService {
             entity.setPendingEffectiveAt(null);
         }
         if (!deleted && !pendingActivationNotPaid) {
-            LocalDateTime quotaPeriodStart = fromEpoch(resolvePeriodEpoch(periodStartOverride, subscription.getCurrentPeriodStart()));
-            LocalDateTime subscriptionPeriodEnd = fromEpoch(resolvePeriodEpoch(periodEndOverride, subscription.getCurrentPeriodEnd()));
+            LocalDateTime quotaPeriodStart = fromEpoch(resolvePeriodEpoch(periodStartOverride, resolveSubscriptionPeriodStart(subscription)));
+            LocalDateTime subscriptionPeriodEnd = fromEpoch(resolvePeriodEpoch(periodEndOverride, resolveSubscriptionPeriodEnd(subscription)));
             entity.setQuotaPeriodStart(quotaPeriodStart);
             entity.setQuotaPeriodEnd("year".equals(plan.getBillingInterval())
                     ? quotaPeriodStart.plusMonths(1)
@@ -836,18 +841,52 @@ public class StripeBillingWebhookService {
     static boolean isPendingPlanActivationUpgrade(
             UserSubscriptionEntity existing,
             String resolvedPlanCode,
+            String resolvedPlanTier,
             Invoice invoice,
             RechargeOrderEntity pendingUpgrade) {
         if (existing == null
                 || existing.getPlanCode() == null
+                || existing.getTier() == null
                 || existing.getPendingPlanCode() == null
                 || resolvedPlanCode == null
+                || resolvedPlanTier == null
                 || resolvedPlanCode.equals(existing.getPlanCode())
-                || !resolvedPlanCode.equals(existing.getPendingPlanCode())) {
+                || !resolvedPlanCode.equals(existing.getPendingPlanCode())
+                || tierRank(resolvedPlanTier) <= tierRank(existing.getTier())) {
             return false;
         }
         return invoice != null && "subscription_update".equals(invoice.getBillingReason())
                 || (pendingUpgrade != null && "subscription_upgrade".equals(pendingUpgrade.getOrderType()));
+    }
+
+    Long resolveSubscriptionPeriodStart(Subscription subscription) {
+        return resolveSubscriptionPeriod(subscription, true);
+    }
+
+    Long resolveSubscriptionPeriodEnd(Subscription subscription) {
+        return resolveSubscriptionPeriod(subscription, false);
+    }
+
+    private Long resolveSubscriptionPeriod(Subscription subscription, boolean start) {
+        if (subscription == null) {
+            return null;
+        }
+        Long fromRoot = start ? subscription.getCurrentPeriodStart() : subscription.getCurrentPeriodEnd();
+        if (fromRoot != null) {
+            return fromRoot;
+        }
+        JsonObject raw = subscription.getRawJsonObject();
+        if (raw == null || !raw.has("items") || !raw.get("items").isJsonObject()) {
+            return null;
+        }
+        JsonObject items = raw.getAsJsonObject("items");
+        if (!items.has("data") || !items.get("data").isJsonArray() || items.getAsJsonArray("data").isEmpty()) {
+            return null;
+        }
+        JsonElement first = items.getAsJsonArray("data").get(0);
+        return first.isJsonObject()
+                ? readLong(first.getAsJsonObject(), start ? "current_period_start" : "current_period_end")
+                : null;
     }
 
     void clearPendingUpgradeState(UserSubscriptionEntity entity, RechargeOrderEntity order, String reason) {
@@ -1274,6 +1313,15 @@ public class StripeBillingWebhookService {
 
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second;
+    }
+
+    private static int tierRank(String tier) {
+        return switch (tier) {
+            case "basic" -> 1;
+            case "plus" -> 2;
+            case "pro" -> 3;
+            default -> 0;
+        };
     }
 
     static Long resolvePeriodEpoch(Long override, Long fallback) {

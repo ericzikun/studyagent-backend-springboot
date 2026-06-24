@@ -3,6 +3,10 @@ package com.studyagent.infra.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.google.gson.Gson;
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
+import com.stripe.model.testhelpers.TestClock;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
@@ -16,6 +20,7 @@ import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlanQuotaServiceImpl implements PlanQuotaService {
@@ -52,13 +58,17 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode) {
-        refreshPlanQuotaIfNeeded(clerkUserId, featureCode, LocalDateTime.now());
+        LocalDateTime fallbackNow = LocalDateTime.now();
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        refreshPlanQuotaIfNeeded(clerkUserId, featureCode, resolveRefreshTime(subscription, fallbackNow));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void refreshAllPlanQuotasIfNeeded(String clerkUserId) {
-        refreshAllPlanQuotasIfNeeded(clerkUserId, LocalDateTime.now());
+        LocalDateTime fallbackNow = LocalDateTime.now();
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        refreshAllPlanQuotasIfNeeded(clerkUserId, resolveRefreshTime(subscription, fallbackNow));
     }
 
     @Override
@@ -624,6 +634,47 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         boolean missingPlanWindow = quota.getPlanPeriodStart() == null || currentPlanEnd == null;
         boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
         return missingPlanWindow || planWindowExpired;
+    }
+
+    LocalDateTime resolveRefreshTime(UserSubscriptionEntity subscription, LocalDateTime fallbackNow) {
+        if (!shouldUseStripeSimulationTime(subscription)) {
+            return fallbackNow;
+        }
+        try {
+            Subscription stripeSubscription = retrieveStripeSubscription(subscription.getStripeSubscriptionId());
+            if (stripeSubscription == null) {
+                return fallbackNow;
+            }
+            String testClockId = stripeSubscription.getTestClock();
+            if (testClockId == null || testClockId.isBlank()) {
+                return fallbackNow;
+            }
+            Long frozenTime = retrieveTestClockFrozenTime(testClockId);
+            if (frozenTime == null) {
+                return fallbackNow;
+            }
+            LocalDateTime simulatedNow = LocalDateTime.ofInstant(Instant.ofEpochSecond(frozenTime), ZoneOffset.UTC);
+            return simulatedNow.isAfter(fallbackNow) ? simulatedNow : fallbackNow;
+        } catch (StripeException e) {
+            log.warn("Resolve Stripe test clock time failed for subscription {}", subscription.getStripeSubscriptionId(), e);
+            return fallbackNow;
+        }
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {
+        return TestClock.retrieve(testClockId).getFrozenTime();
+    }
+
+    private boolean shouldUseStripeSimulationTime(UserSubscriptionEntity subscription) {
+        if (subscription == null || subscription.getStripeSubscriptionId() == null || subscription.getStripeSubscriptionId().isBlank()) {
+            return false;
+        }
+        String apiKey = Stripe.apiKey;
+        return apiKey != null && apiKey.startsWith("sk_test_");
     }
 
     private String normalizeBillingInterval(String billingInterval) {

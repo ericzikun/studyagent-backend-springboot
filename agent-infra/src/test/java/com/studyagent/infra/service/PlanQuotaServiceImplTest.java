@@ -1,6 +1,8 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.stripe.Stripe;
+import com.stripe.model.Subscription;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -311,6 +313,97 @@ class PlanQuotaServiceImplTest {
         verify(userSubscriptionMapper).update(any(), any(Wrapper.class));
         assertEquals(LocalDateTime.parse("2026-07-24T14:29:25"), subscription.getQuotaPeriodStart());
         assertEquals(LocalDateTime.parse("2026-08-24T14:29:25"), subscription.getQuotaPeriodEnd());
+    }
+
+    @Test
+    void refreshPlanQuotaIfNeeded_usesSimulationTimeForTrialingYearlySubscriptions() {
+        SubscriptionPlanEntity plan = plan("pro_yearly", 16L, 100_000L, 60_000L);
+        plan.setBillingInterval("year");
+
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "pro_yearly",
+                "trialing",
+                LocalDateTime.parse("2026-06-24T14:29:25"),
+                LocalDateTime.parse("2027-06-24T14:29:25"));
+        subscription.setStripeSubscriptionId("sub_test_clock");
+
+        UserAiQuotaEntity quota = quota(11L, "task_create", 0L, 19L, 0L);
+        quota.setPlanPeriodStart(LocalDateTime.parse("2026-06-24T14:29:25"));
+        quota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-24T14:29:25"));
+
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota, quota);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper) {
+            @Override
+            LocalDateTime resolveRefreshTime(UserSubscriptionEntity ignored, LocalDateTime fallbackNow) {
+                return LocalDateTime.parse("2026-08-25T12:00:00");
+            }
+        };
+
+        service.refreshPlanQuotaIfNeeded("user_1", "task_create");
+
+        ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
+        verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
+        UserAiQuotaEntity updated = quotaCaptor.getValue();
+        assertEquals(16L, updated.getPlanBalance());
+        assertEquals(LocalDateTime.parse("2026-08-24T14:29:25"), updated.getPlanPeriodStart());
+        assertEquals(LocalDateTime.parse("2026-09-24T14:29:25"), updated.getPlanPeriodEnd());
+    }
+
+    @Test
+    void resolveRefreshTime_prefersStripeTestClockFrozenTimeInTestMode() throws Exception {
+        String originalApiKey = Stripe.apiKey;
+        Stripe.apiKey = "sk_test_123";
+        try {
+            UserSubscriptionEntity subscription = subscription(
+                    "user_1",
+                    "pro_yearly",
+                    "trialing",
+                    LocalDateTime.parse("2026-06-24T14:29:25"),
+                    LocalDateTime.parse("2027-06-24T14:29:25"));
+            subscription.setStripeSubscriptionId("sub_test_clock");
+
+            Subscription stripeSubscription = new Subscription();
+            stripeSubscription.setTestClock("clock_123");
+
+            PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                    subscriptionPlanMapper,
+                    aiFeatureDefsMapper,
+                    userAiQuotaMapper,
+                    quotaLedgerMapper,
+                    userSubscriptionMapper) {
+                @Override
+                Subscription retrieveStripeSubscription(String subscriptionId) {
+                    return stripeSubscription;
+                }
+
+                @Override
+                Long retrieveTestClockFrozenTime(String testClockId) {
+                    return LocalDateTime.parse("2026-08-25T12:00:00").toEpochSecond(ZoneOffset.UTC);
+                }
+            };
+
+            LocalDateTime resolved = service.resolveRefreshTime(
+                    subscription,
+                    LocalDateTime.parse("2026-06-24T12:00:00"));
+
+            assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), resolved);
+        } finally {
+            Stripe.apiKey = originalApiKey;
+        }
     }
 
     @Test

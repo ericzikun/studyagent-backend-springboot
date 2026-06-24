@@ -220,6 +220,48 @@ class VerlaConversationDashboardStatusServiceTest {
     }
 
     @Test
+    void resolve_returnsCompletedWhenLatestTurnFinishedDespiteIntermediateAgentArtifactEvent() {
+        VerlaConversation conversation = conversation(14L, 140L).build();
+        turnRepository.byId.put(140L, turn(140L, 14L, TurnStatus.COMPLETED, 1400L));
+        sessionRepository.byId.put(1400L, session(1400L, 140L, SessionStatus.SUCCEEDED));
+        eventInboxRepository.add(14L, event(
+                2L,
+                14L,
+                VerlaAgentEventType.AGENT_ARTIFACT_UPDATED,
+                "{}"));
+        eventInboxRepository.add(14L, event(
+                1L,
+                14L,
+                VerlaAgentEventType.AGENT_COMPLETED,
+                "{}"));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_COMPLETED,
+                service.resolve(conversation));
+    }
+
+    @Test
+    void resolve_returnsProgressingWhenLatestTurnStillRunningDespiteOlderCompletedEvent() {
+        VerlaConversation conversation = conversation(15L, 150L).build();
+        turnRepository.byId.put(150L, turn(150L, 15L, TurnStatus.RUNNING_AGENT, 1500L));
+        sessionRepository.byId.put(1500L, session(1500L, 150L, SessionStatus.RUNNING));
+        eventInboxRepository.add(15L, event(
+                2L,
+                15L,
+                VerlaAgentEventType.AGENT_ARTIFACT_UPDATED,
+                "{}"));
+        eventInboxRepository.add(15L, event(
+                1L,
+                15L,
+                VerlaAgentEventType.AGENT_COMPLETED,
+                "{}"));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_PROGRESSING,
+                service.resolve(conversation));
+    }
+
+    @Test
     void resolveAll_returnsStatusesByConversationId() {
         VerlaConversation completed = conversation(6L, 60L).build();
         VerlaConversation needsChoice = conversation(7L, 70L).build();

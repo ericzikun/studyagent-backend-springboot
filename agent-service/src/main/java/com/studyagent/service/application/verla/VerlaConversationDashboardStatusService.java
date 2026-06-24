@@ -94,12 +94,11 @@ public class VerlaConversationDashboardStatusService {
             return STATUS_NEEDS_CHOICE;
         }
 
+        VerlaTurn turn = findLatestTurn(conversation, batch);
         String eventStatus = resolveFromLatestEvents(conversation.getId(), batch.eventsByConversation());
         if (eventStatus != null) {
-            return eventStatus;
+            return reconcileEventStatusWithTurn(eventStatus, turn);
         }
-
-        VerlaTurn turn = findLatestTurn(conversation, batch);
         if (turn == null) {
             return STATUS_PROGRESSING;
         }
@@ -240,6 +239,22 @@ public class VerlaConversationDashboardStatusService {
             return List.of();
         }
         return turns.size() <= limit ? turns : turns.subList(0, limit);
+    }
+
+    /**
+     * AI Detection / Humanizer reruns can finish the latest turn while the newest
+     * processed inbox row is still an intermediate AGENT_* artifact/progress event.
+     * Prefer the completed turn over that stale progressing signal.
+     */
+    private String reconcileEventStatusWithTurn(String eventStatus, VerlaTurn turn) {
+        if (!STATUS_PROGRESSING.equals(eventStatus) || turn == null) {
+            return eventStatus;
+        }
+        TurnStatus turnStatus = parseTurnStatus(turn.getStatus());
+        if (turnStatus == TurnStatus.COMPLETED) {
+            return STATUS_COMPLETED;
+        }
+        return eventStatus;
     }
 
     private String resolveFromLatestEvents(Long conversationId, Map<Long, List<VerlaEventInbox>> eventsByConversation) {

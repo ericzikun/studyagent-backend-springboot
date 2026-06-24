@@ -388,6 +388,28 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void shouldClearPendingScheduleStateWhenCancelingWithoutScheduleButPendingPlanExists() {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setPendingPlanCode("basic_yearly");
+
+        assertTrue(BillingDomainServiceImpl.shouldClearPendingScheduleStateBeforeCancellation(
+                true,
+                null,
+                current));
+    }
+
+    @Test
+    void shouldNotClearPendingScheduleStateWhenResumingWithoutScheduleAndOnlyPendingPlanExists() {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setPendingPlanCode("basic_yearly");
+
+        assertFalse(BillingDomainServiceImpl.shouldClearPendingScheduleStateBeforeCancellation(
+                false,
+                null,
+                current));
+    }
+
+    @Test
     void classifyPlanChangeBlocksAnnualToMonthlyDowngrade() {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,

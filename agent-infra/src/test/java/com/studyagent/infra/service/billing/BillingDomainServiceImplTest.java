@@ -14,6 +14,7 @@ import com.studyagent.service.domain.billing.BillingDomainException;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.Customer;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
@@ -277,6 +278,57 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void manualUpgradeCheckoutEnablesInvoiceCreation() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(20L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("basic_yearly");
+        current.setTier("basic");
+        current.setStatus("active");
+        current.setStripeCustomerId("cus_123");
+        current.setStripeSubscriptionId("sub_123");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2027-06-24T10:00:00"));
+        current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+
+        SubscriptionPlanEntity currentPlan = plan("basic_yearly", "basic", "year", 11988);
+        currentPlan.setCurrency("usd");
+        currentPlan.setStripePriceId("price_basic_yearly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("plus_yearly", "plus", "year", 19188);
+        targetPlan.setCurrency("usd");
+        targetPlan.setStripePriceId("price_plus_yearly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_1",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_3");
+
+        assertEquals("cs_test_manual_upgrade", result.getSessionId());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getEnabled());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getDescription()
+                .contains("basic_yearly"));
+        assertEquals(
+                "subscription_upgrade_manual",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("purchase_type"));
+        assertEquals(
+                "plus_yearly",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("target_plan_code"));
+    }
+
+    @Test
     void buildManualUpgradeCheckoutIdempotencyKeyUsesOrderNumber() {
         assertEquals(
                 "manual-upgrade-checkout:RO202606230001",
@@ -520,6 +572,7 @@ class BillingDomainServiceImplTest {
         private int checkoutAttempts;
         private int createdCustomers;
         private com.stripe.exception.StripeException customerCreationFailure;
+        private SessionCreateParams lastCheckoutParams;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper);
@@ -553,6 +606,17 @@ class BillingDomainServiceImplTest {
             session.setUrl("https://checkout.stripe.com/c/pay/cs_test_retried");
             session.setExpiresAt(123456789L);
             session.setSubscription("sub_new");
+            return session;
+        }
+
+        @Override
+        Session createStripeCheckoutSession(SessionCreateParams params, RequestOptions options)
+                throws com.stripe.exception.StripeException {
+            lastCheckoutParams = params;
+            Session session = new Session();
+            session.setId("cs_test_manual_upgrade");
+            session.setUrl("https://checkout.stripe.com/c/pay/cs_test_manual_upgrade");
+            session.setExpiresAt(123456789L);
             return session;
         }
     }

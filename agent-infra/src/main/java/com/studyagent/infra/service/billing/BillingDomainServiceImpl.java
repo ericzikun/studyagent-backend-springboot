@@ -353,34 +353,22 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .putMetadata("target_plan_code", targetPlan.getPlanCode())
                     .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
                     .build();
-            SessionCreateParams params = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.PAYMENT)
-                    .setCustomer(customerId)
-                    .setClientReferenceId(clerkUserId)
-                    .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
-                    .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
-                    .addLineItem(SessionCreateParams.LineItem.builder()
-                            .setQuantity(1L)
-                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
-                                    .setCurrency(normalizeCurrency(targetPlan.getCurrency()))
-                                    .setUnitAmount((long) quote.getAmountCents())
-                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                            .setName("Subscription upgrade to " + targetPlan.getPlanCode())
-                                            .build())
-                                    .build())
-                            .build())
-                    .putMetadata("purchase_type", "subscription_upgrade_manual")
-                    .putMetadata("upgrade_order_no", orderNo)
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("current_plan_code", currentPlan.getPlanCode())
-                    .putMetadata("target_plan_code", targetPlan.getPlanCode())
-                    .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
-                    .setPaymentIntentData(paymentIntentData)
-                    .build();
+            SessionCreateParams params = buildManualUpgradeCheckoutParams(
+                    customerId,
+                    clerkUserId,
+                    currentPlan,
+                    targetPlan,
+                    current,
+                    quote,
+                    orderNo,
+                    requestedSuccessUrl,
+                    requestedCancelUrl,
+                    resumeToken,
+                    paymentIntentData);
             RequestOptions options = RequestOptions.builder()
                     .setIdempotencyKey(buildManualUpgradeCheckoutIdempotencyKey(orderNo))
                     .build();
-            Session session = Session.create(params, options);
+            Session session = createStripeCheckoutSession(params, options);
             insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
             markPendingUpgradeCheckout(current, orderNo, session);
 
@@ -787,6 +775,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Session.create(params);
     }
 
+    Session createStripeCheckoutSession(SessionCreateParams params, RequestOptions options) throws StripeException {
+        return Session.create(params, options);
+    }
+
     Customer createStripeCustomer(CustomerCreateParams params) throws StripeException {
         return Customer.create(params);
     }
@@ -1070,6 +1062,57 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     static String buildManualUpgradeCheckoutIdempotencyKey(String orderNo) {
         return "manual-upgrade-checkout:" + orderNo;
+    }
+
+    SessionCreateParams buildManualUpgradeCheckoutParams(
+            String customerId,
+            String clerkUserId,
+            SubscriptionPlanEntity currentPlan,
+            SubscriptionPlanEntity targetPlan,
+            UserSubscriptionEntity current,
+            UpgradeChargeQuote quote,
+            String orderNo,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken,
+            SessionCreateParams.PaymentIntentData paymentIntentData) {
+        return SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCustomer(customerId)
+                .setClientReferenceId(clerkUserId)
+                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
+                .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setQuantity(1L)
+                        .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                .setCurrency(normalizeCurrency(targetPlan.getCurrency()))
+                                .setUnitAmount((long) quote.getAmountCents())
+                                .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                        .setName("Subscription upgrade to " + targetPlan.getPlanCode())
+                                        .build())
+                                .build())
+                        .build())
+                .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
+                        .setEnabled(true)
+                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                                .setDescription("Subscription upgrade charge from "
+                                        + currentPlan.getPlanCode() + " to " + targetPlan.getPlanCode())
+                                .putMetadata("purchase_type", "subscription_upgrade_manual")
+                                .putMetadata("upgrade_order_no", orderNo)
+                                .putMetadata("clerk_user_id", clerkUserId)
+                                .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                                .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                                .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                                .build())
+                        .build())
+                .putMetadata("purchase_type", "subscription_upgrade_manual")
+                .putMetadata("upgrade_order_no", orderNo)
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                .setPaymentIntentData(paymentIntentData)
+                .build();
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

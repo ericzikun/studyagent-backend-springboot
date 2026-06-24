@@ -50,10 +50,16 @@ public class SubscriptionController {
     }
 
     @PostMapping("/upgrade")
+    @Deprecated(forRemoval = false)
     public Result<SubscriptionResult> upgrade(
             @RequestBody ChangePlanRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
-        return execute(clerkUserId, () -> billingDomainService.upgradeSubscription(clerkUserId, request.getResolvedPlanCode()));
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        return Result.error(
+                ApiCode.BAD_REQUEST,
+                "This endpoint has been deprecated. Use /v1/payment/subscription-checkout instead.");
     }
 
     @PostMapping("/downgrade")

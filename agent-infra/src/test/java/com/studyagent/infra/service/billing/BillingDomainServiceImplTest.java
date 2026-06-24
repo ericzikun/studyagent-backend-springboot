@@ -12,12 +12,20 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.stripe.exception.InvalidRequestException;
+import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
+import com.stripe.model.Price;
+import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
+import com.stripe.model.SubscriptionItemCollection;
+import com.stripe.model.SubscriptionSchedule;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
-import com.stripe.param.checkout.SessionCreateParams;
+import com.stripe.param.SubscriptionScheduleCreateParams;
+import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
+import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -410,6 +418,54 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void downgradeSubscriptionReleasesExistingScheduleBeforeCreatingReplacement() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(30L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("pro_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_123");
+        current.setStripeScheduleId("sub_sched_old");
+        current.setPendingPlanCode("plus_yearly");
+        current.setPendingEffectiveAt(LocalDateTime.parse("2026-07-24T11:59:27"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-24T11:59:27"));
+
+        SubscriptionPlanEntity currentPlan = plan("pro_monthly", "pro", "month", 7999);
+        currentPlan.setStripePriceId("price_pro_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                "sub_sched_old",
+                "price_pro_monthly",
+                1782302367L,
+                1784894367L);
+        service.existingScheduleToRetrieve = schedule("sub_sched_old");
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.updatedScheduleToReturn = schedule("sub_sched_new");
+
+        var result = service.downgradeSubscription("user_1", "basic_monthly");
+
+        assertEquals("sub_sched_new", result.getStripeScheduleId());
+        assertEquals("basic_monthly", result.getPendingPlanCode());
+        assertEquals("sub_sched_old", service.releasedScheduleId);
+        assertEquals("sub_sched_new", current.getStripeScheduleId());
+        assertEquals(1, service.createdSchedules);
+        assertEquals(1, service.updatedSchedules);
+    }
+
+    @Test
     void classifyPlanChangeBlocksAnnualToMonthlyDowngrade() {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
@@ -595,6 +651,13 @@ class BillingDomainServiceImplTest {
         private int createdCustomers;
         private com.stripe.exception.StripeException customerCreationFailure;
         private SessionCreateParams lastCheckoutParams;
+        private Subscription subscriptionToRetrieve;
+        private SubscriptionSchedule existingScheduleToRetrieve;
+        private SubscriptionSchedule replacementScheduleToCreate;
+        private SubscriptionSchedule updatedScheduleToReturn;
+        private String releasedScheduleId;
+        private int createdSchedules;
+        private int updatedSchedules;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper);
@@ -641,6 +704,44 @@ class BillingDomainServiceImplTest {
             session.setExpiresAt(123456789L);
             return session;
         }
+
+        @Override
+        Subscription retrieveStripeSubscription(String subscriptionId) {
+            return subscriptionToRetrieve;
+        }
+
+        @Override
+        SubscriptionSchedule retrieveStripeSubscriptionSchedule(String scheduleId) {
+            return existingScheduleToRetrieve;
+        }
+
+        @Override
+        SubscriptionSchedule createStripeSubscriptionSchedule(
+                SubscriptionScheduleCreateParams params,
+                RequestOptions options) {
+            createdSchedules++;
+            return replacementScheduleToCreate;
+        }
+
+        @Override
+        SubscriptionSchedule updateStripeSubscriptionSchedule(
+                SubscriptionSchedule schedule,
+                SubscriptionScheduleUpdateParams params,
+                RequestOptions options) {
+            updatedSchedules++;
+            return updatedScheduleToReturn;
+        }
+
+        @Override
+        SubscriptionSchedule releaseStripeSubscriptionSchedule(
+                SubscriptionSchedule schedule,
+                SubscriptionScheduleReleaseParams params) {
+            releasedScheduleId = schedule.getId();
+            if (subscriptionToRetrieve != null) {
+                subscriptionToRetrieve.setSchedule(null);
+            }
+            return schedule;
+        }
     }
 
     private SubscriptionPlanEntity plan(String planCode, String tier, String billingInterval, int priceCents) {
@@ -650,5 +751,37 @@ class BillingDomainServiceImplTest {
         plan.setBillingInterval(billingInterval);
         plan.setPriceCents(priceCents);
         return plan;
+    }
+
+    private Subscription subscription(
+            String subscriptionId,
+            String scheduleId,
+            String priceId,
+            Long periodStart,
+            Long periodEnd) {
+        Subscription subscription = new Subscription();
+        subscription.setId(subscriptionId);
+        subscription.setSchedule(scheduleId);
+        subscription.setCurrentPeriodStart(periodStart);
+        subscription.setCurrentPeriodEnd(periodEnd);
+
+        Price price = new Price();
+        price.setId(priceId);
+        SubscriptionItem item = new SubscriptionItem();
+        item.setId("si_123");
+        item.setPrice(price);
+        item.setQuantity(1L);
+
+        SubscriptionItemCollection items = new SubscriptionItemCollection();
+        items.setData(List.of(item));
+        subscription.setItems(items);
+        return subscription;
+    }
+
+    private SubscriptionSchedule schedule(String scheduleId) {
+        SubscriptionSchedule schedule = new SubscriptionSchedule();
+        schedule.setId(scheduleId);
+        schedule.setStatus("active");
+        return schedule;
     }
 }

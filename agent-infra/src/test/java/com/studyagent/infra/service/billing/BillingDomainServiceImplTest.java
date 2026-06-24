@@ -12,11 +12,20 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.stripe.exception.InvalidRequestException;
+import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
+import com.stripe.model.Price;
+import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
+import com.stripe.model.SubscriptionItemCollection;
+import com.stripe.model.SubscriptionSchedule;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
-import com.stripe.param.checkout.SessionCreateParams;
+import com.stripe.param.SubscriptionScheduleCreateParams;
+import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
+import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -272,8 +281,59 @@ class BillingDomainServiceImplTest {
                 LocalDateTime.parse("2026-11-23T10:00:00"));
 
         assertEquals(23988, quote.getAmountCents());
-        assertEquals("annual_diff", quote.getChargeType());
+        assertEquals("annual_full", quote.getChargeType());
         assertEquals(0, quote.getRemainingAnnualMonthsExcludingCurrent());
+    }
+
+    @Test
+    void manualUpgradeCheckoutEnablesInvoiceCreation() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(20L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("basic_yearly");
+        current.setTier("basic");
+        current.setStatus("active");
+        current.setStripeCustomerId("cus_123");
+        current.setStripeSubscriptionId("sub_123");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2027-06-24T10:00:00"));
+        current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+
+        SubscriptionPlanEntity currentPlan = plan("basic_yearly", "basic", "year", 11988);
+        currentPlan.setCurrency("usd");
+        currentPlan.setStripePriceId("price_basic_yearly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("plus_yearly", "plus", "year", 19188);
+        targetPlan.setCurrency("usd");
+        targetPlan.setStripePriceId("price_plus_yearly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_1",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_3");
+
+        assertEquals("cs_test_manual_upgrade", result.getSessionId());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getEnabled());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getDescription()
+                .contains("basic_yearly"));
+        assertEquals(
+                "subscription_upgrade_manual",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("purchase_type"));
+        assertEquals(
+                "plus_yearly",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("target_plan_code"));
     }
 
     @Test
@@ -333,6 +393,76 @@ class BillingDomainServiceImplTest {
                 false,
                 null,
                 "sub_sched_remote"));
+    }
+
+    @Test
+    void shouldClearPendingScheduleStateWhenCancelingWithoutScheduleButPendingPlanExists() {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setPendingPlanCode("basic_yearly");
+
+        assertTrue(BillingDomainServiceImpl.shouldClearPendingScheduleStateBeforeCancellation(
+                true,
+                null,
+                current));
+    }
+
+    @Test
+    void shouldNotClearPendingScheduleStateWhenResumingWithoutScheduleAndOnlyPendingPlanExists() {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setPendingPlanCode("basic_yearly");
+
+        assertFalse(BillingDomainServiceImpl.shouldClearPendingScheduleStateBeforeCancellation(
+                false,
+                null,
+                current));
+    }
+
+    @Test
+    void downgradeSubscriptionReleasesExistingScheduleBeforeCreatingReplacement() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(30L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("pro_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_123");
+        current.setStripeScheduleId("sub_sched_old");
+        current.setPendingPlanCode("plus_yearly");
+        current.setPendingEffectiveAt(LocalDateTime.parse("2026-07-24T11:59:27"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-24T11:59:27"));
+
+        SubscriptionPlanEntity currentPlan = plan("pro_monthly", "pro", "month", 7999);
+        currentPlan.setStripePriceId("price_pro_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                "sub_sched_old",
+                "price_pro_monthly",
+                1782302367L,
+                1784894367L);
+        service.existingScheduleToRetrieve = schedule("sub_sched_old");
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.updatedScheduleToReturn = schedule("sub_sched_new");
+
+        var result = service.downgradeSubscription("user_1", "basic_monthly");
+
+        assertEquals("sub_sched_new", result.getStripeScheduleId());
+        assertEquals("basic_monthly", result.getPendingPlanCode());
+        assertEquals("sub_sched_old", service.releasedScheduleId);
+        assertEquals("sub_sched_new", current.getStripeScheduleId());
+        assertEquals(1, service.createdSchedules);
+        assertEquals(1, service.updatedSchedules);
     }
 
     @Test
@@ -520,6 +650,14 @@ class BillingDomainServiceImplTest {
         private int checkoutAttempts;
         private int createdCustomers;
         private com.stripe.exception.StripeException customerCreationFailure;
+        private SessionCreateParams lastCheckoutParams;
+        private Subscription subscriptionToRetrieve;
+        private SubscriptionSchedule existingScheduleToRetrieve;
+        private SubscriptionSchedule replacementScheduleToCreate;
+        private SubscriptionSchedule updatedScheduleToReturn;
+        private String releasedScheduleId;
+        private int createdSchedules;
+        private int updatedSchedules;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper);
@@ -555,6 +693,55 @@ class BillingDomainServiceImplTest {
             session.setSubscription("sub_new");
             return session;
         }
+
+        @Override
+        Session createStripeCheckoutSession(SessionCreateParams params, RequestOptions options)
+                throws com.stripe.exception.StripeException {
+            lastCheckoutParams = params;
+            Session session = new Session();
+            session.setId("cs_test_manual_upgrade");
+            session.setUrl("https://checkout.stripe.com/c/pay/cs_test_manual_upgrade");
+            session.setExpiresAt(123456789L);
+            return session;
+        }
+
+        @Override
+        Subscription retrieveStripeSubscription(String subscriptionId) {
+            return subscriptionToRetrieve;
+        }
+
+        @Override
+        SubscriptionSchedule retrieveStripeSubscriptionSchedule(String scheduleId) {
+            return existingScheduleToRetrieve;
+        }
+
+        @Override
+        SubscriptionSchedule createStripeSubscriptionSchedule(
+                SubscriptionScheduleCreateParams params,
+                RequestOptions options) {
+            createdSchedules++;
+            return replacementScheduleToCreate;
+        }
+
+        @Override
+        SubscriptionSchedule updateStripeSubscriptionSchedule(
+                SubscriptionSchedule schedule,
+                SubscriptionScheduleUpdateParams params,
+                RequestOptions options) {
+            updatedSchedules++;
+            return updatedScheduleToReturn;
+        }
+
+        @Override
+        SubscriptionSchedule releaseStripeSubscriptionSchedule(
+                SubscriptionSchedule schedule,
+                SubscriptionScheduleReleaseParams params) {
+            releasedScheduleId = schedule.getId();
+            if (subscriptionToRetrieve != null) {
+                subscriptionToRetrieve.setSchedule(null);
+            }
+            return schedule;
+        }
     }
 
     private SubscriptionPlanEntity plan(String planCode, String tier, String billingInterval, int priceCents) {
@@ -564,5 +751,37 @@ class BillingDomainServiceImplTest {
         plan.setBillingInterval(billingInterval);
         plan.setPriceCents(priceCents);
         return plan;
+    }
+
+    private Subscription subscription(
+            String subscriptionId,
+            String scheduleId,
+            String priceId,
+            Long periodStart,
+            Long periodEnd) {
+        Subscription subscription = new Subscription();
+        subscription.setId(subscriptionId);
+        subscription.setSchedule(scheduleId);
+        subscription.setCurrentPeriodStart(periodStart);
+        subscription.setCurrentPeriodEnd(periodEnd);
+
+        Price price = new Price();
+        price.setId(priceId);
+        SubscriptionItem item = new SubscriptionItem();
+        item.setId("si_123");
+        item.setPrice(price);
+        item.setQuantity(1L);
+
+        SubscriptionItemCollection items = new SubscriptionItemCollection();
+        items.setData(List.of(item));
+        subscription.setItems(items);
+        return subscription;
+    }
+
+    private SubscriptionSchedule schedule(String scheduleId) {
+        SubscriptionSchedule schedule = new SubscriptionSchedule();
+        schedule.setId(scheduleId);
+        schedule.setStatus("active");
+        return schedule;
     }
 }

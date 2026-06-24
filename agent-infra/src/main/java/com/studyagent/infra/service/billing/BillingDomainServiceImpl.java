@@ -353,34 +353,22 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .putMetadata("target_plan_code", targetPlan.getPlanCode())
                     .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
                     .build();
-            SessionCreateParams params = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.PAYMENT)
-                    .setCustomer(customerId)
-                    .setClientReferenceId(clerkUserId)
-                    .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
-                    .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
-                    .addLineItem(SessionCreateParams.LineItem.builder()
-                            .setQuantity(1L)
-                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
-                                    .setCurrency(normalizeCurrency(targetPlan.getCurrency()))
-                                    .setUnitAmount((long) quote.getAmountCents())
-                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                            .setName("Subscription upgrade to " + targetPlan.getPlanCode())
-                                            .build())
-                                    .build())
-                            .build())
-                    .putMetadata("purchase_type", "subscription_upgrade_manual")
-                    .putMetadata("upgrade_order_no", orderNo)
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("current_plan_code", currentPlan.getPlanCode())
-                    .putMetadata("target_plan_code", targetPlan.getPlanCode())
-                    .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
-                    .setPaymentIntentData(paymentIntentData)
-                    .build();
+            SessionCreateParams params = buildManualUpgradeCheckoutParams(
+                    customerId,
+                    clerkUserId,
+                    currentPlan,
+                    targetPlan,
+                    current,
+                    quote,
+                    orderNo,
+                    requestedSuccessUrl,
+                    requestedCancelUrl,
+                    resumeToken,
+                    paymentIntentData);
             RequestOptions options = RequestOptions.builder()
                     .setIdempotencyKey(buildManualUpgradeCheckoutIdempotencyKey(orderNo))
                     .build();
-            Session session = Session.create(params, options);
+            Session session = createStripeCheckoutSession(params, options);
             insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
             markPendingUpgradeCheckout(current, orderNo, session);
 
@@ -501,22 +489,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
 
         try {
-            Subscription stripeSubscription = Subscription.retrieve(current.getStripeSubscriptionId());
-            if (stripeSubscription.getItems() == null
-                    || stripeSubscription.getItems().getData() == null
-                    || stripeSubscription.getItems().getData().size() != 1) {
-                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
-            }
-            SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
-            if (item.getPrice() == null || item.getPrice().getId() == null) {
-                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription item price is missing");
-            }
-
+            Subscription stripeSubscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
             SubscriptionSchedule schedule = upsertDowngradeSchedule(
                     clerkUserId,
                     current,
                     stripeSubscription,
-                    item,
                     targetPlan);
             LocalDateTime pendingEffectiveAt = fromEpoch(stripeSubscription.getCurrentPeriodEnd());
             LocalDateTime now = LocalDateTime.now();
@@ -562,13 +539,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         try {
             Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
             String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
-            if (canSkipCancellationUpdate(current.getCancelAtPeriodEnd(), cancel, current.getStripeScheduleId(), subscription.getSchedule())) {
-                return toResult(current);
-            }
+            boolean shouldClearPendingScheduleState =
+                    shouldClearPendingScheduleStateBeforeCancellation(cancel, scheduleId, current);
             if (scheduleId != null) {
                 releasePendingScheduleIfPresent(current, subscription);
-                clearPendingScheduleState(current);
                 subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            }
+            if (shouldClearPendingScheduleState) {
+                clearPendingScheduleState(current);
+            }
+            if (canSkipCancellationUpdate(current.getCancelAtPeriodEnd(), cancel, current.getStripeScheduleId(), subscription.getSchedule())) {
+                return toResult(current);
             }
             Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
                     .setCancelAtPeriodEnd(cancel)
@@ -589,26 +570,45 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 && firstNonBlank(localScheduleId, remoteScheduleId) == null;
     }
 
+    static boolean shouldClearPendingScheduleStateBeforeCancellation(
+            boolean cancelAtPeriodEnd,
+            String scheduleId,
+            UserSubscriptionEntity current) {
+        if (scheduleId != null && !scheduleId.isBlank()) {
+            return true;
+        }
+        return cancelAtPeriodEnd
+                && current != null
+                && ((current.getPendingPlanCode() != null && !current.getPendingPlanCode().isBlank())
+                || current.getPendingEffectiveAt() != null);
+    }
+
     private SubscriptionSchedule upsertDowngradeSchedule(
             String clerkUserId,
             UserSubscriptionEntity current,
             Subscription stripeSubscription,
-            SubscriptionItem item,
             SubscriptionPlanEntity targetPlan) throws StripeException {
         String scheduleId = firstNonBlank(current.getStripeScheduleId(), stripeSubscription.getSchedule());
+        Subscription scheduleSubscription = stripeSubscription;
+        if (scheduleId != null && !scheduleId.isBlank()) {
+            releaseScheduleIfReusable(scheduleId);
+            scheduleSubscription = retrieveStripeSubscription(stripeSubscription.getId());
+            scheduleId = null;
+        }
         SubscriptionSchedule schedule = retrieveReusableSchedule(scheduleId);
         if (schedule == null) {
             RequestOptions createOptions = RequestOptions.builder()
-                    .setIdempotencyKey("downgrade-schedule:create:" + stripeSubscription.getId()
+                    .setIdempotencyKey("downgrade-schedule:create:" + scheduleSubscription.getId()
                             + ":" + targetPlan.getPlanCode() + ":" + stripeSubscription.getCurrentPeriodEnd())
                     .build();
-            schedule = SubscriptionSchedule.create(
-                    buildDowngradeScheduleCreateParams(stripeSubscription.getId()),
+            schedule = createStripeSubscriptionSchedule(
+                    buildDowngradeScheduleCreateParams(scheduleSubscription.getId()),
                     createOptions);
         }
 
-        Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
-        Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
+        SubscriptionItem item = requireSingleSubscriptionItem(scheduleSubscription);
+        Long currentPhaseStart = currentPhaseStart(schedule, scheduleSubscription);
+        Long currentPhaseEnd = scheduleSubscription.getCurrentPeriodEnd();
         Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
         SubscriptionScheduleUpdateParams updateParams = buildDowngradeScheduleUpdateParams(
                 clerkUserId,
@@ -621,7 +621,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setIdempotencyKey("downgrade-schedule:update:" + schedule.getId() + ":"
                         + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
                 .build();
-        return schedule.update(updateParams, updateOptions);
+        return updateStripeSubscriptionSchedule(schedule, updateParams, updateOptions);
     }
 
     static SubscriptionScheduleCreateParams buildDowngradeScheduleCreateParams(String stripeSubscriptionId) {
@@ -678,11 +678,21 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (scheduleId == null || scheduleId.isBlank()) {
             return null;
         }
-        SubscriptionSchedule schedule = SubscriptionSchedule.retrieve(scheduleId);
+        SubscriptionSchedule schedule = retrieveStripeSubscriptionSchedule(scheduleId);
         return switch (schedule.getStatus()) {
             case "active", "not_started" -> schedule;
             default -> null;
         };
+    }
+
+    private void releaseScheduleIfReusable(String scheduleId) throws StripeException {
+        SubscriptionSchedule schedule = retrieveReusableSchedule(scheduleId);
+        if (schedule == null) {
+            return;
+        }
+        releaseStripeSubscriptionSchedule(schedule, SubscriptionScheduleReleaseParams.builder()
+                .setPreserveCancelDate(false)
+                .build());
     }
 
     private void releasePendingScheduleIfPresent(
@@ -692,12 +702,20 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (scheduleId == null) {
             return;
         }
-        SubscriptionSchedule schedule = SubscriptionSchedule.retrieve(scheduleId);
-        if ("active".equals(schedule.getStatus()) || "not_started".equals(schedule.getStatus())) {
-            schedule.release(SubscriptionScheduleReleaseParams.builder()
-                    .setPreserveCancelDate(false)
-                    .build());
+        releaseScheduleIfReusable(scheduleId);
+    }
+
+    private SubscriptionItem requireSingleSubscriptionItem(Subscription stripeSubscription) {
+        if (stripeSubscription.getItems() == null
+                || stripeSubscription.getItems().getData() == null
+                || stripeSubscription.getItems().getData().size() != 1) {
+            throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
         }
+        SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
+        if (item.getPrice() == null || item.getPrice().getId() == null) {
+            throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription item price is missing");
+        }
+        return item;
     }
 
     private void clearPendingScheduleState(UserSubscriptionEntity current) {
@@ -787,8 +805,39 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Session.create(params);
     }
 
+    Session createStripeCheckoutSession(SessionCreateParams params, RequestOptions options) throws StripeException {
+        return Session.create(params, options);
+    }
+
     Customer createStripeCustomer(CustomerCreateParams params) throws StripeException {
         return Customer.create(params);
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    SubscriptionSchedule retrieveStripeSubscriptionSchedule(String scheduleId) throws StripeException {
+        return SubscriptionSchedule.retrieve(scheduleId);
+    }
+
+    SubscriptionSchedule createStripeSubscriptionSchedule(
+            SubscriptionScheduleCreateParams params,
+            RequestOptions options) throws StripeException {
+        return SubscriptionSchedule.create(params, options);
+    }
+
+    SubscriptionSchedule updateStripeSubscriptionSchedule(
+            SubscriptionSchedule schedule,
+            SubscriptionScheduleUpdateParams params,
+            RequestOptions options) throws StripeException {
+        return schedule.update(params, options);
+    }
+
+    SubscriptionSchedule releaseStripeSubscriptionSchedule(
+            SubscriptionSchedule schedule,
+            SubscriptionScheduleReleaseParams params) throws StripeException {
+        return schedule.release(params);
     }
 
     boolean clearStoredStripeCustomer(UserSubscriptionEntity userSubscription) {
@@ -1070,6 +1119,57 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     static String buildManualUpgradeCheckoutIdempotencyKey(String orderNo) {
         return "manual-upgrade-checkout:" + orderNo;
+    }
+
+    SessionCreateParams buildManualUpgradeCheckoutParams(
+            String customerId,
+            String clerkUserId,
+            SubscriptionPlanEntity currentPlan,
+            SubscriptionPlanEntity targetPlan,
+            UserSubscriptionEntity current,
+            UpgradeChargeQuote quote,
+            String orderNo,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken,
+            SessionCreateParams.PaymentIntentData paymentIntentData) {
+        return SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCustomer(customerId)
+                .setClientReferenceId(clerkUserId)
+                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
+                .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setQuantity(1L)
+                        .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                .setCurrency(normalizeCurrency(targetPlan.getCurrency()))
+                                .setUnitAmount((long) quote.getAmountCents())
+                                .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                        .setName("Subscription upgrade to " + targetPlan.getPlanCode())
+                                        .build())
+                                .build())
+                        .build())
+                .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
+                        .setEnabled(true)
+                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                                .setDescription("Subscription upgrade charge from "
+                                        + currentPlan.getPlanCode() + " to " + targetPlan.getPlanCode())
+                                .putMetadata("purchase_type", "subscription_upgrade_manual")
+                                .putMetadata("upgrade_order_no", orderNo)
+                                .putMetadata("clerk_user_id", clerkUserId)
+                                .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                                .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                                .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                                .build())
+                        .build())
+                .putMetadata("purchase_type", "subscription_upgrade_manual")
+                .putMetadata("upgrade_order_no", orderNo)
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
+                .setPaymentIntentData(paymentIntentData)
+                .build();
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

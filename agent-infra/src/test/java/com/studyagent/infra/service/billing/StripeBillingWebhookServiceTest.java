@@ -3,6 +3,8 @@ package com.studyagent.infra.service.billing;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
+import com.stripe.param.SubscriptionUpdateParams;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
@@ -249,6 +251,99 @@ class StripeBillingWebhookServiceTest {
         manualUpgradeOrder.setStatus("completed");
 
         assertTrue(StripeBillingWebhookService.shouldApplyQuotaGrantForInvoice(false, manualUpgradeOrder));
+    }
+
+    @Test
+    void annualDiffManualUpgradeKeepsExistingBillingCycle() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setUpgradeChargeType("annual_diff");
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setBillingInterval("year");
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setBillingInterval("year");
+
+        StripeBillingWebhookService.ManualUpgradeSwitchStrategy strategy =
+                StripeBillingWebhookService.resolveManualUpgradeSwitchStrategy(
+                        order,
+                        currentPlan,
+                        targetPlan,
+                        java.time.LocalDateTime.parse("2026-06-24T12:00:00"));
+
+        assertEquals(StripeBillingWebhookService.ManualUpgradeSwitchMode.KEEP_BILLING_CYCLE, strategy.mode());
+        assertNull(strategy.trialEndEpoch());
+    }
+
+    @Test
+    void historicalAnnualFullManualUpgradeWithoutChargeTypeStillResetsCycle() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setQuotedAmountCents(23988);
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setBillingInterval("year");
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setBillingInterval("year");
+        targetPlan.setPriceCents(23988);
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.parse("2026-06-24T12:00:00");
+        StripeBillingWebhookService.ManualUpgradeSwitchStrategy strategy =
+                StripeBillingWebhookService.resolveManualUpgradeSwitchStrategy(
+                        order,
+                        currentPlan,
+                        targetPlan,
+                        now);
+
+        assertEquals(StripeBillingWebhookService.ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL, strategy.mode());
+        assertEquals(now.plusYears(1).toEpochSecond(java.time.ZoneOffset.UTC), strategy.trialEndEpoch());
+    }
+
+    @Test
+    void monthlyFullManualUpgradeResetsCycleWithOneMonthTrial() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setUpgradeChargeType("monthly_full");
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setBillingInterval("month");
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setBillingInterval("month");
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.parse("2026-06-24T12:00:00");
+        StripeBillingWebhookService.ManualUpgradeSwitchStrategy strategy =
+                StripeBillingWebhookService.resolveManualUpgradeSwitchStrategy(
+                        order,
+                        currentPlan,
+                        targetPlan,
+                        now);
+
+        assertEquals(StripeBillingWebhookService.ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL, strategy.mode());
+        assertEquals(now.plusMonths(1).toEpochSecond(java.time.ZoneOffset.UTC), strategy.trialEndEpoch());
+    }
+
+    @Test
+    void annualFullManualUpgradeBuildsTrialBasedUpdateWithoutImmediateChargeFlags() {
+        SubscriptionItem item = new SubscriptionItem();
+        item.setId("si_test");
+        item.setQuantity(1L);
+
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setStripePriceId("price_plus_yearly");
+
+        SubscriptionUpdateParams params = StripeBillingWebhookService.buildManualUpgradeUpdateParams(
+                item,
+                targetPlan,
+                "user_123",
+                new StripeBillingWebhookService.ManualUpgradeSwitchStrategy(
+                        StripeBillingWebhookService.ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL,
+                        java.time.LocalDateTime.parse("2027-06-24T12:00:00")
+                                .toEpochSecond(java.time.ZoneOffset.UTC)));
+
+        assertEquals(SubscriptionUpdateParams.ProrationBehavior.NONE, params.getProrationBehavior());
+        assertTrue(params.toMap().toString().contains("change_type=upgrade"));
+        assertTrue(params.toMap().toString().contains("clerk_user_id=user_123"));
+        assertEquals(java.time.LocalDateTime.parse("2027-06-24T12:00:00")
+                .toEpochSecond(java.time.ZoneOffset.UTC), params.getTrialEnd());
+        assertNull(params.getBillingCycleAnchor());
+        assertNull(params.getPaymentBehavior());
     }
 
     @Test

@@ -36,11 +36,15 @@ public final class UpgradeChargeCalculator {
 
         int remainingMonths = calculateRemainingAnnualMonthsExcludingCurrent(quotaPeriodStart, currentPeriodEnd, now);
         int credit = (currentPlan.getPriceCents() * remainingMonths) / 12;
+        int amountCents = Math.max(targetPlan.getPriceCents() - credit, 0);
+        boolean fullAnnualCharge = remainingMonths == 0 && amountCents == targetPlan.getPriceCents();
         return UpgradeChargeQuote.builder()
-                .amountCents(Math.max(targetPlan.getPriceCents() - credit, 0))
-                .chargeType("annual_diff")
+                .amountCents(amountCents)
+                .chargeType(fullAnnualCharge ? "annual_full" : "annual_diff")
                 .remainingAnnualMonthsExcludingCurrent(remainingMonths)
-                .pricingFormula("target_annual_full_minus_current_annual_credit")
+                .pricingFormula(fullAnnualCharge
+                        ? "target_annual_full"
+                        : "target_annual_full_minus_current_annual_credit")
                 .build();
     }
 

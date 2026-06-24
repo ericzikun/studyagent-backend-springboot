@@ -16,6 +16,8 @@ public class AssignmentClarifyContinueRequest {
     private Boolean userUnderstood;
     private String text;
     private List<String> objectIds;
+    private String formId;
+    private String title;
     private Map<String, Object> reservedFields;
     private List<Map<String, Object>> appendAskAnswers;
     private Map<String, Object> requirementForm;

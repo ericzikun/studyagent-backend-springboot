@@ -592,6 +592,8 @@ class VerlaTurnOrchestratorTest {
                         "free_user",
                         74L,
                         null,
+                        "form-ppt",
+                        "Unsupported PPT request",
                         Map.of(),
                         List.of(),
                         Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
@@ -854,15 +856,35 @@ class VerlaTurnOrchestratorTest {
                 "free_user",
                 74L,
                 null,
-                Map.of(),
-                List.of(),
+                "form-writing",
+                "Writing request",
+                Map.of("topic", "AI ethics"),
+                List.of(Map.of(
+                        "question", "Reference file",
+                        "answer", "Use the attached rubric",
+                        "attachments", List.of(Map.of(
+                                "objectId", "obj-rubric",
+                                "name", "rubric.pdf")))),
                 Map.of("deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
-                List.of());
+                List.of("obj-rubric"));
 
         MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.clarify");
         Map<String, Object> envelope = objectMapper.readValue(clarifyCommand.getPayload(), Map.class);
         Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
         assertEquals(List.of("writing"), payload.get("allowedOutputTypes"));
+
+        VerlaMessage savedUserMessage = messageRepository.savedMessages.stream()
+                .filter(message -> "user".equals(message.getRole()))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> blocks = objectMapper.readValue(savedUserMessage.getBlocksJson(), Map.class);
+        assertEquals("form-writing", blocks.get("formId"));
+        assertEquals("Writing request", blocks.get("title"));
+        assertEquals(Map.of("topic", "AI ethics"), blocks.get("reservedFields"));
+        List<Map<String, Object>> answers = (List<Map<String, Object>>) blocks.get("appendAskAnswers");
+        assertEquals("Use the attached rubric", answers.get(0).get("answer"));
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) answers.get(0).get("attachments");
+        assertEquals("rubric.pdf", attachments.get(0).get("name"));
     }
 
     @Test

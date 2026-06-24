@@ -64,7 +64,7 @@ public class VerlaSseController {
 
         Long lastId = parseLastEventId(lastEventIdHeader, lastEventIdParam);
         log.info("[Verla/sse] subscribe cid={} userId={} lastEventId={}", cid, clerkUserId, lastId);
-        return sseGateway.register(cid, lastId);
+        return sseGateway.register(cid, lastId, clerkUserId);
     }
 
     private static Long parseLastEventId(String header, Long fromParam) {

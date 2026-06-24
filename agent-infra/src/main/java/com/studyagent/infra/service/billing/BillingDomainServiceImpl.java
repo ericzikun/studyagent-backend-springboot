@@ -7,7 +7,6 @@ import com.stripe.Stripe;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
-import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
@@ -465,89 +464,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 targetPlan.getTier(),
                 targetPlan.getBillingInterval())) {
             case NOOP -> toResult(current);
-            case IMMEDIATE_UPGRADE -> upgradeSubscription(clerkUserId, normalizedTargetPlanCode);
+            case IMMEDIATE_UPGRADE -> throw new BillingDomainException(
+                    "UPGRADE_REQUIRES_CHECKOUT",
+                    "Immediate upgrades must use /v1/payment/subscription-checkout");
             case DEFERRED_CHANGE -> downgradeSubscription(clerkUserId, normalizedTargetPlanCode);
             case UNSUPPORTED -> throw new BillingDomainException(
                     "SUBSCRIPTION_STATE_INVALID",
                     "This plan change is not supported");
         };
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode) {
-        requireStripeConfigured();
-        String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
-        SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
-        UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
-        if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
-            return toResult(current);
-        }
-        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
-        PlanChangeAction action = classifyPlanChange(
-                currentPlan.getTier(),
-                currentPlan.getBillingInterval(),
-                targetPlan.getTier(),
-                targetPlan.getBillingInterval());
-        if (action == PlanChangeAction.UNSUPPORTED) {
-            throw new BillingDomainException("SUBSCRIPTION_STATE_INVALID", "This plan change is not supported");
-        }
-        if (action != PlanChangeAction.IMMEDIATE_UPGRADE) {
-            throw new BillingDomainException("INVALID_UPGRADE_TARGET", "Target plan is not an upgrade");
-        }
-
-        try {
-            Subscription stripeSubscription = Subscription.retrieve(current.getStripeSubscriptionId());
-            if (stripeSubscription.getItems() == null
-                    || stripeSubscription.getItems().getData() == null
-                    || stripeSubscription.getItems().getData().size() != 1) {
-                throw new BillingDomainException("INVALID_SUBSCRIPTION_ITEMS", "Subscription must contain one item");
-            }
-            SubscriptionItem item = stripeSubscription.getItems().getData().get(0);
-            releasePendingScheduleIfPresent(current, stripeSubscription);
-            SubscriptionUpdateParams params = SubscriptionUpdateParams.builder()
-                    .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
-                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
-                    .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
-                    .addItem(SubscriptionUpdateParams.Item.builder()
-                            .setId(item.getId())
-                            .setPrice(targetPlan.getStripePriceId())
-                            .build())
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("pending_plan_code", normalizedTargetPlanCode)
-                    .build();
-            RequestOptions options = RequestOptions.builder()
-                    .setIdempotencyKey("upgrade:" + clerkUserId + ":" + current.getStripeSubscriptionId()
-                            + ":" + normalizedTargetPlanCode + ":" + current.getCurrentPeriodEnd())
-                    .build();
-            stripeSubscription.update(params, options);
-
-            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                    .eq(UserSubscriptionEntity::getId, current.getId())
-                    .set(UserSubscriptionEntity::getStripeScheduleId, null)
-                    .set(UserSubscriptionEntity::getPendingPlanCode, normalizedTargetPlanCode)
-                    .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
-                    .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
-            current.setStripeScheduleId(null);
-            current.setPendingPlanCode(normalizedTargetPlanCode);
-            current.setPendingEffectiveAt(null);
-            insertPendingOrder(
-                    clerkUserId,
-                    "subscription_upgrade",
-                    "subscription",
-                    normalizedTargetPlanCode,
-                    normalizedTargetPlanCode,
-                    null,
-                    0L,
-                    targetPlan.getPriceCents(),
-                    targetPlan.getCurrency(),
-                    null,
-                    null,
-                    current.getStripeSubscriptionId());
-            return toResult(current);
-        } catch (StripeException e) {
-            throw stripeFailure("Upgrade subscription failed", e);
-        }
     }
 
     @Override
@@ -1250,68 +1174,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String fragment = fragmentIndex >= 0 ? url.substring(fragmentIndex) : "";
         String base = fragmentIndex >= 0 ? url.substring(0, fragmentIndex) : url;
         return base + (base.contains("?") ? "&" : "?") + key + "=" + value + fragment;
-    }
-
-    static SubscriptionUpdateParams buildSubscriptionUpgradeParams(
-            String clerkUserId,
-            SubscriptionPlanEntity targetPlan,
-            SubscriptionItem item) {
-        Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
-        return SubscriptionUpdateParams.builder()
-                .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
-                .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.ALWAYS_INVOICE)
-                .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
-                .addItem(SubscriptionUpdateParams.Item.builder()
-                        .setId(item.getId())
-                        .setPrice(targetPlan.getStripePriceId())
-                        .setQuantity(quantity)
-                        .build())
-                .addExpand("latest_invoice")
-                .putMetadata("clerk_user_id", clerkUserId)
-                .putMetadata("pending_plan_code", targetPlan.getPlanCode())
-                .putMetadata("change_type", "upgrade")
-                .build();
-    }
-
-    static String resolveSubscriptionUpgradeCheckoutUrl(
-            String invoiceId,
-            Invoice invoice,
-            String fallbackSuccessUrl) {
-        if (invoice != null && hasTextStatic(invoice.getHostedInvoiceUrl())) {
-            return invoice.getHostedInvoiceUrl();
-        }
-        if (hasTextStatic(invoiceId)) {
-            try {
-                Invoice refreshed = Invoice.retrieve(invoiceId);
-                if (refreshed != null && hasTextStatic(refreshed.getHostedInvoiceUrl())) {
-                    return refreshed.getHostedInvoiceUrl();
-                }
-                if (isSettledInvoice(refreshed) && hasTextStatic(fallbackSuccessUrl)) {
-                    return fallbackSuccessUrl;
-                }
-            } catch (StripeException e) {
-                throw new BillingDomainException("STRIPE_ERROR",
-                        "Retrieve subscription upgrade invoice failed: " + e.getMessage(), e);
-            }
-        }
-        if (isSettledInvoice(invoice) && hasTextStatic(fallbackSuccessUrl)) {
-            return fallbackSuccessUrl;
-        }
-        throw new BillingDomainException(
-                "STRIPE_ERROR",
-                "Stripe hosted invoice URL is unavailable for subscription upgrade");
-    }
-
-    private static boolean isSettledInvoice(Invoice invoice) {
-        if (invoice == null) {
-            return false;
-        }
-        return Boolean.TRUE.equals(invoice.getPaid())
-                || "paid".equalsIgnoreCase(invoice.getStatus());
-    }
-
-    private static boolean hasTextStatic(String value) {
-        return value != null && !value.isBlank();
     }
 
     private String resolveCheckoutReturnUrl(String requestedUrl, String fallbackUrl) {

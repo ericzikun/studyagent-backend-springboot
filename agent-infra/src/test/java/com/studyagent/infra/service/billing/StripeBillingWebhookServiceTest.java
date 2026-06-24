@@ -225,6 +225,33 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void manualUpgradeInvoiceDoesNotGrantUpgradeQuotaAgainAfterCheckoutGrantSucceeded() {
+        RechargeOrderEntity manualUpgradeOrder = new RechargeOrderEntity();
+        manualUpgradeOrder.setOrderType("subscription_upgrade_manual");
+        manualUpgradeOrder.setStatus("completed");
+
+        assertFalse(StripeBillingWebhookService.shouldApplyQuotaGrantForInvoice(true, manualUpgradeOrder));
+    }
+
+    @Test
+    void manualUpgradeInvoiceStillGrantsQuotaWhenCheckoutGrantPreviouslyFailed() {
+        RechargeOrderEntity manualUpgradeOrder = new RechargeOrderEntity();
+        manualUpgradeOrder.setOrderType("subscription_upgrade_manual");
+        manualUpgradeOrder.setStatus("quota_failed");
+
+        assertTrue(StripeBillingWebhookService.shouldApplyQuotaGrantForInvoice(true, manualUpgradeOrder));
+    }
+
+    @Test
+    void nonUpgradeInvoiceStillAppliesResetGrantEvenWhenManualUpgradeOrderExists() {
+        RechargeOrderEntity manualUpgradeOrder = new RechargeOrderEntity();
+        manualUpgradeOrder.setOrderType("subscription_upgrade_manual");
+        manualUpgradeOrder.setStatus("completed");
+
+        assertTrue(StripeBillingWebhookService.shouldApplyQuotaGrantForInvoice(false, manualUpgradeOrder));
+    }
+
+    @Test
     void resolvePeriodEpochPrefersExplicitOverrideOverSubscriptionValue() {
         assertEquals(200L, StripeBillingWebhookService.resolvePeriodEpoch(200L, 100L));
         assertEquals(100L, StripeBillingWebhookService.resolvePeriodEpoch(null, 100L));

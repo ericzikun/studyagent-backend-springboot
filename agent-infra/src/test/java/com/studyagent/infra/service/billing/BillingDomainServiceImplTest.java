@@ -13,13 +13,10 @@ import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.Customer;
-import com.stripe.model.Invoice;
 import com.stripe.model.checkout.Session;
-import com.stripe.model.SubscriptionItem;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
-import com.stripe.param.SubscriptionUpdateParams;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -252,35 +249,6 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void buildSubscriptionUpgradeParamsResetsAnchorAndRequiresLatestInvoiceExpansion() {
-        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
-        targetPlan.setPlanCode("pro_yearly");
-        targetPlan.setStripePriceId("price_pro_yearly");
-
-        SubscriptionItem item = new SubscriptionItem();
-        item.setId("si_123");
-        item.setQuantity(2L);
-
-        var params = BillingDomainServiceImpl.buildSubscriptionUpgradeParams(
-                "user_1",
-                targetPlan,
-                item);
-
-        assertEquals(SubscriptionUpdateParams.BillingCycleAnchor.NOW, params.getBillingCycleAnchor());
-        assertEquals(SubscriptionUpdateParams.ProrationBehavior.ALWAYS_INVOICE, params.getProrationBehavior());
-        assertEquals(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE, params.getPaymentBehavior());
-        assertEquals(List.of("latest_invoice"), params.getExpand());
-        assertEquals(Map.of(
-                "clerk_user_id", "user_1",
-                "pending_plan_code", "pro_yearly",
-                "change_type", "upgrade"), params.getMetadata());
-        assertEquals(1, params.getItems().size());
-        assertEquals("si_123", params.getItems().get(0).getId());
-        assertEquals("price_pro_yearly", params.getItems().get(0).getPrice());
-        assertEquals(2L, params.getItems().get(0).getQuantity());
-    }
-
-    @Test
     void manualUpgradeQuote_monthlyToMonthlyChargesTargetMonthlyFullPrice() {
         UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
                 plan("basic_monthly", "basic", "month", 999),
@@ -327,20 +295,6 @@ class BillingDomainServiceImplTest {
                 service.resolveUpgradeSuccessUrl(
                         "http://localhost:3001/payment-success?foo=bar",
                         "resume_tok_1"));
-    }
-
-    @Test
-    void resolveSubscriptionUpgradeCheckoutUrlFallsBackToAppSuccessUrlWhenInvoiceAlreadyPaid() {
-        Invoice invoice = new Invoice();
-        invoice.setPaid(true);
-        invoice.setStatus("paid");
-
-        assertEquals(
-                "http://localhost:3001/payment-success?resumeToken=resume_tok_1",
-                BillingDomainServiceImpl.resolveSubscriptionUpgradeCheckoutUrl(
-                        null,
-                        invoice,
-                        "http://localhost:3001/payment-success?resumeToken=resume_tok_1"));
     }
 
     @Test
@@ -407,6 +361,43 @@ class BillingDomainServiceImplTest {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
                 BillingDomainServiceImpl.classifyPlanChange("basic", "year", "plus", "month"));
+    }
+
+    @Test
+    void changeSubscriptionRejectsImmediateUpgradeAndPointsToCheckoutEndpoint() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setPlanCode("basic_yearly");
+        current.setTier("basic");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_123");
+
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("plus_yearly");
+        targetPlan.setTier("plus");
+        targetPlan.setBillingInterval("year");
+        targetPlan.setStripePriceId("price_plus_yearly");
+        targetPlan.setIsActive(true);
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setPlanCode("basic_yearly");
+        currentPlan.setTier("basic");
+        currentPlan.setBillingInterval("year");
+        currentPlan.setStripePriceId("price_basic_yearly");
+        currentPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_123");
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.changeSubscription("user_1", "plus_yearly"));
+
+        assertEquals("UPGRADE_REQUIRES_CHECKOUT", exception.getCode());
+        assertTrue(exception.getMessage().contains("/v1/payment/subscription-checkout"));
     }
 
     @Test

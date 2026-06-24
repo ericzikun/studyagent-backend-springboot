@@ -31,8 +31,6 @@ public interface BillingDomainService {
 
     SubscriptionResult changeSubscription(String clerkUserId, String targetPlanCode);
 
-    SubscriptionResult upgradeSubscription(String clerkUserId, String targetPlanCode);
-
     SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode);
 
     BillingPlan getEffectivePlanOrFree(String clerkUserId);

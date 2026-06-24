@@ -48,6 +48,17 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class StripeBillingWebhookService {
+    enum ManualUpgradeSwitchMode {
+        KEEP_BILLING_CYCLE,
+        RESET_CYCLE_WITH_TRIAL
+    }
+
+    record ManualUpgradeSwitchStrategy(
+            ManualUpgradeSwitchMode mode,
+            Long trialEndEpoch
+    ) {
+    }
+
     private static final Set<String> SUBSCRIPTION_EVENTS = Set.of(
             "customer.subscription.created",
             "customer.subscription.updated",
@@ -220,19 +231,18 @@ public class StripeBillingWebhookService {
                 throw new IllegalStateException("Subscription must contain one item");
             }
             SubscriptionItem item = subscription.getItems().getData().get(0);
+            SubscriptionPlanEntity currentPlan = requirePlan(order.getPlanCode());
             SubscriptionPlanEntity targetPlan = requirePlan(order.getTargetPlanCode());
-            Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
-                    .setBillingCycleAnchor(SubscriptionUpdateParams.BillingCycleAnchor.NOW)
-                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
-                    .setPaymentBehavior(SubscriptionUpdateParams.PaymentBehavior.PENDING_IF_INCOMPLETE)
-                    .addItem(SubscriptionUpdateParams.Item.builder()
-                            .setId(item.getId())
-                            .setPrice(targetPlan.getStripePriceId())
-                            .setQuantity(item.getQuantity() == null ? 1L : item.getQuantity())
-                            .build())
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("change_type", "upgrade")
-                    .build(), RequestOptions.builder()
+            ManualUpgradeSwitchStrategy strategy = resolveManualUpgradeSwitchStrategy(
+                    order,
+                    currentPlan,
+                    targetPlan,
+                    LocalDateTime.now(ZoneOffset.UTC));
+            Subscription updated = subscription.update(buildManualUpgradeUpdateParams(
+                    item,
+                    targetPlan,
+                    clerkUserId,
+                    strategy), RequestOptions.builder()
                     .setIdempotencyKey("manual-upgrade-switch:" + order.getOrderNo())
                     .build());
             Long periodStartEpoch = resolvePeriodEpoch(null, updated.getCurrentPeriodStart());
@@ -272,6 +282,69 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
             throw e;
         }
+    }
+
+    static ManualUpgradeSwitchStrategy resolveManualUpgradeSwitchStrategy(
+            RechargeOrderEntity order,
+            SubscriptionPlanEntity currentPlan,
+            SubscriptionPlanEntity targetPlan,
+            LocalDateTime nowUtc) {
+        String currentInterval = currentPlan == null ? null : currentPlan.getBillingInterval();
+        String targetInterval = targetPlan == null ? null : targetPlan.getBillingInterval();
+        String chargeType = order == null ? null : order.getUpgradeChargeType();
+        Integer chargedAmount = order == null
+                ? null
+                : (order.getQuotedAmountCents() != null ? order.getQuotedAmountCents() : order.getPriceCents());
+        boolean targetAnnualFullAmount = "year".equals(currentInterval)
+                && "year".equals(targetInterval)
+                && targetPlan != null
+                && targetPlan.getPriceCents() != null
+                && chargedAmount != null
+                && chargedAmount.intValue() == targetPlan.getPriceCents();
+        if (targetAnnualFullAmount) {
+            chargeType = "annual_full";
+        } else if (chargeType == null || chargeType.isBlank()) {
+            if ("month".equals(currentInterval) && "month".equals(targetInterval)) {
+                chargeType = "monthly_full";
+            } else if ("month".equals(currentInterval) && "year".equals(targetInterval)) {
+                chargeType = "annual_full";
+            } else {
+                chargeType = "annual_diff";
+            }
+        }
+        if ("monthly_full".equals(chargeType)) {
+            return new ManualUpgradeSwitchStrategy(
+                    ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL,
+                    nowUtc.plusMonths(1).toEpochSecond(ZoneOffset.UTC));
+        }
+        if ("annual_full".equals(chargeType)) {
+            return new ManualUpgradeSwitchStrategy(
+                    ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL,
+                    nowUtc.plusYears(1).toEpochSecond(ZoneOffset.UTC));
+        }
+        return new ManualUpgradeSwitchStrategy(ManualUpgradeSwitchMode.KEEP_BILLING_CYCLE, null);
+    }
+
+    static SubscriptionUpdateParams buildManualUpgradeUpdateParams(
+            SubscriptionItem item,
+            SubscriptionPlanEntity targetPlan,
+            String clerkUserId,
+            ManualUpgradeSwitchStrategy strategy) {
+        SubscriptionUpdateParams.Builder builder = SubscriptionUpdateParams.builder()
+                .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
+                .addItem(SubscriptionUpdateParams.Item.builder()
+                        .setId(item.getId())
+                        .setPrice(targetPlan.getStripePriceId())
+                        .setQuantity(item.getQuantity() == null ? 1L : item.getQuantity())
+                        .build())
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("change_type", "upgrade");
+        if (strategy != null
+                && strategy.mode() == ManualUpgradeSwitchMode.RESET_CYCLE_WITH_TRIAL
+                && strategy.trialEndEpoch() != null) {
+            builder.setTrialEnd(strategy.trialEndEpoch());
+        }
+        return builder.build();
     }
 
     private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId) {

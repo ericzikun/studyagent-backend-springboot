@@ -272,7 +272,7 @@ class BillingDomainServiceImplTest {
                 LocalDateTime.parse("2026-11-23T10:00:00"));
 
         assertEquals(23988, quote.getAmountCents());
-        assertEquals("annual_diff", quote.getChargeType());
+        assertEquals("annual_full", quote.getChargeType());
         assertEquals(0, quote.getRemainingAnnualMonthsExcludingCurrent());
     }
 

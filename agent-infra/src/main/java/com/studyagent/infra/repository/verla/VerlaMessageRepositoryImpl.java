@@ -49,6 +49,14 @@ public class VerlaMessageRepositoryImpl
                 .stream().map(this::toDomain).collect(Collectors.toList());
     }
 
+    @Override
+    public VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {
+        if (turnId == null || role == null || role.isBlank() || scene == null || scene.isBlank()) {
+            return null;
+        }
+        return toDomain(this.baseMapper.selectByTurnRoleScene(turnId, role, scene));
+    }
+
     private VerlaMessage toDomain(VerlaMessageEntity e) {
         if (e == null) {
             return null;

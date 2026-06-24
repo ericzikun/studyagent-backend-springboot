@@ -17,10 +17,12 @@ import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
+import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactEditProposalRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -67,6 +69,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -124,6 +127,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -170,6 +174,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -216,6 +221,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -262,6 +268,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -307,6 +314,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -364,6 +372,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -442,6 +451,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -498,6 +508,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -553,6 +564,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -613,6 +625,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -689,6 +702,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -749,6 +763,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -812,6 +827,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -954,6 +970,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -995,6 +1012,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,
@@ -1043,6 +1061,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -1085,6 +1104,7 @@ class VerlaTurnOrchestratorTest {
                 messageRepository,
                 new NoopAttachmentRepository(),
                 new NoopArtifactRepository(),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 null,
@@ -1110,6 +1130,163 @@ class VerlaTurnOrchestratorTest {
         orchestrator.onAssignmentChatCompleted(700L, Map.of("finalText", "done"));
 
         Mockito.verify(entitlementService).markFollowupEditCompleted(700L);
+    }
+
+    @Test
+    void onAssignmentChatCompleted_doesNotDuplicateAssistantMessageForRetriedTurn() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        orchestrator.onAssignmentChatCompleted(700L, Map.of("finalText", "done once"));
+
+        turnRepository.turn.setStatus(TurnStatus.RUNNING_AGENT.name());
+        sessionRepository.session = VerlaSession.builder()
+                .id(701L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        orchestrator.onAssignmentChatCompleted(701L, Map.of("finalText", "done twice"));
+
+        List<VerlaMessage> assistantMessages = messageRepository.savedMessages.stream()
+                .filter(message -> "assistant".equals(message.getRole()))
+                .filter(message -> "ASSIGNMENT_CHAT".equals(message.getScene()))
+                .filter(message -> Long.valueOf(801L).equals(message.getTurnId()))
+                .toList();
+        assertEquals(1, assistantMessages.size());
+        assertEquals("done once", assistantMessages.get(0).getTextContent());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void onAssignmentChatCompleted_persistsProposalSnapshotInAssistantBlocks() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                proposalRepository,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                objectMapper,
+                new NoopQuotaService(),
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        proposalRepository.proposal = VerlaArtifactEditProposal.builder()
+                .proposalId("ep_74_801")
+                .conversationId(74L)
+                .turnId(801L)
+                .state(VerlaArtifactEditProposal.STATE_REVIEWING)
+                .targetsJson("""
+                        [
+                          {
+                            "artifactUid": "art_doc",
+                            "kind": "document",
+                            "title": "Essay",
+                            "editMode": "review"
+                          }
+                        ]
+                        """)
+                .changesJson("""
+                        {
+                          "art_doc": [
+                            {
+                              "id": "h1",
+                              "anchor": "BODY",
+                              "originalText": "old",
+                              "proposedText": "new"
+                            }
+                          ]
+                        }
+                        """)
+                .build();
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of(
+                "finalText", "I prepared review suggestions.",
+                "perFile", List.of(Map.of(
+                        "artifactUid", "art_doc",
+                        "status", "review_ready"))));
+
+        VerlaMessage assistant = messageRepository.savedMessages.stream()
+                .filter(message -> "assistant".equals(message.getRole()))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> blocks =
+                objectMapper.readValue(assistant.getBlocksJson(), Map.class);
+        Map<String, Object> proposal =
+                (Map<String, Object>) blocks.get("artifactEditProposal");
+        List<Map<String, Object>> targets =
+                (List<Map<String, Object>>) proposal.get("targets");
+        List<Map<String, Object>> changes =
+                (List<Map<String, Object>>) targets.get(0).get("changes");
+
+        assertEquals("ASSIGNMENT_CHAT_COMPLETED", blocks.get("eventType"));
+        assertEquals("I prepared review suggestions.", blocks.get("finalText"));
+        assertEquals("ep_74_801", proposal.get("proposalId"));
+        assertEquals(74, proposal.get("conversationId"));
+        assertEquals("reviewing", proposal.get("state"));
+        assertEquals("review", targets.get(0).get("editMode"));
+        assertEquals("h1", changes.get(0).get("id"));
+        assertEquals("new", changes.get(0).get("proposedText"));
+        assertNotNull(blocks.get("perFile"));
     }
 
     private static final class FakeSessionRepository implements VerlaSessionRepository {
@@ -1281,6 +1458,16 @@ class VerlaTurnOrchestratorTest {
         public List<VerlaMessage> findAssignmentChatByCursor(Long conversationId, Long cursor, int limit) {
             return List.of();
         }
+
+        @Override
+        public VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {
+            return savedMessages.stream()
+                    .filter(message -> turnId.equals(message.getTurnId()))
+                    .filter(message -> role.equals(message.getRole()))
+                    .filter(message -> scene.equals(message.getScene()))
+                    .findFirst()
+                    .orElse(null);
+        }
     }
 
     private static final class NoopArtifactRepository
@@ -1314,6 +1501,48 @@ class VerlaTurnOrchestratorTest {
         public com.studyagent.service.domain.verla.VerlaArtifact upsertByUid(
                 com.studyagent.service.domain.verla.VerlaArtifact artifact) {
             return artifact;
+        }
+    }
+
+    private static final class FakeArtifactEditProposalRepository
+            implements VerlaArtifactEditProposalRepository {
+        VerlaArtifactEditProposal proposal;
+
+        @Override
+        public VerlaArtifactEditProposal upsertByProposalId(VerlaArtifactEditProposal proposal) {
+            this.proposal = proposal;
+            return proposal;
+        }
+
+        @Override
+        public VerlaArtifactEditProposal findByProposalId(String proposalId) {
+            if (proposal != null && proposalId.equals(proposal.getProposalId())) {
+                return proposal;
+            }
+            return null;
+        }
+
+        @Override
+        public List<VerlaArtifactEditProposal> findActiveByConversation(Long conversationId) {
+            return proposal == null ? List.of() : List.of(proposal);
+        }
+
+        @Override
+        public VerlaArtifactEditProposal findLatestByTurnId(Long turnId) {
+            if (proposal != null && turnId.equals(proposal.getTurnId())) {
+                return proposal;
+            }
+            return null;
+        }
+
+        @Override
+        public int markState(String proposalId, String newState) {
+            return 0;
+        }
+
+        @Override
+        public int supersedeActiveExcept(Long conversationId, String keepProposalId) {
+            return 0;
         }
     }
 

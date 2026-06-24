@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -341,6 +342,185 @@ class QuotaDomainServiceImplTest {
         assertEquals(99L, allocations.get(2).getGrantId());
         assertEquals(2L, allocations.get(2).getAmount());
         assertEquals(addonGrant.getExpiresAt(), allocations.get(2).getSourcePeriodEnd());
+    }
+
+    @Test
+    void consume_assignment_debitsFreeBeforePlanAndAddon() {
+        UserAiQuotaEntity quota = assignmentQuota(1L, 2L, 0L);
+        UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
+
+        stubAssignmentConsume(quota, List.of(addonGrant), 701L);
+
+        QuotaDomainServiceImpl service = service();
+        ConsumeResult result = consumeAssignment(service, "session_free");
+
+        assertEquals(701L, result.ledgerId());
+        assertEquals(0L, quota.getFreeBalance());
+        assertEquals(2L, quota.getPlanBalance());
+        assertEquals(3L, addonGrant.getRemainingAmount());
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+
+        QuotaLedgerEntity ledger = captureOnlyLedger();
+        assertEquals(0L, ledger.getFreeBalanceAfter());
+        assertEquals(2L, ledger.getPlanBalanceAfter());
+        assertEquals(3L, ledger.getAddonBalanceAfter());
+
+        List<QuotaLedgerAllocationEntity> allocations = captureAllocations(1);
+        assertEquals("free", allocations.get(0).getPoolType());
+        assertEquals(1L, allocations.get(0).getAmount());
+    }
+
+    @Test
+    void consume_assignment_debitsPlanBeforeAddonWhenFreeExhausted() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 2L, 0L);
+        UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
+
+        stubAssignmentConsume(quota, List.of(addonGrant), 702L);
+
+        QuotaDomainServiceImpl service = service();
+        ConsumeResult result = consumeAssignment(service, "session_plan");
+
+        assertEquals(702L, result.ledgerId());
+        assertEquals(0L, quota.getFreeBalance());
+        assertEquals(1L, quota.getPlanBalance());
+        assertEquals(3L, addonGrant.getRemainingAmount());
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+
+        QuotaLedgerEntity ledger = captureOnlyLedger();
+        assertEquals(0L, ledger.getFreeBalanceAfter());
+        assertEquals(1L, ledger.getPlanBalanceAfter());
+        assertEquals(3L, ledger.getAddonBalanceAfter());
+
+        List<QuotaLedgerAllocationEntity> allocations = captureAllocations(1);
+        assertEquals("plan", allocations.get(0).getPoolType());
+        assertEquals(1L, allocations.get(0).getAmount());
+    }
+
+    @Test
+    void consume_assignment_debitsActiveAddonWhenFreeAndPlanExhausted() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
+        UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
+
+        stubAssignmentConsume(quota, List.of(addonGrant), 703L);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = service();
+        ConsumeResult result = consumeAssignment(service, "session_addon");
+
+        assertEquals(703L, result.ledgerId());
+        assertEquals(2L, addonGrant.getRemainingAmount());
+        assertEquals("active", addonGrant.getStatus());
+        verify(userAddonGrantMapper).updateById(addonGrant);
+
+        QuotaLedgerEntity ledger = captureOnlyLedger();
+        assertEquals(2L, ledger.getAddonBalanceAfter());
+
+        List<QuotaLedgerAllocationEntity> allocations = captureAllocations(1);
+        assertEquals("addon", allocations.get(0).getPoolType());
+        assertEquals(99L, allocations.get(0).getGrantId());
+        assertEquals(1L, allocations.get(0).getAmount());
+    }
+
+    @Test
+    void consume_assignmentRejectsPausedAddonWhenMemberExpired() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> consumeAssignment(service, "session_paused_addon"));
+
+        assertTrue(ex.getMessage().contains("Insufficient quota"));
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+        verify(quotaLedgerAllocationMapper, never()).insert(any(QuotaLedgerAllocationEntity.class));
+    }
+
+    @Test
+    void consume_assignmentRejectsExpiredAddon() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> consumeAssignment(service, "session_expired_addon"));
+
+        assertTrue(ex.getMessage().contains("Insufficient quota"));
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+        verify(quotaLedgerAllocationMapper, never()).insert(any(QuotaLedgerAllocationEntity.class));
+    }
+
+    @Test
+    void consume_assignmentUsesEarliestExpiringAddonFirst() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
+        UserAddonGrantEntity earlierGrant = addonGrant(100L, "active", 3L, LocalDateTime.now().plusDays(1));
+        UserAddonGrantEntity laterGrant = addonGrant(101L, "active", 3L, LocalDateTime.now().plusDays(7));
+
+        stubAssignmentConsume(quota, List.of(laterGrant, earlierGrant), 704L);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = service();
+        ConsumeResult result = consumeAssignment(service, "session_earliest_addon");
+
+        assertEquals(704L, result.ledgerId());
+        assertEquals(2L, earlierGrant.getRemainingAmount());
+        assertEquals(3L, laterGrant.getRemainingAmount());
+
+        ArgumentCaptor<UserAddonGrantEntity> grantCaptor = ArgumentCaptor.forClass(UserAddonGrantEntity.class);
+        verify(userAddonGrantMapper).updateById(grantCaptor.capture());
+        assertEquals(100L, grantCaptor.getValue().getId());
+
+        List<QuotaLedgerAllocationEntity> allocations = captureAllocations(1);
+        assertEquals(100L, allocations.get(0).getGrantId());
+    }
+
+    @Test
+    void consume_assignmentSpansMultipleAddonsAcrossSequentialCreations() {
+        UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
+        UserAddonGrantEntity firstGrant = addonGrant(100L, "active", 1L, LocalDateTime.now().plusDays(1));
+        UserAddonGrantEntity secondGrant = addonGrant(101L, "active", 3L, LocalDateTime.now().plusDays(7));
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(secondGrant, firstGrant), List.of(secondGrant));
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
+            QuotaLedgerEntity ledger = invocation.getArgument(0);
+            ledger.setId(705L);
+            return 1;
+        });
+        when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = service();
+        ConsumeResult first = consumeAssignment(service, "session_addon_a");
+        ConsumeResult second = consumeAssignment(service, "session_addon_b");
+
+        assertEquals(705L, first.ledgerId());
+        assertEquals(705L, second.ledgerId());
+        assertEquals(0L, firstGrant.getRemainingAmount());
+        assertEquals("depleted", firstGrant.getStatus());
+        assertEquals(2L, secondGrant.getRemainingAmount());
+
+        ArgumentCaptor<UserAddonGrantEntity> grantCaptor = ArgumentCaptor.forClass(UserAddonGrantEntity.class);
+        verify(userAddonGrantMapper, times(2)).updateById(grantCaptor.capture());
+        assertEquals(List.of(100L, 101L), grantCaptor.getAllValues().stream()
+                .map(UserAddonGrantEntity::getId)
+                .toList());
+
+        List<QuotaLedgerAllocationEntity> allocations = captureAllocations(2);
+        assertEquals(100L, allocations.get(0).getGrantId());
+        assertEquals(101L, allocations.get(1).getGrantId());
     }
 
     @Test
@@ -814,5 +994,92 @@ class QuotaDomainServiceImplTest {
                 Map.of()));
 
         verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+    }
+
+    private QuotaDomainServiceImpl service() {
+        return new QuotaDomainServiceImpl(
+                aiFeatureDefsMapper,
+                aiFeaturePackageMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userAddonGrantMapper,
+                quotaLedgerAllocationMapper,
+                planQuotaService);
+    }
+
+    private AiFeatureDefsEntity assignmentFeature() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(0L);
+        featureDef.setIsActive(true);
+        return featureDef;
+    }
+
+    private UserAiQuotaEntity assignmentQuota(long freeBalance, long planBalance, long paidBalance) {
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(11L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(freeBalance);
+        quota.setPlanBalance(planBalance);
+        quota.setPaidBalance(paidBalance);
+        quota.setVersion(0);
+        return quota;
+    }
+
+    private UserAddonGrantEntity addonGrant(Long id, String status, long remainingAmount, LocalDateTime expiresAt) {
+        UserAddonGrantEntity grant = new UserAddonGrantEntity();
+        grant.setId(id);
+        grant.setClerkUserId("user_1");
+        grant.setFeatureCode("task_create");
+        grant.setAddonCode("addon_assignment_3");
+        grant.setGrantType("addon");
+        grant.setStatus(status);
+        grant.setInitialAmount(remainingAmount);
+        grant.setRemainingAmount(remainingAmount);
+        grant.setExpiresAt(expiresAt);
+        return grant;
+    }
+
+    private void stubAssignmentConsume(
+            UserAiQuotaEntity quota,
+            List<UserAddonGrantEntity> addonGrants,
+            long ledgerId) {
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(addonGrants);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
+            QuotaLedgerEntity ledger = invocation.getArgument(0);
+            ledger.setId(ledgerId);
+            return 1;
+        });
+        when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
+    }
+
+    private ConsumeResult consumeAssignment(QuotaDomainServiceImpl service, String sessionId) {
+        return service.consume(
+                "user_1",
+                "task_create",
+                1L,
+                "verla_session",
+                sessionId,
+                Map.of());
+    }
+
+    private QuotaLedgerEntity captureOnlyLedger() {
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        return ledgerCaptor.getValue();
+    }
+
+    private List<QuotaLedgerAllocationEntity> captureAllocations(int count) {
+        ArgumentCaptor<QuotaLedgerAllocationEntity> allocationCaptor =
+                ArgumentCaptor.forClass(QuotaLedgerAllocationEntity.class);
+        verify(quotaLedgerAllocationMapper, times(count)).insert(allocationCaptor.capture());
+        return allocationCaptor.getAllValues();
     }
 }

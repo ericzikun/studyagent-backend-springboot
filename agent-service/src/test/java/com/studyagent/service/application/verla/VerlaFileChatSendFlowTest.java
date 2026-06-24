@@ -84,6 +84,7 @@ class VerlaFileChatSendFlowTest {
                 messageRepository,
                 attachmentRepository,
                 Mockito.mock(com.studyagent.service.domain.verla.repo.VerlaArtifactRepository.class),
+                null,
                 new TurnStateMachine(),
                 new SessionStateMachine(),
                 mqOutboxService,

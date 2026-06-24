@@ -28,12 +28,14 @@ import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaArtifact;
+import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
+import com.studyagent.service.domain.verla.repo.VerlaArtifactEditProposalRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
@@ -118,6 +120,7 @@ public class VerlaTurnOrchestrator {
     private final VerlaMessageRepository messageRepository;
     private final VerlaAttachmentRepository attachmentRepository;
     private final VerlaArtifactRepository artifactRepository;
+    private final VerlaArtifactEditProposalRepository artifactEditProposalRepository;
     private final TurnStateMachine turnStateMachine;
     private final SessionStateMachine sessionStateMachine;
     private final MqOutboxService mqOutboxService;
@@ -1066,6 +1069,7 @@ public class VerlaTurnOrchestrator {
                         .textContent(reply)
                         .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
                                 safeResult, "FILE_CHAT_COMPLETED")))
+                        .scene(FileChatMessageMeta.SCENE_FILE_CHAT)
                         .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
                                 FileChatMessageMeta.builder()
                                         .scene(FileChatMessageMeta.SCENE_FILE_CHAT)
@@ -1118,15 +1122,18 @@ public class VerlaTurnOrchestrator {
 
         if (justCompleted) {
             String reply = extractFileChatAssistantReply(safeResult);
-            if (reply != null && !reply.isBlank()) {
+            if (reply != null && !reply.isBlank()
+                    && messageRepository.findByTurnRoleScene(
+                            turn.getId(), "assistant", FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT) == null) {
                 VerlaMessage assistant = VerlaMessage.builder()
                         .conversationId(turn.getConversationId())
                         .turnId(turn.getId())
                         .role("assistant")
                         .sourceSessionId(agentSessionId)
                         .textContent(reply)
-                        .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
-                                safeResult, "ASSIGNMENT_CHAT_COMPLETED")))
+                        .blocksJson(serializeJson(buildAssignmentChatAssistantBlocks(
+                                safeResult, turn.getId())))
+                        .scene(FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT)
                         .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
                                 FileChatMessageMeta.builder()
                                         .scene(FileChatMessageMeta.SCENE_ASSIGNMENT_CHAT)
@@ -2833,6 +2840,73 @@ public class VerlaTurnOrchestrator {
     private static Map<String, Object> withEventTypeWithoutStageForFrontend(
             Map<String, Object> result, String eventType) {
         return VerlaFrontendPayloadSanitizer.sanitize(eventType, withEventTypeWithoutStage(result, eventType));
+    }
+
+    private Map<String, Object> buildAssignmentChatAssistantBlocks(
+            Map<String, Object> result, Long turnId) {
+        Map<String, Object> blocks = new LinkedHashMap<>(
+                withEventTypeWithoutStageForFrontend(result, "ASSIGNMENT_CHAT_COMPLETED"));
+        VerlaArtifactEditProposal proposal =
+                artifactEditProposalRepository == null ? null
+                        : artifactEditProposalRepository.findLatestByTurnId(turnId);
+        if (proposal == null) {
+            return blocks;
+        }
+
+        List<Map<String, Object>> targets = mergeProposalTargetsWithChanges(proposal);
+        Map<String, Object> proposalBlock = new LinkedHashMap<>();
+        proposalBlock.put("state", VerlaArtifactEditProposal.STATE_GENERATING.equals(proposal.getState())
+                ? "generating" : "reviewing");
+        proposalBlock.put("proposalId", proposal.getProposalId());
+        proposalBlock.put("conversationId", proposal.getConversationId());
+        proposalBlock.put("targets", targets);
+        blocks.put("artifactEditProposal", proposalBlock);
+        blocks.putIfAbsent("proposalId", proposal.getProposalId());
+        blocks.putIfAbsent("targets", targets);
+        return blocks;
+    }
+
+    private List<Map<String, Object>> mergeProposalTargetsWithChanges(VerlaArtifactEditProposal proposal) {
+        List<Map<String, Object>> targets = readJsonListOfMaps(proposal.getTargetsJson());
+        Map<String, Object> changesByUid = readJsonMapObject(proposal.getChangesJson());
+        if (targets.isEmpty() || changesByUid.isEmpty()) {
+            return targets;
+        }
+        List<Map<String, Object>> merged = new ArrayList<>();
+        for (Map<String, Object> target : targets) {
+            Map<String, Object> next = new LinkedHashMap<>(target);
+            Object uid = next.get("artifactUid");
+            if (uid != null && !next.containsKey("changes")) {
+                Object changes = changesByUid.get(String.valueOf(uid));
+                if (changes != null) {
+                    next.put("changes", changes);
+                }
+            }
+            merged.add(next);
+        }
+        return merged;
+    }
+
+    private List<Map<String, Object>> readJsonListOfMaps(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private Map<String, Object> readJsonMapObject(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, MAP_STRING_OBJECT);
+        } catch (Exception e) {
+            return Map.of();
+        }
     }
 
     @SuppressWarnings("unchecked")

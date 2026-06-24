@@ -374,6 +374,8 @@ public class VerlaConversationController {
                 clerkUserId,
                 cid,
                 body.getSessionId(),
+                body.getFormId(),
+                body.getTitle(),
                 body.getReservedFields(),
                 body.getAppendAskAnswers(),
                 body.getRequirementForm(),

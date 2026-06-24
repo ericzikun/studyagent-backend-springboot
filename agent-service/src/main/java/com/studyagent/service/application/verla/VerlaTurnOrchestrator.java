@@ -805,6 +805,8 @@ public class VerlaTurnOrchestrator {
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult finalizeAssignmentClarify(String userId, Long conversationId,
                                                        Long previousSessionId,
+                                                       String formId,
+                                                       String title,
                                                        Map<String, Object> reservedFields,
                                                        List<Map<String, Object>> appendAskAnswers,
                                                        Map<String, Object> requirementForm,
@@ -822,6 +824,18 @@ public class VerlaTurnOrchestrator {
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
         String messageText = buildClarifyUserMessageText(
                 "generation", "", reservedFields, normalizedAnswers, requirementForm);
+        Map<String, Object> blocks = new LinkedHashMap<>();
+        blocks.put("phase", "assignment_clarify");
+        blocks.put("userChoice", "generation");
+        if (formId != null && !formId.isBlank()) {
+            blocks.put("formId", formId);
+        }
+        if (title != null && !title.isBlank()) {
+            blocks.put("title", title);
+        }
+        blocks.put("reservedFields", reservedFields == null ? Map.of() : reservedFields);
+        blocks.put("appendAskAnswers", normalizedAnswers);
+        blocks.put("requirementForm", requirementForm == null ? Map.of() : requirementForm);
         VerlaMessage userMessage = VerlaMessage.builder()
                 .conversationId(conversationId)
                 .turnId(turn.getId())
@@ -831,12 +845,7 @@ public class VerlaTurnOrchestrator {
                         ? null : serializeJson(objectIds.stream()
                         .map(objectId -> Map.<String, Object>of("objectId", objectId))
                         .toList()))
-                .blocksJson(serializeJson(Map.of(
-                        "phase", "assignment_clarify",
-                        "userChoice", "generation",
-                        "reservedFields", reservedFields == null ? Map.of() : reservedFields,
-                        "appendAskAnswers", normalizedAnswers,
-                        "requirementForm", requirementForm == null ? Map.of() : requirementForm)))
+                .blocksJson(serializeJson(blocks))
                 .createdAt(LocalDateTime.now())
                 .build();
         messageRepository.save(userMessage);

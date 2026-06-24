@@ -43,7 +43,7 @@ import java.util.Set;
  * Chat With Assignment / write 模式 review 提案 commit 接口（设计 §4.8 / 协议 §9.3）。
  * <p>
  * 用户逐块 Accept/Reject 后一次性提交 decisions；后端校验 baseVersionNo 未漂移 →
- * 按 accepted hunks 由 base 正文重算整篇新正文 → 同事务 upsert artifact(version+1) +
+ * 按 accepted hunks 由 canonical BODY 重算可编辑正文并拼回 artifact → 同事务 upsert artifact(version+1) +
  * 清空 editor 工作态（让 GET 回落 seed 新正文）+ proposal 置 COMMITTED（不可回退）。
  */
 @Slf4j
@@ -54,6 +54,8 @@ public class VerlaArtifactEditProposalController {
 
     private static final String MODE_REVIEW = "review";
     private static final String STATUS_ACCEPTED = "accepted";
+    private static final String BODY_SECTION_SENTINEL = "[--BODY_SECTION--]";
+    private static final String EVIDENCE_RECORDS_SENTINEL = "[--EVIDENCE_RECORDS--]";
 
     private final VerlaConversationService conversationService;
     private final VerlaArtifactEditProposalRepository proposalRepository;
@@ -107,7 +109,7 @@ public class VerlaArtifactEditProposalController {
 
             Set<String> accepted = acceptedByUid.getOrDefault(uid, Set.of());
             String baseText = artifact.getBodyOrRef() != null ? artifact.getBodyOrRef() : "";
-            String newText = applyAcceptedHunks(baseText, hunks, accepted);
+            String newText = applyAcceptedHunksToArtifactBody(baseText, hunks, accepted);
 
             // 全部 rejected → 正文不变，仅记审计；artifact 不升版。
             if (!newText.equals(baseText)) {
@@ -143,9 +145,60 @@ public class VerlaArtifactEditProposalController {
     }
 
     /**
-     * 由 base 正文叠加 accepted hunks 算出整篇新正文。
+     * Assignment artifact 可能在可编辑正文前后存 metadata/reference 块。
+     * Python 生成的 hunk anchor 面向 canonical BODY，因此 commit 只 patch BODY 段再拼回原始 payload。
+     */
+    private String applyAcceptedHunksToArtifactBody(
+            String rawBody,
+            List<Map<String, Object>> hunks,
+            Set<String> accepted) {
+        EditableBodySection section = resolveEditableBodySection(rawBody);
+        if (section == null) {
+            return applyAcceptedHunks(rawBody, hunks, accepted);
+        }
+
+        String updatedBody = applyAcceptedHunks(section.body(), hunks, accepted);
+        if (updatedBody.equals(section.body())) {
+            return rawBody;
+        }
+        return rawBody.substring(0, section.startInclusive())
+                + updatedBody
+                + rawBody.substring(section.endExclusive());
+    }
+
+    /**
+     * 返回已存 assignment artifact 内的 canonical 可编辑 markdown 段。
+     * 这里的 trim 对齐 Python 的正文规范化；拼回时仍保留 BODY 段外的原始 payload。
+     */
+    private static EditableBodySection resolveEditableBodySection(String rawBody) {
+        int bodySentinelIndex = rawBody.indexOf(BODY_SECTION_SENTINEL);
+        int sectionStart = bodySentinelIndex >= 0
+                ? bodySentinelIndex + BODY_SECTION_SENTINEL.length()
+                : 0;
+        int evidenceSentinelIndex = rawBody.indexOf(EVIDENCE_RECORDS_SENTINEL, sectionStart);
+        if (bodySentinelIndex < 0 && evidenceSentinelIndex < 0) {
+            return null;
+        }
+
+        int sectionEnd = evidenceSentinelIndex >= 0
+                ? evidenceSentinelIndex
+                : rawBody.length();
+
+        int trimmedStart = sectionStart;
+        while (trimmedStart < sectionEnd && Character.isWhitespace(rawBody.charAt(trimmedStart))) {
+            trimmedStart++;
+        }
+        int trimmedEnd = sectionEnd;
+        while (trimmedEnd > trimmedStart && Character.isWhitespace(rawBody.charAt(trimmedEnd - 1))) {
+            trimmedEnd--;
+        }
+        return new EditableBodySection(trimmedStart, trimmedEnd, rawBody.substring(trimmedStart, trimmedEnd));
+    }
+
+    /**
+     * 由 canonical BODY 正文叠加 accepted hunks 算出新 BODY。
      * 倒序应用（按 anchor.from 降序），避免前面替换移动后面 hunk 的 offset；
-     * 以 originalText 二次校验定位（offset 命中失败回落首个 indexOf），防 base 漂移误改。
+     * 以 originalText 二次校验定位（offset 命中失败回落 BODY 内首个 indexOf），防 base 漂移误改。
      */
     private String applyAcceptedHunks(String base, List<Map<String, Object>> hunks, Set<String> accepted) {
         List<Map<String, Object>> applicable = new ArrayList<>();
@@ -170,7 +223,7 @@ public class VerlaArtifactEditProposalController {
             }
             int from = anchorFrom(h);
             int to = anchorTo(h);
-            // 优先按 offset 命中校验，失败则回落 indexOf（base 可能被前一轮编辑微调）。
+            // 优先按 offset 命中校验，失败则回落 BODY 内 indexOf（base 可能被前一轮编辑微调）。
             if (from >= 0 && to >= from && to <= sb.length()
                     && sb.substring(from, to).equals(originalText)) {
                 sb.replace(from, to, proposedText);
@@ -184,6 +237,9 @@ public class VerlaArtifactEditProposalController {
             }
         }
         return sb.toString();
+    }
+
+    private record EditableBodySection(int startInclusive, int endExclusive, String body) {
     }
 
     private Map<String, List<Map<String, Object>>> parseChanges(String changesJson) {

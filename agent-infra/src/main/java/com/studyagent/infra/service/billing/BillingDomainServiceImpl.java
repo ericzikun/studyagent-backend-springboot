@@ -550,13 +550,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         try {
             Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
             String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
-            if (canSkipCancellationUpdate(current.getCancelAtPeriodEnd(), cancel, current.getStripeScheduleId(), subscription.getSchedule())) {
-                return toResult(current);
-            }
+            boolean shouldClearPendingScheduleState =
+                    shouldClearPendingScheduleStateBeforeCancellation(cancel, scheduleId, current);
             if (scheduleId != null) {
                 releasePendingScheduleIfPresent(current, subscription);
-                clearPendingScheduleState(current);
                 subscription = Subscription.retrieve(current.getStripeSubscriptionId());
+            }
+            if (shouldClearPendingScheduleState) {
+                clearPendingScheduleState(current);
+            }
+            if (canSkipCancellationUpdate(current.getCancelAtPeriodEnd(), cancel, current.getStripeScheduleId(), subscription.getSchedule())) {
+                return toResult(current);
             }
             Subscription updated = subscription.update(SubscriptionUpdateParams.builder()
                     .setCancelAtPeriodEnd(cancel)
@@ -575,6 +579,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String remoteScheduleId) {
         return Boolean.valueOf(requestedCancelAtPeriodEnd).equals(currentCancelAtPeriodEnd)
                 && firstNonBlank(localScheduleId, remoteScheduleId) == null;
+    }
+
+    static boolean shouldClearPendingScheduleStateBeforeCancellation(
+            boolean cancelAtPeriodEnd,
+            String scheduleId,
+            UserSubscriptionEntity current) {
+        if (scheduleId != null && !scheduleId.isBlank()) {
+            return true;
+        }
+        return cancelAtPeriodEnd
+                && current != null
+                && ((current.getPendingPlanCode() != null && !current.getPendingPlanCode().isBlank())
+                || current.getPendingEffectiveAt() != null);
     }
 
     private SubscriptionSchedule upsertDowngradeSchedule(

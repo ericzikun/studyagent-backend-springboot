@@ -199,6 +199,98 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void getUserQuota_reanchorsFutureFreeWindowBackToResolvedNow() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("daily");
+        featureDef.setFreeQuotaAmount(3L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime resolvedNow = LocalDateTime.parse("2026-06-25T10:00:00");
+        LocalDateTime futureStart = resolvedNow.plusDays(5);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(17L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(1L);
+        quota.setFreePeriodStart(futureStart);
+        quota.setFreePeriodEnd(futureStart.plusDays(1));
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(resolvedNow);
+
+        QuotaBalance balance = service.getUserQuota("user_1", "task_create");
+
+        assertEquals(3L, balance.freeBalance());
+        assertEquals(resolvedNow.plusDays(1), balance.freePeriodEnd());
+
+        ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
+        verify(userAiQuotaMapper).updateById(quotaCaptor.capture());
+        assertEquals(resolvedNow, quotaCaptor.getValue().getFreePeriodStart());
+        assertEquals(resolvedNow.plusDays(1), quotaCaptor.getValue().getFreePeriodEnd());
+    }
+
+    @Test
+    void getUserQuota_reanchorsFutureAddonGrantBackToResolvedNow() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(0L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime resolvedNow = LocalDateTime.parse("2026-06-25T10:00:00");
+        LocalDateTime futurePurchaseTime = resolvedNow.plusDays(5);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(18L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(0L);
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        UserAddonGrantEntity addonGrant = new UserAddonGrantEntity();
+        addonGrant.setId(501L);
+        addonGrant.setGrantType("addon");
+        addonGrant.setStatus("active");
+        addonGrant.setInitialAmount(3L);
+        addonGrant.setRemainingAmount(3L);
+        addonGrant.setPurchasedAt(futurePurchaseTime);
+        addonGrant.setExpiresAt(futurePurchaseTime.plusDays(30));
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(addonGrant));
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(resolvedNow);
+
+        QuotaBalance balance = service.getUserQuota("user_1", "task_create");
+
+        assertEquals(3L, balance.addonBalance());
+
+        ArgumentCaptor<UserAddonGrantEntity> grantCaptor = ArgumentCaptor.forClass(UserAddonGrantEntity.class);
+        verify(userAddonGrantMapper).updateById(grantCaptor.capture());
+        assertEquals(resolvedNow, grantCaptor.getValue().getPurchasedAt());
+        assertEquals(resolvedNow.plusDays(30), grantCaptor.getValue().getExpiresAt());
+        assertEquals("active", grantCaptor.getValue().getStatus());
+    }
+
+    @Test
     void consume_debitsDetectionLegacyBalanceByWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");

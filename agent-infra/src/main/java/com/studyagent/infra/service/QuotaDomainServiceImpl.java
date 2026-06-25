@@ -27,6 +27,7 @@ import com.google.gson.JsonParser;
 
 import java.time.LocalDateTime;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.time.ZoneOffset;
@@ -135,7 +136,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
         long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> addonGrants = findAddonGrantsForBalance(clerkUserId, featureCode);
+        List<UserAddonGrantEntity> addonGrants = reanchorFutureAddonGrantsIfNeeded(
+                findAddonGrantsForBalance(clerkUserId, featureCode),
+                now);
         long addonBalance = addonGrants.stream()
                 .filter(grant -> isGrantConsumable(grant, now))
                 .map(UserAddonGrantEntity::getRemainingAmount)
@@ -270,7 +273,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
         long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> activeAddonGrants = findActiveAddonGrants(clerkUserId, featureCode, now);
+        List<UserAddonGrantEntity> activeAddonGrants = reanchorFutureAddonGrantsIfNeeded(
+                findActiveAddonGrants(clerkUserId, featureCode, now),
+                now);
         long addonBalance = activeAddonGrants.stream()
                 .map(UserAddonGrantEntity::getRemainingAmount)
                 .filter(value -> value != null && value > 0)
@@ -692,10 +697,11 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
         String configuredPeriod = normalizePeriod(featureDef.getFreeQuotaPeriod());
         boolean periodExpired = quota.getFreePeriodEnd() != null && now.isAfter(quota.getFreePeriodEnd());
+        boolean futureAnchoredWindow = quota.getFreePeriodStart() != null && quota.getFreePeriodStart().isAfter(now);
         boolean periodConfigChanged = quota.getFreePeriodStart() != null
                 && quota.getFreePeriodEnd() != null
                 && !configuredPeriod.equals(inferStoredPeriod(quota.getFreePeriodStart(), quota.getFreePeriodEnd()));
-        if (!periodExpired && !periodConfigChanged) {
+        if (!periodExpired && !periodConfigChanged && !futureAnchoredWindow) {
             return;
         }
 
@@ -720,7 +726,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ctx.put("refresh_trigger", trigger);
         ctx.put("previous_free_balance", oldFreeBalance);
         ctx.put("refreshed_to", freeQuotaAmount);
-        if (periodConfigChanged) {
+        if (futureAnchoredWindow) {
+            ctx.put("reason", "future_window_reanchored");
+        } else if (periodConfigChanged) {
             ctx.put("reason", "period_config_changed");
         } else {
             ctx.put("reason", "period_expired");
@@ -912,6 +920,45 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                                 Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(UserAddonGrantEntity::getId))
                 .collect(Collectors.toList());
+    }
+
+    private List<UserAddonGrantEntity> reanchorFutureAddonGrantsIfNeeded(
+            List<UserAddonGrantEntity> grants,
+            LocalDateTime now) {
+        if (grants == null || grants.isEmpty()) {
+            return List.of();
+        }
+        for (UserAddonGrantEntity grant : grants) {
+            reanchorFutureAddonGrantIfNeeded(grant, now);
+        }
+        return grants.stream()
+                .sorted(Comparator.comparing(
+                                UserAddonGrantEntity::getExpiresAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(UserAddonGrantEntity::getId))
+                .collect(Collectors.toList());
+    }
+
+    private void reanchorFutureAddonGrantIfNeeded(UserAddonGrantEntity grant, LocalDateTime now) {
+        if (grant == null || grant.getPurchasedAt() == null || !grant.getPurchasedAt().isAfter(now)) {
+            return;
+        }
+
+        LocalDateTime originalPurchasedAt = grant.getPurchasedAt();
+        LocalDateTime reanchoredExpiresAt = grant.getExpiresAt();
+        if (grant.getExpiresAt() != null) {
+            Duration validity = Duration.between(originalPurchasedAt, grant.getExpiresAt());
+            reanchoredExpiresAt = validity.isNegative() ? now : now.plus(validity);
+        }
+
+        grant.setPurchasedAt(now);
+        grant.setExpiresAt(reanchoredExpiresAt);
+        if ("expired".equals(grant.getStatus())
+                && (reanchoredExpiresAt == null || reanchoredExpiresAt.isAfter(now))) {
+            grant.setStatus("active");
+        }
+        grant.setUpdatedAt(now);
+        updateAddonGrantOrThrow(grant, "reanchor future addon grant");
     }
 
     private long sumActiveAddonBalance(String clerkUserId, String featureCode, LocalDateTime now) {

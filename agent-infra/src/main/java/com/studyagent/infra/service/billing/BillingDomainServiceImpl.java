@@ -133,11 +133,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
 
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
-        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                .eq(UserSubscriptionEntity::getId, userSubscription.getId())
-                .set(UserSubscriptionEntity::getPendingPlanCode, planCode)
-                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
-                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
         String finalSuccessUrl = resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken);
         String finalCancelUrl = resolveCheckoutCancelUrl(requestedCancelUrl);
         SessionCreateParams.SubscriptionData subscriptionData = SessionCreateParams.SubscriptionData.builder()

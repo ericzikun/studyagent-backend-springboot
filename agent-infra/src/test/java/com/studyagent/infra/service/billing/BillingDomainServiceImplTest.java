@@ -48,6 +48,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class BillingDomainServiceImplTest {
@@ -720,7 +721,7 @@ class BillingDomainServiceImplTest {
         assertEquals("cus_recreated", subscription.getStripeCustomerId());
         assertEquals(2, service.checkoutAttempts);
         assertEquals(1, service.createdCustomers);
-        verify(userSubscriptionMapper, times(3)).update(isNull(), any(Wrapper.class));
+        verify(userSubscriptionMapper, times(2)).update(isNull(), any(Wrapper.class));
     }
 
     @Test
@@ -769,6 +770,56 @@ class BillingDomainServiceImplTest {
         assertTrue(exception.getMessage().contains("Create Stripe customer failed"));
         assertEquals(1, service.checkoutAttempts);
         assertEquals(1, service.createdCustomers);
+    }
+
+    @Test
+    void createSubscriptionCheckoutDoesNotMarkPendingPlanBeforeCheckoutCompletes() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(15L);
+        subscription.setClerkUserId("user_3");
+        subscription.setTier("free");
+        subscription.setStatus("free");
+        subscription.setStripeCustomerId("cus_existing");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+        plan.setStripePriceId("price_plus_yearly");
+        plan.setPriceCents(19999);
+        plan.setCurrency("usd");
+        plan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+
+        BillingDomainServiceImpl service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                userSubscriptionMapper,
+                rechargeOrderMapper) {
+            @Override
+            Session createStripeCheckoutSession(SessionCreateParams params) {
+                Session session = new Session();
+                session.setId("cs_test_initial");
+                session.setUrl("https://checkout.stripe.com/c/pay/cs_test_initial");
+                session.setExpiresAt(123456789L);
+                session.setSubscription("sub_new");
+                return session;
+            }
+        };
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_3",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_6");
+
+        assertEquals("cs_test_initial", result.getSessionId());
+        verify(userSubscriptionMapper, never()).update(isNull(), any(Wrapper.class));
     }
 
     @Test

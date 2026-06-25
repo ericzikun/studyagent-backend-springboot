@@ -46,6 +46,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -666,7 +667,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void startAssignmentRunFromFinalClarify_infersSlidesDeliverableBeforeEntitlementCheck() throws Exception {
+    void startAssignmentRunFromFinalClarify_trustsDeliverableCountAndIgnoresPresentationProse() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -734,12 +735,15 @@ class VerlaTurnOrchestratorTest {
                         .resultJson(objectMapper.writeValueAsString(Map.of(
                                 "isReadyForGeneration", true,
                                 "requirementForm", Map.of(
+                                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0),
                                         "task_title", "Build a presentation deck for the client pitch"))))
                         .build());
 
-        assertThrows(BusinessException.class,
-                () -> orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L));
-        Mockito.verifyNoInteractions(quotaService);
+        // Run trusts the structured deliverable_count (ppt:0) and ignores the "presentation deck"
+        // prose, so generation is dispatched instead of being blocked by a phantom ppt output type.
+        orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
+
+        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.run"));
     }
 
     @Test
@@ -943,16 +947,12 @@ class VerlaTurnOrchestratorTest {
                 .status(SessionStatus.RUNNING.name())
                 .build();
 
+        // A genuine ppt deliverable (deliverable_count.ppt=1) that the free plan does not allow.
         orchestrator.onAssignmentClarifyCompleted(800L, Map.of(
                 "isReadyForGeneration", true,
                 "requirementForm", Map.of(
-                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0),
-                        "task_title", "Write a short report"),
-                "reservedFields", Map.of(
-                        "question", "Please do not create slides"),
-                "appendAskAnswers", List.of(Map.of(
-                        "question", "Desired output",
-                        "answer", "Writing only"))));
+                        "deliverable_count", Map.of("markdown", 1, "ppt", 1, "code", 0),
+                        "task_title", "Write a short report")));
 
         assertEquals(SessionStatus.FAILED.name(), sessionRepository.saved.getStatus());
         assertEquals(TurnStatus.FAILED.name(), turnRepository.saved.getStatus());
@@ -964,10 +964,104 @@ class VerlaTurnOrchestratorTest {
         assertEquals("failed", failureBlock.get("runStatus"));
         Map<String, Object> diagnostics = (Map<String, Object>) failureBlock.get("diagnostics");
         assertNotNull(diagnostics);
-        assertEquals(Map.of("markdown", 1, "ppt", 0, "code", 0), diagnostics.get("rawDeliverableCount"));
+        // Run trusts the structured deliverable_count verbatim — normalized == raw, no inference applied.
+        assertEquals(Map.of("markdown", 1, "ppt", 1, "code", 0), diagnostics.get("rawDeliverableCount"));
         assertEquals(Map.of("markdown", 1, "ppt", 1, "code", 0), diagnostics.get("normalizedDeliverableCount"));
-        assertEquals(List.of("ppt"), diagnostics.get("inferredOutputTypes"));
+        assertEquals(List.of(), diagnostics.get("inferredOutputTypes"));
         assertEquals(List.of("ppt", "writing"), diagnostics.get("requestedOutputTypes"));
+    }
+
+    @Test
+    void onAssignmentClarifyCompleted_doesNotInferPptFromEmbeddedFormJsonInRequirementUnderstanding()
+            throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        // Mirror the real entitlement gate: reject only when a ppt/code deliverable is actually requested.
+        Mockito.doAnswer(invocation -> {
+            Map<String, Object> requirementForm = invocation.getArgument(1);
+            Object deliverableCountRaw = requirementForm.get("deliverable_count");
+            Map<String, Object> deliverableCount = deliverableCountRaw instanceof Map<?, ?> rawMap
+                    ? rawMap.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null)
+                    .collect(Collectors.toMap(
+                            entry -> String.valueOf(entry.getKey()),
+                            Map.Entry::getValue))
+                    : Map.of();
+            Number ppt = deliverableCount.get("ppt") instanceof Number number ? number : Integer.valueOf(0);
+            Number code = deliverableCount.get("code") instanceof Number number ? number : Integer.valueOf(0);
+            if (ppt.intValue() > 0 || code.intValue() > 0) {
+                throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+            }
+            return null;
+        }).when(entitlementService).assertAssignmentOutputAllowed(
+                Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new FakeArtifactEditProposalRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        sessionRepository.session = VerlaSession.builder()
+                .id(800L)
+                .conversationId(74L)
+                .turnId(700L)
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .status(SessionStatus.RUNNING.name())
+                .build();
+
+        // requirementUnderstanding is free-form text that embeds the serialized requirement_form,
+        // whose deliverable_count keys ("ppt": 0, "code": 0) must NOT be mistaken for an intent to
+        // produce slides/code. The structured deliverable_count is the authoritative source.
+        String requirementUnderstanding = "This undergraduate Biology lab report compares fermentation "
+                + "efficiency, presented in 2000 words double-spaced. "
+                + "deliverable_count: {\"ppt\": 0, \"code\": 0, \"markdown\": 1}. "
+                + "Report structure: Abstract, Introduction, Methods, Results, Discussion.";
+
+        orchestrator.onAssignmentClarifyCompleted(800L, Map.of(
+                "isReadyForGeneration", true,
+                "requirementForm", Map.of(
+                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0),
+                        "task_title", "Fermentation lab report"),
+                "requirementUnderstanding", requirementUnderstanding));
+
+        // The run command must be dispatched: the embedded JSON keys must not floor ppt/code to 1.
+        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.run"));
+        assertNotEquals(SessionStatus.FAILED.name(), sessionRepository.saved.getStatus());
     }
 
     @Test

@@ -756,12 +756,32 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 || hasText(current.getPendingPlanCode())
                 || current.getPendingEffectiveAt() != null;
         if (!hasPendingState) {
+            resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
             return;
         }
         if (scheduleId != null) {
             releasePendingScheduleIfPresent(current, subscription);
+            subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
         }
         clearPendingScheduleState(current);
+        resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
+    }
+
+    private Subscription resumeCancellationBeforePaidPlanChangeIfNeeded(
+            UserSubscriptionEntity current,
+            Subscription subscription) throws StripeException {
+        if (current == null || subscription == null) {
+            return subscription;
+        }
+        if (!Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd())
+                && !Boolean.TRUE.equals(current.getCancelAtPeriodEnd())) {
+            return subscription;
+        }
+        Subscription resumed = updateStripeSubscription(subscription, SubscriptionUpdateParams.builder()
+                .setCancelAtPeriodEnd(false)
+                .build());
+        syncCancellationFields(current, resumed);
+        return resumed;
     }
 
     void clearPendingUpgradeStateForRetry(UserSubscriptionEntity current) {
@@ -866,6 +886,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+            stripeSubscription = resumeCancellationBeforePaidPlanChangeIfNeeded(current, stripeSubscription);
             SubscriptionSchedule schedule = upsertDowngradeSchedule(
                     clerkUserId,
                     current,
@@ -1204,6 +1225,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
         return Subscription.retrieve(subscriptionId);
+    }
+
+    Subscription updateStripeSubscription(
+            Subscription subscription,
+            SubscriptionUpdateParams params) throws StripeException {
+        return subscription.update(params);
     }
 
     SubscriptionSchedule retrieveStripeSubscriptionSchedule(String scheduleId) throws StripeException {

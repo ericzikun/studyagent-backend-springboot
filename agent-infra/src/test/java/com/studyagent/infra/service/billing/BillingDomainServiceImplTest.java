@@ -27,6 +27,7 @@ import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.SubscriptionScheduleCreateParams;
 import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
+import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -395,6 +396,104 @@ class BillingDomainServiceImplTest {
         assertEquals("cs_test_manual_upgrade", result.getSessionId());
         assertEquals("sub_sched_old", service.releasedScheduleId);
         assertNull(service.subscriptionToRetrieve.getSchedule());
+    }
+
+    @Test
+    void downgradeSubscriptionResumesCancelAtPeriodEndBeforeSchedulingPaidPlanChange() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(22L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("pro_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setCancelAtPeriodEnd(true);
+        current.setStripeSubscriptionId("sub_123");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-24T10:00:00"));
+
+        SubscriptionPlanEntity currentPlan = plan("pro_monthly", "pro", "month", 7999);
+        currentPlan.setCurrency("usd");
+        currentPlan.setStripePriceId("price_pro_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 3999);
+        targetPlan.setCurrency("usd");
+        targetPlan.setStripePriceId("price_plus_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                null,
+                "price_pro_monthly",
+                1782302367L,
+                1784894367L);
+        service.subscriptionToRetrieve.setCancelAtPeriodEnd(true);
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.updatedScheduleToReturn = schedule("sub_sched_new");
+
+        var result = service.downgradeSubscription("user_1", "plus_monthly");
+
+        assertEquals("plus_monthly", result.getPendingPlanCode());
+        assertEquals(false, service.lastSubscriptionUpdateParams.getCancelAtPeriodEnd());
+        assertFalse(current.getCancelAtPeriodEnd());
+    }
+
+    @Test
+    void manualUpgradeCheckoutResumesCancelAtPeriodEndBeforeCreatingCheckout() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(22L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("basic_monthly");
+        current.setTier("basic");
+        current.setStatus("active");
+        current.setCancelAtPeriodEnd(true);
+        current.setStripeCustomerId("cus_123");
+        current.setStripeSubscriptionId("sub_123");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-24T10:00:00"));
+        current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+
+        SubscriptionPlanEntity currentPlan = plan("basic_monthly", "basic", "month", 1999);
+        currentPlan.setCurrency("usd");
+        currentPlan.setStripePriceId("price_basic_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 3999);
+        targetPlan.setCurrency("usd");
+        targetPlan.setStripePriceId("price_plus_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                null,
+                "price_basic_monthly",
+                1782302367L,
+                1784894367L);
+        service.subscriptionToRetrieve.setCancelAtPeriodEnd(true);
+
+        var result = service.createSubscriptionCheckout(
+                "user_1",
+                "user@example.com",
+                "plus_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_5");
+
+        assertEquals("cs_test_manual_upgrade", result.getSessionId());
+        assertEquals(false, service.lastSubscriptionUpdateParams.getCancelAtPeriodEnd());
+        assertFalse(current.getCancelAtPeriodEnd());
     }
 
     @Test
@@ -1114,6 +1213,7 @@ class BillingDomainServiceImplTest {
         private String releasedScheduleId;
         private int createdSchedules;
         private int updatedSchedules;
+        private SubscriptionUpdateParams lastSubscriptionUpdateParams;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper, planQuotaService);
@@ -1204,6 +1304,16 @@ class BillingDomainServiceImplTest {
             subscription.setId(subscriptionId);
             subscription.setSchedule(null);
             subscription.setLatestInvoice(subscriptionLatestInvoiceId);
+            return subscription;
+        }
+
+        @Override
+        Subscription updateStripeSubscription(Subscription subscription, SubscriptionUpdateParams params) {
+            lastSubscriptionUpdateParams = params;
+            subscription.setCancelAtPeriodEnd(false);
+            if (subscriptionToRetrieve != null) {
+                subscriptionToRetrieve.setCancelAtPeriodEnd(false);
+            }
             return subscription;
         }
 

@@ -1790,7 +1790,8 @@ public class VerlaTurnOrchestrator {
                 requirementForm,
                 reservedFields,
                 appendAskAnswers,
-                null);
+                null,
+                true);
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -2586,11 +2587,13 @@ public class VerlaTurnOrchestrator {
             return Map.of();
         }
         Map<String, Object> normalized = new HashMap<>(result);
+        // Run path: trust clarify's structured deliverable_count verbatim — no keyword inference.
         normalized.put("requirementForm", normalizeAssignmentRequirementForm(
                 castMap(normalized.get("requirementForm")),
                 castMap(normalized.get("reservedFields")),
                 castListOfMaps(normalized.get("appendAskAnswers")),
-                normalized.get("requirementUnderstanding") instanceof String text ? text : null));
+                normalized.get("requirementUnderstanding") instanceof String text ? text : null,
+                false));
         return normalized;
     }
 
@@ -2678,18 +2681,27 @@ public class VerlaTurnOrchestrator {
         return errorBlock;
     }
 
+    /**
+     * Normalize an assignment requirement form's {@code deliverable_count}.
+     *
+     * <p>When {@code applyOutputTypeInference} is true, keyword inference over the free-form fields
+     * may floor {@code ppt}/{@code code} up to 1 as a safety net (used by the clarify-dispatch and
+     * deep-understanding paths). When false, the structured {@code deliverable_count} is trusted
+     * verbatim — the <b>run</b> path passes false so generation honors exactly what clarify decided
+     * and never re-infers extra output types from prose (e.g. an embedded serialized form, or the
+     * word "slides" in a sentence), which would otherwise wrongly trip the entitlement gate.
+     */
     private static Map<String, Object> normalizeAssignmentRequirementForm(
             Map<String, Object> requirementForm,
             Map<String, Object> reservedFields,
             List<Map<String, Object>> appendAskAnswers,
-            String requirementUnderstanding) {
+            String requirementUnderstanding,
+            boolean applyOutputTypeInference) {
         Map<String, Object> normalized = requirementForm == null ? new HashMap<>() : new HashMap<>(requirementForm);
         Map<String, Object> deliverableCount = castMutableMap(normalized.get("deliverable_count"));
-        Set<String> inferredOutputTypes = inferAssignmentOutputTypes(
-                normalized,
-                reservedFields,
-                appendAskAnswers,
-                requirementUnderstanding);
+        Set<String> inferredOutputTypes = applyOutputTypeInference
+                ? inferAssignmentOutputTypes(normalized, reservedFields, appendAskAnswers, requirementUnderstanding)
+                : Set.of();
         putDeliverableCountFloor(deliverableCount, "markdown", 0);
         putDeliverableCountFloor(deliverableCount, "ppt", inferredOutputTypes.contains("ppt") ? 1 : 0);
         putDeliverableCountFloor(deliverableCount, "code", inferredOutputTypes.contains("coding") ? 1 : 0);
@@ -2824,7 +2836,8 @@ public class VerlaTurnOrchestrator {
                 castMap(normalized.get("requirementForm")),
                 Map.of(),
                 List.of(),
-                null));
+                null,
+                true));
 
         if (normalized.get("ready") instanceof Boolean) {
             return normalized;

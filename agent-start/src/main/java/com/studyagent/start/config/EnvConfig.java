@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -25,32 +26,58 @@ public class EnvConfig implements ApplicationListener<ApplicationEnvironmentPrep
     @Override
     public void onApplicationEvent(ApplicationEnvironmentPreparedEvent event) {
         ConfigurableEnvironment environment = event.getEnvironment();
-        
-        // 查找 .env 文件（在项目根目录）
-        File envFile = new File(".env");
-        if (!envFile.exists()) {
-            // 尝试在父目录查找（如果从 agent-start 目录启动）
-            envFile = new File("../.env");
-        }
-        
-        if (envFile.exists() && envFile.isFile()) {
-            log.info("找到 .env 文件: {}", envFile.getAbsolutePath());
-            Map<String, Object> envProperties = loadEnvFile(envFile);
-            
+
+        List<File> envFiles = findEnvFiles();
+        if (!envFiles.isEmpty()) {
+            Map<String, Object> envProperties = loadEnvFiles(envFiles);
+
             if (!envProperties.isEmpty()) {
                 MapPropertySource propertySource = new MapPropertySource("envFile", envProperties);
                 environment.getPropertySources().addFirst(propertySource);
-                log.info("已加载 {} 个环境变量从 .env 文件", envProperties.size());
+                log.info("已加载 {} 个环境变量从本地 env 文件", envProperties.size());
             }
         } else {
-            log.debug("未找到 .env 文件，跳过加载");
+            log.debug("未找到 .env 或 .env.local 文件，跳过加载");
         }
+    }
+
+    /**
+     * 查找本地 env 文件。
+     *
+     * `./start-mock.sh` 会从 agent-start 目录启动 Spring Boot，所以需要先看
+     * 当前目录，再看父目录；`.env.local` 后加载，用于覆盖共享 `.env`。
+     */
+    List<File> findEnvFiles() {
+        List<File> currentDirFiles = existingEnvFiles(".");
+        if (!currentDirFiles.isEmpty()) {
+            return currentDirFiles;
+        }
+        return existingEnvFiles("..");
+    }
+
+    private List<File> existingEnvFiles(String baseDir) {
+        return java.util.stream.Stream.of(".env", ".env.local")
+                .map(fileName -> new File(baseDir, fileName))
+                .filter(file -> file.exists() && file.isFile())
+                .toList();
+    }
+
+    Map<String, Object> loadEnvFiles(List<File> envFiles) {
+        Map<String, Object> properties = new HashMap<>();
+        for (File envFile : envFiles) {
+            log.info("找到 env 文件: {}", envFile.getAbsolutePath());
+            properties.putAll(loadEnvFile(envFile));
+        }
+        return properties;
     }
     
     /**
-     * 加载 .env 文件内容
+     * 加载 .env 文件内容。
+     *
+     * 支持 shell 风格的 `export KEY=VALUE`，让本地 `./start-mock.sh`
+     * 直接启动时也能读取同一份 .env 配置。
      */
-    private Map<String, Object> loadEnvFile(File envFile) {
+    Map<String, Object> loadEnvFile(File envFile) {
         Map<String, Object> properties = new HashMap<>();
         
         try (BufferedReader reader = new BufferedReader(new FileReader(envFile))) {
@@ -65,6 +92,8 @@ public class EnvConfig implements ApplicationListener<ApplicationEnvironmentPrep
                 if (line.isEmpty() || line.startsWith("#")) {
                     continue;
                 }
+
+                line = stripOptionalExportPrefix(line);
                 
                 // 解析 KEY=VALUE 格式
                 int equalsIndex = line.indexOf('=');
@@ -80,7 +109,7 @@ public class EnvConfig implements ApplicationListener<ApplicationEnvironmentPrep
                     
                     if (!key.isEmpty()) {
                         properties.put(key, value);
-                        log.debug("加载环境变量: {} = {}", key, value.contains("key") || value.contains("secret") ? "***" : value);
+                        log.debug("加载环境变量: {} = {}", key, maskIfSensitive(key, value));
                     }
                 } else {
                     log.warn(".env 文件第 {} 行格式错误: {}", lineNumber, line);
@@ -92,5 +121,25 @@ public class EnvConfig implements ApplicationListener<ApplicationEnvironmentPrep
         
         return properties;
     }
-}
 
+    private String stripOptionalExportPrefix(String line) {
+        if (line.startsWith("export ")) {
+            return line.substring("export ".length()).trim();
+        }
+        if (line.startsWith("export\t")) {
+            return line.substring("export".length()).trim();
+        }
+        return line;
+    }
+
+    private String maskIfSensitive(String key, String value) {
+        String normalizedKey = key == null ? "" : key.toLowerCase();
+        if (normalizedKey.contains("key")
+                || normalizedKey.contains("secret")
+                || normalizedKey.contains("token")
+                || normalizedKey.contains("password")) {
+            return "***";
+        }
+        return value;
+    }
+}

@@ -58,6 +58,32 @@ PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
 
 启动脚本会补齐旧 mock 数据库缺失的商业化额度字段：`verla_sessions.quota_ledger_id`、`verla_sessions.quota_amount` 以及 `humanizer_tasks` 的 quota 相关列。
 
+启动脚本会补齐 V2 商业化 mock 数据：`/v1/billing/config` 需要的订阅套餐与 add-on catalog、`/v1/billing/account` 需要的订阅镜像表、`/v1/payment/config` 需要的 Assignment / AI Detection / Humanizer 额度包，以及 quota ledger allocation、payment resume 和充值订单相关表/列。
+
+这些 mock 数据用于本地页面和套餐内容联调；`start-mock.sh` 会先加载项目根目录的 `.env` 和 `.env.local`，再设置本地默认值。默认 `BILLING_CHECKOUT_MOCK_ENABLED=true` 和 `PAYMENT_CHECKOUT_MOCK_ENABLED=true` 时，会员购买会本地更新 `user_subscriptions`、写入 completed `recharge_orders`，并直接回跳 `/payment-success?session_id=mock_cs_...`。
+
+如需真实 Stripe test mode checkout 跳转，在 `.env.local` 或启动命令中设置：
+
+```bash
+export BILLING_CHECKOUT_MOCK_ENABLED=false
+export PAYMENT_CHECKOUT_MOCK_ENABLED=false
+export STRIPE_SECRET_KEY=sk_test_...
+export STRIPE_PUBLISHABLE_KEY=pk_test_...
+export STRIPE_ALLOW_UNSIGNED_WEBHOOKS=true
+export STRIPE_WEBHOOK_SECRET=whsec_xxx
+```
+
+然后启动两个终端：
+
+```bash
+./start-mock.sh
+./start-stripe-webhook.sh
+```
+
+`start-stripe-webhook.sh` 会把 Stripe CLI test events 转发到 `http://localhost:8080/v1/webhook/stripe`。完成 Stripe Checkout 测试支付后，后端会通过 `checkout.session.completed` / `invoice.paid` 等事件把订单更新为 completed，并写入可用于账单页的 Stripe invoice 信息。如需严格校验签名，将 `stripe listen` 输出的 `whsec_...` 写入 `.env.local` 的 `STRIPE_WEBHOOK_SECRET` 后重启 `./start-mock.sh`。真实 Stripe checkout 还需要按 `sql/v2_billing_stripe_sandbox_ids.example.sql` 写入对应 sandbox `price_...`。
+
+账单入口 `POST /v1/billing/portal-session` 在 `start-mock.sh` 下默认使用 `BILLING_PORTAL_MOCK_URL=return-url`，避免本地未配置 Stripe Secret Key 时返回 `Stripe not configured`；如需打开真实 Stripe Customer Portal，请传入真实 test mode `STRIPE_SECRET_KEY`，设置 `BILLING_PORTAL_MOCK_ENABLED=false`，并确保本地 `user_subscriptions.stripe_customer_id` 对应同一个 Stripe test account。
+
 启动脚本会补齐旧 mock 数据库缺失的 Verla workforce 进度列与 `verla_editor_previews`，避免 conversation 列表和 compose-progress 链路因旧 schema 报错。
 
 本地 MockPy 的 Assignment init 默认流会先发送一段基于真实 requirement-analysis case 分割的 `channel=thinking` stream chunk，再发送 `channel=content` 正文 chunk，用于验证 V2 前端左栏 thinking 折叠消息和正文流式消息的切换。

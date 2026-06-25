@@ -12,6 +12,63 @@ DEPS_DIR="${VERLA_ROOT}/studyagent-backend"
 COMPOSE_FILE="${DEPS_DIR}/docker-cp/docker-compose.yml"
 AGENT_START_DIR="${SCRIPT_DIR}/agent-start"
 
+START_MOCK_ENV_FILE_KEYS=" "
+
+trim_env_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+strip_env_quotes() {
+  local value="$1"
+  if [[ ${#value} -ge 2 ]]; then
+    if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+  fi
+  printf '%s' "${value}"
+}
+
+load_start_mock_env_file() {
+  local env_file="$1"
+  [[ -f "${env_file}" ]] || return 0
+
+  echo "Loading local env file: ${env_file}"
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="$(trim_env_value "${line}")"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+
+    if [[ "${line}" == export[[:space:]]* ]]; then
+      line="$(trim_env_value "${line#export}")"
+    fi
+
+    [[ "${line}" == *=* ]] || continue
+    key="$(trim_env_value "${line%%=*}")"
+    value="$(trim_env_value "${line#*=}")"
+    value="$(strip_env_quotes "${value}")"
+
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+
+    # Explicit shell env wins over .env files; .env.local can override .env.
+    if [[ -n "${!key+x}" && "${START_MOCK_ENV_FILE_KEYS}" != *" ${key} "* ]]; then
+      continue
+    fi
+
+    export "${key}=${value}"
+    if [[ "${START_MOCK_ENV_FILE_KEYS}" != *" ${key} "* ]]; then
+      START_MOCK_ENV_FILE_KEYS="${START_MOCK_ENV_FILE_KEYS}${key} "
+    fi
+  done < "${env_file}"
+}
+
+load_start_mock_env_file "${SCRIPT_DIR}/.env"
+load_start_mock_env_file "${SCRIPT_DIR}/.env.local"
+
 PORT="${PORT:-8080}"
 SPRING_PROFILE="${SPRING_PROFILE:-local}"
 START_DEPS="${START_DEPS:-true}"
@@ -33,6 +90,14 @@ RABBITMQ_PASSWORD="${RABBITMQ_PASSWORD:-studyagent2024}"
 RABBITMQ_VHOST="${RABBITMQ_VHOST:-/}"
 
 VERLA_MOCK_DELAY_MS="${VERLA_MOCK_DELAY_MS:-50}"
+BILLING_PORTAL_MOCK_ENABLED="${BILLING_PORTAL_MOCK_ENABLED:-true}"
+BILLING_PORTAL_MOCK_URL="${BILLING_PORTAL_MOCK_URL:-return-url}"
+BILLING_CHECKOUT_MOCK_ENABLED="${BILLING_CHECKOUT_MOCK_ENABLED:-true}"
+PAYMENT_CHECKOUT_MOCK_ENABLED="${PAYMENT_CHECKOUT_MOCK_ENABLED:-${BILLING_CHECKOUT_MOCK_ENABLED}}"
+
+if [[ "${BILLING_PORTAL_MOCK_ENABLED}" != "true" ]]; then
+  BILLING_PORTAL_MOCK_URL=""
+fi
 
 compose_cmd=()
 if docker compose version >/dev/null 2>&1; then
@@ -284,6 +349,9 @@ CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`user_ai_quotas\` (
   \`free_balance\` bigint NOT NULL DEFAULT 0 COMMENT '免费额度余额',
   \`free_period_start\` datetime DEFAULT NULL COMMENT '免费周期开始时间',
   \`free_period_end\` datetime DEFAULT NULL COMMENT '免费周期结束时间',
+  \`plan_balance\` bigint NOT NULL DEFAULT 0 COMMENT '订阅套餐额度余额',
+  \`plan_period_start\` datetime DEFAULT NULL COMMENT '订阅套餐额度周期开始时间',
+  \`plan_period_end\` datetime DEFAULT NULL COMMENT '订阅套餐额度周期结束时间',
   \`paid_balance\` bigint NOT NULL DEFAULT 0 COMMENT '付费额度余额',
   \`version\` int NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -306,16 +374,63 @@ CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`quota_ledger\` (
   \`amount\` bigint NOT NULL COMMENT '流水额度，扣减为负数',
   \`source_type\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源类型',
   \`source_id\` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源ID',
+  \`idempotency_key\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '业务幂等键',
+  \`subscription_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe subscription id',
+  \`invoice_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe invoice id',
   \`free_balance_after\` bigint DEFAULT NULL COMMENT '变更后免费余额',
+  \`plan_balance_after\` bigint DEFAULT NULL COMMENT '变更后订阅套餐余额',
+  \`addon_balance_after\` bigint DEFAULT NULL COMMENT '变更后 add-on 汇总余额',
   \`paid_balance_after\` bigint DEFAULT NULL COMMENT '变更后付费余额',
   \`biz_context\` json DEFAULT NULL COMMENT '业务上下文',
   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (\`id\`),
   UNIQUE KEY \`uk_quota_ledger_no\` (\`ledger_no\`),
+  UNIQUE KEY \`uk_quota_ledger_feature_type_idempotency\` (\`feature_code\`, \`ledger_type\`, \`idempotency_key\`),
   KEY \`idx_quota_ledger_user_feature\` (\`clerk_user_id\`, \`feature_code\`, \`created_at\`),
   KEY \`idx_quota_ledger_source\` (\`source_type\`, \`source_id\`),
   KEY \`idx_quota_ledger_type\` (\`ledger_type\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 额度流水';
+SQL
+}
+
+apply_recharge_orders_table() {
+  run_mysql <<SQL
+CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`recharge_orders\` (
+  \`id\` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  \`order_no\` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '订单号',
+  \`order_type\` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'legacy_recharge' COMMENT 'legacy_recharge / subscription / addon',
+  \`clerk_user_id\` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Clerk 用户ID',
+  \`feature_code\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '功能编码',
+  \`package_code\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '旧额度包编码',
+  \`plan_code\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '订阅套餐编码',
+  \`target_plan_code\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '升级目标订阅套餐编码',
+  \`addon_code\` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'add-on 编码',
+  \`quota_amount\` bigint NOT NULL DEFAULT 0 COMMENT '到账额度',
+  \`price_cents\` int NOT NULL DEFAULT 0 COMMENT '价格（美分）',
+  \`quoted_amount_cents\` int DEFAULT NULL COMMENT '报价金额（美分）',
+  \`upgrade_charge_type\` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '升级收费类型',
+  \`currency\` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'usd' COMMENT '币种',
+  \`stripe_session_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe checkout session id',
+  \`stripe_payment_intent_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe payment intent id',
+  \`stripe_invoice_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe invoice id',
+  \`stripe_subscription_id\` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Stripe subscription id',
+  \`status\` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'pending / completed / failed',
+  \`failure_reason\` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '失败原因',
+  \`paid_at\` datetime DEFAULT NULL COMMENT '支付完成时间',
+  \`upgrade_effective_at\` datetime DEFAULT NULL COMMENT '升级生效时间',
+  \`switch_attempts\` int NOT NULL DEFAULT 0 COMMENT '切换重试次数',
+  \`biz_context\` json DEFAULT NULL COMMENT '业务上下文',
+  \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  \`updated_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_recharge_order_no\` (\`order_no\`),
+  UNIQUE KEY \`uk_recharge_stripe_session\` (\`stripe_session_id\`),
+  UNIQUE KEY \`uk_recharge_stripe_invoice\` (\`stripe_invoice_id\`),
+  KEY \`idx_recharge_user_status\` (\`clerk_user_id\`, \`status\`, \`created_at\`),
+  KEY \`idx_recharge_subscription\` (\`stripe_subscription_id\`, \`created_at\`),
+  KEY \`idx_recharge_order_type_status\` (\`order_type\`, \`status\`, \`created_at\`),
+  KEY \`idx_recharge_upgrade_user_status\` (\`clerk_user_id\`, \`order_type\`, \`status\`, \`created_at\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商业化充值/订阅订单';
 SQL
 }
 
@@ -324,9 +439,9 @@ seed_mock_quota_features() {
 INSERT INTO \`${DB_NAME}\`.\`ai_feature_defs\`
   (\`feature_code\`, \`feature_name\`, \`quota_unit\`, \`free_quota_period\`, \`free_quota_amount\`, \`is_active\`, \`display_order\`, \`created_at\`, \`updated_at\`)
 VALUES
-  ('task_create', 'Assignment', 'count', 'monthly', 20, 1, 10, NOW(), NOW()),
-  ('ai_detection', 'AI Detection', 'words', 'monthly', 20000, 1, 20, NOW(), NOW()),
-  ('humanizer', 'Humanizer', 'words', 'monthly', 20000, 1, 30, NOW(), NOW())
+  ('task_create', 'Assignment', 'count', 'monthly', 1, 1, 10, NOW(), NOW()),
+  ('ai_detection', 'AI Detection', 'count', 'monthly', 1, 1, 20, NOW(), NOW()),
+  ('humanizer', 'Humanizer', 'count', 'monthly', 1, 1, 30, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
   \`feature_name\` = VALUES(\`feature_name\`),
   \`quota_unit\` = VALUES(\`quota_unit\`),
@@ -339,9 +454,16 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO \`${DB_NAME}\`.\`ai_feature_packages\`
   (\`feature_code\`, \`package_code\`, \`package_name\`, \`quota_amount\`, \`price_cents\`, \`currency\`, \`is_active\`, \`display_order\`, \`label\`, \`created_at\`, \`updated_at\`)
 VALUES
-  ('task_create', 'mock_task_50', 'Mock Assignment 50', 50, 0, 'usd', 1, 10, 'mock', NOW(), NOW()),
-  ('ai_detection', 'mock_detection_50k', 'Mock Detection 50k', 50000, 0, 'usd', 1, 20, 'mock', NOW(), NOW()),
-  ('humanizer', 'mock_humanizer_50k', 'Mock Humanizer 50k', 50000, 0, 'usd', 1, 30, 'mock', NOW(), NOW())
+  ('task_create', 'assignment_1', '1 Assignment Credit', 1, 299, 'usd', 1, 10, 'normal', NOW(), NOW()),
+  ('task_create', 'assignment_5', '5 Assignment Credits', 5, 1299, 'usd', 1, 11, 'normal', NOW(), NOW()),
+  ('task_create', 'assignment_10', '10 Assignment Credits', 10, 2399, 'usd', 1, 12, 'popular', NOW(), NOW()),
+  ('task_create', 'assignment_50', '50 Assignment Credits', 50, 9999, 'usd', 1, 13, 'best', NOW(), NOW()),
+  ('ai_detection', 'detection_10k', '10,000 AI Detection Words', 10000, 199, 'usd', 1, 20, 'normal', NOW(), NOW()),
+  ('ai_detection', 'detection_50k', '50,000 AI Detection Words', 50000, 799, 'usd', 1, 21, 'normal', NOW(), NOW()),
+  ('ai_detection', 'detection_200k', '200,000 AI Detection Words', 200000, 2399, 'usd', 1, 22, 'best', NOW(), NOW()),
+  ('humanizer', 'humanizer_10k', '10,000 Humanizer Words', 10000, 299, 'usd', 1, 30, 'normal', NOW(), NOW()),
+  ('humanizer', 'humanizer_50k', '50,000 Humanizer Words', 50000, 1199, 'usd', 1, 31, 'normal', NOW(), NOW()),
+  ('humanizer', 'humanizer_200k', '200,000 Humanizer Words', 200000, 3999, 'usd', 1, 32, 'best', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
   \`package_name\` = VALUES(\`package_name\`),
   \`quota_amount\` = VALUES(\`quota_amount\`),
@@ -403,6 +525,195 @@ ALTER TABLE \`${DB_NAME}\`.\`humanizer_tasks\`
 SQL
 }
 
+apply_user_ai_quotas_plan_balance_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_ai_quotas\`
+    ADD COLUMN plan_balance BIGINT NOT NULL DEFAULT 0 COMMENT 'Current subscription plan balance for this feature' AFTER free_period_end;
+SQL
+}
+
+apply_user_ai_quotas_plan_period_start_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_ai_quotas\`
+    ADD COLUMN plan_period_start DATETIME NULL COMMENT 'Current plan quota period start' AFTER plan_balance;
+SQL
+}
+
+apply_user_ai_quotas_plan_period_end_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_ai_quotas\`
+    ADD COLUMN plan_period_end DATETIME NULL COMMENT 'Current plan quota period end' AFTER plan_period_start;
+SQL
+}
+
+apply_quota_ledger_idempotency_key_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`quota_ledger\`
+    ADD COLUMN idempotency_key VARCHAR(255) NULL COMMENT 'Business idempotency key for grants / clears / refunds' AFTER source_id;
+SQL
+}
+
+apply_quota_ledger_subscription_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`quota_ledger\`
+    ADD COLUMN subscription_id VARCHAR(255) NULL COMMENT 'Stripe subscription id for subscription-driven ledger entries' AFTER idempotency_key;
+SQL
+}
+
+apply_quota_ledger_invoice_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`quota_ledger\`
+    ADD COLUMN invoice_id VARCHAR(255) NULL COMMENT 'Stripe invoice id for invoice-driven ledger entries' AFTER subscription_id;
+SQL
+}
+
+apply_quota_ledger_plan_balance_after_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`quota_ledger\`
+    ADD COLUMN plan_balance_after BIGINT NULL COMMENT 'Plan pool balance snapshot after this ledger row' AFTER free_balance_after;
+SQL
+}
+
+apply_quota_ledger_addon_balance_after_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`quota_ledger\`
+    ADD COLUMN addon_balance_after BIGINT NULL COMMENT 'Aggregated add-on pool balance snapshot after this ledger row' AFTER plan_balance_after;
+SQL
+}
+
+apply_quota_ledger_idempotency_index() {
+  run_mysql <<SQL
+CREATE UNIQUE INDEX uk_quota_ledger_feature_type_idempotency
+    ON \`${DB_NAME}\`.\`quota_ledger\` (feature_code, ledger_type, idempotency_key);
+SQL
+}
+
+apply_recharge_orders_order_type_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN order_type VARCHAR(32) NOT NULL DEFAULT 'legacy_recharge' AFTER order_no;
+SQL
+}
+
+apply_recharge_orders_plan_code_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN plan_code VARCHAR(64) NULL AFTER package_code;
+SQL
+}
+
+apply_recharge_orders_addon_code_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN addon_code VARCHAR(64) NULL AFTER plan_code;
+SQL
+}
+
+apply_recharge_orders_target_plan_code_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN target_plan_code VARCHAR(64) NULL AFTER plan_code;
+SQL
+}
+
+apply_recharge_orders_quoted_amount_cents_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN quoted_amount_cents INT NULL AFTER price_cents;
+SQL
+}
+
+apply_recharge_orders_upgrade_charge_type_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN upgrade_charge_type VARCHAR(32) NULL AFTER target_plan_code;
+SQL
+}
+
+apply_recharge_orders_stripe_invoice_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN stripe_invoice_id VARCHAR(255) NULL AFTER stripe_payment_intent_id;
+SQL
+}
+
+apply_recharge_orders_stripe_subscription_id_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN stripe_subscription_id VARCHAR(255) NULL AFTER stripe_invoice_id;
+SQL
+}
+
+apply_recharge_orders_upgrade_effective_at_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN upgrade_effective_at DATETIME NULL AFTER paid_at;
+SQL
+}
+
+apply_recharge_orders_switch_attempts_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN switch_attempts INT NOT NULL DEFAULT 0 AFTER upgrade_effective_at;
+SQL
+}
+
+apply_recharge_orders_biz_context_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD COLUMN biz_context JSON NULL AFTER switch_attempts;
+SQL
+}
+
+apply_recharge_orders_stripe_invoice_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD UNIQUE KEY uk_recharge_stripe_invoice (stripe_invoice_id);
+SQL
+}
+
+apply_recharge_orders_subscription_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD INDEX idx_recharge_subscription (stripe_subscription_id, created_at);
+SQL
+}
+
+apply_recharge_orders_order_type_status_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD INDEX idx_recharge_order_type_status (order_type, status, created_at);
+SQL
+}
+
+apply_recharge_orders_upgrade_user_status_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`recharge_orders\`
+    ADD INDEX idx_recharge_upgrade_user_status (clerk_user_id, order_type, status, created_at);
+SQL
+}
+
+apply_user_subscriptions_pending_upgrade_order_no_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_subscriptions\`
+    ADD COLUMN pending_upgrade_order_no VARCHAR(64) NULL AFTER pending_effective_at;
+SQL
+}
+
+apply_user_subscriptions_pending_upgrade_expires_at_column() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_subscriptions\`
+    ADD COLUMN pending_upgrade_expires_at DATETIME NULL AFTER pending_upgrade_order_no;
+SQL
+}
+
+apply_user_subscriptions_pending_upgrade_index() {
+  run_mysql <<SQL
+ALTER TABLE \`${DB_NAME}\`.\`user_subscriptions\`
+    ADD INDEX idx_user_subscription_pending_upgrade (pending_upgrade_order_no, pending_upgrade_expires_at);
+SQL
+}
+
 apply_verla_workforce_tasks_compose_current_round_column() {
   run_mysql <<SQL
 ALTER TABLE \`${DB_NAME}\`.\`verla_workforce_tasks\`
@@ -431,7 +742,10 @@ SQL
 
 apply_sql_file() {
   local file="$1"
-  run_mysql < "${file}"
+  # Migration files in this repo often contain "USE studyagent;" because the
+  # canonical local DB is named studyagent. start-mock can be pointed at another
+  # DB_NAME, so execute those files against the already-selected connection DB.
+  sed '/^USE studyagent;$/d' "${file}" | run_mysql
 }
 
 ensure_mock_db_schema() {
@@ -466,6 +780,133 @@ ensure_mock_db_schema() {
     echo "Creating quota_ledger table for local quota mock"
     apply_quota_ledger_table
   fi
+
+  if ! column_exists "user_ai_quotas" "plan_balance"; then
+    echo "Applying user_ai_quotas plan_balance patch"
+    apply_user_ai_quotas_plan_balance_column
+  fi
+  if ! column_exists "user_ai_quotas" "plan_period_start"; then
+    echo "Applying user_ai_quotas plan_period_start patch"
+    apply_user_ai_quotas_plan_period_start_column
+  fi
+  if ! column_exists "user_ai_quotas" "plan_period_end"; then
+    echo "Applying user_ai_quotas plan_period_end patch"
+    apply_user_ai_quotas_plan_period_end_column
+  fi
+
+  if ! column_exists "quota_ledger" "idempotency_key"; then
+    echo "Applying quota_ledger idempotency_key patch"
+    apply_quota_ledger_idempotency_key_column
+  fi
+  if ! column_exists "quota_ledger" "subscription_id"; then
+    echo "Applying quota_ledger subscription_id patch"
+    apply_quota_ledger_subscription_id_column
+  fi
+  if ! column_exists "quota_ledger" "invoice_id"; then
+    echo "Applying quota_ledger invoice_id patch"
+    apply_quota_ledger_invoice_id_column
+  fi
+  if ! column_exists "quota_ledger" "plan_balance_after"; then
+    echo "Applying quota_ledger plan_balance_after patch"
+    apply_quota_ledger_plan_balance_after_column
+  fi
+  if ! column_exists "quota_ledger" "addon_balance_after"; then
+    echo "Applying quota_ledger addon_balance_after patch"
+    apply_quota_ledger_addon_balance_after_column
+  fi
+  if ! index_exists "quota_ledger" "uk_quota_ledger_feature_type_idempotency"; then
+    echo "Applying quota_ledger idempotency index patch"
+    apply_quota_ledger_idempotency_index
+  fi
+
+  echo "Ensuring V2 billing catalog and account mock tables"
+  apply_sql_file "${SCRIPT_DIR}/sql/056_subscription_catalog.sql"
+  apply_sql_file "${SCRIPT_DIR}/sql/057_user_subscriptions_and_webhook_events.sql"
+  apply_sql_file "${SCRIPT_DIR}/sql/059_user_addon_grants.sql"
+  apply_sql_file "${SCRIPT_DIR}/sql/060_quota_ledger_allocations.sql"
+  apply_sql_file "${SCRIPT_DIR}/sql/064_payment_resume_context.sql"
+
+  if table_exists "user_subscriptions"; then
+    if ! column_exists "user_subscriptions" "pending_upgrade_order_no"; then
+      echo "Applying user_subscriptions pending_upgrade_order_no patch"
+      apply_user_subscriptions_pending_upgrade_order_no_column
+    fi
+    if ! column_exists "user_subscriptions" "pending_upgrade_expires_at"; then
+      echo "Applying user_subscriptions pending_upgrade_expires_at patch"
+      apply_user_subscriptions_pending_upgrade_expires_at_column
+    fi
+    if ! index_exists "user_subscriptions" "idx_user_subscription_pending_upgrade"; then
+      echo "Applying user_subscriptions pending upgrade index patch"
+      apply_user_subscriptions_pending_upgrade_index
+    fi
+  fi
+
+  if ! table_exists "recharge_orders"; then
+    echo "Creating recharge_orders table for local billing mock"
+    apply_recharge_orders_table
+  else
+    if ! column_exists "recharge_orders" "order_type"; then
+      echo "Applying recharge_orders order_type patch"
+      apply_recharge_orders_order_type_column
+    fi
+    if ! column_exists "recharge_orders" "plan_code"; then
+      echo "Applying recharge_orders plan_code patch"
+      apply_recharge_orders_plan_code_column
+    fi
+    if ! column_exists "recharge_orders" "addon_code"; then
+      echo "Applying recharge_orders addon_code patch"
+      apply_recharge_orders_addon_code_column
+    fi
+    if ! column_exists "recharge_orders" "target_plan_code"; then
+      echo "Applying recharge_orders target_plan_code patch"
+      apply_recharge_orders_target_plan_code_column
+    fi
+    if ! column_exists "recharge_orders" "quoted_amount_cents"; then
+      echo "Applying recharge_orders quoted_amount_cents patch"
+      apply_recharge_orders_quoted_amount_cents_column
+    fi
+    if ! column_exists "recharge_orders" "upgrade_charge_type"; then
+      echo "Applying recharge_orders upgrade_charge_type patch"
+      apply_recharge_orders_upgrade_charge_type_column
+    fi
+    if ! column_exists "recharge_orders" "stripe_invoice_id"; then
+      echo "Applying recharge_orders stripe_invoice_id patch"
+      apply_recharge_orders_stripe_invoice_id_column
+    fi
+    if ! column_exists "recharge_orders" "stripe_subscription_id"; then
+      echo "Applying recharge_orders stripe_subscription_id patch"
+      apply_recharge_orders_stripe_subscription_id_column
+    fi
+    if ! column_exists "recharge_orders" "upgrade_effective_at"; then
+      echo "Applying recharge_orders upgrade_effective_at patch"
+      apply_recharge_orders_upgrade_effective_at_column
+    fi
+    if ! column_exists "recharge_orders" "switch_attempts"; then
+      echo "Applying recharge_orders switch_attempts patch"
+      apply_recharge_orders_switch_attempts_column
+    fi
+    if ! column_exists "recharge_orders" "biz_context"; then
+      echo "Applying recharge_orders biz_context patch"
+      apply_recharge_orders_biz_context_column
+    fi
+    if ! index_exists "recharge_orders" "uk_recharge_stripe_invoice"; then
+      echo "Applying recharge_orders stripe_invoice index patch"
+      apply_recharge_orders_stripe_invoice_index
+    fi
+    if ! index_exists "recharge_orders" "idx_recharge_subscription"; then
+      echo "Applying recharge_orders subscription index patch"
+      apply_recharge_orders_subscription_index
+    fi
+    if ! index_exists "recharge_orders" "idx_recharge_order_type_status"; then
+      echo "Applying recharge_orders order_type status index patch"
+      apply_recharge_orders_order_type_status_index
+    fi
+    if ! index_exists "recharge_orders" "idx_recharge_upgrade_user_status"; then
+      echo "Applying recharge_orders upgrade user status index patch"
+      apply_recharge_orders_upgrade_user_status_index
+    fi
+  fi
+
   seed_mock_quota_features
 
   if table_exists "verla_attachments"; then
@@ -609,10 +1050,22 @@ run_args=(
   "--verla.mq.single-active-consumer-enabled=false"
   "--verla.mq.mock.enabled=true"
   "--verla.mq.mock.delay-base-ms=${VERLA_MOCK_DELAY_MS}"
+  "--billing.portal.mock-url=${BILLING_PORTAL_MOCK_URL}"
+  "--billing.checkout.mock-enabled=${BILLING_CHECKOUT_MOCK_ENABLED}"
+  "--payment.checkout.mock-enabled=${PAYMENT_CHECKOUT_MOCK_ENABLED}"
 )
 
 echo "Starting Spring Boot MockPy backend on http://localhost:${PORT}"
 echo "Profile: ${SPRING_PROFILE}; DB: ${DB_HOST}:${DB_PORT}/${DB_NAME}; RabbitMQ: ${RABBITMQ_HOST}:${RABBITMQ_PORT}"
+echo "Billing checkout mock: ${BILLING_CHECKOUT_MOCK_ENABLED}; payment checkout mock: ${PAYMENT_CHECKOUT_MOCK_ENABLED}; billing portal mock URL: ${BILLING_PORTAL_MOCK_URL:-<disabled>}"
+if [[ "${BILLING_CHECKOUT_MOCK_ENABLED}" != "true" || "${PAYMENT_CHECKOUT_MOCK_ENABLED}" != "true" ]]; then
+  echo "Stripe test checkout is enabled. Keep a second terminal running: ./start-stripe-webhook.sh"
+  echo "Stripe webhook endpoint: http://localhost:${PORT}/v1/webhook/stripe"
+fi
+if [[ "${STRIPE_ALLOW_UNSIGNED_WEBHOOKS:-false}" != "true" ]] \
+  && { [[ -z "${STRIPE_WEBHOOK_SECRET:-}" ]] || [[ "${STRIPE_WEBHOOK_SECRET:-}" == "whsec_xxx" ]]; }; then
+  echo "WARN: STRIPE_WEBHOOK_SECRET is not configured and unsigned Stripe webhooks are disabled." >&2
+fi
 echo "Use BUILD_FIRST=false, START_DEPS=false, or PATCH_MOCK_DB=false to skip those steps when needed."
 
 cd "${AGENT_START_DIR}"

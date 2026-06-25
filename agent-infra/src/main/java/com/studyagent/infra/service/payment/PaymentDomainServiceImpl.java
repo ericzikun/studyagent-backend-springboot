@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,6 +44,9 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     @Value("${payment.cancel-url:http://localhost:3000/cancel}")
     private String cancelUrl;
+
+    @Value("${payment.checkout.mock-enabled:false}")
+    private boolean paymentCheckoutMockEnabled;
 
     @PostConstruct
     public void init() {
@@ -149,6 +153,18 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     @Override
     public SessionStatusResult getSessionStatus(String sessionId) {
+        if (paymentCheckoutMockEnabled && sessionId != null && sessionId.startsWith("mock_cs_")) {
+            return SessionStatusResult.builder()
+                    .sessionId(sessionId)
+                    .status("complete")
+                    .paymentStatus("paid")
+                    .amountTotal(null)
+                    .currency("usd")
+                    .customerEmail(null)
+                    .createdAt(Instant.now().getEpochSecond())
+                    .clerkUserId(null)
+                    .build();
+        }
         Session session;
         try {
             session = Session.retrieve(sessionId);

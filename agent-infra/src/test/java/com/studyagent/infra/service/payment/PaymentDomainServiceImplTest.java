@@ -54,4 +54,17 @@ class PaymentDomainServiceImplTest {
         assertEquals(10_000, result.getPackages().get(0).get("credits"));
         assertEquals("ai_detection", result.getPackages().get(0).get("featureCode"));
     }
+
+    @Test
+    void getSessionStatusReturnsPaidForMockCheckoutSession() {
+        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper);
+        ReflectionTestUtils.setField(service, "paymentCheckoutMockEnabled", true);
+
+        var result = service.getSessionStatus("mock_cs_123");
+
+        assertEquals("mock_cs_123", result.getSessionId());
+        assertEquals("complete", result.getStatus());
+        assertEquals("paid", result.getPaymentStatus());
+        assertEquals("usd", result.getCurrency());
+    }
 }

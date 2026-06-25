@@ -9,6 +9,7 @@ import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -17,8 +18,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -133,6 +137,36 @@ class VerlaAssignmentChatHttpBindingTest {
 
         verify(conversationService).getOwned("user_1", 24L);
         verify(messageRepository).findAssignmentChatByCursor(eq(24L), eq(300L), eq(2));
+    }
+
+    // task 4.4: 空历史返回空列表而非报错。
+    @Test
+    void assignmentChatHistoryEndpoint_shouldReturnEmptyListForNoHistory() throws Exception {
+        when(messageRepository.findAssignmentChatByCursor(eq(24L), eq((Long) null), eq(20)))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/v1/verla/conversations/24/assignment-chat/messages")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+
+        verify(conversationService).getOwned("user_1", 24L);
+    }
+
+    // task 4.4: 他人 conversation 拒绝——所有权校验失败时不查询历史。
+    @Test
+    void assignmentChatHistoryEndpoint_shouldRejectForeignConversation() {
+        Mockito.doThrow(new RuntimeException("not owner"))
+                .when(conversationService).getOwned("user_1", 24L);
+
+        assertThrows(Exception.class, () ->
+                mockMvc.perform(get("/v1/verla/conversations/24/assignment-chat/messages")
+                        .requestAttr("clerkUserId", "user_1")));
+
+        verify(messageRepository, never()).findAssignmentChatByCursor(
+                any(), any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     private static final class StubVerlaTurnOrchestrator extends VerlaTurnOrchestrator {

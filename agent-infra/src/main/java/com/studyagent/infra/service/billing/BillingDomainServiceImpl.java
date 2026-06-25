@@ -345,6 +345,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String orderNo = generateOrderNo();
 
         try {
+            releasePendingScheduleStateBeforeManualUpgradeCheckout(current);
             SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                     .putMetadata("purchase_type", "subscription_upgrade_manual")
                     .putMetadata("upgrade_order_no", orderNo)
@@ -386,6 +387,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure("Create manual subscription upgrade Checkout failed", e);
         }
+    }
+
+    private void releasePendingScheduleStateBeforeManualUpgradeCheckout(
+            UserSubscriptionEntity current) throws StripeException {
+        if (current == null || !hasText(current.getStripeSubscriptionId())) {
+            return;
+        }
+        Subscription subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+        String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
+        boolean hasPendingState = scheduleId != null
+                || hasText(current.getPendingPlanCode())
+                || current.getPendingEffectiveAt() != null;
+        if (!hasPendingState) {
+            return;
+        }
+        if (scheduleId != null) {
+            releasePendingScheduleIfPresent(current, subscription);
+        }
+        clearPendingScheduleState(current);
     }
 
     void clearPendingUpgradeStateForRetry(UserSubscriptionEntity current) {

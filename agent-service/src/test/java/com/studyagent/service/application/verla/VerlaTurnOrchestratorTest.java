@@ -1410,6 +1410,206 @@ class VerlaTurnOrchestratorTest {
         assertEquals(8000, ((String) hunk.get("proposedText")).indexOf("\n\n[Truncated"));
     }
 
+    // task 4.1 (overwrite case): code overwrite 轮持久化 editMode=overwrite + result 状态。
+    @Test
+    @SuppressWarnings("unchecked")
+    void onAssignmentChatCompleted_persistsOverwriteResultInAssistantBlocks() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = assignmentChatOrchestrator(
+                sessionRepository, turnRepository, messageRepository, proposalRepository, objectMapper);
+
+        seedAssignmentChatTurn(sessionRepository, turnRepository);
+        proposalRepository.proposal = VerlaArtifactEditProposal.builder()
+                .proposalId("ep_74_801")
+                .conversationId(74L)
+                .turnId(801L)
+                .state(VerlaArtifactEditProposal.STATE_REVIEWING)
+                .targetsJson("""
+                        [
+                          {
+                            "artifactUid": "art_code",
+                            "kind": "code",
+                            "editMode": "overwrite",
+                            "result": { "artifactUid": "art_code", "kind": "code", "status": "overwritten" }
+                          }
+                        ]
+                        """)
+                .changesJson("{}")
+                .build();
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of(
+                "finalText", "Rewrote the file.",
+                "perFile", List.of(Map.of(
+                        "artifactUid", "art_code",
+                        "status", "overwritten"))));
+
+        Map<String, Object> blocks = onlyAssistantBlocks(messageRepository, objectMapper);
+        Map<String, Object> target = ((List<Map<String, Object>>)
+                ((Map<String, Object>) blocks.get("artifactEditProposal")).get("targets")).get(0);
+        assertEquals("overwrite", target.get("editMode"));
+        assertEquals("overwritten",
+                ((Map<String, Object>) target.get("result")).get("status"));
+        assertNull(target.get("changes"));
+    }
+
+    // task 4.1 (plain-text case): 纯文本回复轮只落 finalText，不含任何提案 block。
+    @Test
+    void onAssignmentChatCompleted_persistsPlainTextReplyWithoutProposalBlock() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = assignmentChatOrchestrator(
+                sessionRepository, turnRepository, messageRepository, proposalRepository, objectMapper);
+
+        seedAssignmentChatTurn(sessionRepository, turnRepository);
+        // No proposal for this turn → read-only reply.
+        proposalRepository.proposal = null;
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of(
+                "finalText", "Here is my answer."));
+
+        VerlaMessage assistant = messageRepository.savedMessages.stream()
+                .filter(message -> "assistant".equals(message.getRole()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Here is my answer.", assistant.getTextContent());
+        Map<String, Object> blocks = onlyAssistantBlocks(messageRepository, objectMapper);
+        assertNull(blocks.get("artifactEditProposal"));
+        assertNull(blocks.get("targets"));
+    }
+
+    // task 4.3: 失败轮不把未完成 review 提案当作已完成 assistant 内容持久化。
+    @Test
+    void onAssignmentChatFailed_doesNotPersistProposalAsCompletedContent() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = assignmentChatOrchestrator(
+                sessionRepository, turnRepository, messageRepository, proposalRepository, objectMapper);
+
+        seedAssignmentChatTurn(sessionRepository, turnRepository);
+        // A review proposal exists for the turn, but the turn FAILS before commit.
+        proposalRepository.proposal = VerlaArtifactEditProposal.builder()
+                .proposalId("ep_74_801")
+                .conversationId(74L)
+                .turnId(801L)
+                .state(VerlaArtifactEditProposal.STATE_REVIEWING)
+                .targetsJson("[{\"artifactUid\":\"art_doc\",\"editMode\":\"review\"}]")
+                .changesJson("{\"art_doc\":[{\"id\":\"h1\",\"originalText\":\"old\",\"proposedText\":\"new\"}]}")
+                .build();
+
+        orchestrator.onAssignmentChatFailed(700L, Map.of("errorMessage", "model error"));
+
+        // No persisted message may carry the review proposal as completed assistant content.
+        boolean anyProposalPersisted = messageRepository.savedMessages.stream()
+                .anyMatch(message -> message.getBlocksJson() != null
+                        && message.getBlocksJson().contains("artifactEditProposal"));
+        assertFalse(anyProposalPersisted);
+    }
+
+    // task 4.5: 落库 blocks 的结构与实时 SSE proposal_ready/final 同构（同名键、同 hunk 身份字段）。
+    @Test
+    @SuppressWarnings("unchecked")
+    void onAssignmentChatCompleted_blocksAreIsomorphicToRealtimeContract() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeArtifactEditProposalRepository proposalRepository = new FakeArtifactEditProposalRepository();
+        ObjectMapper objectMapper = new ObjectMapper();
+        VerlaTurnOrchestrator orchestrator = assignmentChatOrchestrator(
+                sessionRepository, turnRepository, messageRepository, proposalRepository, objectMapper);
+
+        seedAssignmentChatTurn(sessionRepository, turnRepository);
+        proposalRepository.proposal = VerlaArtifactEditProposal.builder()
+                .proposalId("ep_74_801")
+                .conversationId(74L)
+                .turnId(801L)
+                .state(VerlaArtifactEditProposal.STATE_REVIEWING)
+                .targetsJson("[{\"artifactUid\":\"art_doc\",\"kind\":\"document\",\"editMode\":\"review\"}]")
+                .changesJson("{\"art_doc\":[{\"id\":\"h1\",\"anchor\":\"BODY\","
+                        + "\"originalText\":\"old\",\"proposedText\":\"new\"}]}")
+                .build();
+
+        orchestrator.onAssignmentChatCompleted(700L, Map.of("finalText", "ok"));
+
+        Map<String, Object> blocks = onlyAssistantBlocks(messageRepository, objectMapper);
+        // top-level keys mirror the Python `final` payload (+ Java-stamped eventType).
+        assertEquals("ASSIGNMENT_CHAT_COMPLETED", blocks.get("eventType"));
+        assertEquals("ok", blocks.get("finalText"));
+        Map<String, Object> proposal = (Map<String, Object>) blocks.get("artifactEditProposal");
+        Map<String, Object> target =
+                ((List<Map<String, Object>>) proposal.get("targets")).get(0);
+        // target keys mirror Python proposal_ready ready_targets[] (review shape).
+        assertEquals("art_doc", target.get("artifactUid"));
+        assertEquals("review", target.get("editMode"));
+        Map<String, Object> hunk =
+                ((List<Map<String, Object>>) target.get("changes")).get(0);
+        // hunk identity fields are preserved verbatim (commit semantics depend on them).
+        assertEquals("h1", hunk.get("id"));
+        assertEquals("BODY", hunk.get("anchor"));
+        assertEquals("old", hunk.get("originalText"));
+        assertEquals("new", hunk.get("proposedText"));
+    }
+
+    private VerlaTurnOrchestrator assignmentChatOrchestrator(
+            FakeSessionRepository sessionRepository,
+            FakeTurnRepository turnRepository,
+            FakeMessageRepository messageRepository,
+            FakeArtifactEditProposalRepository proposalRepository,
+            ObjectMapper objectMapper) {
+        return new VerlaTurnOrchestrator(
+                null,
+                new FakeConversationRepository(),
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                proposalRepository,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                objectMapper,
+                new NoopQuotaService(),
+                Mockito.mock(EntitlementService.class),
+                event -> {},
+                mockAnalyticsService());
+    }
+
+    /** Seeds a RUNNING assignment-chat session(700)/turn(801) on conversation 74. */
+    private void seedAssignmentChatTurn(
+            FakeSessionRepository sessionRepository, FakeTurnRepository turnRepository) {
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT_CHAT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+    }
+
+    private static Map<String, Object> onlyAssistantBlocks(
+            FakeMessageRepository messageRepository, ObjectMapper objectMapper) throws Exception {
+        VerlaMessage assistant = messageRepository.savedMessages.stream()
+                .filter(message -> "assistant".equals(message.getRole()))
+                .findFirst()
+                .orElseThrow();
+        return objectMapper.readValue(assistant.getBlocksJson(), Map.class);
+    }
+
     private static final class FakeSessionRepository implements VerlaSessionRepository {
         VerlaSession session;
         VerlaSession saved;

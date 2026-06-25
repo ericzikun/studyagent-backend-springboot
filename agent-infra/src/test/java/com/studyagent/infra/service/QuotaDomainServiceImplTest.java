@@ -12,6 +12,7 @@ import com.studyagent.infra.mapper.QuotaLedgerAllocationMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
+import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
@@ -61,6 +62,8 @@ class QuotaDomainServiceImplTest {
     private QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
     @Mock
     private PlanQuotaService planQuotaService;
+    @Mock
+    private UserSubscriptionMapper userSubscriptionMapper;
 
     @Test
     void getUserQuota_migratesLegacyDetectionBalanceIntoAddonWords() {
@@ -104,7 +107,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         QuotaBalance balance = service.getUserQuota("user_1", "ai_detection");
 
@@ -112,6 +116,86 @@ class QuotaDomainServiceImplTest {
         assertEquals(0L, balance.legacyBalance());
         assertEquals(240_000L, balance.paidBalance());
         assertEquals(240_001L, balance.totalAvailable());
+    }
+
+    @Test
+    void getUserQuota_usesResolvedSimulationTimeForFreeRefresh() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("daily");
+        featureDef.setFreeQuotaAmount(3L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime fallbackNow = LocalDateTime.parse("2026-06-25T10:00:00");
+        LocalDateTime simulatedNow = fallbackNow.plusDays(2);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(15L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(1L);
+        quota.setFreePeriodStart(fallbackNow.minusDays(1));
+        quota.setFreePeriodEnd(fallbackNow.plusHours(2));
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(simulatedNow);
+
+        QuotaBalance balance = service.getUserQuota("user_1", "task_create");
+
+        assertEquals(3L, balance.freeBalance());
+        verify(userAiQuotaMapper).updateById(any(UserAiQuotaEntity.class));
+    }
+
+    @Test
+    void getUserQuota_usesResolvedSimulationTimeForAddonExpiry() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(0L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime fallbackNow = LocalDateTime.parse("2026-06-25T10:00:00");
+        LocalDateTime simulatedNow = fallbackNow.plusDays(5);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(16L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(0L);
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        UserAddonGrantEntity addonGrant = new UserAddonGrantEntity();
+        addonGrant.setId(401L);
+        addonGrant.setGrantType("addon");
+        addonGrant.setStatus("active");
+        addonGrant.setInitialAmount(3L);
+        addonGrant.setRemainingAmount(3L);
+        addonGrant.setExpiresAt(fallbackNow.plusDays(1));
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(addonGrant));
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(simulatedNow);
+
+        QuotaBalance balance = service.getUserQuota("user_1", "task_create");
+
+        assertEquals(0L, balance.addonBalance());
+        assertEquals(0L, balance.totalAvailable());
     }
 
     @Test
@@ -164,7 +248,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -247,7 +332,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         List<QuotaBalance> balances = service.getAllUserQuotas("user_1");
 
@@ -308,7 +394,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -564,7 +651,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         ConsumeResult first = service.consume(
                 "user_1",
@@ -646,7 +734,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         service.refund(501L, "task_failed");
 
@@ -729,7 +818,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         service.refund(502L, "task_failed");
 
@@ -786,7 +876,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         service.refund(5L, "task_failed");
 
@@ -849,7 +940,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         ConsumeResult result = service.consume(
                 "user_1",
@@ -910,7 +1002,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -983,7 +1076,8 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
 
         assertThrows(IllegalStateException.class, () -> service.consume(
                 "user_1",
@@ -1004,7 +1098,25 @@ class QuotaDomainServiceImplTest {
                 quotaLedgerMapper,
                 userAddonGrantMapper,
                 quotaLedgerAllocationMapper,
-                planQuotaService);
+                planQuotaService,
+                userSubscriptionMapper);
+    }
+
+    private QuotaDomainServiceImpl serviceWithResolvedNow(LocalDateTime resolvedNow) {
+        return new QuotaDomainServiceImpl(
+                aiFeatureDefsMapper,
+                aiFeaturePackageMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userAddonGrantMapper,
+                quotaLedgerAllocationMapper,
+                planQuotaService,
+                userSubscriptionMapper) {
+            @Override
+            LocalDateTime resolveQuotaNow(String clerkUserId, LocalDateTime fallbackNow) {
+                return resolvedNow;
+            }
+        };
     }
 
     private AiFeatureDefsEntity assignmentFeature() {

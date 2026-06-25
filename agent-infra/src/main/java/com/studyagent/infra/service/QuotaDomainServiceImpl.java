@@ -1,6 +1,10 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
+import com.stripe.model.testhelpers.TestClock;
 import com.google.gson.Gson;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
@@ -22,8 +26,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +54,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private final UserAddonGrantMapper userAddonGrantMapper;
     private final QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
     private final PlanQuotaService planQuotaService;
+    private final UserSubscriptionMapper userSubscriptionMapper;
 
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
@@ -101,7 +108,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (quota == null) {
             long freeBalance = freeQuotaAmount;
             long nonFreeBalance = 0L;
-            LocalDateTime periodEnd = computePeriodEnd(LocalDateTime.now(), featureDef.getFreeQuotaPeriod());
+            LocalDateTime periodEnd = computePeriodEnd(
+                    resolveQuotaNow(clerkUserId, LocalDateTime.now()),
+                    featureDef.getFreeQuotaPeriod());
             return new QuotaBalance(
                     featureCode,
                     featureDef.getFeatureName(),
@@ -118,7 +127,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             );
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = resolveQuotaNow(clerkUserId, LocalDateTime.now());
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
         migrateLegacyBalanceToAddonIfNeeded(quota, now);
 
@@ -128,7 +137,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
         List<UserAddonGrantEntity> addonGrants = findAddonGrantsForBalance(clerkUserId, featureCode);
         long addonBalance = addonGrants.stream()
-                .filter(this::isGrantConsumable)
+                .filter(grant -> isGrantConsumable(grant, now))
                 .map(UserAddonGrantEntity::getRemainingAmount)
                 .filter(value -> value != null && value > 0)
                 .mapToLong(Long::longValue)
@@ -233,7 +242,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
                         .last("LIMIT 1"));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = resolveQuotaNow(clerkUserId, LocalDateTime.now());
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
 
         // 2. 不存在则创建，存在则检查并刷新周期
@@ -411,7 +420,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalStateException("User quota not found for refund: " + consumeLedger.getClerkUserId());
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = resolveQuotaNow(consumeLedger.getClerkUserId(), LocalDateTime.now());
         List<QuotaLedgerAllocationEntity> allocations = quotaLedgerAllocationMapper.selectList(
                 new LambdaQueryWrapper<QuotaLedgerAllocationEntity>()
                         .eq(QuotaLedgerAllocationEntity::getQuotaLedgerId, ledgerId)
@@ -917,7 +926,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         return allocation.getSourcePeriodEnd() != null && !allocation.getSourcePeriodEnd().isAfter(now);
     }
 
-    private boolean isGrantConsumable(UserAddonGrantEntity grant) {
+    private boolean isGrantConsumable(UserAddonGrantEntity grant, LocalDateTime now) {
         if (grant == null) {
             return false;
         }
@@ -927,7 +936,52 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (grant.getRemainingAmount() == null || grant.getRemainingAmount() <= 0) {
             return false;
         }
-        return grant.getExpiresAt() == null || grant.getExpiresAt().isAfter(LocalDateTime.now());
+        return grant.getExpiresAt() == null || grant.getExpiresAt().isAfter(now);
+    }
+
+    LocalDateTime resolveQuotaNow(String clerkUserId, LocalDateTime fallbackNow) {
+        if (clerkUserId == null || clerkUserId.isBlank() || userSubscriptionMapper == null) {
+            return fallbackNow;
+        }
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        if (!shouldUseStripeSimulationTime(subscription)) {
+            return fallbackNow;
+        }
+        try {
+            Subscription stripeSubscription = retrieveStripeSubscription(subscription.getStripeSubscriptionId());
+            if (stripeSubscription == null) {
+                return fallbackNow;
+            }
+            String testClockId = stripeSubscription.getTestClock();
+            if (testClockId == null || testClockId.isBlank()) {
+                return fallbackNow;
+            }
+            Long frozenTime = retrieveTestClockFrozenTime(testClockId);
+            if (frozenTime == null) {
+                return fallbackNow;
+            }
+            LocalDateTime simulatedNow = LocalDateTime.ofInstant(Instant.ofEpochSecond(frozenTime), ZoneOffset.UTC);
+            return simulatedNow.isAfter(fallbackNow) ? simulatedNow : fallbackNow;
+        } catch (StripeException e) {
+            log.warn("Resolve Stripe test clock time failed for quota user {}", clerkUserId, e);
+            return fallbackNow;
+        }
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {
+        return TestClock.retrieve(testClockId).getFrozenTime();
+    }
+
+    private boolean shouldUseStripeSimulationTime(UserSubscriptionEntity subscription) {
+        if (subscription == null || subscription.getStripeSubscriptionId() == null || subscription.getStripeSubscriptionId().isBlank()) {
+            return false;
+        }
+        String apiKey = Stripe.apiKey;
+        return apiKey != null && apiKey.startsWith("sk_test_");
     }
 
     private Map<String, Object> toAddonBalanceItem(UserAddonGrantEntity grant) {

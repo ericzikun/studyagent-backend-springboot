@@ -12,6 +12,63 @@ DEPS_DIR="${VERLA_ROOT}/studyagent-backend"
 COMPOSE_FILE="${DEPS_DIR}/docker-cp/docker-compose.yml"
 AGENT_START_DIR="${SCRIPT_DIR}/agent-start"
 
+START_MOCK_ENV_FILE_KEYS=" "
+
+trim_env_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+strip_env_quotes() {
+  local value="$1"
+  if [[ ${#value} -ge 2 ]]; then
+    if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+  fi
+  printf '%s' "${value}"
+}
+
+load_start_mock_env_file() {
+  local env_file="$1"
+  [[ -f "${env_file}" ]] || return 0
+
+  echo "Loading local env file: ${env_file}"
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="$(trim_env_value "${line}")"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+
+    if [[ "${line}" == export[[:space:]]* ]]; then
+      line="$(trim_env_value "${line#export}")"
+    fi
+
+    [[ "${line}" == *=* ]] || continue
+    key="$(trim_env_value "${line%%=*}")"
+    value="$(trim_env_value "${line#*=}")"
+    value="$(strip_env_quotes "${value}")"
+
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+
+    # Explicit shell env wins over .env files; .env.local can override .env.
+    if [[ -n "${!key+x}" && "${START_MOCK_ENV_FILE_KEYS}" != *" ${key} "* ]]; then
+      continue
+    fi
+
+    export "${key}=${value}"
+    if [[ "${START_MOCK_ENV_FILE_KEYS}" != *" ${key} "* ]]; then
+      START_MOCK_ENV_FILE_KEYS="${START_MOCK_ENV_FILE_KEYS}${key} "
+    fi
+  done < "${env_file}"
+}
+
+load_start_mock_env_file "${SCRIPT_DIR}/.env"
+load_start_mock_env_file "${SCRIPT_DIR}/.env.local"
+
 PORT="${PORT:-8080}"
 SPRING_PROFILE="${SPRING_PROFILE:-local}"
 START_DEPS="${START_DEPS:-true}"
@@ -1000,6 +1057,15 @@ run_args=(
 
 echo "Starting Spring Boot MockPy backend on http://localhost:${PORT}"
 echo "Profile: ${SPRING_PROFILE}; DB: ${DB_HOST}:${DB_PORT}/${DB_NAME}; RabbitMQ: ${RABBITMQ_HOST}:${RABBITMQ_PORT}"
+echo "Billing checkout mock: ${BILLING_CHECKOUT_MOCK_ENABLED}; payment checkout mock: ${PAYMENT_CHECKOUT_MOCK_ENABLED}; billing portal mock URL: ${BILLING_PORTAL_MOCK_URL:-<disabled>}"
+if [[ "${BILLING_CHECKOUT_MOCK_ENABLED}" != "true" || "${PAYMENT_CHECKOUT_MOCK_ENABLED}" != "true" ]]; then
+  echo "Stripe test checkout is enabled. Keep a second terminal running: ./start-stripe-webhook.sh"
+  echo "Stripe webhook endpoint: http://localhost:${PORT}/v1/webhook/stripe"
+fi
+if [[ "${STRIPE_ALLOW_UNSIGNED_WEBHOOKS:-false}" != "true" ]] \
+  && { [[ -z "${STRIPE_WEBHOOK_SECRET:-}" ]] || [[ "${STRIPE_WEBHOOK_SECRET:-}" == "whsec_xxx" ]]; }; then
+  echo "WARN: STRIPE_WEBHOOK_SECRET is not configured and unsigned Stripe webhooks are disabled." >&2
+fi
 echo "Use BUILD_FIRST=false, START_DEPS=false, or PATCH_MOCK_DB=false to skip those steps when needed."
 
 cd "${AGENT_START_DIR}"

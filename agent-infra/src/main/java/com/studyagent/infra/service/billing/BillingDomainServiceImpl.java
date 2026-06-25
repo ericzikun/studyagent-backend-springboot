@@ -7,6 +7,7 @@ import com.stripe.Stripe;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
+import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
@@ -30,6 +31,7 @@ import com.studyagent.service.domain.billing.BillingAddon;
 import com.studyagent.service.domain.billing.BillingCatalogResult;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
@@ -144,7 +146,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     resumeToken);
         }
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
-                && userSubscription.getStripeSubscriptionId() != null) {
+                && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
             return createManualUpgradeCheckout(
                     clerkUserId,
                     customerEmail,
@@ -370,12 +372,73 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
 
+        Session session;
+        try {
+            session = createStripeCheckoutSession(buildAddonCheckoutParams(
+                    clerkUserId,
+                    addonCode,
+                    requestedSuccessUrl,
+                    requestedCancelUrl,
+                    resumeToken,
+                    addon,
+                    customerId));
+        } catch (StripeException e) {
+            if (!isMissingStripeCustomer(e) || !clearStoredStripeCustomer(userSubscription)) {
+                throw stripeFailure("Create add-on Checkout failed", e);
+            }
+            UserSubscriptionEntity retrySubscription = getOrCreateUserSubscription(clerkUserId);
+            String retriedCustomerId = ensureStripeCustomer(retrySubscription, clerkUserId, customerEmail);
+            try {
+                session = createStripeCheckoutSession(buildAddonCheckoutParams(
+                        clerkUserId,
+                        addonCode,
+                        requestedSuccessUrl,
+                        requestedCancelUrl,
+                        resumeToken,
+                        addon,
+                        retriedCustomerId));
+                userSubscription = retrySubscription;
+            } catch (StripeException retryException) {
+                throw stripeFailure("Create add-on Checkout failed", retryException);
+            }
+        }
+        insertPendingOrder(
+                clerkUserId,
+                "addon",
+                addon.getFeatureCode(),
+                addonCode,
+                null,
+                addonCode,
+                addon.getQuotaAmount(),
+                addon.getPriceCents(),
+                addon.getCurrency(),
+                session.getId(),
+                session.getPaymentIntent(),
+                userSubscription.getStripeSubscriptionId());
+        return CheckoutSessionResult.builder()
+                .checkoutKind("session")
+                .sessionId(session.getId())
+                .referenceId(session.getId())
+                .checkoutUrl(session.getUrl())
+                .expiresAt(session.getExpiresAt())
+                .resumeToken(resumeToken)
+                .build();
+    }
+
+    private SessionCreateParams buildAddonCheckoutParams(
+            String clerkUserId,
+            String addonCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken,
+            AddonPackageDefEntity addon,
+            String customerId) {
         SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                 .putMetadata("purchase_type", "addon")
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("addon_code", addonCode)
                 .build();
-        SessionCreateParams params = SessionCreateParams.builder()
+        return SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
@@ -389,33 +452,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("addon_code", addonCode)
                 .setPaymentIntentData(paymentIntentData)
+                .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
+                        .setEnabled(true)
+                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                                .setDescription("Add-on purchase: " + addonCode)
+                                .putMetadata("purchase_type", "addon")
+                                .putMetadata("clerk_user_id", clerkUserId)
+                                .putMetadata("addon_code", addonCode)
+                                .build())
+                        .build())
                 .build();
-        try {
-            Session session = Session.create(params);
-            insertPendingOrder(
-                    clerkUserId,
-                    "addon",
-                    addon.getFeatureCode(),
-                    addonCode,
-                    null,
-                    addonCode,
-                    addon.getQuotaAmount(),
-                    addon.getPriceCents(),
-                    addon.getCurrency(),
-                    session.getId(),
-                    session.getPaymentIntent(),
-                    userSubscription.getStripeSubscriptionId());
-            return CheckoutSessionResult.builder()
-                    .checkoutKind("session")
-                    .sessionId(session.getId())
-                    .referenceId(session.getId())
-                    .checkoutUrl(session.getUrl())
-                    .expiresAt(session.getExpiresAt())
-                    .resumeToken(resumeToken)
-                    .build();
-        } catch (StripeException e) {
-            throw stripeFailure("Create add-on Checkout failed", e);
-        }
     }
 
     @Override
@@ -463,6 +509,39 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .toList();
     }
 
+    @Override
+    public BillingHostedInvoiceResult createBillingHostedInvoice(String clerkUserId, String recordId) {
+        RechargeOrderEntity order = requireOwnedBillingRecord(clerkUserId, recordId);
+        String invoiceId = resolveStoredStripeInvoiceId(order);
+        if (!hasText(invoiceId) && !hasRealStripeBillingReference(order)) {
+            throw new BillingDomainException(
+                    "BILLING_INVOICE_NOT_AVAILABLE",
+                    "This billing record does not have a Stripe hosted invoice");
+        }
+        requireStripeConfigured();
+        try {
+            if (!hasText(invoiceId)) {
+                invoiceId = resolveStripeInvoiceIdFromBillingReference(order);
+            }
+            if (!hasText(invoiceId)) {
+                throw new BillingDomainException(
+                        "BILLING_INVOICE_NOT_AVAILABLE",
+                        "Stripe hosted invoice is not available for this billing record");
+            }
+            Invoice invoice = retrieveStripeInvoice(invoiceId);
+            if (invoice == null || !hasText(invoice.getHostedInvoiceUrl())) {
+                throw new BillingDomainException(
+                        "BILLING_INVOICE_NOT_AVAILABLE",
+                        "Stripe hosted invoice is not available for this billing record");
+            }
+            return BillingHostedInvoiceResult.builder()
+                    .url(invoice.getHostedInvoiceUrl())
+                    .build();
+        } catch (StripeException e) {
+            throw stripeFailure("Retrieve hosted invoice failed", e);
+        }
+    }
+
     private BillingRecordResult toBillingRecord(RechargeOrderEntity order) {
         return BillingRecordResult.builder()
                 .id(hasText(order.getOrderNo())
@@ -473,7 +552,109 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .currency(normalizeCurrency(order.getCurrency()))
                 .status(order.getStatus())
                 .orderType(order.getOrderType())
+                .hostedInvoiceAvailable(isHostedInvoiceCandidate(order))
                 .build();
+    }
+
+    private boolean isHostedInvoiceCandidate(RechargeOrderEntity order) {
+        return isSettledBillingStatus(order.getStatus())
+                && (resolveStoredStripeInvoiceId(order) != null || hasRealStripeBillingReference(order));
+    }
+
+    private boolean isSettledBillingStatus(String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase();
+        return "completed".equals(normalized)
+                || "paid".equals(normalized)
+                || "succeeded".equals(normalized)
+                || "success".equals(normalized);
+    }
+
+    private RechargeOrderEntity requireOwnedBillingRecord(String clerkUserId, String recordId) {
+        String normalizedRecordId = recordId == null ? "" : recordId.trim();
+        if (!hasText(normalizedRecordId)) {
+            throw new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Billing record not found");
+        }
+        Long numericId = parseLongOrNull(normalizedRecordId);
+        RechargeOrderEntity order = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .gt(RechargeOrderEntity::getPriceCents, 0)
+                        .and(wrapper -> {
+                            wrapper.eq(RechargeOrderEntity::getOrderNo, normalizedRecordId);
+                            if (numericId != null) {
+                                wrapper.or().eq(RechargeOrderEntity::getId, numericId);
+                            }
+                        })
+                        .last("LIMIT 1"));
+        if (order == null) {
+            throw new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Billing record not found");
+        }
+        return order;
+    }
+
+    private String resolveStoredStripeInvoiceId(RechargeOrderEntity order) {
+        String invoiceId = order.getStripeInvoiceId();
+        return isRealStripeReference(invoiceId) ? invoiceId : null;
+    }
+
+    private boolean hasRealStripeBillingReference(RechargeOrderEntity order) {
+        return isRealStripeReference(order.getStripeSessionId())
+                || isRealStripeReference(order.getStripeSubscriptionId());
+    }
+
+    private static boolean isRealStripeReference(String value) {
+        return hasText(value) && !value.startsWith("mock_");
+    }
+
+    private String resolveStripeInvoiceIdFromBillingReference(RechargeOrderEntity order) throws StripeException {
+        if (isRealStripeReference(order.getStripeSessionId())) {
+            Session session = retrieveStripeCheckoutSession(order.getStripeSessionId());
+            String sessionInvoiceId = resolveSessionInvoiceId(session);
+            if (hasText(sessionInvoiceId)) {
+                return sessionInvoiceId;
+            }
+            if (session != null && isRealStripeReference(session.getSubscription())) {
+                String latestInvoiceId = resolveSubscriptionLatestInvoiceId(session.getSubscription());
+                if (hasText(latestInvoiceId)) {
+                    return latestInvoiceId;
+                }
+            }
+        }
+        if (isRealStripeReference(order.getStripeSubscriptionId())) {
+            return resolveSubscriptionLatestInvoiceId(order.getStripeSubscriptionId());
+        }
+        return null;
+    }
+
+    private String resolveSessionInvoiceId(Session session) {
+        if (session == null) {
+            return null;
+        }
+        if (hasText(session.getInvoice())) {
+            return session.getInvoice();
+        }
+        Invoice invoice = session.getInvoiceObject();
+        return invoice == null ? null : invoice.getId();
+    }
+
+    private String resolveSubscriptionLatestInvoiceId(String subscriptionId) throws StripeException {
+        Subscription subscription = retrieveStripeSubscription(subscriptionId);
+        if (subscription == null) {
+            return null;
+        }
+        if (hasText(subscription.getLatestInvoice())) {
+            return subscription.getLatestInvoice();
+        }
+        Invoice invoice = subscription.getLatestInvoiceObject();
+        return invoice == null ? null : invoice.getId();
+    }
+
+    private Long parseLongOrNull(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     @SafeVarargs
@@ -980,6 +1161,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return com.stripe.model.billingportal.Session.create(params);
     }
 
+    Invoice retrieveStripeInvoice(String invoiceId) throws StripeException {
+        return Invoice.retrieve(invoiceId);
+    }
+
+    Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
+        return Session.retrieve(sessionId);
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
     boolean clearStoredStripeCustomer(UserSubscriptionEntity userSubscription) {
         if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
             return false;
@@ -1007,7 +1200,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String tier = normalizeNullableText(userSubscription.getTier());
         boolean freeLikeState = userSubscription.getPlanCode() == null
                 && ("free".equals(tier) || "free".equals(status) || "canceled".equals(status));
-        return freeLikeState && isMissingStripeCustomer(exception);
+        boolean localMockSubscriptionState = hasText(userSubscription.getStripeSubscriptionId())
+                && !isRealStripeReference(userSubscription.getStripeSubscriptionId());
+        return (freeLikeState || localMockSubscriptionState) && isMissingStripeCustomer(exception);
     }
 
     static boolean isMissingStripeCustomer(StripeException exception) {

@@ -6,7 +6,7 @@ import lombok.Data;
 /**
  * Stripe Customer Portal 跳转会话。
  *
- * 后端只向前端暴露短期 URL；账单列表、账单详情和下载能力由 Stripe 官方页面承载。
+ * 后端只向前端暴露短期 URL；完整账单历史、付款方式和订阅管理由 Stripe 官方页面承载。
  */
 @Data
 @Builder

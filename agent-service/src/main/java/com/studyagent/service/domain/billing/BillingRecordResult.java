@@ -9,8 +9,9 @@ import java.time.LocalDateTime;
  * Lightweight billing row for the V2 Bill tab.
  *
  * The record is sourced from local recharge_orders snapshots and intentionally
- * excludes Stripe object ids; invoice details and downloads remain owned by
- * Stripe Customer Portal.
+ * excludes Stripe object ids; hosted invoice details are resolved on demand.
+ * hostedInvoiceAvailable only says the row has a real Stripe reference that can
+ * be resolved by the invoice endpoint; it does not expose that reference.
  */
 @Data
 @Builder
@@ -21,4 +22,5 @@ public class BillingRecordResult {
     private String currency;
     private String status;
     private String orderType;
+    private boolean hostedInvoiceAvailable;
 }

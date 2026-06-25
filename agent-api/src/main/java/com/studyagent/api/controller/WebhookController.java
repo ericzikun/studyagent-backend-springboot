@@ -51,16 +51,7 @@ public class WebhookController {
             @RequestHeader("stripe-signature") String signature) {
         try {
             // 验证 Webhook 签名
-            Event event;
-            if (webhookSecret != null && !webhookSecret.isBlank() && !"whsec_xxx".equals(webhookSecret)) {
-                event = Webhook.constructEvent(payload, signature, webhookSecret);
-            } else if (allowUnsignedWebhooks) {
-                log.warn("Stripe Webhook signature verification is explicitly disabled");
-                event = new com.google.gson.Gson().fromJson(payload, Event.class);
-            } else {
-                log.error("Stripe Webhook secret is not configured");
-                return ResponseEntity.status(500).build();
-            }
+            Event event = parseStripeEvent(payload, signature);
 
             log.info("收到 Stripe Webhook: event_type={}, event_id={}", event.getType(), event.getId());
 
@@ -108,6 +99,30 @@ public class WebhookController {
             log.error("处理Webhook失败", e);
             return ResponseEntity.status(500).build();
         }
+    }
+
+    private Event parseStripeEvent(String payload, String signature) throws SignatureVerificationException {
+        if (webhookSecret != null && !webhookSecret.isBlank() && !"whsec_xxx".equals(webhookSecret)) {
+            try {
+                return Webhook.constructEvent(payload, signature, webhookSecret);
+            } catch (SignatureVerificationException e) {
+                if (!allowUnsignedWebhooks) {
+                    throw e;
+                }
+                // Local Stripe CLI sessions rotate their whsec_ value on each
+                // listen run. In explicit local unsigned mode, keep the test
+                // checkout flow usable without copying the new secret on every
+                // restart. Production must leave allowUnsignedWebhooks=false.
+                log.warn("Stripe Webhook signature verification failed, falling back to unsigned local parsing");
+                return new com.google.gson.Gson().fromJson(payload, Event.class);
+            }
+        }
+        if (allowUnsignedWebhooks) {
+            log.warn("Stripe Webhook signature verification is explicitly disabled");
+            return new com.google.gson.Gson().fromJson(payload, Event.class);
+        }
+        log.error("Stripe Webhook secret is not configured");
+        throw new SignatureVerificationException("Stripe Webhook secret is not configured", null);
     }
 
     /**

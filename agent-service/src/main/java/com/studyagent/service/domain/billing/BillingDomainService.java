@@ -29,6 +29,8 @@ public interface BillingDomainService {
 
     List<BillingRecordResult> getBillingRecords(String clerkUserId);
 
+    BillingHostedInvoiceResult createBillingHostedInvoice(String clerkUserId, String recordId);
+
     SubscriptionResult getCurrentSubscription(String clerkUserId);
 
     SubscriptionResult cancelAtPeriodEnd(String clerkUserId);

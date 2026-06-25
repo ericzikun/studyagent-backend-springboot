@@ -14,6 +14,8 @@ import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.Customer;
+import com.stripe.model.Invoice;
+import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
@@ -628,6 +630,58 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void createAddonCheckoutEnablesInvoiceCreationForHostedInvoice() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(19L);
+        subscription.setClerkUserId("user_5");
+        subscription.setTier("basic");
+        subscription.setStatus("active");
+        subscription.setStripeCustomerId("cus_123");
+        subscription.setStripeSubscriptionId("sub_123");
+
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_detection_5");
+        addon.setFeatureCode("ai_detection");
+        addon.setStripePriceId("price_addon_detection_5");
+        addon.setQuotaAmount(20000L);
+        addon.setPriceCents(499);
+        addon.setCurrency("usd");
+        addon.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(addonPackageDefMapper.selectOne(any(Wrapper.class))).thenReturn(addon);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.checkoutAttempts = 1;
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createAddonCheckout(
+                "user_5",
+                "user@example.com",
+                "addon_detection_5",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_5");
+
+        assertEquals("cs_test_retried", result.getSessionId());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getEnabled());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getDescription()
+                .contains("addon_detection_5"));
+        assertEquals("addon",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("purchase_type"));
+        assertEquals("addon_detection_5",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("addon_code"));
+
+        ArgumentCaptor<RechargeOrderEntity> orderCaptor = ArgumentCaptor.forClass(RechargeOrderEntity.class);
+        verify(rechargeOrderMapper).insert(orderCaptor.capture());
+        RechargeOrderEntity order = orderCaptor.getValue();
+        assertEquals("addon", order.getOrderType());
+        assertEquals("pending", order.getStatus());
+        assertEquals("cs_test_retried", order.getStripeSessionId());
+        assertEquals("sub_123", order.getStripeSubscriptionId());
+    }
+
+    @Test
     void getBillingRecordsMapsLocalOrdersWithoutStripeIdentifiers() {
         RechargeOrderEntity paid = new RechargeOrderEntity();
         paid.setOrderNo("RO202606150001");
@@ -637,6 +691,7 @@ class BillingDomainServiceImplTest {
         paid.setCurrency("php");
         paid.setPaidAt(LocalDateTime.parse("2026-06-15T08:00:00"));
         paid.setStripeSessionId("cs_should_not_leak");
+        paid.setStripeInvoiceId("in_should_not_leak");
 
         RechargeOrderEntity failed = new RechargeOrderEntity();
         failed.setOrderNo("RO202606160001");
@@ -645,6 +700,7 @@ class BillingDomainServiceImplTest {
         failed.setPriceCents(1999);
         failed.setCurrency("usd");
         failed.setCreatedAt(LocalDateTime.parse("2026-06-16T08:00:00"));
+        failed.setStripeSessionId("cs_failed_should_not_open");
 
         when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(paid, failed));
 
@@ -657,8 +713,152 @@ class BillingDomainServiceImplTest {
         assertEquals("php", records.get(0).getCurrency());
         assertEquals("completed", records.get(0).getStatus());
         assertEquals("subscription_initial", records.get(0).getOrderType());
+        assertTrue(records.get(0).isHostedInvoiceAvailable());
         assertEquals("RO202606160001", records.get(1).getId());
         assertEquals(LocalDateTime.parse("2026-06-16T08:00:00"), records.get(1).getPaidAt());
+        assertFalse(records.get(1).isHostedInvoiceAvailable());
+    }
+
+    @Test
+    void getBillingRecordsMarksMockStripeReferencesAsInvoiceUnavailable() {
+        RechargeOrderEntity mockPaid = new RechargeOrderEntity();
+        mockPaid.setOrderNo("RO202606250001");
+        mockPaid.setOrderType("subscription_initial");
+        mockPaid.setStatus("completed");
+        mockPaid.setPriceCents(9588);
+        mockPaid.setCurrency("usd");
+        mockPaid.setPaidAt(LocalDateTime.parse("2026-06-25T01:26:38"));
+        mockPaid.setStripeSessionId("mock_cs_123");
+        mockPaid.setStripeSubscriptionId("mock_sub_123");
+
+        when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(mockPaid));
+
+        var records = service().getBillingRecords("user_1");
+
+        assertEquals(1, records.size());
+        assertFalse(records.get(0).isHostedInvoiceAvailable());
+    }
+
+    @Test
+    void createSubscriptionCheckoutIgnoresMockSubscriptionWhenStripeIsConfigured() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(19L);
+        subscription.setClerkUserId("user_5");
+        subscription.setTier("basic");
+        subscription.setPlanCode("basic_yearly");
+        subscription.setStatus("active");
+        subscription.setStripeCustomerId("cus_deleted");
+        subscription.setStripeSubscriptionId("mock_sub_123");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+        plan.setStripePriceId("price_plus_yearly");
+        plan.setPriceCents(19188);
+        plan.setCurrency("usd");
+        plan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_5",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_5");
+
+        assertEquals("cs_test_retried", result.getSessionId());
+        assertEquals("session", result.getCheckoutKind());
+        assertNull(result.getQuotedAmountCents());
+        assertEquals(2, service.checkoutAttempts);
+    }
+
+    @Test
+    void createBillingHostedInvoiceRetrievesStripeHostedInvoiceForOwnedRecord() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(21L);
+        order.setOrderNo("RO202606150001");
+        order.setStripeInvoiceId("in_123");
+
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createBillingHostedInvoice("user_1", "RO202606150001");
+
+        assertEquals("https://invoice.stripe.com/i/test_123", result.getUrl());
+        assertEquals("in_123", service.lastRetrievedInvoiceId);
+        assertEquals(1, service.invoiceRetrieveAttempts);
+    }
+
+    @Test
+    void createBillingHostedInvoiceRejectsRecordWithoutInvoice() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(22L);
+        order.setOrderNo("RO202606160001");
+
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createBillingHostedInvoice("user_1", "RO202606160001"));
+
+        assertEquals("BILLING_INVOICE_NOT_AVAILABLE", exception.getCode());
+        assertEquals(0, service.invoiceRetrieveAttempts);
+    }
+
+    @Test
+    void createBillingHostedInvoiceFallsBackToCheckoutSessionInvoice() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(23L);
+        order.setOrderNo("RO202606170001");
+        order.setStripeSessionId("cs_123");
+
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.checkoutSessionInvoiceId = "in_from_session";
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createBillingHostedInvoice("user_1", "RO202606170001");
+
+        assertEquals("https://invoice.stripe.com/i/test_123", result.getUrl());
+        assertEquals("cs_123", service.lastRetrievedCheckoutSessionId);
+        assertEquals("in_from_session", service.lastRetrievedInvoiceId);
+        assertEquals(1, service.checkoutSessionRetrieveAttempts);
+        assertEquals(0, service.subscriptionRetrieveAttempts);
+    }
+
+    @Test
+    void createBillingHostedInvoiceFallsBackToSubscriptionLatestInvoice() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(24L);
+        order.setOrderNo("RO202606180001");
+        order.setStripeSubscriptionId("sub_123");
+
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.subscriptionLatestInvoiceId = "in_from_subscription";
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createBillingHostedInvoice("user_1", "RO202606180001");
+
+        assertEquals("https://invoice.stripe.com/i/test_123", result.getUrl());
+        assertEquals("sub_123", service.lastRetrievedSubscriptionId);
+        assertEquals("in_from_subscription", service.lastRetrievedInvoiceId);
+        assertEquals(1, service.subscriptionRetrieveAttempts);
     }
 
     @Test
@@ -785,10 +985,19 @@ class BillingDomainServiceImplTest {
     private final class TestBillingDomainService extends BillingDomainServiceImpl {
         private int checkoutAttempts;
         private int portalAttempts;
+        private int invoiceRetrieveAttempts;
+        private int checkoutSessionRetrieveAttempts;
+        private int subscriptionRetrieveAttempts;
         private int createdCustomers;
         private com.stripe.exception.StripeException customerCreationFailure;
         private SessionCreateParams lastCheckoutParams;
         private com.stripe.param.billingportal.SessionCreateParams lastPortalParams;
+        private String lastRetrievedInvoiceId;
+        private String lastRetrievedCheckoutSessionId;
+        private String lastRetrievedSubscriptionId;
+        private String checkoutSessionInvoiceId;
+        private String checkoutSessionSubscriptionId;
+        private String subscriptionLatestInvoiceId;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper, planQuotaService);
@@ -808,6 +1017,7 @@ class BillingDomainServiceImplTest {
         @Override
         Session createStripeCheckoutSession(SessionCreateParams params) throws com.stripe.exception.StripeException {
             checkoutAttempts++;
+            lastCheckoutParams = params;
             if (checkoutAttempts == 1) {
                 throw new InvalidRequestException(
                         "No such customer: 'cus_deleted'",
@@ -845,6 +1055,37 @@ class BillingDomainServiceImplTest {
             com.stripe.model.billingportal.Session session = new com.stripe.model.billingportal.Session();
             session.setUrl("https://billing.stripe.com/p/session/test_123");
             return session;
+        }
+
+        @Override
+        Invoice retrieveStripeInvoice(String invoiceId) throws com.stripe.exception.StripeException {
+            invoiceRetrieveAttempts++;
+            lastRetrievedInvoiceId = invoiceId;
+            Invoice invoice = new Invoice();
+            invoice.setId(invoiceId);
+            invoice.setHostedInvoiceUrl("https://invoice.stripe.com/i/test_123");
+            return invoice;
+        }
+
+        @Override
+        Session retrieveStripeCheckoutSession(String sessionId) throws com.stripe.exception.StripeException {
+            checkoutSessionRetrieveAttempts++;
+            lastRetrievedCheckoutSessionId = sessionId;
+            Session session = new Session();
+            session.setId(sessionId);
+            session.setInvoice(checkoutSessionInvoiceId);
+            session.setSubscription(checkoutSessionSubscriptionId);
+            return session;
+        }
+
+        @Override
+        Subscription retrieveStripeSubscription(String subscriptionId) throws com.stripe.exception.StripeException {
+            subscriptionRetrieveAttempts++;
+            lastRetrievedSubscriptionId = subscriptionId;
+            Subscription subscription = new Subscription();
+            subscription.setId(subscriptionId);
+            subscription.setLatestInvoice(subscriptionLatestInvoiceId);
+            return subscription;
         }
     }
 

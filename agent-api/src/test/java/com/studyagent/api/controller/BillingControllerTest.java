@@ -3,6 +3,7 @@ package com.studyagent.api.controller;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.payment.PaymentDomainService;
@@ -51,6 +52,14 @@ class BillingControllerTest {
     }
 
     @Test
+    void hostedInvoiceRequiresLogin() {
+        var result = controller.hostedInvoice("RO202606150001", null);
+
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(ApiCode.USER_NOT_LOGGED_IN.getCode());
+        verifyNoInteractions(billingDomainService);
+    }
+
+    @Test
     void recordsReturnsLocalBillingRows() {
         when(billingDomainService.getBillingRecords("user_1"))
                 .thenReturn(List.of(BillingRecordResult.builder()
@@ -68,6 +77,21 @@ class BillingControllerTest {
         assertThat(result.getData()).hasSize(1);
         assertThat(result.getData().get(0).getId()).isEqualTo("RO202606150001");
         verify(billingDomainService).getBillingRecords("user_1");
+        verifyNoInteractions(paymentDomainService);
+    }
+
+    @Test
+    void hostedInvoiceReturnsStripeUrl() {
+        when(billingDomainService.createBillingHostedInvoice("user_1", "RO202606150001"))
+                .thenReturn(BillingHostedInvoiceResult.builder()
+                        .url("https://invoice.stripe.com/i/test_123")
+                        .build());
+
+        var result = controller.hostedInvoice("RO202606150001", "user_1");
+
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
+        assertThat(result.getData()).containsEntry("url", "https://invoice.stripe.com/i/test_123");
+        verify(billingDomainService).createBillingHostedInvoice("user_1", "RO202606150001");
         verifyNoInteractions(paymentDomainService);
     }
 

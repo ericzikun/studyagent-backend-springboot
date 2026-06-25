@@ -751,6 +751,9 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getPackageCode, packageCode)
                 .set(RechargeOrderEntity::getPlanCode, planCode)
                 .set(RechargeOrderEntity::getStripePaymentIntentId, session.getPaymentIntent())
+                .set(session.getInvoice() != null && !session.getInvoice().isBlank(),
+                        RechargeOrderEntity::getStripeInvoiceId,
+                        session.getInvoice())
                 .set(RechargeOrderEntity::getStatus, "completed")
                 .set(RechargeOrderEntity::getPaidAt, LocalDateTime.now())
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));

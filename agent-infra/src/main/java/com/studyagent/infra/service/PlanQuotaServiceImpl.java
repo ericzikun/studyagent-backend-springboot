@@ -8,6 +8,7 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 import com.stripe.model.testhelpers.TestClock;
 import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -26,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -58,7 +58,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode) {
-        LocalDateTime fallbackNow = LocalDateTime.now();
+        LocalDateTime fallbackNow = DateTimeFormats.now();
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         refreshPlanQuotaIfNeeded(clerkUserId, featureCode, resolveRefreshTime(subscription, fallbackNow));
     }
@@ -66,7 +66,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void refreshAllPlanQuotasIfNeeded(String clerkUserId) {
-        LocalDateTime fallbackNow = LocalDateTime.now();
+        LocalDateTime fallbackNow = DateTimeFormats.now();
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         refreshAllPlanQuotasIfNeeded(clerkUserId, resolveRefreshTime(subscription, fallbackNow));
     }
@@ -143,7 +143,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                                 FeatureCode.TASK_CREATE.getCode(),
                                 FeatureCode.AI_DETECTION.getCode(),
                                 FeatureCode.HUMANIZER.getCode())));
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = DateTimeFormats.now();
         for (UserAiQuotaEntity quota : quotas) {
             if (quota == null || quota.getId() == null) {
                 continue;
@@ -330,9 +330,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             String ledgerType,
             boolean additive) {
         SubscriptionPlanEntity plan = requirePlan(planCode);
-        LocalDateTime periodStart = LocalDateTime.ofInstant(quotaPeriodStart, ZoneOffset.UTC);
-        LocalDateTime periodEnd = LocalDateTime.ofInstant(quotaPeriodEnd, ZoneOffset.UTC);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime periodStart = DateTimeFormats.fromInstant(quotaPeriodStart);
+        LocalDateTime periodEnd = DateTimeFormats.fromInstant(quotaPeriodEnd);
+        LocalDateTime now = DateTimeFormats.now();
 
         for (FeatureGrant featureGrant : featureGrants(plan)) {
             String idempotencyKey = idempotencyPrefix + ":" + sourceId + ":"
@@ -653,7 +653,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             if (frozenTime == null) {
                 return fallbackNow;
             }
-            LocalDateTime simulatedNow = LocalDateTime.ofInstant(Instant.ofEpochSecond(frozenTime), ZoneOffset.UTC);
+            LocalDateTime simulatedNow = DateTimeFormats.fromInstant(Instant.ofEpochSecond(frozenTime));
             return simulatedNow.isAfter(fallbackNow) ? simulatedNow : fallbackNow;
         } catch (StripeException e) {
             log.warn("Resolve Stripe test clock time failed for subscription {}", subscription.getStripeSubscriptionId(), e);
@@ -695,7 +695,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     }
 
     private String generateLedgerNo() {
-        return "QL" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
+        return "QL" + DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
                 UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
     }
 

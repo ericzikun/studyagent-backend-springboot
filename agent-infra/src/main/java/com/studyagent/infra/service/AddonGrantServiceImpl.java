@@ -3,6 +3,7 @@ package com.studyagent.infra.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.google.gson.Gson;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +59,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
             throw new IllegalArgumentException("Unknown active addon code: " + addonCode);
         }
 
-        LocalDateTime purchaseTime = LocalDateTime.ofInstant(paidAt, ZoneOffset.UTC);
+        LocalDateTime purchaseTime = DateTimeFormats.fromInstant(paidAt);
         UserAddonGrantEntity grant = new UserAddonGrantEntity();
         grant.setClerkUserId(clerkUserId);
         grant.setFeatureCode(addon.getFeatureCode());
@@ -73,8 +73,8 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         grant.setPurchasedAt(purchaseTime);
         grant.setExpiresAt(purchaseTime.plusMonths(Math.max(1, defaultInt(addon.getValidityMonths(), 2))));
         grant.setVersion(0);
-        grant.setCreatedAt(LocalDateTime.now());
-        grant.setUpdatedAt(LocalDateTime.now());
+        grant.setCreatedAt(DateTimeFormats.now());
+        grant.setUpdatedAt(DateTimeFormats.now());
         userAddonGrantMapper.insert(grant);
 
         QuotaLedgerEntity ledger = new QuotaLedgerEntity();
@@ -86,13 +86,13 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         ledger.setSourceType("checkout");
         ledger.setSourceId(stripeSessionId);
         ledger.setIdempotencyKey("checkout:" + stripeSessionId + ":addon");
-        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, addon.getFeatureCode(), LocalDateTime.now()));
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, addon.getFeatureCode(), DateTimeFormats.now()));
         ledger.setBizContext(GSON.toJson(Map.of(
                 "addon_code", addonCode,
                 "stripe_session_id", stripeSessionId,
                 "stripe_payment_intent_id", paymentIntentId == null ? "" : paymentIntentId
         )));
-        ledger.setCreatedAt(LocalDateTime.now());
+        ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
     }
 
@@ -102,7 +102,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_PAUSE, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = DateTimeFormats.now();
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -128,7 +128,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_RESUME, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = DateTimeFormats.now();
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -227,7 +227,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
     }
 
     private String generateLedgerNo() {
-        return "QL" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
+        return "QL" + DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
                 UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
     }
 }

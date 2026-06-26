@@ -24,13 +24,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.studyagent.common.datetime.DateTimeFormats;
 
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Set;
@@ -120,7 +120,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             long freeBalance = freeQuotaAmount;
             long nonFreeBalance = 0L;
             LocalDateTime periodEnd = computePeriodEnd(
-                    resolveQuotaNow(clerkUserId, LocalDateTime.now()),
+                    resolveQuotaNow(clerkUserId, DateTimeFormats.now()),
                     featureDef.getFreeQuotaPeriod());
             return new QuotaBalance(
                     featureCode,
@@ -138,7 +138,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             );
         }
 
-        LocalDateTime now = resolveQuotaNow(clerkUserId, LocalDateTime.now());
+        LocalDateTime now = resolveQuotaNow(clerkUserId, DateTimeFormats.now());
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
         migrateLegacyBalanceToAddonIfNeeded(quota, now);
 
@@ -255,7 +255,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
                         .last("LIMIT 1"));
 
-        LocalDateTime now = resolveQuotaNow(clerkUserId, LocalDateTime.now());
+        LocalDateTime now = resolveQuotaNow(clerkUserId, DateTimeFormats.now());
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
 
         // 2. 不存在则创建，存在则检查并刷新周期
@@ -435,7 +435,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             throw new IllegalStateException("User quota not found for refund: " + consumeLedger.getClerkUserId());
         }
 
-        LocalDateTime now = resolveQuotaNow(consumeLedger.getClerkUserId(), LocalDateTime.now());
+        LocalDateTime now = resolveQuotaNow(consumeLedger.getClerkUserId(), DateTimeFormats.now());
         List<QuotaLedgerAllocationEntity> allocations = quotaLedgerAllocationMapper.selectList(
                 new LambdaQueryWrapper<QuotaLedgerAllocationEntity>()
                         .eq(QuotaLedgerAllocationEntity::getQuotaLedgerId, ledgerId)
@@ -1019,7 +1019,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             if (frozenTime == null) {
                 return fallbackNow;
             }
-            LocalDateTime simulatedNow = LocalDateTime.ofInstant(Instant.ofEpochSecond(frozenTime), ZoneOffset.UTC);
+            LocalDateTime simulatedNow = DateTimeFormats.fromInstant(Instant.ofEpochSecond(frozenTime));
             return simulatedNow.isAfter(fallbackNow) ? simulatedNow : fallbackNow;
         } catch (StripeException e) {
             log.warn("Resolve Stripe test clock time failed for quota user {}", clerkUserId, e);
@@ -1215,7 +1215,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     private String generateLedgerNo() {
-        return "QL" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
+        return "QL" + DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
                 UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
     }
 }

@@ -3,6 +3,7 @@ package com.studyagent.infra.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
 import lombok.RequiredArgsConstructor;
@@ -96,9 +97,9 @@ public class QuotaRechargeService {
         order.setStripeSessionId(stripeSessionId);
         order.setStripePaymentIntentId(paymentIntentId);
         order.setStatus(ORDER_STATUS_COMPLETED);
-        order.setPaidAt(LocalDateTime.now());
-        order.setCreatedAt(LocalDateTime.now());
-        order.setUpdatedAt(LocalDateTime.now());
+        order.setPaidAt(DateTimeFormats.now());
+        order.setCreatedAt(DateTimeFormats.now());
+        order.setUpdatedAt(DateTimeFormats.now());
         rechargeOrderMapper.insert(order);
 
         // 2. 更新 user_ai_quotas：存在则增加 paid_balance，不存在则新建
@@ -112,7 +113,7 @@ public class QuotaRechargeService {
         if (quota == null) {
             // 新用户：从 ai_feature_defs 赋予应有免费额度，确保先扣免费再扣付费
             long freeQuotaAmount = 0L;
-            LocalDateTime periodStart = LocalDateTime.now();
+            LocalDateTime periodStart = DateTimeFormats.now();
             LocalDateTime periodEnd = periodStart.plusMonths(1);
             AiFeatureDefsEntity featureDef = aiFeatureDefsMapper.selectOne(
                     new LambdaQueryWrapper<AiFeatureDefsEntity>()
@@ -132,8 +133,8 @@ public class QuotaRechargeService {
             quota.setFreePeriodEnd(periodEnd);
             quota.setPaidBalance(quotaAmount);
             quota.setVersion(0);
-            quota.setCreatedAt(LocalDateTime.now());
-            quota.setUpdatedAt(LocalDateTime.now());
+            quota.setCreatedAt(DateTimeFormats.now());
+            quota.setUpdatedAt(DateTimeFormats.now());
             userAiQuotaMapper.insert(quota);
             newPaidBalance = quotaAmount;
         } else {
@@ -141,7 +142,7 @@ public class QuotaRechargeService {
             userAiQuotaMapper.update(null, new LambdaUpdateWrapper<UserAiQuotaEntity>()
                     .eq(UserAiQuotaEntity::getId, quota.getId())
                     .set(UserAiQuotaEntity::getPaidBalance, newPaidBalance)
-                    .set(UserAiQuotaEntity::getUpdatedAt, LocalDateTime.now())
+                    .set(UserAiQuotaEntity::getUpdatedAt, DateTimeFormats.now())
                     .setSql("version = version + 1"));
         }
 
@@ -163,7 +164,7 @@ public class QuotaRechargeService {
         bizContext.put("quota_amount", quotaAmount);
         bizContext.put("price_cents", priceCents);
         ledger.setBizContext(new com.google.gson.Gson().toJson(bizContext));
-        ledger.setCreatedAt(LocalDateTime.now());
+        ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
 
         log.info("充值成功: clerk_user_id={}, order_no={}, package={}, quota_amount={}, paid_balance_after={}",
@@ -236,8 +237,8 @@ public class QuotaRechargeService {
         order.setStatus(ORDER_STATUS_FAILED);
         order.setFailureReason(failureReason != null ? truncate(failureReason, 512) : null);
         order.setPaidAt(null);
-        order.setCreatedAt(LocalDateTime.now());
-        order.setUpdatedAt(LocalDateTime.now());
+        order.setCreatedAt(DateTimeFormats.now());
+        order.setUpdatedAt(DateTimeFormats.now());
         rechargeOrderMapper.insert(order);
 
         log.info("支付失败已记录: order_no={}, payment_intent_id={}, clerk_user_id={}, package={}, reason={}",
@@ -264,7 +265,7 @@ public class QuotaRechargeService {
     }
 
     private String generateOrderNo() {
-        return "RO" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + 
+        return "RO" + DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + 
                 UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
     }
 
@@ -280,7 +281,7 @@ public class QuotaRechargeService {
     }
 
     private String generateLedgerNo() {
-        return "QL" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
+        return "QL" + DateTimeFormats.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) +
                 UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
     }
 }

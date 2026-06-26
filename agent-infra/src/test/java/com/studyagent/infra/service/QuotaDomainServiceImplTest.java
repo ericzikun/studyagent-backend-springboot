@@ -628,6 +628,47 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void consume_shouldStampLedgerCreatedAtWithResolvedAppTime() {
+        LocalDateTime resolvedNow = LocalDateTime.of(2026, 6, 26, 13, 23, 4);
+
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("humanizer");
+        featureDef.setFeatureName("Humanizer");
+        featureDef.setQuotaUnit("words");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(1000L);
+        featureDef.setIsActive(true);
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(21L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("humanizer");
+        quota.setFreeBalance(1000L);
+        quota.setPlanBalance(10L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
+            QuotaLedgerEntity ledger = invocation.getArgument(0);
+            ledger.setId(7858L);
+            return 1;
+        });
+        when(quotaLedgerAllocationMapper.insert(any(QuotaLedgerAllocationEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(resolvedNow);
+        service.consume("user_1", "humanizer", 223L, "verla_session", "6776", Map.of());
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        assertEquals(resolvedNow, ledgerCaptor.getValue().getCreatedAt());
+        assertEquals("consume", ledgerCaptor.getValue().getLedgerType());
+    }
+
+    @Test
     void consume_assignment_debitsFreeBeforePlanAndAddon() {
         UserAiQuotaEntity quota = assignmentQuota(1L, 2L, 0L);
         UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));

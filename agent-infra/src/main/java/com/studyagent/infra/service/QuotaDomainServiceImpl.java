@@ -33,6 +33,7 @@ import java.util.Comparator;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -61,6 +62,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String LEDGER_TYPE_REFUND = "refund";
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
     private static final String LEDGER_TYPE_FREE_REFRESH = "free_refresh";
+    private static final String LEDGER_TYPE_ADDON_PAUSE = "addon_pause";
+    private static final String LEDGER_TYPE_ADDON_RESUME = "addon_resume";
     private static final String POOL_TYPE_FREE = "free";
     private static final String POOL_TYPE_PLAN = "plan";
     private static final String POOL_TYPE_ADDON = "addon";
@@ -77,6 +80,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String PERIOD_DAILY = "daily";
     private static final long LEGACY_WORDS_PER_RUN = 10_000L;
     private static final int LEGACY_MIGRATION_VALIDITY_MONTHS = 12;
+    private static final Set<String> HIDDEN_LEDGER_TYPES = Set.of(
+            LEDGER_TYPE_ADDON_PAUSE,
+            LEDGER_TYPE_ADDON_RESUME,
+            LEDGER_TYPE_COMPENSATION_GRANT,
+            LEDGER_TYPE_LEGACY_MIGRATION_GRANT,
+            LEDGER_TYPE_LEGACY_MIGRATION_REFUND_GRANT
+    );
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -567,6 +577,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     public QuotaLedgerPageResult getLedgerPage(String clerkUserId, String featureCode, int page, int pageSize) {
         LambdaQueryWrapper<QuotaLedgerEntity> wrapper = new LambdaQueryWrapper<QuotaLedgerEntity>()
                 .eq(QuotaLedgerEntity::getClerkUserId, clerkUserId)
+                .notIn(QuotaLedgerEntity::getLedgerType, HIDDEN_LEDGER_TYPES)
                 .orderByDesc(QuotaLedgerEntity::getCreatedAt);
         if (featureCode != null && !featureCode.isEmpty()) {
             wrapper.eq(QuotaLedgerEntity::getFeatureCode, featureCode);
@@ -577,6 +588,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         List<QuotaLedgerEntity> entities = pageResult.getRecords();
 
         List<QuotaLedgerItem> items = entities.stream()
+                .filter(entity -> !HIDDEN_LEDGER_TYPES.contains(entity.getLedgerType()))
                 .map(this::toLedgerItem)
                 .collect(Collectors.toList());
 

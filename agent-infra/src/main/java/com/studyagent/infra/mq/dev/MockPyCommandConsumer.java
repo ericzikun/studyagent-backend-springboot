@@ -106,6 +106,8 @@ public class MockPyCommandConsumer {
     private static final long ASSIGNMENT_INIT_THINKING_TO_CONTENT_SETTLE_MS = 140L;
     private static final long ASSIGNMENT_INIT_CONTENT_INTERVAL_MS = 200L;
     private static final long ASSIGNMENT_INIT_COMPLETION_SETTLE_MS = 250L;
+    /** How long after the last early overlap chunk ASSIGNMENT_INIT_COMPLETED is emitted. */
+    private static final long ASSIGNMENT_INIT_OVERLAP_COMPLETION_AFTER_EARLY_MS = 100L;
 
     private final ObjectMapper objectMapper;
     private final MockPyEventPublisher eventPublisher;
@@ -407,6 +409,10 @@ public class MockPyCommandConsumer {
                     ASSIGNMENT_INIT_FAST_COMPLETION_SETTLE_MS);
             return;
         }
+        if (MockPyAssignmentFixtures.STREAM_SCENARIO_OVERLAP.equals(scenario)) {
+            scheduleAssignmentInitOverlapResponse(cmd, scenario);
+            return;
+        }
         Map<String, Object> started = new HashMap<>();
         started.put("agentType", assignmentAgentType(cmd));
         started.put("stage", "stage_0");
@@ -500,6 +506,64 @@ public class MockPyCommandConsumer {
                         firstChunkDelayMs,
                         chunkIntervalMs,
                         completionSettleMs));
+    }
+
+    /**
+     * Deterministic repro for init prose still streaming while deep understanding
+     * queued copy is already visible. Thinking and the first few content chunks
+     * arrive normally; {@code ASSIGNMENT_INIT_COMPLETED} is emitted before the
+     * trailing content chunks so Spring auto-spawns deep understanding while init
+     * stream events are still in flight.
+     */
+    private void scheduleAssignmentInitOverlapResponse(VerlaCommandEnvelope cmd, String scenario) {
+        Map<String, Object> started = new HashMap<>();
+        started.put("agentType", assignmentAgentType(cmd));
+        started.put("stage", "stage_0");
+        started.put("mockScenario", scenario);
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STARTED, started, 50);
+
+        List<String> thinkingChunks = MockPyAssignmentFixtures.initThinkingChunks();
+        List<String> contentChunks = MockPyAssignmentFixtures.overlapInitContentChunks();
+        int earlyContentCount = Math.min(
+                MockPyAssignmentFixtures.OVERLAP_INIT_EARLY_CONTENT_CHUNK_COUNT,
+                contentChunks.size());
+        List<String> earlyContentChunks = contentChunks.subList(0, earlyContentCount);
+        List<String> lateContentChunks = contentChunks.subList(earlyContentCount, contentChunks.size());
+
+        AssignmentInitTiming timing = defaultAssignmentInitTiming(
+                thinkingChunks.size(),
+                earlyContentCount);
+
+        scheduleAssignmentThinkingChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                thinkingChunks,
+                null,
+                timing.thinkingFirstDelayMs(),
+                timing.thinkingIntervalMs());
+
+        scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                earlyContentChunks,
+                null,
+                timing.contentFirstDelayMs(),
+                timing.contentIntervalMs(),
+                scenario);
+
+        long completedDelayMs = timing.contentFirstDelayMs()
+                + Math.max(0, earlyContentCount - 1L) * timing.contentIntervalMs()
+                + ASSIGNMENT_INIT_OVERLAP_COMPLETION_AFTER_EARLY_MS;
+        scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_COMPLETED,
+                MockPyAssignmentFixtures.defaultInitCompletedPayload(scenario),
+                completedDelayMs);
+
+        if (!lateContentChunks.isEmpty()) {
+            long lateContentFirstDelayMs = completedDelayMs + timing.contentIntervalMs();
+            scheduleAssignmentChunks(cmd, VerlaAgentEventType.ASSIGNMENT_INIT_STREAM_CHUNK,
+                    lateContentChunks,
+                    null,
+                    lateContentFirstDelayMs,
+                    timing.contentIntervalMs(),
+                    scenario,
+                    earlyContentCount);
+        }
     }
 
     /**
@@ -1102,15 +1166,24 @@ public class MockPyCommandConsumer {
                                           List<String> chunks, String stage, long firstDelayMs,
                                           long chunkIntervalMs,
                                           String mockScenario) {
+        scheduleAssignmentChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
+                mockScenario, 0);
+    }
+
+    private void scheduleAssignmentChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                          List<String> chunks, String stage, long firstDelayMs,
+                                          long chunkIntervalMs,
+                                          String mockScenario,
+                                          int startIndex) {
         scheduleAssignmentChannelChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
-                mockScenario, "content");
+                mockScenario, "content", startIndex);
     }
 
     private void scheduleAssignmentThinkingChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
                                                   List<String> chunks, String stage, long firstDelayMs,
                                                   long chunkIntervalMs) {
         scheduleAssignmentChannelChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
-                null, "thinking");
+                null, "thinking", 0);
     }
 
     /**
@@ -1124,11 +1197,21 @@ public class MockPyCommandConsumer {
                                                  long chunkIntervalMs,
                                                  String mockScenario,
                                                  String channel) {
+        scheduleAssignmentChannelChunks(cmd, eventType, chunks, stage, firstDelayMs, chunkIntervalMs,
+                mockScenario, channel, 0);
+    }
+
+    private void scheduleAssignmentChannelChunks(VerlaCommandEnvelope cmd, VerlaAgentEventType eventType,
+                                                 List<String> chunks, String stage, long firstDelayMs,
+                                                 long chunkIntervalMs,
+                                                 String mockScenario,
+                                                 String channel,
+                                                 int startIndex) {
         for (int i = 0; i < chunks.size(); i++) {
             Map<String, Object> chunkPayload = new HashMap<>();
             chunkPayload.put("delta", chunks.get(i));
             chunkPayload.put("channel", channel);
-            chunkPayload.put("index", i);
+            chunkPayload.put("index", startIndex + i);
             if (stage != null) {
                 chunkPayload.put("stage", stage);
             }

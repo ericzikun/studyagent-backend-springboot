@@ -35,6 +35,8 @@ class MockPyCommandConsumerTest {
                 .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("retry test failed node reset", "router"))
                 .isEqualTo("assignment");
+        assertThat(MockPyCommandConsumer.resolvePlanIntent("overlap test queued label repro", "router"))
+                .isEqualTo("assignment");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("fasting is unrelated", "router"))
                 .isEqualTo("qa");
         assertThat(MockPyCommandConsumer.resolvePlanIntent("mixed test rich markdown stream", "router"))
@@ -60,6 +62,10 @@ class MockPyCommandConsumerTest {
                 .isEqualTo("code-project");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("retry assignment node reset"))
                 .isEqualTo("retry");
+        assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("overlap queued label repro"))
+                .isEqualTo("overlap");
+        assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  overlap: assignment handoff"))
+                .isEqualTo("overlap");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("  mixed: assignment markdown"))
                 .isEqualTo("default");
         assertThat(MockPyCommandConsumer.resolveAssignmentStreamScenario("fasting should stay normal"))
@@ -124,6 +130,26 @@ class MockPyCommandConsumerTest {
                 .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
                 .containsEntry("outputType", "retry")
                 .containsEntry("nextStep", "start generation to emit a retrying task node fixture");
+    }
+
+    @Test
+    void assignmentOverlapInitContentChunks_splitEarlyAndLateForHandoffRepro() {
+        var chunks = MockPyAssignmentFixtures.overlapInitContentChunks();
+
+        assertThat(chunks).hasSizeGreaterThan(
+                MockPyAssignmentFixtures.OVERLAP_INIT_EARLY_CONTENT_CHUNK_COUNT);
+        assertThat(chunks.get(chunks.size() - 1))
+                .contains("deep understanding is already queued");
+    }
+
+    @Test
+    void assignmentOverlapInitCompletedPayload_persistsMockScenario() {
+        Map<String, Object> payload = MockPyAssignmentFixtures.defaultInitCompletedPayload("overlap");
+
+        assertThat(payload).containsEntry("mockScenario", "overlap");
+        assertThat(payload.get("requirementUnderstanding"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("outputType", "overlap");
     }
 
     @Test

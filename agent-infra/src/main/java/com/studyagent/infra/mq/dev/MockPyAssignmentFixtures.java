@@ -18,8 +18,11 @@ final class MockPyAssignmentFixtures {
 
     static final String STREAM_SCENARIO_DEFAULT = "default";
     static final String STREAM_SCENARIO_FAST = "fast";
+    static final String STREAM_SCENARIO_OVERLAP = "overlap";
     static final String STREAM_SCENARIO_CODE_PROJECT = "code-project";
     static final String STREAM_SCENARIO_RETRY = "retry";
+    /** Init content chunks emitted before ASSIGNMENT_INIT_COMPLETED in the overlap scenario. */
+    static final int OVERLAP_INIT_EARLY_CONTENT_CHUNK_COUNT = 2;
     static final List<String> ASSIGNMENT_TYPE_OPTIONS = List.of("Essay", "Lab Report", "Case Study");
 
     private MockPyAssignmentFixtures() {
@@ -33,6 +36,9 @@ final class MockPyAssignmentFixtures {
         String normalized = userText == null ? "" : userText.stripLeading().toLowerCase(java.util.Locale.ROOT);
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_FAST)) {
             return STREAM_SCENARIO_FAST;
+        }
+        if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_OVERLAP)) {
+            return STREAM_SCENARIO_OVERLAP;
         }
         if (hasMockScenarioPrefix(normalized, STREAM_SCENARIO_RETRY)) {
             return STREAM_SCENARIO_RETRY;
@@ -88,6 +94,12 @@ final class MockPyAssignmentFixtures {
                     "topic", "Retryable assignment workflow",
                     "outputType", STREAM_SCENARIO_RETRY,
                     "nextStep", "start generation to emit a retrying task node fixture"));
+        } else if (STREAM_SCENARIO_OVERLAP.equals(scenario)) {
+            done.put("mockScenario", STREAM_SCENARIO_OVERLAP);
+            done.put("requirementUnderstanding", Map.of(
+                    "topic", "Queued label overlap repro",
+                    "outputType", STREAM_SCENARIO_OVERLAP,
+                    "nextStep", "observe init content still streaming while deep understanding queued label appears"));
         } else {
             done.put("requirementUnderstanding", Map.of(
                     "topic", "Causes of World War I",
@@ -146,6 +158,24 @@ final class MockPyAssignmentFixtures {
      * local SSE replay behaves like a provider revealing thoughts paragraph by
      * paragraph before the visible requirement summary arrives.
      */
+    /**
+     * Longer init content used by {@link #STREAM_SCENARIO_OVERLAP}. The first
+     * {@link #OVERLAP_INIT_EARLY_CONTENT_CHUNK_COUNT} chunks are emitted before
+     * {@code ASSIGNMENT_INIT_COMPLETED}; the remainder continue afterward so the
+     * frontend can reproduce queued waiting copy overlapping visible init prose.
+     */
+    static List<String> overlapInitContentChunks() {
+        return List.of(
+                "Reading the assignment brief and extracting the core requirements...\n",
+                "I found the topic, expected output, and the constraints that still need confirmation.\n",
+                "The rubric emphasizes source quality, argument structure, and citation consistency.\n",
+                "I still need to map audience level and deadline sensitivity before moving into setup.\n",
+                "Several uploaded notes mention compare-and-contrast framing between two periods.\n",
+                "Length expectations appear flexible, but evidence density is explicitly graded.\n",
+                "I will keep summarizing requirement signals while the next phase prepares its handoff.\n",
+                "This trailing paragraph should still be streaming when deep understanding is already queued.\n");
+    }
+
     static List<String> initThinkingChunks() {
         return List.of(
                 """

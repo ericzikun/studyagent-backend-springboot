@@ -38,6 +38,24 @@ class DateTimeFormatsTest {
     }
 
     @Test
+    void toQuotaLedgerCreatedAtEpochSecond_shouldUseUtcWallClockBeforeWriteFix() {
+        LocalDateTime legacy = LocalDateTime.of(2026, 6, 26, 5, 23, 4);
+
+        assertThat(DateTimeFormats.toQuotaLedgerCreatedAtEpochSecond(legacy))
+                .isEqualTo(Instant.parse("2026-06-26T05:23:04Z").getEpochSecond());
+        assertThat(DateTimeFormats.toQuotaLedgerCreatedAtEpochSecond(legacy))
+                .isNotEqualTo(DateTimeFormats.toEpochSecond(legacy));
+    }
+
+    @Test
+    void toQuotaLedgerCreatedAtEpochSecond_shouldUseShanghaiWallClockAfterWriteFix() {
+        LocalDateTime fixed = LocalDateTime.of(2026, 6, 26, 14, 0, 0);
+
+        assertThat(DateTimeFormats.toQuotaLedgerCreatedAtEpochSecond(fixed))
+                .isEqualTo(DateTimeFormats.toEpochSecond(fixed));
+    }
+
+    @Test
     void offsetSerializer_shouldSerializeLocalDateTimeWithZone() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper()
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)

@@ -10,12 +10,14 @@ import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.VerlaWorkforceTask;
 import com.studyagent.service.domain.verla.VerlaWorkforceTaskOutput;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactEditProposalRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskOutputRepository;
+import com.studyagent.service.domain.verla.repo.VerlaWorkforceTaskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +44,7 @@ public class AssignmentRuntimeSnapshotService {
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaEventInboxRepository eventInboxRepository;
     private final AssignmentRuntimeProgressEstimator progressEstimator;
+    private final VerlaWorkforceTaskRepository taskRepository;
     private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
     private final VerlaArtifactEditProposalRepository editProposalRepository;
     private final ObjectMapper objectMapper;
@@ -133,9 +136,10 @@ public class AssignmentRuntimeSnapshotService {
     }
 
     /**
-     * Restores detail panel state into the corresponding folded node without
-     * changing live SSE semantics. Card `content` remains the card snapshot;
-     * `detailed.content` is the accumulated ASSIGNMENT_AGENT_NODE_DETAILED output.
+     * Restores detail panel state into the corresponding folded node without changing
+     * live SSE semantics. Card `content` remains the card snapshot; `detailed.content`
+     * is the accumulated ASSIGNMENT_AGENT_NODE_DETAILED output, while
+     * `detailed.durationMs` comes from the task row's completed processing time.
      */
     private List<Map<String, Object>> withPersistedNodeDetails(
             List<Map<String, Object>> agentNodes,
@@ -144,17 +148,28 @@ public class AssignmentRuntimeSnapshotService {
             return agentNodes == null ? List.of() : agentNodes;
         }
         List<VerlaWorkforceTaskOutput> outputs = taskOutputRepository.listBySession(sessionId);
-        if (outputs == null || outputs.isEmpty()) {
+        List<VerlaWorkforceTask> tasks = taskRepository.listBySession(sessionId);
+        if ((outputs == null || outputs.isEmpty()) && (tasks == null || tasks.isEmpty())) {
             return agentNodes;
         }
 
         Map<String, VerlaWorkforceTaskOutput> outputByNodeId = new LinkedHashMap<>();
-        for (VerlaWorkforceTaskOutput output : outputs) {
-            if (output.getNodeId() != null && !output.getNodeId().isBlank()) {
-                outputByNodeId.put(output.getNodeId(), output);
+        if (outputs != null) {
+            for (VerlaWorkforceTaskOutput output : outputs) {
+                if (output.getNodeId() != null && !output.getNodeId().isBlank()) {
+                    outputByNodeId.put(output.getNodeId(), output);
+                }
             }
         }
-        if (outputByNodeId.isEmpty()) {
+        Map<String, VerlaWorkforceTask> taskByNodeId = new LinkedHashMap<>();
+        if (tasks != null) {
+            for (VerlaWorkforceTask task : tasks) {
+                if (task.getNodeId() != null && !task.getNodeId().isBlank()) {
+                    taskByNodeId.put(task.getNodeId(), task);
+                }
+            }
+        }
+        if (outputByNodeId.isEmpty() && taskByNodeId.isEmpty()) {
             return agentNodes;
         }
 
@@ -162,19 +177,24 @@ public class AssignmentRuntimeSnapshotService {
         for (Map<String, Object> node : agentNodes) {
             String nodeId = node == null ? null : stringValue(node.get("id"));
             VerlaWorkforceTaskOutput output = nodeId == null ? null : outputByNodeId.get(nodeId);
-            if (output == null || !hasNodeDetail(output)) {
+            VerlaWorkforceTask task = nodeId == null ? null : taskByNodeId.get(nodeId);
+            Integer durationMs = resolveDurationMs(task);
+            if (!hasNodeDetail(output) && durationMs == null) {
                 enriched.add(node);
                 continue;
             }
 
             Map<String, Object> nextNode = new LinkedHashMap<>(node);
             Map<String, Object> detailed = new LinkedHashMap<>();
-            if (output.getResultText() != null && !output.getResultText().isBlank()) {
+            if (output != null && output.getResultText() != null && !output.getResultText().isBlank()) {
                 detailed.put("content", output.getResultText());
             }
-            List<Map<String, Object>> detailItems = parseDetailItems(output.getDetailItemsJson());
+            List<Map<String, Object>> detailItems = parseDetailItems(output == null ? null : output.getDetailItemsJson());
             if (!detailItems.isEmpty()) {
                 detailed.put("detailItems", detailItems);
+            }
+            if (durationMs != null) {
+                detailed.put("durationMs", durationMs);
             }
             nextNode.put("detailed", detailed);
             enriched.add(nextNode);
@@ -198,6 +218,13 @@ public class AssignmentRuntimeSnapshotService {
         return output != null
                 && ((output.getResultText() != null && !output.getResultText().isBlank())
                 || (output.getDetailItemsJson() != null && !output.getDetailItemsJson().isBlank()));
+    }
+
+    private Integer resolveDurationMs(VerlaWorkforceTask task) {
+        if (task == null || task.getProcessingTimeMs() == null || task.getProcessingTimeMs() < 0) {
+            return null;
+        }
+        return task.getProcessingTimeMs();
     }
 
     private List<Map<String, Object>> parseDetailItems(String detailItemsJson) {

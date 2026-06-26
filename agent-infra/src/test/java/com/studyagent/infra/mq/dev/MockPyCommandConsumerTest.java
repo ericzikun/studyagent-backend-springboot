@@ -291,7 +291,9 @@ class MockPyCommandConsumerTest {
                 List.of(Map.of(
                         "type", "search_serper",
                         "detailed", List.of(Map.of("name", "Mock source scan")))),
-                "Draft Writer completed. Generated the main assignment draft.\n");
+                "Draft Writer completed. Generated the main assignment draft.\n",
+                false,
+                12_345);
 
         assertThat(payload).containsEntry("id", "draft-writer");
         assertThat(payload).containsEntry("status", "COMPLETED");
@@ -300,6 +302,7 @@ class MockPyCommandConsumerTest {
         assertThat(payload.get("startStamp")).isInstanceOf(String.class);
         assertThat(payload.get("contentChunk"))
                 .isEqualTo("Draft Writer completed. Generated the main assignment draft.\n");
+        assertThat(payload).containsEntry("durationMs", 12_345);
         assertThat(payload.get("detailChunk")).isEqualTo(List.of(Map.of(
                 "type", "search_serper",
                 "detailed", List.of(Map.of("name", "Mock source scan")))));

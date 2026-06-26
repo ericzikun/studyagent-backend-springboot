@@ -57,6 +57,7 @@ class AssignmentRuntimeSnapshotServiceTest {
                 artifactRepository,
                 eventInboxRepository,
                 progressEstimator,
+                workforceTaskRepository,
                 taskOutputRepository,
                 editProposalRepository,
                 new ObjectMapper());
@@ -197,6 +198,12 @@ class AssignmentRuntimeSnapshotServiceTest {
                         .resultText("Recovered detail transcript")
                         .detailItemsJson("[{\"type\":\"search\",\"detailed\":[{\"name\":\"Google Search\"}]}]")
                         .build()));
+        workforceTaskRepository.tasksBySession.put(88L, List.of(
+                VerlaWorkforceTask.builder()
+                        .sessionId(88L)
+                        .nodeId("task-1")
+                        .processingTimeMs(12_345)
+                        .build()));
 
         AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(17L);
 
@@ -204,6 +211,7 @@ class AssignmentRuntimeSnapshotServiceTest {
         assertEquals("Card text", node.get("content"));
         Map<String, Object> detailed = (Map<String, Object>) node.get("detailed");
         assertEquals("Recovered detail transcript", detailed.get("content"));
+        assertEquals(12_345, detailed.get("durationMs"));
         List<Map<String, Object>> detailItems = (List<Map<String, Object>>) detailed.get("detailItems");
         assertEquals("search", detailItems.get(0).get("type"));
     }
@@ -497,6 +505,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
     private static class FakeWorkforceTaskRepository implements VerlaWorkforceTaskRepository {
         private final Map<Long, WorkforceTaskProgressSnapshot> snapshotBySession = new HashMap<>();
+        private final Map<Long, List<VerlaWorkforceTask>> tasksBySession = new HashMap<>();
 
         @Override
         public Optional<VerlaWorkforceTask> findBySessionAndNode(Long sessionId, String nodeId) {
@@ -505,7 +514,7 @@ class AssignmentRuntimeSnapshotServiceTest {
 
         @Override
         public List<VerlaWorkforceTask> listBySession(Long sessionId) {
-            return List.of();
+            return tasksBySession.getOrDefault(sessionId, List.of());
         }
 
         @Override

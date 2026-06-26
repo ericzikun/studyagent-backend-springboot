@@ -1,5 +1,7 @@
 package com.studyagent.infra.service.billing;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
@@ -18,6 +20,7 @@ import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
@@ -384,6 +388,64 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void checkoutCompletedForUnpaidInitialSubscriptionDoesNotCreatePendingPlanForNewUser() throws Exception {
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(null);
+
+        Session session = new Session();
+        session.setId("cs_test_unpaid");
+        session.setCustomer("cus_123");
+        session.setSubscription(null);
+        session.setPaymentStatus("unpaid");
+        session.setMetadata(java.util.Map.of(
+                "purchase_type", "subscription",
+                "clerk_user_id", "user_1",
+                "plan_code", "basic_monthly"));
+
+        invokeHandleCheckoutCompleted(service(), session);
+
+        ArgumentCaptor<UserSubscriptionEntity> entityCaptor = ArgumentCaptor.forClass(UserSubscriptionEntity.class);
+        verify(userSubscriptionMapper).insert(entityCaptor.capture());
+        UserSubscriptionEntity inserted = entityCaptor.getValue();
+        assertEquals("user_1", inserted.getClerkUserId());
+        assertEquals("free", inserted.getTier());
+        assertEquals("incomplete", inserted.getStatus());
+        assertNull(inserted.getPendingPlanCode());
+        verify(userSubscriptionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void checkoutCompletedForUnpaidInitialSubscriptionDoesNotMarkExistingFreeAccountPending() throws Exception {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setId(88L);
+        existing.setClerkUserId("user_1");
+        existing.setTier("free");
+        existing.setStatus("free");
+
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+
+        Session session = new Session();
+        session.setId("cs_test_unpaid_existing");
+        session.setCustomer("cus_456");
+        session.setSubscription(null);
+        session.setPaymentStatus("unpaid");
+        session.setMetadata(java.util.Map.of(
+                "purchase_type", "subscription",
+                "clerk_user_id", "user_1",
+                "plan_code", "plus_monthly"));
+
+        invokeHandleCheckoutCompleted(service(), session);
+
+        ArgumentCaptor<LambdaUpdateWrapper<UserSubscriptionEntity>> updateCaptor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(userSubscriptionMapper).update(isNull(), updateCaptor.capture());
+        java.lang.reflect.Field field = updateCaptor.getValue().getClass().getSuperclass().getSuperclass()
+                .getDeclaredField("paramNameValuePairs");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> paramValues = (java.util.Map<String, Object>) field.get(updateCaptor.getValue());
+        assertFalse(paramValues.containsValue("plus_monthly"));
+    }
+
+    @Test
     void resolvePeriodEpochPrefersExplicitOverrideOverSubscriptionValue() {
         assertEquals(200L, StripeBillingWebhookService.resolvePeriodEpoch(200L, 100L));
         assertEquals(100L, StripeBillingWebhookService.resolvePeriodEpoch(null, 100L));
@@ -451,6 +513,48 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void applySubscriptionClearsStaleDeferredPlanWhenStripeAlreadySwitchedToAnotherPlan() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setTier("basic");
+        entity.setPlanCode("basic_monthly");
+        entity.setStatus("active");
+        entity.setStripeCustomerId("cus_123");
+        entity.setStripeSubscriptionId("sub_123");
+        entity.setStripeScheduleId("sub_sched_basic_yearly");
+        entity.setPendingPlanCode("basic_yearly");
+        entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
+
+        Subscription subscription = new Subscription();
+        subscription.setCustomer("cus_123");
+        subscription.setId("sub_123");
+        subscription.setStatus("active");
+        subscription.setCurrentPeriodStart(1782226690L);
+        subscription.setCurrentPeriodEnd(1813762690L);
+        subscription.setSchedule(null);
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+
+        service().applySubscription(
+                entity,
+                subscription,
+                plan,
+                false,
+                false,
+                null,
+                null,
+                java.time.LocalDateTime.parse("2026-06-23T15:11:00"));
+
+        assertEquals("plus", entity.getTier());
+        assertEquals("plus_yearly", entity.getPlanCode());
+        assertNull(entity.getStripeScheduleId());
+        assertNull(entity.getPendingPlanCode());
+        assertNull(entity.getPendingEffectiveAt());
+    }
+
+    @Test
     void applySubscriptionDeletedPreservesExistingCustomerWhenDeletedPayloadHasNoCustomer() {
         UserSubscriptionEntity entity = new UserSubscriptionEntity();
         entity.setTier("basic");
@@ -492,6 +596,12 @@ class StripeBillingWebhookServiceTest {
                 rechargeOrderMapper,
                 quotaGatewayProvider,
                 transactionManager);
+    }
+
+    private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {
+        var method = service.getClass().getDeclaredMethod("handleCheckoutCompleted", Session.class);
+        method.setAccessible(true);
+        method.invoke(service, session);
     }
 
     private Event event(String type, String object, String purchaseType) {

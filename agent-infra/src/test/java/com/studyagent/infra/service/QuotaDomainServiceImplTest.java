@@ -1,7 +1,6 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerAllocationEntity;
@@ -92,7 +91,7 @@ class QuotaDomainServiceImplTest {
         hidden.setSourceId("sub_1");
         hidden.setCreatedAt(LocalDateTime.parse("2026-06-26T09:00:00"));
 
-        IPage<QuotaLedgerEntity> page = new Page<QuotaLedgerEntity>(1, 20, 2);
+        Page<QuotaLedgerEntity> page = new Page<>(1, 20, 2);
         page.setRecords(List.of(visible, hidden));
 
         when(quotaLedgerMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
@@ -151,7 +150,7 @@ class QuotaDomainServiceImplTest {
         hiddenMigrationRefund.setSourceId("task_create");
         hiddenMigrationRefund.setCreatedAt(LocalDateTime.parse("2026-06-26T08:30:00"));
 
-        IPage<QuotaLedgerEntity> page = new Page<QuotaLedgerEntity>(1, 20, 4);
+        Page<QuotaLedgerEntity> page = new Page<>(1, 20, 4);
         page.setRecords(List.of(
                 visible,
                 hiddenCompensation,

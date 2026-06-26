@@ -74,6 +74,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private static final int MAX_BILLING_RECORD_LIMIT = 50;
     private static final DateTimeFormatter BILLING_RECORD_CURSOR_FORMATTER =
             DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final String BILLING_RECORD_EFFECTIVE_TIME_SQL =
+            "COALESCE(paid_at, created_at, updated_at)";
 
     enum PlanChangeAction {
         NOOP,
@@ -82,7 +84,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UNSUPPORTED
     }
 
-    private record BillingRecordCursor(LocalDateTime paidAt, LocalDateTime createdAt, Long id) {
+    private record BillingRecordCursor(LocalDateTime effectiveAt, Long id) {
     }
 
     private final SubscriptionPlanMapper subscriptionPlanMapper;
@@ -510,10 +512,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         applyBillingRecordCursor(query, decodedCursor);
 
         List<RechargeOrderEntity> orders = rechargeOrderMapper.selectList(query
-                .orderByDesc(RechargeOrderEntity::getPaidAt)
-                .orderByDesc(RechargeOrderEntity::getCreatedAt)
-                .orderByDesc(RechargeOrderEntity::getId)
-                .last("LIMIT " + (pageSize + 1)));
+                .last("ORDER BY "
+                        + BILLING_RECORD_EFFECTIVE_TIME_SQL
+                        + " DESC, id DESC LIMIT "
+                        + (pageSize + 1)));
         boolean hasMore = orders.size() > pageSize;
         List<RechargeOrderEntity> pageOrders = hasMore ? orders.subList(0, pageSize) : orders;
         String nextCursor = hasMore && !pageOrders.isEmpty()
@@ -540,18 +542,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         try {
             String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
             String[] parts = decoded.split("\\|", -1);
-            if (parts.length != 3 || !hasText(parts[1]) || !hasText(parts[2])) {
+            if (parts.length != 2 || !hasText(parts[0]) || !hasText(parts[1])) {
                 throw new IllegalArgumentException("Invalid billing records cursor");
             }
-            LocalDateTime paidAt = "-".equals(parts[0])
-                    ? null
-                    : LocalDateTime.parse(parts[0], BILLING_RECORD_CURSOR_FORMATTER);
-            LocalDateTime createdAt = LocalDateTime.parse(parts[1], BILLING_RECORD_CURSOR_FORMATTER);
-            Long id = Long.valueOf(parts[2]);
+            LocalDateTime effectiveAt = LocalDateTime.parse(parts[0], BILLING_RECORD_CURSOR_FORMATTER);
+            Long id = Long.valueOf(parts[1]);
             if (id <= 0) {
                 throw new IllegalArgumentException("Invalid billing records cursor id");
             }
-            return new BillingRecordCursor(paidAt, createdAt, id);
+            return new BillingRecordCursor(effectiveAt, id);
         } catch (IllegalArgumentException | DateTimeParseException e) {
             throw new BillingDomainException(
                     "INVALID_BILLING_RECORD_CURSOR",
@@ -566,29 +565,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return;
         }
         // Cursor predicates mirror the list ordering:
-        // paid_at DESC NULLS LAST, created_at DESC, id DESC.
-        if (cursor.paidAt() == null) {
-            query.apply(
-                    "(paid_at IS NULL AND (created_at < {0} OR (created_at = {0} AND id < {1})))",
-                    cursor.createdAt(),
-                    cursor.id());
-            return;
-        }
+        // effective billing time DESC, id DESC. Effective time is the same
+        // fallback timestamp returned to the frontend as paidAt.
         query.apply(
-                "(paid_at < {0} OR paid_at IS NULL "
-                        + "OR (paid_at = {0} AND (created_at < {1} OR (created_at = {1} AND id < {2}))))",
-                cursor.paidAt(),
-                cursor.createdAt(),
+                "("
+                        + BILLING_RECORD_EFFECTIVE_TIME_SQL
+                        + " < {0} OR ("
+                        + BILLING_RECORD_EFFECTIVE_TIME_SQL
+                        + " = {0} AND id < {1}))",
+                cursor.effectiveAt(),
                 cursor.id());
     }
 
     private String encodeBillingRecordCursor(RechargeOrderEntity order) {
-        if (order.getId() == null || order.getCreatedAt() == null) {
+        LocalDateTime effectiveAt = firstNonNull(order.getPaidAt(), order.getCreatedAt(), order.getUpdatedAt());
+        if (order.getId() == null || effectiveAt == null) {
             return null;
         }
         String payload = String.join("|",
-                order.getPaidAt() == null ? "-" : BILLING_RECORD_CURSOR_FORMATTER.format(order.getPaidAt()),
-                BILLING_RECORD_CURSOR_FORMATTER.format(order.getCreatedAt()),
+                BILLING_RECORD_CURSOR_FORMATTER.format(effectiveAt),
                 String.valueOf(order.getId()));
         return Base64.getUrlEncoder()
                 .withoutPadding()

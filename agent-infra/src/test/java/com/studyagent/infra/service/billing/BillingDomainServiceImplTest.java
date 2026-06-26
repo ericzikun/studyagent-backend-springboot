@@ -1073,6 +1073,13 @@ class BillingDomainServiceImplTest {
         assertEquals(1, secondPage.getItems().size());
         assertEquals("RO202606150051", secondPage.getItems().get(0).getId());
         assertNull(secondPage.getNextCursor());
+
+        ArgumentCaptor<Wrapper> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(rechargeOrderMapper, times(2)).selectList(queryCaptor.capture());
+        String firstPageSql = queryCaptor.getAllValues().get(0).getCustomSqlSegment();
+        String secondPageSql = queryCaptor.getAllValues().get(1).getCustomSqlSegment();
+        assertTrue(firstPageSql.contains("ORDER BY COALESCE(paid_at, created_at, updated_at) DESC, id DESC"));
+        assertTrue(secondPageSql.contains("COALESCE(paid_at, created_at, updated_at) <"));
     }
 
     @Test

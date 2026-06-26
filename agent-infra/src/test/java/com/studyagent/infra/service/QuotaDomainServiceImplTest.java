@@ -1,6 +1,8 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerAllocationEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
@@ -16,6 +18,7 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
+import com.studyagent.service.domain.quota.QuotaLedgerPageResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -64,6 +67,108 @@ class QuotaDomainServiceImplTest {
     private PlanQuotaService planQuotaService;
     @Mock
     private UserSubscriptionMapper userSubscriptionMapper;
+
+    @Test
+    void getLedgerPage_filtersAddonLifecycleRowsFromUsageHistory() {
+        AiFeatureDefsEntity featureDef = assignmentFeature();
+
+        QuotaLedgerEntity visible = new QuotaLedgerEntity();
+        visible.setId(1L);
+        visible.setClerkUserId("user_1");
+        visible.setFeatureCode("task_create");
+        visible.setLedgerType("consume");
+        visible.setAmount(-1L);
+        visible.setSourceType("verla_session");
+        visible.setSourceId("session_1");
+        visible.setCreatedAt(LocalDateTime.parse("2026-06-26T10:00:00"));
+
+        QuotaLedgerEntity hidden = new QuotaLedgerEntity();
+        hidden.setId(2L);
+        hidden.setClerkUserId("user_1");
+        hidden.setFeatureCode("addon");
+        hidden.setLedgerType("addon_resume");
+        hidden.setAmount(0L);
+        hidden.setSourceType("subscription");
+        hidden.setSourceId("sub_1");
+        hidden.setCreatedAt(LocalDateTime.parse("2026-06-26T09:00:00"));
+
+        IPage<QuotaLedgerEntity> page = new Page<QuotaLedgerEntity>(1, 20, 2);
+        page.setRecords(List.of(visible, hidden));
+
+        when(quotaLedgerMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(quotaLedgerAllocationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+
+        QuotaLedgerPageResult result = service.getLedgerPage("user_1", null, 1, 20);
+
+        assertEquals(1, result.items().size());
+        assertEquals("consume", result.items().get(0).ledgerType());
+    }
+
+    @Test
+    void getLedgerPage_filtersInternalGrantRowsFromUsageHistory() {
+        AiFeatureDefsEntity featureDef = assignmentFeature();
+
+        QuotaLedgerEntity visible = new QuotaLedgerEntity();
+        visible.setId(11L);
+        visible.setClerkUserId("user_1");
+        visible.setFeatureCode("task_create");
+        visible.setLedgerType("recharge");
+        visible.setAmount(3L);
+        visible.setSourceType("checkout");
+        visible.setSourceId("cs_1");
+        visible.setCreatedAt(LocalDateTime.parse("2026-06-26T10:00:00"));
+
+        QuotaLedgerEntity hiddenCompensation = new QuotaLedgerEntity();
+        hiddenCompensation.setId(12L);
+        hiddenCompensation.setClerkUserId("user_1");
+        hiddenCompensation.setFeatureCode("task_create");
+        hiddenCompensation.setLedgerType("compensation_grant");
+        hiddenCompensation.setAmount(1L);
+        hiddenCompensation.setSourceType("system");
+        hiddenCompensation.setSourceId("task_create");
+        hiddenCompensation.setCreatedAt(LocalDateTime.parse("2026-06-26T09:30:00"));
+
+        QuotaLedgerEntity hiddenMigration = new QuotaLedgerEntity();
+        hiddenMigration.setId(13L);
+        hiddenMigration.setClerkUserId("user_1");
+        hiddenMigration.setFeatureCode("task_create");
+        hiddenMigration.setLedgerType("legacy_migration_grant");
+        hiddenMigration.setAmount(10000L);
+        hiddenMigration.setSourceType("system");
+        hiddenMigration.setSourceId("task_create");
+        hiddenMigration.setCreatedAt(LocalDateTime.parse("2026-06-26T09:00:00"));
+
+        QuotaLedgerEntity hiddenMigrationRefund = new QuotaLedgerEntity();
+        hiddenMigrationRefund.setId(14L);
+        hiddenMigrationRefund.setClerkUserId("user_1");
+        hiddenMigrationRefund.setFeatureCode("task_create");
+        hiddenMigrationRefund.setLedgerType("legacy_migration_refund_grant");
+        hiddenMigrationRefund.setAmount(10000L);
+        hiddenMigrationRefund.setSourceType("system");
+        hiddenMigrationRefund.setSourceId("task_create");
+        hiddenMigrationRefund.setCreatedAt(LocalDateTime.parse("2026-06-26T08:30:00"));
+
+        IPage<QuotaLedgerEntity> page = new Page<QuotaLedgerEntity>(1, 20, 4);
+        page.setRecords(List.of(
+                visible,
+                hiddenCompensation,
+                hiddenMigration,
+                hiddenMigrationRefund));
+
+        when(quotaLedgerMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(quotaLedgerAllocationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+
+        QuotaLedgerPageResult result = service.getLedgerPage("user_1", null, 1, 20);
+
+        assertEquals(1, result.items().size());
+        assertEquals("recharge", result.items().get(0).ledgerType());
+    }
 
     @Test
     void getUserQuota_migratesLegacyDetectionBalanceIntoAddonWords() {

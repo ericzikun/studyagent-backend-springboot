@@ -627,6 +627,61 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void downgradeSubscriptionClearsLocalPendingStateWhenReplacementSchedulingFailsAfterRelease() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(31L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("pro_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_123");
+        current.setStripeScheduleId("sub_sched_old");
+        current.setPendingPlanCode("plus_yearly");
+        current.setPendingEffectiveAt(LocalDateTime.parse("2026-07-24T11:59:27"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-24T11:59:27"));
+
+        SubscriptionPlanEntity currentPlan = plan("pro_monthly", "pro", "month", 7999);
+        currentPlan.setStripePriceId("price_pro_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                "sub_sched_old",
+                "price_pro_monthly",
+                1782302367L,
+                1784894367L);
+        service.existingScheduleToRetrieve = schedule("sub_sched_old");
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.scheduleUpdateFailure = new InvalidRequestException(
+                "No such price: 'price_basic_monthly'",
+                "price",
+                "req_789",
+                "resource_missing",
+                404,
+                null);
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.downgradeSubscription("user_1", "basic_monthly"));
+
+        assertEquals("STRIPE_ERROR", exception.getCode());
+        assertEquals("sub_sched_old", service.releasedScheduleId);
+        assertNull(current.getStripeScheduleId());
+        assertNull(current.getPendingPlanCode());
+        assertNull(current.getPendingEffectiveAt());
+    }
+
+    @Test
     void classifyPlanChangeBlocksAnnualToMonthlyDowngrade() {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
@@ -1266,6 +1321,7 @@ class BillingDomainServiceImplTest {
         private int createdSchedules;
         private int updatedSchedules;
         private SubscriptionUpdateParams lastSubscriptionUpdateParams;
+        private com.stripe.exception.StripeException scheduleUpdateFailure;
 
         private TestBillingDomainService() {
             super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper, planQuotaService);
@@ -1386,7 +1442,10 @@ class BillingDomainServiceImplTest {
         SubscriptionSchedule updateStripeSubscriptionSchedule(
                 SubscriptionSchedule schedule,
                 SubscriptionScheduleUpdateParams params,
-                RequestOptions options) {
+                RequestOptions options) throws com.stripe.exception.StripeException {
+            if (scheduleUpdateFailure != null) {
+                throw scheduleUpdateFailure;
+            }
             updatedSchedules++;
             return updatedScheduleToReturn;
         }

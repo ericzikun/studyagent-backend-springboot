@@ -345,6 +345,7 @@ VerlaInboxService.toSsePayload()
 GET /api/v2/verla/conversation/{id}/assignment-snapshot
   └── AssignmentRuntimeSnapshotService.getSnapshot()
         ├── 查最近 EVENT_SCAN_LIMIT 条事件
+        ├── 恢复 agentNodes[].detailed.{ content, detailItems, durationMs }
         ├── progressEstimator.resolveProgress(recentEvents)
         └── 返回 AssignmentRuntimeSnapshotVO.payload.progress
 ```
@@ -517,6 +518,7 @@ VerlaInboxService.processInbox()
   │       → upsert verla_workforce_tasks
   │     ASSIGNMENT_AGENT_NODE_DETAILED
   │       → upsert verla_workforce_task_outputs
+  │       → payload.durationMs 同步到 verla_workforce_tasks.processing_time_ms
   │
   └──[SSE path]─────────────────────────────────────────────
       toSsePayload()

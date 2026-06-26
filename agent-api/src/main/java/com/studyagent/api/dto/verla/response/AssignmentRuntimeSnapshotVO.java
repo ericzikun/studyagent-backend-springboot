@@ -49,7 +49,7 @@ public class AssignmentRuntimeSnapshotVO {
         private Map<String, Object> stateEventPayload;
         /** Latest backend-owned runtime progress, including Assignment generation ETA when available. */
         private Map<String, Object> progress;
-        /** Latest folded Assignment workflow canvas nodes; each node may include persisted `detailed` output. */
+        /** Latest folded Assignment workflow canvas nodes; each node may include persisted `detailed` output and durationMs. */
         private List<Map<String, Object>> agentNodes;
         /** Latest persisted output artifacts for this conversation. */
         private List<VerlaArtifactVO> artifacts;

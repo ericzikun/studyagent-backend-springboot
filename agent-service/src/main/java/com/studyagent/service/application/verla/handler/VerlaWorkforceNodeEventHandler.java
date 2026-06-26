@@ -188,8 +188,39 @@ public class VerlaWorkforceNodeEventHandler implements VerlaEventHandler {
                 .build();
 
         VerlaWorkforceTaskOutput saved = taskOutputRepository.upsertBySessionNode(patch);
+        persistNodeDuration(row, p);
         log.info("[Verla/workforce] NODE_DETAILED upsert ok sessionId={} nodeId={}",
                 saved.getSessionId(), saved.getNodeId());
+    }
+
+    private void persistNodeDuration(VerlaEventInbox row, VerlaWorkforceNodeDetailedPayload payload) {
+        Integer durationMs = normalizeDurationMs(payload.getDurationMs());
+        if (durationMs == null) {
+            return;
+        }
+        VerlaWorkforceTask patch = VerlaWorkforceTask.builder()
+                .conversationId(row.getConversationId())
+                .turnId(row.getTurnId())
+                .sessionId(row.getSessionId())
+                .nodeId(payload.getId())
+                .nodeKind(NODE_KIND_TASK)
+                .taskName(truncate(payload.getTaskName(), MAX_TASK_NAME_LEN))
+                .taskAgent(truncate(payload.getTaskAgent(), MAX_TASK_AGENT_LEN))
+                .status(statusForDurationPatch(payload.getStatus()))
+                .processingTimeMs(durationMs)
+                .build();
+        taskRepository.upsertBySessionNode(patch);
+    }
+
+    private Integer normalizeDurationMs(Integer durationMs) {
+        if (durationMs == null || durationMs < 0) {
+            return null;
+        }
+        return durationMs;
+    }
+
+    private String statusForDurationPatch(String status) {
+        return status == null || status.isBlank() ? "completed" : status;
     }
 
     // -------------------------------------------------------------------------

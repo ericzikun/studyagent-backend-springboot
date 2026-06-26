@@ -44,4 +44,7 @@ public class VerlaWorkforceNodeDetailedPayload {
     private Boolean reset;
 
     private String startStamp;
+
+    /** 任务完成后的实际耗时毫秒；Java 侧同步到任务表，供 snapshot 恢复详情用时。 */
+    private Integer durationMs;
 }

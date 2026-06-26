@@ -203,6 +203,17 @@ final class MockPyAssignmentFixtures {
                                                  List<Map<String, Object>> detailChunk,
                                                  String contentChunk,
                                                  boolean reset) {
+        return nodeDetailPayload(id, title, role, status, detailChunk, contentChunk, reset, null);
+    }
+
+    static Map<String, Object> nodeDetailPayload(String id,
+                                                 String title,
+                                                 String role,
+                                                 String status,
+                                                 List<Map<String, Object>> detailChunk,
+                                                 String contentChunk,
+                                                 boolean reset,
+                                                 Integer durationMs) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("id", id);
         payload.put("status", status);
@@ -217,6 +228,9 @@ final class MockPyAssignmentFixtures {
         }
         if (reset) {
             payload.put("reset", true);
+        }
+        if (durationMs != null) {
+            payload.put("durationMs", durationMs);
         }
         return payload;
     }

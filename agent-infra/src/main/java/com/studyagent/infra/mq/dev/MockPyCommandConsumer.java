@@ -857,6 +857,7 @@ public class MockPyCommandConsumer {
         scheduleAssignmentNodeDetail(cmd, id, title, role, "COMPLETED",
                 List.of(),
                 mockCompletedDetailContent(title, outputSummary),
+                mockNodeDurationMs(runningDelayMs, completedDelayMs),
                 completedDelayMs + 80L);
     }
 
@@ -906,6 +907,7 @@ public class MockPyCommandConsumer {
         scheduleAssignmentNodeDetail(cmd, id, title, role, "COMPLETED",
                 List.of(),
                 mockCompletedDetailContent(title, outputSummary),
+                mockNodeDurationMs(retryingDelayMs, completedDelayMs),
                 completedDelayMs + 80L);
     }
 
@@ -949,8 +951,20 @@ public class MockPyCommandConsumer {
                                               String status,
                                               List<Map<String, Object>> detailChunk,
                                               String contentChunk,
+                                              Integer durationMs,
                                               long delayMs) {
-        scheduleAssignmentNodeDetail(cmd, id, title, role, status, detailChunk, contentChunk, false, delayMs);
+        scheduleAssignmentNodeDetail(cmd, id, title, role, status, detailChunk, contentChunk, false, durationMs, delayMs);
+    }
+
+    private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
+                                              String id,
+                                              String title,
+                                              String role,
+                                              String status,
+                                              List<Map<String, Object>> detailChunk,
+                                              String contentChunk,
+                                              long delayMs) {
+        scheduleAssignmentNodeDetail(cmd, id, title, role, status, detailChunk, contentChunk, false, null, delayMs);
     }
 
     private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
@@ -962,9 +976,28 @@ public class MockPyCommandConsumer {
                                               String contentChunk,
                                               boolean reset,
                                               long delayMs) {
+        scheduleAssignmentNodeDetail(cmd, id, title, role, status, detailChunk, contentChunk, reset, null, delayMs);
+    }
+
+    private void scheduleAssignmentNodeDetail(VerlaCommandEnvelope cmd,
+                                              String id,
+                                              String title,
+                                              String role,
+                                              String status,
+                                              List<Map<String, Object>> detailChunk,
+                                              String contentChunk,
+                                              boolean reset,
+                                              Integer durationMs,
+                                              long delayMs) {
         scheduleEvent(cmd, VerlaAgentEventType.ASSIGNMENT_AGENT_NODE_DETAILED,
-                MockPyAssignmentFixtures.nodeDetailPayload(id, title, role, status, detailChunk, contentChunk, reset),
+                MockPyAssignmentFixtures.nodeDetailPayload(
+                        id, title, role, status, detailChunk, contentChunk, reset, durationMs),
                 delayMs);
+    }
+
+    private Integer mockNodeDurationMs(long startedDelayMs, long completedDelayMs) {
+        long durationMs = Math.max(0L, completedDelayMs - startedDelayMs);
+        return durationMs > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) durationMs;
     }
 
     private List<Map<String, Object>> mockDetailItems(List<String> stepTitles) {

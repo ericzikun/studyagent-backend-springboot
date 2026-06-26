@@ -145,8 +145,9 @@ public class StripeBillingWebhookService {
         }
 
         if ("subscription".equals(purchaseType)) {
-            updateCheckoutSubscriptionLink(session, clerkUserId, metadata.get("plan_code"));
-            if (session.getSubscription() != null) {
+            boolean paymentSettled = "paid".equals(session.getPaymentStatus());
+            updateCheckoutSubscriptionLink(session, clerkUserId, metadata.get("plan_code"), paymentSettled);
+            if (paymentSettled && session.getSubscription() != null) {
                 try {
                     syncSubscription(Subscription.retrieve(session.getSubscription()), false, false);
                 } catch (StripeException e) {
@@ -611,11 +612,16 @@ public class StripeBillingWebhookService {
             Long periodStartOverride,
             Long periodEndOverride,
             LocalDateTime now) {
+        boolean pendingPlanMatchesResolvedPlan = entity.getPendingPlanCode() != null
+                && entity.getPendingPlanCode().equals(plan.getPlanCode());
         boolean pendingActivationNotPaid = !deleted
                 && !activatePendingPlan
-                && entity.getPendingPlanCode() != null
-                && entity.getPendingPlanCode().equals(plan.getPlanCode())
+                && pendingPlanMatchesResolvedPlan
                 && !plan.getPlanCode().equals(entity.getPlanCode());
+        boolean staleDeferredPlan = !deleted
+                && !hasText(subscription.getSchedule())
+                && entity.getPendingPlanCode() != null
+                && !pendingPlanMatchesResolvedPlan;
         if (!deleted || hasText(subscription.getCustomer())) {
             entity.setStripeCustomerId(subscription.getCustomer());
         }
@@ -636,9 +642,8 @@ public class StripeBillingWebhookService {
                 subscription.getSchedule(),
                 deleted,
                 activatePendingPlan,
-                entity.getPendingPlanCode() != null && entity.getPendingPlanCode().equals(plan.getPlanCode())));
-        if (activatePendingPlan && !deleted && entity.getPendingPlanCode() != null
-                && entity.getPendingPlanCode().equals(plan.getPlanCode())) {
+                pendingPlanMatchesResolvedPlan));
+        if ((activatePendingPlan && !deleted && pendingPlanMatchesResolvedPlan) || staleDeferredPlan) {
             entity.setPendingPlanCode(null);
             entity.setPendingEffectiveAt(null);
         }
@@ -720,18 +725,19 @@ public class StripeBillingWebhookService {
     private void updateCheckoutSubscriptionLink(
             Session session,
             String clerkUserId,
-            String planCode) {
+            String planCode,
+            boolean paymentSettled) {
         UserSubscriptionEntity existing = findByUser(clerkUserId);
         LocalDateTime now = LocalDateTime.now();
         if (existing == null) {
             existing = new UserSubscriptionEntity();
             existing.setClerkUserId(clerkUserId);
             existing.setTier("free");
-            existing.setPendingPlanCode(planCode);
             existing.setStatus("incomplete");
             existing.setStripeCustomerId(session.getCustomer());
             existing.setStripeSubscriptionId(session.getSubscription());
             existing.setCancelAtPeriodEnd(false);
+            existing.setPendingPlanCode(paymentSettled ? planCode : null);
             existing.setVersion(0);
             existing.setCreatedAt(now);
             existing.setUpdatedAt(now);
@@ -741,7 +747,9 @@ public class StripeBillingWebhookService {
                     .eq(UserSubscriptionEntity::getId, existing.getId())
                     .set(UserSubscriptionEntity::getStripeCustomerId, session.getCustomer())
                     .set(UserSubscriptionEntity::getStripeSubscriptionId, session.getSubscription())
-                    .set(UserSubscriptionEntity::getPendingPlanCode, planCode)
+                    .set(UserSubscriptionEntity::getStatus, paymentSettled ? existing.getStatus() : "incomplete")
+                    .set(UserSubscriptionEntity::getPendingPlanCode, paymentSettled ? planCode : null)
+                    .set(!paymentSettled, UserSubscriptionEntity::getPendingEffectiveAt, null)
                     .set(UserSubscriptionEntity::getUpdatedAt, now));
         }
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()

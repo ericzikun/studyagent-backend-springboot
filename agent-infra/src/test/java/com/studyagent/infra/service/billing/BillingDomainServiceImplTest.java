@@ -1000,6 +1000,39 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void getBillingRecordsMarksLegacyRechargeWithoutStoredInvoiceAsUnavailable() {
+        RechargeOrderEntity legacyRecharge = new RechargeOrderEntity();
+        legacyRecharge.setOrderNo("RO202604170321172E88DF");
+        legacyRecharge.setOrderType("legacy_recharge");
+        legacyRecharge.setStatus("completed");
+        legacyRecharge.setPriceCents(2399);
+        legacyRecharge.setCurrency("usd");
+        legacyRecharge.setPaidAt(LocalDateTime.parse("2026-04-17T03:21:18"));
+        legacyRecharge.setStripeSessionId("cs_live_like_legacy");
+        legacyRecharge.setStripeSubscriptionId("sub_live_like_legacy");
+
+        RechargeOrderEntity legacyWithStoredInvoice = new RechargeOrderEntity();
+        legacyWithStoredInvoice.setOrderNo("RO202604170321172E88E0");
+        legacyWithStoredInvoice.setOrderType("legacy_recharge");
+        legacyWithStoredInvoice.setStatus("completed");
+        legacyWithStoredInvoice.setPriceCents(2399);
+        legacyWithStoredInvoice.setCurrency("usd");
+        legacyWithStoredInvoice.setPaidAt(LocalDateTime.parse("2026-04-17T03:22:18"));
+        legacyWithStoredInvoice.setStripeInvoiceId("in_legacy_invoice");
+
+        when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                legacyRecharge,
+                legacyWithStoredInvoice));
+
+        var records = service().getBillingRecords("user_1");
+
+        assertEquals(2, records.size());
+        assertEquals("legacy_recharge", records.get(0).getOrderType());
+        assertFalse(records.get(0).isHostedInvoiceAvailable());
+        assertTrue(records.get(1).isHostedInvoiceAvailable());
+    }
+
+    @Test
     void createSubscriptionCheckoutIgnoresMockSubscriptionWhenStripeIsConfigured() throws Exception {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(19L);

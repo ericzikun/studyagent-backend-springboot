@@ -553,7 +553,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private boolean isHostedInvoiceCandidate(RechargeOrderEntity order) {
         return isSettledBillingStatus(order.getStatus())
-                && (resolveStoredStripeInvoiceId(order) != null || hasRealStripeBillingReference(order));
+                && (resolveStoredStripeInvoiceId(order) != null || hasResolvableHostedInvoiceReference(order));
+    }
+
+    private boolean hasResolvableHostedInvoiceReference(RechargeOrderEntity order) {
+        if (!hasRealStripeBillingReference(order)) {
+            return false;
+        }
+        String orderType = order.getOrderType() == null ? "" : order.getOrderType().trim().toLowerCase();
+        return "subscription_initial".equals(orderType)
+                || "subscription_upgrade".equals(orderType)
+                || "subscription_upgrade_manual".equals(orderType)
+                || "addon".equals(orderType);
     }
 
     private boolean isSettledBillingStatus(String status) {

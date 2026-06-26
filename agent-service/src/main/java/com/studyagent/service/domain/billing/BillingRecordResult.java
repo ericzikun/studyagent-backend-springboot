@@ -10,8 +10,9 @@ import java.time.LocalDateTime;
  *
  * The record is sourced from local recharge_orders snapshots and intentionally
  * excludes Stripe object ids; hosted invoice details are resolved on demand.
- * hostedInvoiceAvailable only says the row has a real Stripe reference that can
- * be resolved by the invoice endpoint; it does not expose that reference.
+ * hostedInvoiceAvailable only says the row already has a stored Stripe invoice,
+ * or belongs to a billing flow whose Stripe reference can resolve to one; it
+ * does not expose that reference.
  */
 @Data
 @Builder

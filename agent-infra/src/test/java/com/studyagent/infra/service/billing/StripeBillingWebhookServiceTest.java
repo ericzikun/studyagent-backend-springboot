@@ -6,6 +6,7 @@ import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
+import com.stripe.model.SubscriptionSchedule;
 import com.stripe.param.SubscriptionUpdateParams;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -62,6 +63,12 @@ class StripeBillingWebhookServiceTest {
     @Test
     void supportsSubscriptionLifecycleEvents() {
         Event event = event("invoice.paid", "invoice", null);
+        assertTrue(service().supports(event));
+    }
+
+    @Test
+    void supportsSubscriptionScheduleEvents() {
+        Event event = event("subscription_schedule.updated", "subscription_schedule", null);
         assertTrue(service().supports(event));
     }
 
@@ -513,6 +520,42 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void applySubscriptionDeletedWithDeferredPlanDoesNotRequireResolvedPlan() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setTier("pro");
+        entity.setPlanCode("pro_monthly");
+        entity.setStatus("active");
+        entity.setStripeCustomerId("cus_123");
+        entity.setStripeSubscriptionId("sub_123");
+        entity.setStripeScheduleId("sub_sched_123");
+        entity.setPendingPlanCode("plus_yearly");
+        entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
+
+        Subscription subscription = new Subscription();
+        subscription.setCustomer("cus_123");
+        subscription.setId("sub_123");
+        subscription.setStatus("canceled");
+
+        service().applySubscription(
+                entity,
+                subscription,
+                null,
+                true,
+                false,
+                null,
+                null,
+                java.time.LocalDateTime.parse("2026-06-23T15:11:00"));
+
+        assertEquals("free", entity.getTier());
+        assertNull(entity.getPlanCode());
+        assertEquals("canceled", entity.getStatus());
+        assertNull(entity.getStripeSubscriptionId());
+        assertNull(entity.getStripeScheduleId());
+        assertNull(entity.getPendingPlanCode());
+        assertNull(entity.getPendingEffectiveAt());
+    }
+
+    @Test
     void applySubscriptionClearsStaleDeferredPlanWhenStripeAlreadySwitchedToAnotherPlan() {
         UserSubscriptionEntity entity = new UserSubscriptionEntity();
         entity.setTier("basic");
@@ -552,6 +595,33 @@ class StripeBillingWebhookServiceTest {
         assertNull(entity.getStripeScheduleId());
         assertNull(entity.getPendingPlanCode());
         assertNull(entity.getPendingEffectiveAt());
+    }
+
+    @Test
+    void applyScheduleStateRefreshesPendingPlanFromActiveScheduleMetadata() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setTier("pro");
+        entity.setPlanCode("pro_monthly");
+        entity.setStatus("active");
+        entity.setStripeCustomerId("cus_123");
+        entity.setStripeSubscriptionId("sub_123");
+        entity.setStripeScheduleId("sub_sched_basic_yearly");
+        entity.setPendingPlanCode("plus_yearly");
+        entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
+
+        SubscriptionSchedule schedule = new SubscriptionSchedule();
+        schedule.setId("sub_sched_basic_yearly");
+        schedule.setStatus("active");
+        schedule.setMetadata(java.util.Map.of("pending_plan_code", "basic_yearly"));
+
+        service().applyScheduleState(
+                entity,
+                schedule,
+                java.time.LocalDateTime.parse("2026-06-23T15:11:00"));
+
+        assertEquals("sub_sched_basic_yearly", entity.getStripeScheduleId());
+        assertEquals("basic_yearly", entity.getPendingPlanCode());
+        assertEquals(java.time.LocalDateTime.parse("2026-07-23T14:58:10"), entity.getPendingEffectiveAt());
     }
 
     @Test

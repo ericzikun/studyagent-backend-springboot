@@ -67,6 +67,13 @@ public class StripeBillingWebhookService {
             "invoice.payment_failed",
             "invoice.payment_action_required"
     );
+    private static final Set<String> SUBSCRIPTION_SCHEDULE_EVENTS = Set.of(
+            "subscription_schedule.updated",
+            "subscription_schedule.released",
+            "subscription_schedule.canceled",
+            "subscription_schedule.aborted",
+            "subscription_schedule.completed"
+    );
 
     private final StripeWebhookEventMapper webhookEventMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
@@ -78,6 +85,9 @@ public class StripeBillingWebhookService {
 
     public boolean supports(Event event) {
         if (SUBSCRIPTION_EVENTS.contains(event.getType())) {
+            return true;
+        }
+        if (SUBSCRIPTION_SCHEDULE_EVENTS.contains(event.getType())) {
             return true;
         }
         if (!event.getType().startsWith("checkout.session.")) {
@@ -115,6 +125,10 @@ public class StripeBillingWebhookService {
             case "customer.subscription.created", "customer.subscription.updated" ->
                     syncSubscription(event, false, false);
             case "customer.subscription.deleted" -> syncSubscription(event, true, false);
+            case "subscription_schedule.updated", "subscription_schedule.released",
+                    "subscription_schedule.canceled", "subscription_schedule.aborted",
+                    "subscription_schedule.completed" ->
+                    handleSubscriptionScheduleEvent(resolveRequired(event, SubscriptionSchedule.class));
             case "invoice.paid" -> handleInvoicePaid(resolveRequired(event, Invoice.class), resolveInvoiceSubscriptionId(event));
             case "invoice.payment_failed", "invoice.payment_action_required" ->
                     handleInvoiceFailed(resolveRequired(event, Invoice.class), event.getType(), resolveInvoiceSubscriptionId(event));
@@ -603,6 +617,30 @@ public class StripeBillingWebhookService {
         }
     }
 
+    void handleSubscriptionScheduleEvent(SubscriptionSchedule schedule) {
+        String subscriptionId = resolveScheduleSubscriptionId(schedule);
+        if (!hasText(subscriptionId)) {
+            log.info("Ignore schedule event without subscription binding: schedule={}", schedule == null ? null : schedule.getId());
+            return;
+        }
+        UserSubscriptionEntity existing = userSubscriptionMapper.selectOne(
+                new LambdaQueryWrapper<UserSubscriptionEntity>()
+                        .eq(UserSubscriptionEntity::getStripeSubscriptionId, subscriptionId)
+                        .last("LIMIT 1"));
+        if (existing == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        applyScheduleState(existing, schedule, now);
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, existing.getId())
+                .set(UserSubscriptionEntity::getStripeScheduleId, existing.getStripeScheduleId())
+                .set(UserSubscriptionEntity::getPendingPlanCode, existing.getPendingPlanCode())
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, existing.getPendingEffectiveAt())
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+    }
+
     void applySubscription(
             UserSubscriptionEntity entity,
             Subscription subscription,
@@ -612,12 +650,15 @@ public class StripeBillingWebhookService {
             Long periodStartOverride,
             Long periodEndOverride,
             LocalDateTime now) {
+        String resolvedPlanCode = plan == null ? null : plan.getPlanCode();
         boolean pendingPlanMatchesResolvedPlan = entity.getPendingPlanCode() != null
-                && entity.getPendingPlanCode().equals(plan.getPlanCode());
+                && resolvedPlanCode != null
+                && entity.getPendingPlanCode().equals(resolvedPlanCode);
         boolean pendingActivationNotPaid = !deleted
                 && !activatePendingPlan
                 && pendingPlanMatchesResolvedPlan
-                && !plan.getPlanCode().equals(entity.getPlanCode());
+                && resolvedPlanCode != null
+                && !resolvedPlanCode.equals(entity.getPlanCode());
         boolean staleDeferredPlan = !deleted
                 && !hasText(subscription.getSchedule())
                 && entity.getPendingPlanCode() != null
@@ -657,6 +698,33 @@ public class StripeBillingWebhookService {
         } else if (deleted) {
             entity.setQuotaPeriodStart(null);
             entity.setQuotaPeriodEnd(null);
+        }
+        entity.setLastSyncedAt(now);
+        entity.setUpdatedAt(now);
+    }
+
+    void applyScheduleState(
+            UserSubscriptionEntity entity,
+            SubscriptionSchedule schedule,
+            LocalDateTime now) {
+        if (entity == null || schedule == null || !hasText(schedule.getId())) {
+            return;
+        }
+        String status = schedule.getStatus();
+        String pendingPlanCode = schedule.getMetadata() == null ? null : schedule.getMetadata().get("pending_plan_code");
+        if ("active".equals(status) || "not_started".equals(status)) {
+            entity.setStripeScheduleId(schedule.getId());
+            if (hasText(pendingPlanCode)) {
+                entity.setPendingPlanCode(pendingPlanCode);
+                if (entity.getPendingEffectiveAt() == null) {
+                    LocalDateTime effectiveAt = fromEpoch(resolveScheduleCurrentPhaseEnd(schedule));
+                    entity.setPendingEffectiveAt(effectiveAt != null ? effectiveAt : entity.getCurrentPeriodEnd());
+                }
+            }
+        } else if (schedule.getId().equals(entity.getStripeScheduleId())) {
+            entity.setStripeScheduleId(null);
+            entity.setPendingPlanCode(null);
+            entity.setPendingEffectiveAt(null);
         }
         entity.setLastSyncedAt(now);
         entity.setUpdatedAt(now);
@@ -1267,6 +1335,28 @@ public class StripeBillingWebhookService {
         return null;
     }
 
+    private String resolveScheduleSubscriptionId(SubscriptionSchedule schedule) {
+        if (schedule == null) {
+            return null;
+        }
+        JsonObject raw = schedule.getRawJsonObject();
+        String subscriptionId = readString(raw, "subscription");
+        if (subscriptionId != null) {
+            return subscriptionId;
+        }
+        return readString(raw, "released_subscription");
+    }
+
+    private Long resolveScheduleCurrentPhaseEnd(SubscriptionSchedule schedule) {
+        if (schedule == null) {
+            return null;
+        }
+        if (schedule.getCurrentPhase() != null && schedule.getCurrentPhase().getEndDate() != null) {
+            return schedule.getCurrentPhase().getEndDate();
+        }
+        return readLong(schedule.getRawJsonObject(), "current_phase", "end_date");
+    }
+
     Long resolveSubscriptionPeriodStart(Event event) {
         return resolveSubscriptionPeriod(event, "current_period_start");
     }
@@ -1294,6 +1384,24 @@ public class StripeBillingWebhookService {
         }
         JsonElement first = items.getAsJsonArray("data").get(0);
         return first.isJsonObject() ? readLong(first.getAsJsonObject(), fieldName) : null;
+    }
+
+    private Long readLong(JsonObject object, String... path) {
+        JsonElement current = object;
+        for (String key : path) {
+            if (current == null || !current.isJsonObject()) {
+                return null;
+            }
+            JsonObject currentObject = current.getAsJsonObject();
+            if (!currentObject.has(key)) {
+                return null;
+            }
+            current = currentObject.get(key);
+        }
+        if (current == null || current.isJsonNull()) {
+            return null;
+        }
+        return current.getAsLong();
     }
 
     private String readString(JsonObject object, String... path) {

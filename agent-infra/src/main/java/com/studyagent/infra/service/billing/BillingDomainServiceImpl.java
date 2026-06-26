@@ -951,7 +951,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
         String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
@@ -1081,10 +1080,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         Subscription scheduleSubscription = stripeSubscription;
         if (scheduleId != null && !scheduleId.isBlank()) {
             releaseScheduleIfReusable(scheduleId);
+            clearPendingScheduleState(current);
             scheduleSubscription = retrieveStripeSubscription(stripeSubscription.getId());
             scheduleId = null;
         }
         SubscriptionSchedule schedule = retrieveReusableSchedule(scheduleId);
+        boolean createdReplacementSchedule = false;
         if (schedule == null) {
             RequestOptions createOptions = RequestOptions.builder()
                     .setIdempotencyKey("downgrade-schedule:create:" + scheduleSubscription.getId()
@@ -1093,6 +1094,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             schedule = createStripeSubscriptionSchedule(
                     buildDowngradeScheduleCreateParams(scheduleSubscription.getId()),
                     createOptions);
+            createdReplacementSchedule = true;
         }
 
         SubscriptionItem item = requireSingleSubscriptionItem(scheduleSubscription);
@@ -1110,7 +1112,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setIdempotencyKey("downgrade-schedule:update:" + schedule.getId() + ":"
                         + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
                 .build();
-        return updateStripeSubscriptionSchedule(schedule, updateParams, updateOptions);
+        try {
+            return updateStripeSubscriptionSchedule(schedule, updateParams, updateOptions);
+        } catch (StripeException e) {
+            if (createdReplacementSchedule && schedule != null && schedule.getId() != null) {
+                releaseScheduleIfReusable(schedule.getId());
+            }
+            throw e;
+        }
     }
 
     static SubscriptionScheduleCreateParams buildDowngradeScheduleCreateParams(String stripeSubscriptionId) {

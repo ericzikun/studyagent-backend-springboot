@@ -34,6 +34,7 @@ import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
+import com.studyagent.service.domain.billing.BillingRecordPageResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
@@ -53,6 +54,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -67,12 +70,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
     );
     private static final Gson GSON = new Gson();
+    private static final int DEFAULT_BILLING_RECORD_LIMIT = 50;
+    private static final int MAX_BILLING_RECORD_LIMIT = 50;
+    private static final DateTimeFormatter BILLING_RECORD_CURSOR_FORMATTER =
+            DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     enum PlanChangeAction {
         NOOP,
         IMMEDIATE_UPGRADE,
         DEFERRED_CHANGE,
         UNSUPPORTED
+    }
+
+    private record BillingRecordCursor(LocalDateTime paidAt, LocalDateTime createdAt, Long id) {
     }
 
     private final SubscriptionPlanMapper subscriptionPlanMapper;
@@ -491,17 +501,98 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     @Override
-    public List<BillingRecordResult> getBillingRecords(String clerkUserId) {
-        return rechargeOrderMapper.selectList(
-                        new LambdaQueryWrapper<RechargeOrderEntity>()
-                                .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
-                                .gt(RechargeOrderEntity::getPriceCents, 0)
-                                .orderByDesc(RechargeOrderEntity::getPaidAt)
-                                .orderByDesc(RechargeOrderEntity::getCreatedAt)
-                                .last("LIMIT 50"))
-                .stream()
-                .map(this::toBillingRecord)
-                .toList();
+    public BillingRecordPageResult getBillingRecords(String clerkUserId, String cursor, Integer limit) {
+        int pageSize = resolveBillingRecordLimit(limit);
+        BillingRecordCursor decodedCursor = decodeBillingRecordCursor(cursor);
+        LambdaQueryWrapper<RechargeOrderEntity> query = new LambdaQueryWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                .gt(RechargeOrderEntity::getPriceCents, 0);
+        applyBillingRecordCursor(query, decodedCursor);
+
+        List<RechargeOrderEntity> orders = rechargeOrderMapper.selectList(query
+                .orderByDesc(RechargeOrderEntity::getPaidAt)
+                .orderByDesc(RechargeOrderEntity::getCreatedAt)
+                .orderByDesc(RechargeOrderEntity::getId)
+                .last("LIMIT " + (pageSize + 1)));
+        boolean hasMore = orders.size() > pageSize;
+        List<RechargeOrderEntity> pageOrders = hasMore ? orders.subList(0, pageSize) : orders;
+        String nextCursor = hasMore && !pageOrders.isEmpty()
+                ? encodeBillingRecordCursor(pageOrders.get(pageOrders.size() - 1))
+                : null;
+
+        return BillingRecordPageResult.builder()
+                .items(pageOrders.stream().map(this::toBillingRecord).toList())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+    private int resolveBillingRecordLimit(Integer limit) {
+        if (limit == null || limit <= 0) {
+            return DEFAULT_BILLING_RECORD_LIMIT;
+        }
+        return Math.min(limit, MAX_BILLING_RECORD_LIMIT);
+    }
+
+    private BillingRecordCursor decodeBillingRecordCursor(String cursor) {
+        if (!hasText(cursor)) {
+            return null;
+        }
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = decoded.split("\\|", -1);
+            if (parts.length != 3 || !hasText(parts[1]) || !hasText(parts[2])) {
+                throw new IllegalArgumentException("Invalid billing records cursor");
+            }
+            LocalDateTime paidAt = "-".equals(parts[0])
+                    ? null
+                    : LocalDateTime.parse(parts[0], BILLING_RECORD_CURSOR_FORMATTER);
+            LocalDateTime createdAt = LocalDateTime.parse(parts[1], BILLING_RECORD_CURSOR_FORMATTER);
+            Long id = Long.valueOf(parts[2]);
+            if (id <= 0) {
+                throw new IllegalArgumentException("Invalid billing records cursor id");
+            }
+            return new BillingRecordCursor(paidAt, createdAt, id);
+        } catch (IllegalArgumentException | DateTimeParseException e) {
+            throw new BillingDomainException(
+                    "INVALID_BILLING_RECORD_CURSOR",
+                    "Invalid billing records cursor");
+        }
+    }
+
+    private void applyBillingRecordCursor(
+            LambdaQueryWrapper<RechargeOrderEntity> query,
+            BillingRecordCursor cursor) {
+        if (cursor == null) {
+            return;
+        }
+        // Cursor predicates mirror the list ordering:
+        // paid_at DESC NULLS LAST, created_at DESC, id DESC.
+        if (cursor.paidAt() == null) {
+            query.apply(
+                    "(paid_at IS NULL AND (created_at < {0} OR (created_at = {0} AND id < {1})))",
+                    cursor.createdAt(),
+                    cursor.id());
+            return;
+        }
+        query.apply(
+                "(paid_at < {0} OR paid_at IS NULL "
+                        + "OR (paid_at = {0} AND (created_at < {1} OR (created_at = {1} AND id < {2}))))",
+                cursor.paidAt(),
+                cursor.createdAt(),
+                cursor.id());
+    }
+
+    private String encodeBillingRecordCursor(RechargeOrderEntity order) {
+        if (order.getId() == null || order.getCreatedAt() == null) {
+            return null;
+        }
+        String payload = String.join("|",
+                order.getPaidAt() == null ? "-" : BILLING_RECORD_CURSOR_FORMATTER.format(order.getPaidAt()),
+                BILLING_RECORD_CURSOR_FORMATTER.format(order.getCreatedAt()),
+                String.valueOf(order.getId()));
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(payload.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

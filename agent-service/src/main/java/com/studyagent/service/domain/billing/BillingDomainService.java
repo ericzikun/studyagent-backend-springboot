@@ -2,8 +2,6 @@ package com.studyagent.service.domain.billing;
 
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
 
-import java.util.List;
-
 public interface BillingDomainService {
     BillingCatalogResult getCatalog();
 
@@ -27,7 +25,7 @@ public interface BillingDomainService {
 
     BillingPortalSessionResult createBillingPortalSession(String clerkUserId, String returnUrl);
 
-    List<BillingRecordResult> getBillingRecords(String clerkUserId);
+    BillingRecordPageResult getBillingRecords(String clerkUserId, String cursor, Integer limit);
 
     BillingHostedInvoiceResult createBillingHostedInvoice(String clerkUserId, String recordId);
 

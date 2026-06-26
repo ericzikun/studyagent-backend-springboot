@@ -7,7 +7,7 @@ import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
-import com.studyagent.service.domain.billing.BillingRecordResult;
+import com.studyagent.service.domain.billing.BillingRecordPageResult;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.PaymentConfigResult;
 import com.studyagent.service.domain.payment.PaymentDomainService;
@@ -19,10 +19,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -54,12 +54,18 @@ public class BillingController {
     }
 
     @GetMapping("/records")
-    public Result<List<BillingRecordResult>> records(
+    public Result<BillingRecordPageResult> records(
+            @RequestParam(value = "cursor", required = false) String cursor,
+            @RequestParam(value = "limit", required = false) Integer limit,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
-        return Result.success(billingDomainService.getBillingRecords(clerkUserId));
+        try {
+            return Result.success(billingDomainService.getBillingRecords(clerkUserId, cursor, limit));
+        } catch (BillingDomainException e) {
+            return mapBillingException(e);
+        }
     }
 
     @PostMapping("/portal-session")
@@ -100,12 +106,13 @@ public class BillingController {
         }
     }
 
-    private Result<Map<String, Object>> mapBillingException(BillingDomainException e) {
+    private <T> Result<T> mapBillingException(BillingDomainException e) {
         return switch (e.getCode()) {
             case "STRIPE_NOT_CONFIGURED" -> Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
             case "STRIPE_CUSTOMER_NOT_FOUND" -> Result.error(ApiCode.BILLING_CUSTOMER_NOT_FOUND);
             case "BILLING_RECORD_NOT_FOUND" -> Result.error(ApiCode.BILLING_RECORD_NOT_FOUND);
             case "BILLING_INVOICE_NOT_AVAILABLE" -> Result.error(ApiCode.BILLING_INVOICE_NOT_AVAILABLE);
+            case "INVALID_BILLING_RECORD_CURSOR" -> Result.error(ApiCode.PARAM_ERROR, e.getMessage());
             case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());

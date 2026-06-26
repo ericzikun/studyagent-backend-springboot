@@ -44,6 +44,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -964,7 +965,7 @@ class BillingDomainServiceImplTest {
 
         when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(paid, failed));
 
-        var records = service().getBillingRecords("user_1");
+        var records = service().getBillingRecords("user_1", null, null).getItems();
 
         assertEquals(2, records.size());
         assertEquals("RO202606150001", records.get(0).getId());
@@ -993,7 +994,7 @@ class BillingDomainServiceImplTest {
 
         when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(mockPaid));
 
-        var records = service().getBillingRecords("user_1");
+        var records = service().getBillingRecords("user_1", null, null).getItems();
 
         assertEquals(1, records.size());
         assertFalse(records.get(0).isHostedInvoiceAvailable());
@@ -1024,12 +1025,54 @@ class BillingDomainServiceImplTest {
                 legacyRecharge,
                 legacyWithStoredInvoice));
 
-        var records = service().getBillingRecords("user_1");
+        var records = service().getBillingRecords("user_1", null, null).getItems();
 
         assertEquals(2, records.size());
         assertEquals("legacy_recharge", records.get(0).getOrderType());
         assertFalse(records.get(0).isHostedInvoiceAvailable());
         assertTrue(records.get(1).isHostedInvoiceAvailable());
+    }
+
+    @Test
+    void getBillingRecordsReturnsNextCursorForAdditionalPages() {
+        List<RechargeOrderEntity> firstQueryRows = new java.util.ArrayList<>();
+        for (int i = 0; i < 51; i++) {
+            RechargeOrderEntity order = new RechargeOrderEntity();
+            order.setId(100L - i);
+            order.setOrderNo("RO20260615" + String.format("%04d", i));
+            order.setOrderType("subscription_initial");
+            order.setStatus("completed");
+            order.setPriceCents(999);
+            order.setCurrency("usd");
+            order.setPaidAt(LocalDateTime.parse("2026-06-15T08:00:00").minusMinutes(i));
+            order.setCreatedAt(LocalDateTime.parse("2026-06-15T07:00:00").minusMinutes(i));
+            firstQueryRows.add(order);
+        }
+
+        RechargeOrderEntity secondPageOrder = new RechargeOrderEntity();
+        secondPageOrder.setId(49L);
+        secondPageOrder.setOrderNo("RO202606150051");
+        secondPageOrder.setOrderType("subscription_initial");
+        secondPageOrder.setStatus("completed");
+        secondPageOrder.setPriceCents(999);
+        secondPageOrder.setCurrency("usd");
+        secondPageOrder.setPaidAt(LocalDateTime.parse("2026-06-15T07:09:00"));
+        secondPageOrder.setCreatedAt(LocalDateTime.parse("2026-06-15T06:09:00"));
+
+        when(rechargeOrderMapper.selectList(any(Wrapper.class)))
+                .thenReturn(firstQueryRows)
+                .thenReturn(List.of(secondPageOrder));
+
+        var firstPage = service().getBillingRecords("user_1", null, 50);
+
+        assertEquals(50, firstPage.getItems().size());
+        assertNotNull(firstPage.getNextCursor());
+
+        var secondPage = service().getBillingRecords("user_1", firstPage.getNextCursor(), 50);
+
+        assertEquals(1, secondPage.getItems().size());
+        assertEquals("RO202606150051", secondPage.getItems().get(0).getId());
+        assertNull(secondPage.getNextCursor());
     }
 
     @Test

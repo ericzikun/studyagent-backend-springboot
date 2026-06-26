@@ -5,6 +5,7 @@ import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
+import com.studyagent.service.domain.billing.BillingRecordPageResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.payment.PaymentDomainService;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +46,7 @@ class BillingControllerTest {
 
     @Test
     void recordsRequiresLogin() {
-        var result = controller.records(null);
+        var result = controller.records(null, null, null);
 
         assertThat(result.getMeta().getStatusCode()).isEqualTo(ApiCode.USER_NOT_LOGGED_IN.getCode());
         verifyNoInteractions(billingDomainService);
@@ -61,22 +62,26 @@ class BillingControllerTest {
 
     @Test
     void recordsReturnsLocalBillingRows() {
-        when(billingDomainService.getBillingRecords("user_1"))
-                .thenReturn(List.of(BillingRecordResult.builder()
-                        .id("RO202606150001")
-                        .paidAt(LocalDateTime.parse("2026-06-15T08:00:00"))
-                        .amountCents(98214)
-                        .currency("php")
-                        .status("completed")
-                        .orderType("subscription_initial")
-                        .build()));
+        when(billingDomainService.getBillingRecords("user_1", "cursor_1", 25))
+                .thenReturn(BillingRecordPageResult.builder()
+                        .items(List.of(BillingRecordResult.builder()
+                                .id("RO202606150001")
+                                .paidAt(LocalDateTime.parse("2026-06-15T08:00:00"))
+                                .amountCents(98214)
+                                .currency("php")
+                                .status("completed")
+                                .orderType("subscription_initial")
+                                .build()))
+                        .nextCursor("cursor_2")
+                        .build());
 
-        var result = controller.records("user_1");
+        var result = controller.records("cursor_1", 25, "user_1");
 
         assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
-        assertThat(result.getData()).hasSize(1);
-        assertThat(result.getData().get(0).getId()).isEqualTo("RO202606150001");
-        verify(billingDomainService).getBillingRecords("user_1");
+        assertThat(result.getData().getItems()).hasSize(1);
+        assertThat(result.getData().getItems().get(0).getId()).isEqualTo("RO202606150001");
+        assertThat(result.getData().getNextCursor()).isEqualTo("cursor_2");
+        verify(billingDomainService).getBillingRecords("user_1", "cursor_1", 25);
         verifyNoInteractions(paymentDomainService);
     }
 

@@ -24,6 +24,13 @@ public final class DateTimeFormats {
     /** API JSON 输出 offset（中国无夏令时，固定 +08:00） */
     public static final ZoneOffset API_ZONE = ZoneOffset.ofHours(8);
 
+    /**
+     * quota_ledger 写入改为 {@link #now()} 之前，部分环境把 JVM UTC 墙钟写进 DATETIME，
+     * 但 API 仍按 +08:00 输出；读路径需在此时间点前按 UTC 墙钟还原 epoch。
+     */
+    public static final LocalDateTime QUOTA_LEDGER_UTC_WALL_CLOCK_CUTOFF =
+            LocalDateTime.of(2026, 6, 26, 13, 38, 19);
+
     private static final DateTimeFormatter API_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private DateTimeFormats() {
@@ -73,5 +80,19 @@ public final class DateTimeFormats {
             return null;
         }
         return value.atZone(APP_ZONE).format(API_FORMATTER);
+    }
+
+    /**
+     * quota_ledger.created_at → Unix epoch 秒。
+     * 修复写入时区前，DATETIME 存的是 UTC 墙钟；之后存北京时间墙钟。
+     */
+    public static long toQuotaLedgerCreatedAtEpochSecond(LocalDateTime value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value.isBefore(QUOTA_LEDGER_UTC_WALL_CLOCK_CUTOFF)) {
+            return value.atZone(ZoneOffset.UTC).toEpochSecond();
+        }
+        return toEpochSecond(value);
     }
 }

@@ -157,6 +157,7 @@ public class QuotaController {
                     m.put("paidBalanceAfter", item.paidBalanceAfter());
                     m.put("allocations", item.allocations());
                     m.put("createdAt", DateTimeFormats.formatApi(item.createdAt()));
+                    m.put("createdAtEpoch", DateTimeFormats.toQuotaLedgerCreatedAtEpochSecond(item.createdAt()));
                     m.put("feature_code", item.featureCode());
                     m.put("quota_unit", item.quotaUnit());
                     return m;

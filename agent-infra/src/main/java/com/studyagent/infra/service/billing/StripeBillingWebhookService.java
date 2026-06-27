@@ -64,6 +64,8 @@ public class StripeBillingWebhookService {
             "customer.subscription.updated",
             "customer.subscription.deleted",
             "invoice.paid",
+            "invoice.payment_succeeded",
+            "invoice_payment.paid",
             "invoice.payment_failed",
             "invoice.payment_action_required"
     );
@@ -129,10 +131,25 @@ public class StripeBillingWebhookService {
                     "subscription_schedule.canceled", "subscription_schedule.aborted",
                     "subscription_schedule.completed" ->
                     handleSubscriptionScheduleEvent(resolveRequired(event, SubscriptionSchedule.class));
-            case "invoice.paid" -> handleInvoicePaid(resolveRequired(event, Invoice.class), resolveInvoiceSubscriptionId(event));
+            case "invoice.paid", "invoice.payment_succeeded" ->
+                    handleInvoicePaid(resolveRequired(event, Invoice.class), resolveInvoiceSubscriptionId(event));
+            case "invoice_payment.paid" -> handleInvoicePaymentPaid(event);
             case "invoice.payment_failed", "invoice.payment_action_required" ->
                     handleInvoiceFailed(resolveRequired(event, Invoice.class), event.getType(), resolveInvoiceSubscriptionId(event));
             default -> log.info("Ignored Stripe billing event: {}", event.getType());
+        }
+    }
+
+    private void handleInvoicePaymentPaid(Event event) {
+        String invoiceId = resolveInvoiceIdFromInvoicePayment(event);
+        if (invoiceId == null) {
+            log.info("invoice_payment.paid has no invoice id, ignored: event={}", event.getId());
+            return;
+        }
+        try {
+            handleInvoicePaid(Invoice.retrieve(invoiceId), null);
+        } catch (StripeException e) {
+            throw new IllegalStateException("Retrieve invoice failed from invoice_payment.paid: " + invoiceId, e);
         }
     }
 
@@ -1300,6 +1317,15 @@ public class StripeBillingWebhookService {
         }
         JsonObject invoice = com.stripe.net.ApiResource.GSON.fromJson(raw, JsonObject.class);
         return resolveInvoiceSubscriptionId(invoice);
+    }
+
+    String resolveInvoiceIdFromInvoicePayment(Event event) {
+        String raw = event.getDataObjectDeserializer().getRawJson();
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        JsonObject invoicePayment = com.stripe.net.ApiResource.GSON.fromJson(raw, JsonObject.class);
+        return readString(invoicePayment, "invoice");
     }
 
     private String resolveInvoiceSubscriptionId(JsonObject invoice) {

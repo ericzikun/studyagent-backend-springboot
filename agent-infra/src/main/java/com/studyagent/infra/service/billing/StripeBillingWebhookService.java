@@ -132,7 +132,10 @@ public class StripeBillingWebhookService {
                     "subscription_schedule.completed" ->
                     handleSubscriptionScheduleEvent(resolveRequired(event, SubscriptionSchedule.class));
             case "invoice.paid", "invoice.payment_succeeded" ->
-                    handleInvoicePaid(resolveRequired(event, Invoice.class), resolveInvoiceSubscriptionId(event));
+                    handleInvoicePaid(
+                            resolveRequired(event, Invoice.class),
+                            resolveInvoiceSubscriptionId(event),
+                            event.getCreated());
             case "invoice_payment.paid" -> handleInvoicePaymentPaid(event);
             case "invoice.payment_failed", "invoice.payment_action_required" ->
                     handleInvoiceFailed(resolveRequired(event, Invoice.class), event.getType(), resolveInvoiceSubscriptionId(event));
@@ -147,7 +150,7 @@ public class StripeBillingWebhookService {
             return;
         }
         try {
-            handleInvoicePaid(Invoice.retrieve(invoiceId), null);
+            handleInvoicePaid(Invoice.retrieve(invoiceId), null, event.getCreated());
         } catch (StripeException e) {
             throw new IllegalStateException("Retrieve invoice failed from invoice_payment.paid: " + invoiceId, e);
         }
@@ -379,7 +382,7 @@ public class StripeBillingWebhookService {
         return builder.build();
     }
 
-    private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId) {
+    private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId, Long eventCreatedEpoch) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
             log.info("Paid invoice has no subscription, ignored: invoice={}", invoice.getId());
@@ -394,6 +397,15 @@ public class StripeBillingWebhookService {
         SubscriptionPlanEntity plan = requirePlanBySubscription(subscription);
         String clerkUserId = resolveUserId(subscription);
         UserSubscriptionEntity existing = findByUser(clerkUserId);
+        if (shouldIgnorePaidInvoiceSync(existing, subscriptionId, eventCreatedEpoch)) {
+            log.info("Ignore stale paid invoice sync: invoice={}, subscription={}, user={}",
+                    invoice.getId(), subscriptionId, clerkUserId);
+            return;
+        }
+        RechargeOrderEntity existingInvoiceOrder = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
+                        .last("LIMIT 1"));
         RechargeOrderEntity pendingUpgrade = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
@@ -410,13 +422,23 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStatus, "pending")
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
                         .last("LIMIT 1"));
-        boolean upgrade = isSubscriptionUpgradeInvoice(invoice, pendingUpgrade)
+        RechargeOrderEntity selectedUpgradeOrder = selectSubscriptionInvoiceOrder(
+                isOrderType(existingInvoiceOrder, "subscription_upgrade") ? existingInvoiceOrder : null,
+                pendingUpgrade,
+                subscriptionId);
+        RechargeOrderEntity selectedInitialOrder = selectSubscriptionInvoiceOrder(
+                isOrderType(existingInvoiceOrder, "subscription_initial", "subscription_renewal")
+                        ? existingInvoiceOrder
+                        : null,
+                pendingInitial,
+                subscriptionId);
+        boolean upgrade = isSubscriptionUpgradeInvoice(invoice, firstNonNull(selectedUpgradeOrder, existingInvoiceOrder))
                 || isPendingPlanActivationUpgrade(
                 existing,
                 plan.getPlanCode(),
                 plan.getTier(),
                 invoice,
-                pendingUpgrade);
+                selectedUpgradeOrder);
         RechargeOrderEntity matchingManualUpgradeOrder = findMatchingManualUpgradeOrder(
                 clerkUserId,
                 subscriptionId,
@@ -453,10 +475,10 @@ public class StripeBillingWebhookService {
         }
 
         syncSubscription(subscription, false, true, periodStartEpoch, periodEndEpoch);
-        if (pendingUpgrade != null) {
-            completeSubscriptionOrder(pendingUpgrade, invoice, subscriptionId);
-        } else if (pendingInitial != null) {
-            completeSubscriptionOrder(pendingInitial, invoice, subscriptionId);
+        if (selectedUpgradeOrder != null) {
+            completeSubscriptionOrder(selectedUpgradeOrder, invoice, subscriptionId);
+        } else if (selectedInitialOrder != null) {
+            completeSubscriptionOrder(selectedInitialOrder, invoice, subscriptionId);
         } else {
             markInvoicePaid(invoice, subscriptionId, clerkUserId, plan, upgrade);
         }
@@ -897,6 +919,17 @@ public class StripeBillingWebhookService {
     }
 
     private void completeSubscriptionOrder(RechargeOrderEntity order, Invoice invoice, String subscriptionId) {
+        RechargeOrderEntity existingInvoiceOrder = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
+                        .last("LIMIT 1"));
+        if (existingInvoiceOrder != null
+                && existingInvoiceOrder.getId() != null
+                && !existingInvoiceOrder.getId().equals(order.getId())) {
+            log.info("Invoice {} already linked to order {}, skip duplicate completion for order {}",
+                    invoice.getId(), existingInvoiceOrder.getOrderNo(), order.getOrderNo());
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getId, order.getId())
@@ -932,6 +965,65 @@ public class StripeBillingWebhookService {
         }
         return !Set.of("paid", "switching", "switched", "completed")
                 .contains(matchingManualUpgradeOrder.getStatus());
+    }
+
+    static RechargeOrderEntity selectSubscriptionInvoiceOrder(
+            RechargeOrderEntity existingInvoiceOrder,
+            RechargeOrderEntity pendingOrder,
+            String subscriptionId) {
+        if (existingInvoiceOrder != null) {
+            return existingInvoiceOrder;
+        }
+        if (pendingOrder == null) {
+            return null;
+        }
+        if (subscriptionId == null || subscriptionId.isBlank()) {
+            return pendingOrder;
+        }
+        if (pendingOrder.getStripeSubscriptionId() == null
+                || pendingOrder.getStripeSubscriptionId().isBlank()
+                || subscriptionId.equals(pendingOrder.getStripeSubscriptionId())) {
+            return pendingOrder;
+        }
+        return null;
+    }
+
+    static boolean shouldIgnorePaidInvoiceSync(
+            UserSubscriptionEntity existing,
+            String subscriptionId,
+            Long eventCreatedEpoch) {
+        if (existing == null) {
+            return false;
+        }
+        if (existing.getStripeSubscriptionId() != null
+                && !existing.getStripeSubscriptionId().isBlank()
+                && subscriptionId != null
+                && !subscriptionId.isBlank()
+                && !subscriptionId.equals(existing.getStripeSubscriptionId())) {
+            return true;
+        }
+        if (!"canceled".equalsIgnoreCase(existing.getStatus())
+                || existing.getLastSyncedAt() == null
+                || eventCreatedEpoch == null) {
+            return false;
+        }
+        return eventCreatedEpoch < existing.getLastSyncedAt().toEpochSecond(ZoneOffset.UTC);
+    }
+
+    private static RechargeOrderEntity firstNonNull(RechargeOrderEntity primary, RechargeOrderEntity fallback) {
+        return primary != null ? primary : fallback;
+    }
+
+    private static boolean isOrderType(RechargeOrderEntity order, String... expectedTypes) {
+        if (order == null || order.getOrderType() == null || order.getOrderType().isBlank()) {
+            return false;
+        }
+        for (String expectedType : expectedTypes) {
+            if (expectedType.equals(order.getOrderType())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static boolean isPendingPlanActivationUpgrade(

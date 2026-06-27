@@ -192,11 +192,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
                         .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
                         .last("LIMIT 1"));
-        if (quota == null) {
-            return;
-        }
-
-        if (!needsPlanRefresh(quota, now)) {
+        if (quota != null && !needsPlanRefresh(quota, now)) {
             return;
         }
 
@@ -210,7 +206,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
                         .eq(UserAiQuotaEntity::getFeatureCode, featureCode)
                         .last("LIMIT 1"));
-        if (lockedQuota == null || !needsPlanRefresh(lockedQuota, now)) {
+        if (lockedQuota == null) {
+            lockedQuota = findOrCreateQuota(clerkUserId, featureCode, now);
+        } else if (!needsPlanRefresh(lockedQuota, now)) {
             return;
         }
 
@@ -238,7 +236,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         Map<String, UserAiQuotaEntity> quotasByFeatureCode = quotasByFeatureCode(clerkUserId);
-        boolean anyQuotaNeedsRefresh = quotasByFeatureCode.values().stream()
+        boolean missingQuotaRows = quotasByFeatureCode.size() < PLAN_FEATURE_CODES.size();
+        boolean anyQuotaNeedsRefresh = missingQuotaRows || quotasByFeatureCode.values().stream()
                 .anyMatch(quota -> needsPlanRefresh(quota, now));
         if (!anyQuotaNeedsRefresh) {
             return;
@@ -256,7 +255,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         for (String featureCode : PLAN_FEATURE_CODES) {
             UserAiQuotaEntity quota = lockedQuotasByFeatureCode.get(featureCode);
             if (quota == null) {
-                continue;
+                quota = findOrCreateQuota(clerkUserId, featureCode, now);
+                lockedQuotasByFeatureCode.put(featureCode, quota);
             }
             refreshResolvedPlanQuotaIfNeeded(clerkUserId, featureCode, now, lockedSubscription, plan, billingInterval, quota);
         }
@@ -284,6 +284,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
+        boolean missingPlanWindow = quota.getPlanPeriodStart() == null || quota.getPlanPeriodEnd() == null;
         LocalDateTime currentPlanEnd = quota.getPlanPeriodEnd();
         boolean planWindowExpired = currentPlanEnd != null && now.isAfter(currentPlanEnd);
         if ("year".equals(billingInterval)) {
@@ -291,9 +292,65 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
+        if ("month".equals(billingInterval) && missingPlanWindow) {
+            refreshMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
+            return;
+        }
+
         if ("month".equals(billingInterval) && planWindowExpired) {
             expireMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, now);
         }
+    }
+
+    private void refreshMonthlyPlanQuota(
+            String clerkUserId,
+            UserSubscriptionEntity subscription,
+            UserAiQuotaEntity quota,
+            String featureCode,
+            SubscriptionPlanEntity plan,
+            LocalDateTime now) {
+        LocalDateTime windowStart = subscription.getQuotaPeriodStart();
+        LocalDateTime windowEnd = subscription.getQuotaPeriodEnd();
+        if (windowStart == null || windowEnd == null) {
+            return;
+        }
+        String idempotencyKey = "plan-refresh:" + clerkUserId + ":" + featureCode + ":" + windowStart;
+        if (hasLedger(featureCode, LEDGER_TYPE_PLAN_REFRESH, idempotencyKey)) {
+            quota.setPlanPeriodStart(windowStart);
+            quota.setPlanPeriodEnd(windowEnd);
+            quota.setUpdatedAt(now);
+            persistQuota(quota, now);
+            return;
+        }
+
+        long grantAmount = featureGrantAmount(plan, featureCode);
+        quota.setPlanBalance(grantAmount);
+        quota.setPlanPeriodStart(windowStart);
+        quota.setPlanPeriodEnd(windowEnd);
+        quota.setUpdatedAt(now);
+        persistQuota(quota, now);
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_PLAN_REFRESH);
+        ledger.setAmount(grantAmount);
+        ledger.setSourceType("subscription");
+        ledger.setSourceId(subscription.getStripeSubscriptionId());
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setSubscriptionId(subscription.getStripeSubscriptionId());
+        ledger.setFreeBalanceAfter(quota.getFreeBalance());
+        ledger.setPlanBalanceAfter(grantAmount);
+        ledger.setPaidBalanceAfter(quota.getPaidBalance());
+        ledger.setBizContext(GSON.toJson(Map.of(
+                "plan_code", subscription.getPlanCode(),
+                "quota_period_start", windowStart.toString(),
+                "quota_period_end", windowEnd.toString(),
+                "refresh_mode", "monthly_missing_window"
+        )));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
     }
 
     private void applyPlanGrant(

@@ -1,6 +1,8 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.api.service.legacy.LegacyTaskAdapter;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.request.AssignmentChatSendMessageRequest;
@@ -41,6 +43,7 @@ public class VerlaAssignmentChatController {
     private final VerlaTurnOrchestrator turnOrchestrator;
     private final VerlaConversationService conversationService;
     private final VerlaMessageRepository messageRepository;
+    private final LegacyTaskAdapter legacyTaskAdapter;
 
     @GetMapping("/{cid}/assignment-chat/messages")
     public Result<MessagePageVO> listMessages(
@@ -49,6 +52,14 @@ public class VerlaAssignmentChatController {
             @RequestParam(value = "cursor", required = false) Long cursor,
             @RequestParam(value = "limit", defaultValue = "20") int limit) {
         ensureLogin(clerkUserId);
+        if (LegacyConversationIdCodec.isLegacy(cid)) {
+            legacyTaskAdapter.requireOwnedCompleted(
+                    clerkUserId, LegacyConversationIdCodec.decode(cid));
+            return Result.success(MessagePageVO.builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build());
+        }
         conversationService.getOwned(clerkUserId, cid);
         int safeLimit = Math.max(1, Math.min(limit, 100));
         List<VerlaMessage> page = messageRepository.findAssignmentChatByCursor(cid, cursor, safeLimit);

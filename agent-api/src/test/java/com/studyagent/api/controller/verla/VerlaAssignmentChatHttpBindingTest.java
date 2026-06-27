@@ -1,6 +1,8 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.api.service.legacy.LegacyTaskAdapter;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
@@ -35,6 +37,7 @@ class VerlaAssignmentChatHttpBindingTest {
     private StubVerlaTurnOrchestrator turnOrchestrator;
     private VerlaConversationService conversationService;
     private VerlaMessageRepository messageRepository;
+    private LegacyTaskAdapter legacyTaskAdapter;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -42,9 +45,10 @@ class VerlaAssignmentChatHttpBindingTest {
         turnOrchestrator = new StubVerlaTurnOrchestrator();
         conversationService = mock(VerlaConversationService.class);
         messageRepository = mock(VerlaMessageRepository.class);
+        legacyTaskAdapter = mock(LegacyTaskAdapter.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new VerlaAssignmentChatController(
-                                turnOrchestrator, conversationService, messageRepository))
+                                turnOrchestrator, conversationService, messageRepository, legacyTaskAdapter))
                 .build();
     }
 
@@ -153,6 +157,23 @@ class VerlaAssignmentChatHttpBindingTest {
                 .andExpect(jsonPath("$.data.items.length()").value(0));
 
         verify(conversationService).getOwned("user_1", 24L);
+    }
+
+    @Test
+    void assignmentChatHistoryEndpoint_shouldReturnEmptyListForLegacyConversation() throws Exception {
+        long legacyConversationId = LegacyConversationIdCodec.encode(24L);
+
+        mockMvc.perform(get("/v1/verla/conversations/{cid}/assignment-chat/messages", legacyConversationId)
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+
+        verify(conversationService, never()).getOwned("user_1", legacyConversationId);
+        verify(legacyTaskAdapter).requireOwnedCompleted("user_1", 24L);
+        verify(messageRepository, never()).findAssignmentChatByCursor(
+                any(), any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     // task 4.4: 他人 conversation 拒绝——所有权校验失败时不查询历史。

@@ -85,6 +85,54 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void invoicePaidRetriesReuseExistingInvoiceOrderBeforePendingOrder() {
+        RechargeOrderEntity existingInvoiceOrder = new RechargeOrderEntity();
+        existingInvoiceOrder.setId(140L);
+        existingInvoiceOrder.setOrderNo("RO_existing");
+        existingInvoiceOrder.setClerkUserId("user_1");
+        existingInvoiceOrder.setOrderType("subscription_initial");
+        existingInvoiceOrder.setPlanCode("basic_monthly");
+        existingInvoiceOrder.setStatus("completed");
+        existingInvoiceOrder.setStripeInvoiceId("in_123");
+        existingInvoiceOrder.setStripeSubscriptionId("sub_current");
+
+        RechargeOrderEntity stalePendingOrder = new RechargeOrderEntity();
+        stalePendingOrder.setId(130L);
+        stalePendingOrder.setOrderNo("RO_stale");
+        stalePendingOrder.setClerkUserId("user_1");
+        stalePendingOrder.setOrderType("subscription_initial");
+        stalePendingOrder.setPlanCode("basic_monthly");
+        stalePendingOrder.setStatus("pending");
+        stalePendingOrder.setStripeSubscriptionId("sub_old");
+
+        assertEquals(
+                existingInvoiceOrder,
+                StripeBillingWebhookService.selectSubscriptionInvoiceOrder(
+                        existingInvoiceOrder,
+                        stalePendingOrder,
+                        "sub_current"));
+    }
+
+    @Test
+    void invoicePaidKeepsPendingOrderWhenInvoiceNotSeenYet() {
+        RechargeOrderEntity stalePendingOrder = new RechargeOrderEntity();
+        stalePendingOrder.setId(130L);
+        stalePendingOrder.setOrderNo("RO_pending");
+        stalePendingOrder.setClerkUserId("user_1");
+        stalePendingOrder.setOrderType("subscription_initial");
+        stalePendingOrder.setPlanCode("basic_monthly");
+        stalePendingOrder.setStatus("pending");
+        stalePendingOrder.setStripeSubscriptionId("sub_current");
+
+        assertEquals(
+                stalePendingOrder,
+                StripeBillingWebhookService.selectSubscriptionInvoiceOrder(
+                        null,
+                        stalePendingOrder,
+                        "sub_current"));
+    }
+
+    @Test
     void supportsOnlyV2CheckoutMetadata() {
         Event addon = event("checkout.session.completed", "checkout.session", "addon");
         Event manualUpgrade = event("checkout.session.completed", "checkout.session", "subscription_upgrade_manual");

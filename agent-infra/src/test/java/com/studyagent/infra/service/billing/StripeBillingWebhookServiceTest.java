@@ -133,6 +133,43 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void stalePaidEventIsIgnoredAfterSubscriptionWasCanceledLater() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("canceled");
+        existing.setLastSyncedAt(java.time.LocalDateTime.parse("2026-06-27T14:27:48"));
+
+        assertTrue(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_old",
+                java.time.LocalDateTime.parse("2026-06-27T14:21:37").toEpochSecond(java.time.ZoneOffset.UTC)));
+    }
+
+    @Test
+    void stalePaidEventIsIgnoredWhenDifferentSubscriptionIsAlreadyCurrent() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("active");
+        existing.setStripeSubscriptionId("sub_current");
+
+        assertTrue(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_old",
+                null));
+    }
+
+    @Test
+    void currentPaidEventIsNotIgnoredForSameSubscription() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("active");
+        existing.setStripeSubscriptionId("sub_current");
+        existing.setLastSyncedAt(java.time.LocalDateTime.parse("2026-06-27T14:20:00"));
+
+        assertFalse(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_current",
+                java.time.LocalDateTime.parse("2026-06-27T14:21:37").toEpochSecond(java.time.ZoneOffset.UTC)));
+    }
+
+    @Test
     void supportsOnlyV2CheckoutMetadata() {
         Event addon = event("checkout.session.completed", "checkout.session", "addon");
         Event manualUpgrade = event("checkout.session.completed", "checkout.session", "subscription_upgrade_manual");

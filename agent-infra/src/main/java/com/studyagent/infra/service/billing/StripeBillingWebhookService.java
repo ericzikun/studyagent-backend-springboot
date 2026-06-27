@@ -132,7 +132,10 @@ public class StripeBillingWebhookService {
                     "subscription_schedule.completed" ->
                     handleSubscriptionScheduleEvent(resolveRequired(event, SubscriptionSchedule.class));
             case "invoice.paid", "invoice.payment_succeeded" ->
-                    handleInvoicePaid(resolveRequired(event, Invoice.class), resolveInvoiceSubscriptionId(event));
+                    handleInvoicePaid(
+                            resolveRequired(event, Invoice.class),
+                            resolveInvoiceSubscriptionId(event),
+                            event.getCreated());
             case "invoice_payment.paid" -> handleInvoicePaymentPaid(event);
             case "invoice.payment_failed", "invoice.payment_action_required" ->
                     handleInvoiceFailed(resolveRequired(event, Invoice.class), event.getType(), resolveInvoiceSubscriptionId(event));
@@ -147,7 +150,7 @@ public class StripeBillingWebhookService {
             return;
         }
         try {
-            handleInvoicePaid(Invoice.retrieve(invoiceId), null);
+            handleInvoicePaid(Invoice.retrieve(invoiceId), null, event.getCreated());
         } catch (StripeException e) {
             throw new IllegalStateException("Retrieve invoice failed from invoice_payment.paid: " + invoiceId, e);
         }
@@ -379,7 +382,7 @@ public class StripeBillingWebhookService {
         return builder.build();
     }
 
-    private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId) {
+    private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId, Long eventCreatedEpoch) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
             log.info("Paid invoice has no subscription, ignored: invoice={}", invoice.getId());
@@ -394,6 +397,11 @@ public class StripeBillingWebhookService {
         SubscriptionPlanEntity plan = requirePlanBySubscription(subscription);
         String clerkUserId = resolveUserId(subscription);
         UserSubscriptionEntity existing = findByUser(clerkUserId);
+        if (shouldIgnorePaidInvoiceSync(existing, subscriptionId, eventCreatedEpoch)) {
+            log.info("Ignore stale paid invoice sync: invoice={}, subscription={}, user={}",
+                    invoice.getId(), subscriptionId, clerkUserId);
+            return;
+        }
         RechargeOrderEntity existingInvoiceOrder = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
@@ -978,6 +986,28 @@ public class StripeBillingWebhookService {
             return pendingOrder;
         }
         return null;
+    }
+
+    static boolean shouldIgnorePaidInvoiceSync(
+            UserSubscriptionEntity existing,
+            String subscriptionId,
+            Long eventCreatedEpoch) {
+        if (existing == null) {
+            return false;
+        }
+        if (existing.getStripeSubscriptionId() != null
+                && !existing.getStripeSubscriptionId().isBlank()
+                && subscriptionId != null
+                && !subscriptionId.isBlank()
+                && !subscriptionId.equals(existing.getStripeSubscriptionId())) {
+            return true;
+        }
+        if (!"canceled".equalsIgnoreCase(existing.getStatus())
+                || existing.getLastSyncedAt() == null
+                || eventCreatedEpoch == null) {
+            return false;
+        }
+        return eventCreatedEpoch < existing.getLastSyncedAt().toEpochSecond(ZoneOffset.UTC);
     }
 
     private static RechargeOrderEntity firstNonNull(RechargeOrderEntity primary, RechargeOrderEntity fallback) {

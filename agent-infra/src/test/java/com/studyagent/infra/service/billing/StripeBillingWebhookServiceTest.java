@@ -67,6 +67,18 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void supportsInvoicePaymentSucceededEvents() {
+        Event event = event("invoice.payment_succeeded", "invoice", null);
+        assertTrue(service().supports(event));
+    }
+
+    @Test
+    void supportsInvoicePaymentPaidEvents() {
+        Event event = event("invoice_payment.paid", "invoice_payment", null);
+        assertTrue(service().supports(event));
+    }
+
+    @Test
     void supportsSubscriptionScheduleEvents() {
         Event event = event("subscription_schedule.updated", "subscription_schedule", null);
         assertTrue(service().supports(event));

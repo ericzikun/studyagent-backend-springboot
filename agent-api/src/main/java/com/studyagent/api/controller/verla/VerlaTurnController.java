@@ -1,6 +1,8 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.api.service.legacy.LegacyTaskAdapter;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.verla.response.VerlaArtifactVO;
@@ -42,6 +44,7 @@ public class VerlaTurnController {
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaArtifactRepository artifactRepository;
+    private final LegacyTaskAdapter legacyTaskAdapter;
 
     // ========================================================
     // 1) GET /v1/verla/turns/{tid}  ——  turn 详情
@@ -118,6 +121,11 @@ public class VerlaTurnController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
+        if (LegacyConversationIdCodec.isLegacy(cid)) {
+            long legacyTaskId = LegacyConversationIdCodec.decode(cid);
+            legacyTaskAdapter.requireOwnedCompleted(clerkUserId, legacyTaskId);
+            return Result.success(legacyTaskAdapter.buildArtifacts(legacyTaskId));
+        }
         conversationService.getOwned(clerkUserId, cid);
         List<VerlaArtifact> list = artifactRepository.findByConversation(cid);
         return Result.success(list.stream()

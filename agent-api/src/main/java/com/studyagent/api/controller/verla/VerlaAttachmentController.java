@@ -1,6 +1,8 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.web.verla.VerlaPublicId;
+import com.studyagent.api.service.legacy.LegacyTaskAdapter;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
 
 import com.studyagent.api.common.Result;
@@ -36,6 +38,7 @@ import java.util.stream.Collectors;
 public class VerlaAttachmentController {
 
     private final VerlaAttachmentService attachmentService;
+    private final LegacyTaskAdapter legacyTaskAdapter;
 
     @GetMapping("/conversations/{cid}/attachments")
     public Result<List<VerlaAttachmentVO>> listByConversation(
@@ -43,6 +46,11 @@ public class VerlaAttachmentController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestParam(value = "limit", defaultValue = "50") int limit) {
         ensureLogin(clerkUserId);
+        if (LegacyConversationIdCodec.isLegacy(cid)) {
+            legacyTaskAdapter.requireOwnedCompleted(
+                    clerkUserId, LegacyConversationIdCodec.decode(cid));
+            return Result.success(List.of());
+        }
         int safe = Math.max(1, Math.min(limit, 100));
         List<VerlaAttachmentVO> items = attachmentService.listByConversation(clerkUserId, cid, safe).stream()
                 .map(VerlaAttachmentVO::fromUser)

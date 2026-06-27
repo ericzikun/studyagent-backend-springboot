@@ -2,7 +2,9 @@ package com.studyagent.api.controller.verla;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.api.service.legacy.LegacyTaskAdapter;
 import com.studyagent.common.analytics.AnalyticsService;
+import com.studyagent.common.verla.id.LegacyConversationIdCodec;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.application.verla.VerlaFileChatService;
@@ -25,6 +27,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,6 +41,7 @@ class VerlaFileChatHttpBindingTest {
     private StubAttachmentService attachmentService;
     private StubVerlaFileChatService fileChatService;
     private StubVerlaTurnOrchestrator turnOrchestrator;
+    private LegacyTaskAdapter legacyTaskAdapter;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -44,8 +49,9 @@ class VerlaFileChatHttpBindingTest {
         attachmentService = new StubAttachmentService();
         fileChatService = new StubVerlaFileChatService();
         turnOrchestrator = new StubVerlaTurnOrchestrator();
+        legacyTaskAdapter = mock(LegacyTaskAdapter.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new VerlaAttachmentController(attachmentService),
+                        new VerlaAttachmentController(attachmentService, legacyTaskAdapter),
                         new VerlaFileChatController(fileChatService, turnOrchestrator))
                 .build();
     }
@@ -76,6 +82,23 @@ class VerlaFileChatHttpBindingTest {
         assertThat(attachmentService.lastUserId).isEqualTo("user_1");
         assertThat(attachmentService.lastConversationId).isEqualTo(24L);
         assertThat(attachmentService.lastLimit).isEqualTo(50);
+    }
+
+    @Test
+    void attachmentsEndpoint_shouldReturnEmptyListForLegacyConversation() throws Exception {
+        long legacyConversationId = LegacyConversationIdCodec.encode(24L);
+
+        mockMvc.perform(get("/v1/verla/conversations/{cid}/attachments", legacyConversationId)
+                        .requestAttr("clerkUserId", "user_1")
+                        .param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        assertThat(attachmentService.lastConversationId).isNull();
+        assertThat(attachmentService.lastLimit).isNull();
+        verify(legacyTaskAdapter).requireOwnedCompleted("user_1", 24L);
     }
 
     @Test

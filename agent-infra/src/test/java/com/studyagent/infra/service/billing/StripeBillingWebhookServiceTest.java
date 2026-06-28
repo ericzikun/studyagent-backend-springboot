@@ -1,6 +1,8 @@
 package com.studyagent.infra.service.billing;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
@@ -8,6 +10,7 @@ import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
 import com.stripe.param.SubscriptionUpdateParams;
+import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
@@ -32,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -55,6 +59,10 @@ class StripeBillingWebhookServiceTest {
     private AddonPackageDefMapper addonPackageDefMapper;
     @Mock
     private RechargeOrderMapper rechargeOrderMapper;
+    @Mock
+    private AnalyticsService analyticsService;
+    @Mock
+    private BillingQuotaGateway billingQuotaGateway;
     @Mock
     private ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
     @Mock
@@ -518,6 +526,80 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void checkoutCompletedForAddonCapturesSuccessAnalytics() throws Exception {
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_assignment_3");
+        addon.setFeatureCode("assignment");
+        addon.setQuotaAmount(3L);
+        when(addonPackageDefMapper.selectOne(any())).thenReturn(addon);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Session session = new Session();
+        session.setId("cs_test_addon_paid");
+        session.setPaymentIntent("pi_test_addon_paid");
+        session.setPaymentStatus("paid");
+        session.setAmountTotal(9900L);
+        session.setCurrency("usd");
+        session.setCreated(1781696510L);
+        session.setMetadata(java.util.Map.of(
+                "purchase_type", "addon",
+                "clerk_user_id", "user_1",
+                "addon_code", "addon_assignment_3"));
+
+        invokeHandleCheckoutCompleted(service(), session);
+
+        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.PAYMENT_COMPLETED), any());
+        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED), any());
+        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.RECHARGE_SUCCESS), any());
+    }
+
+    @Test
+    void checkoutExpiredCapturesFailedAnalytics() throws Exception {
+        Session session = new Session();
+        session.setId("cs_test_expired");
+        session.setPaymentIntent("pi_test_expired");
+        session.setAmountTotal(19900L);
+        session.setCurrency("usd");
+        session.setMetadata(java.util.Map.of(
+                "purchase_type", "subscription",
+                "clerk_user_id", "user_1",
+                "plan_code", "basic_monthly"));
+
+        invokeHandleCheckoutExpired(service(), session);
+
+        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_FAILED), any());
+    }
+
+    @Test
+    void invoicePaymentFailedCapturesFailedAnalytics() throws Exception {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setId(88L);
+        entity.setClerkUserId("user_1");
+        entity.setPlanCode("basic_monthly");
+        entity.setStripeSubscriptionId("sub_123");
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(entity);
+
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(101L);
+        order.setClerkUserId("user_1");
+        order.setPlanCode("basic_monthly");
+        order.setPriceCents(19900);
+        order.setCurrency("usd");
+        order.setStripeSessionId("cs_invoice_failed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+
+        Invoice invoice = new Invoice();
+        invoice.setId("in_failed");
+        invoice.setPaymentIntent("pi_failed");
+        invoice.setCurrency("usd");
+        invoice.setSubscription("sub_123");
+
+        invokeHandleInvoiceFailed(service(), invoice, "invoice.payment_failed", "sub_123");
+
+        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_FAILED), any());
+    }
+
+    @Test
     void checkoutCompletedForUnpaidInitialSubscriptionDoesNotMarkExistingFreeAccountPending() throws Exception {
         UserSubscriptionEntity existing = new UserSubscriptionEntity();
         existing.setId(88L);
@@ -761,6 +843,7 @@ class StripeBillingWebhookServiceTest {
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
                 rechargeOrderMapper,
+                analyticsService,
                 quotaGatewayProvider,
                 transactionManager);
     }
@@ -769,6 +852,26 @@ class StripeBillingWebhookServiceTest {
         var method = service.getClass().getDeclaredMethod("handleCheckoutCompleted", Session.class);
         method.setAccessible(true);
         method.invoke(service, session);
+    }
+
+    private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
+        var method = service.getClass().getDeclaredMethod("handleCheckoutExpired", Session.class);
+        method.setAccessible(true);
+        method.invoke(service, session);
+    }
+
+    private void invokeHandleInvoiceFailed(
+            StripeBillingWebhookService service,
+            Invoice invoice,
+            String eventType,
+            String eventSubscriptionId) throws Exception {
+        var method = service.getClass().getDeclaredMethod(
+                "handleInvoiceFailed",
+                Invoice.class,
+                String.class,
+                String.class);
+        method.setAccessible(true);
+        method.invoke(service, invoice, eventType, eventSubscriptionId);
     }
 
     private Event event(String type, String object, String purchaseType) {

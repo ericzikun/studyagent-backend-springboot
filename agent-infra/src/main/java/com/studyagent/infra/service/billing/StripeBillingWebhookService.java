@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
@@ -39,6 +41,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -82,6 +85,7 @@ public class StripeBillingWebhookService {
     private final SubscriptionPlanMapper subscriptionPlanMapper;
     private final AddonPackageDefMapper addonPackageDefMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
+    private final AnalyticsService analyticsService;
     private final ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
     private final PlatformTransactionManager transactionManager;
 
@@ -167,7 +171,7 @@ public class StripeBillingWebhookService {
                 return;
             }
             String addonCode = metadata.get("addon_code");
-            requireAddon(addonCode);
+            AddonPackageDefEntity addon = requireAddon(addonCode);
             quotaGateway().grantAddonFromCheckout(
                     clerkUserId,
                     addonCode,
@@ -175,6 +179,15 @@ public class StripeBillingWebhookService {
                     session.getPaymentIntent(),
                     Instant.ofEpochSecond(session.getCreated()));
             completeOrderBySession(session, addonCode, null);
+            capturePaymentSucceeded(
+                    clerkUserId,
+                    session,
+                    addonCode,
+                    "addon",
+                    addon.getFeatureCode(),
+                    addon.getQuotaAmount(),
+                    addonCode
+            );
             return;
         }
 
@@ -182,6 +195,15 @@ public class StripeBillingWebhookService {
             boolean paymentSettled = "paid".equals(session.getPaymentStatus());
             updateCheckoutSubscriptionLink(session, clerkUserId, metadata.get("plan_code"), paymentSettled);
             if (paymentSettled && session.getSubscription() != null) {
+                capturePaymentSucceeded(
+                        clerkUserId,
+                        session,
+                        metadata.get("plan_code"),
+                        "subscription",
+                        "subscription",
+                        0L,
+                        null
+                );
                 try {
                     syncSubscription(Subscription.retrieve(session.getSubscription()), false, false);
                 } catch (StripeException e) {
@@ -193,10 +215,29 @@ public class StripeBillingWebhookService {
 
         if ("subscription_upgrade_manual".equals(purchaseType)) {
             handleManualUpgradeCheckoutCompleted(session, clerkUserId);
+            capturePaymentSucceeded(
+                    clerkUserId,
+                    session,
+                    metadata.get("target_plan_code"),
+                    "subscription",
+                    "subscription",
+                    0L,
+                    null
+            );
         }
     }
 
     private void handleCheckoutExpired(Session session) {
+        Map<String, String> metadata = session.getMetadata();
+        capturePaymentFailed(
+                firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId()),
+                session,
+                resolveAnalyticsPlanId(metadata),
+                resolveAnalyticsPackageType(metadata),
+                resolveAnalyticsFeatureCode(metadata),
+                0L,
+                "expired"
+        );
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
                 .in(RechargeOrderEntity::getStatus, List.of("pending", "pending_checkout", "checkout_created"))
@@ -530,6 +571,7 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getFailureReason, eventType)
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
         }
+        captureInvoicePaymentFailed(entity, order, invoice, eventType);
         if ("invoice.payment_failed".equals(eventType) && entity != null) {
             clearPendingUpgradeState(entity, order, eventType);
         }
@@ -877,6 +919,128 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getStatus, "completed")
                 .set(RechargeOrderEntity::getPaidAt, LocalDateTime.now())
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+    }
+
+    private void capturePaymentSucceeded(
+            String clerkUserId,
+            Session session,
+            String planId,
+            String packageType,
+            String featureCode,
+            Long quotaAmount,
+            String rechargePackageCode) {
+        Map<String, Object> paymentProps = buildBillingPaymentProps(
+                session.getId(),
+                session.getPaymentIntent(),
+                planId,
+                packageType,
+                featureCode,
+                quotaAmount,
+                session.getAmountTotal() == null ? 0 : session.getAmountTotal().intValue(),
+                session.getCurrency() == null ? "usd" : session.getCurrency(),
+                session.getCustomerDetails() == null ? null : session.getCustomerDetails().getEmail()
+        );
+        String resolvedUserId = hasText(clerkUserId) ? clerkUserId : "unknown";
+        analyticsService.capture(resolvedUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
+        analyticsService.capture(resolvedUserId, AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
+
+        if (quotaAmount != null && quotaAmount > 0 && hasText(rechargePackageCode)) {
+            Map<String, Object> rechargeProps = new HashMap<>();
+            rechargeProps.put("order_no", session.getId());
+            rechargeProps.put("package_code", rechargePackageCode);
+            rechargeProps.put("quota_amount", quotaAmount);
+            rechargeProps.put("price_cents", session.getAmountTotal() == null ? 0 : session.getAmountTotal().intValue());
+            rechargeProps.put("currency", session.getCurrency() == null ? "usd" : session.getCurrency());
+            analyticsService.capture(resolvedUserId, AnalyticsEvents.RECHARGE_SUCCESS, rechargeProps);
+        }
+    }
+
+    private void capturePaymentFailed(
+            String clerkUserId,
+            Session session,
+            String planId,
+            String packageType,
+            String featureCode,
+            Long quotaAmount,
+            String failureReason) {
+        Map<String, Object> failedProps = buildBillingPaymentProps(
+                session.getId(),
+                session.getPaymentIntent(),
+                planId,
+                packageType,
+                featureCode,
+                quotaAmount,
+                session.getAmountTotal() == null ? 0 : session.getAmountTotal().intValue(),
+                session.getCurrency() == null ? "usd" : session.getCurrency(),
+                session.getCustomerDetails() == null ? null : session.getCustomerDetails().getEmail()
+        );
+        failedProps.put("failure_reason", failureReason);
+        analyticsService.capture(
+                hasText(clerkUserId) ? clerkUserId : "unknown",
+                AnalyticsEvents.BILLING_PAYMENT_FAILED,
+                failedProps
+        );
+    }
+
+    private void captureInvoicePaymentFailed(
+            UserSubscriptionEntity entity,
+            RechargeOrderEntity order,
+            Invoice invoice,
+            String eventType) {
+        String clerkUserId = entity != null ? entity.getClerkUserId() : order != null ? order.getClerkUserId() : null;
+        String planId = resolveInvoiceFailedPlanId(entity, order);
+        Long quotaAmount = order != null && order.getQuotaAmount() != null
+                ? order.getQuotaAmount()
+                : 0L;
+        int amountCents = order != null && order.getPriceCents() != null
+                ? order.getPriceCents()
+                : 0;
+        String currency = order != null && hasText(order.getCurrency())
+                ? order.getCurrency()
+                : (invoice.getCurrency() == null ? "usd" : invoice.getCurrency());
+        Map<String, Object> failedProps = buildBillingPaymentProps(
+                order != null ? order.getStripeSessionId() : null,
+                invoice.getPaymentIntent(),
+                planId,
+                "subscription",
+                "subscription",
+                quotaAmount,
+                amountCents,
+                currency,
+                null
+        );
+        failedProps.put("stripe_invoice_id", invoice.getId());
+        failedProps.put("failure_reason", eventType);
+        analyticsService.capture(
+                hasText(clerkUserId) ? clerkUserId : "unknown",
+                AnalyticsEvents.BILLING_PAYMENT_FAILED,
+                failedProps
+        );
+    }
+
+    private Map<String, Object> buildBillingPaymentProps(
+            String sessionId,
+            String paymentIntentId,
+            String planId,
+            String packageType,
+            String featureCode,
+            Long quotaAmount,
+            int amountCents,
+            String currency,
+            String customerEmail) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("session_id", sessionId);
+        props.put("checkout_session_id", sessionId);
+        props.put("payment_intent_id", paymentIntentId);
+        props.put("plan_id", planId);
+        props.put("package_type", packageType);
+        props.put("feature_code", featureCode);
+        props.put("quota_amount", quotaAmount);
+        props.put("amount", amountCents);
+        props.put("price_cents", amountCents);
+        props.put("currency", currency);
+        props.put("customer_email", customerEmail);
+        return props;
     }
 
     private void markInvoicePaid(
@@ -1550,6 +1714,56 @@ public class StripeBillingWebhookService {
 
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second;
+    }
+
+    private String resolveAnalyticsPackageType(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        String purchaseType = metadata.get("purchase_type");
+        if (purchaseType == null || purchaseType.isBlank()) {
+            return null;
+        }
+        return purchaseType.startsWith("subscription") ? "subscription" : purchaseType;
+    }
+
+    private String resolveAnalyticsPlanId(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        return firstNonBlank(
+                metadata.get("target_plan_code"),
+                firstNonBlank(
+                        metadata.get("plan_code"),
+                        firstNonBlank(
+                                metadata.get("addon_code"),
+                                firstNonBlank(metadata.get("pending_plan_code"), metadata.get("current_plan_code"))
+                        )
+                )
+        );
+    }
+
+    private String resolveAnalyticsFeatureCode(Map<String, String> metadata) {
+        String packageType = resolveAnalyticsPackageType(metadata);
+        if ("addon".equals(packageType) && metadata != null) {
+            return metadata.get("feature_code");
+        }
+        return "subscription";
+    }
+
+    private String resolveInvoiceFailedPlanId(
+            UserSubscriptionEntity entity,
+            RechargeOrderEntity order) {
+        if (order != null) {
+            String fromOrder = firstNonBlank(order.getTargetPlanCode(), order.getPlanCode());
+            if (hasText(fromOrder)) {
+                return fromOrder;
+            }
+        }
+        if (entity == null) {
+            return null;
+        }
+        return firstNonBlank(entity.getPendingPlanCode(), entity.getPlanCode());
     }
 
     private static int tierRank(String tier) {

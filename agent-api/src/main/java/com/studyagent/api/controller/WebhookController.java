@@ -195,6 +195,8 @@ public class WebhookController {
         Map<String, String> metadata = session.getMetadata();
         String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
         String packageType = metadata != null ? metadata.get("package_type") : null;
+        String analyticsPackageType = resolveAnalyticsPackageType(metadata);
+        String analyticsPlanId = resolveAnalyticsPlanId(metadata);
         String creditsStr = metadata != null ? metadata.get("credits") : null;
         String featureCode = metadata != null ? metadata.get("feature_code") : null;
         if (featureCode == null || featureCode.isEmpty()) {
@@ -205,7 +207,7 @@ public class WebhookController {
             session.getId(),
             session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null,
             session.getAmountTotal() != null ? session.getAmountTotal() / 100.0 : 0,
-            packageType,
+            analyticsPlanId,
             featureCode,
             creditsStr,
             clerkUserId
@@ -249,6 +251,8 @@ public class WebhookController {
                 Map<String, Object> paymentProps = buildBillingPaymentProps(
                         session.getId(),
                         paymentIntentId,
+                        analyticsPlanId,
+                        analyticsPackageType,
                         packageType,
                         featureCode,
                         quotaAmount,
@@ -282,6 +286,22 @@ public class WebhookController {
                 );
             }
         } else {
+            Map<String, Object> paymentProps = buildBillingPaymentProps(
+                    session.getId(),
+                    paymentIntentId,
+                    analyticsPlanId,
+                    analyticsPackageType,
+                    packageType,
+                    featureCode,
+                    quotaAmount,
+                    priceCents,
+                    currency,
+                    customerEmail
+            );
+            analyticsService.capture(clerkUserId != null && !clerkUserId.isEmpty() ? clerkUserId : "unknown",
+                    AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
+            analyticsService.capture(clerkUserId != null && !clerkUserId.isEmpty() ? clerkUserId : "unknown",
+                    AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
             log.warn("支付回调跳过充值: clerk_user_id 为空或 quota_amount 无效");
         }
     }
@@ -293,6 +313,8 @@ public class WebhookController {
         Map<String, String> metadata = session.getMetadata();
         String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
         String packageType = metadata != null ? metadata.get("package_type") : null;
+        String analyticsPackageType = resolveAnalyticsPackageType(metadata);
+        String analyticsPlanId = resolveAnalyticsPlanId(metadata);
         String creditsStr = metadata != null ? metadata.get("credits") : null;
         String featureCode = metadata != null ? metadata.get("feature_code") : null;
         if (featureCode == null || featureCode.isEmpty()) {
@@ -311,6 +333,21 @@ public class WebhookController {
         }
         int priceCents = session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0;
         String currency = session.getCurrency() != null ? session.getCurrency() : "usd";
+        Map<String, Object> failedProps = buildBillingPaymentProps(
+                session.getId(),
+                session.getPaymentIntent(),
+                analyticsPlanId,
+                analyticsPackageType,
+                packageType,
+                featureCode,
+                quotaAmount,
+                priceCents,
+                currency,
+                session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null
+        );
+        failedProps.put("failure_reason", "expired");
+        analyticsService.capture(clerkUserId != null && !clerkUserId.isEmpty() ? clerkUserId : "unknown",
+                AnalyticsEvents.BILLING_PAYMENT_FAILED, failedProps);
 
         robotNotifyAsyncService.notifyCheckoutExpired(
                 stripeEventId,
@@ -350,6 +387,8 @@ public class WebhookController {
 
         String clerkUserId = null;
         String packageType = null;
+        String analyticsPackageType = null;
+        String analyticsPlanId = null;
         String creditsStr = null;
         String featureCode = FeatureCode.TASK_CREATE.getCode();
         long quotaAmount = 0L;
@@ -358,6 +397,8 @@ public class WebhookController {
             Map<String, String> metadata = paymentIntent.getMetadata();
             clerkUserId = metadata.get("clerk_user_id");
             packageType = metadata.get("package_type");
+            analyticsPackageType = resolveAnalyticsPackageType(metadata);
+            analyticsPlanId = resolveAnalyticsPlanId(metadata);
             creditsStr = metadata.get("credits");
             String fc = metadata.get("feature_code");
             if (fc != null && !fc.isEmpty()) {
@@ -395,6 +436,8 @@ public class WebhookController {
             Map<String, Object> failedProps = buildBillingPaymentProps(
                     null,
                     paymentIntentId,
+                    analyticsPlanId,
+                    analyticsPackageType,
                     packageType,
                     featureCode,
                     quotaAmount,
@@ -458,6 +501,8 @@ public class WebhookController {
         Map<String, String> metadata = paymentIntent.getMetadata();
         String clerkUserId = metadata != null ? metadata.get("clerk_user_id") : null;
         String packageType = metadata != null ? metadata.get("package_type") : null;
+        String analyticsPackageType = resolveAnalyticsPackageType(metadata);
+        String analyticsPlanId = resolveAnalyticsPlanId(metadata);
         String creditsStr = metadata != null ? metadata.get("credits") : null;
         String featureCode = metadata != null ? metadata.get("feature_code") : null;
         if (featureCode == null || featureCode.isEmpty()) {
@@ -497,6 +542,8 @@ public class WebhookController {
             Map<String, Object> failedProps = buildBillingPaymentProps(
                     null,
                     paymentIntentId,
+                    analyticsPlanId,
+                    analyticsPackageType,
                     packageType,
                     featureCode,
                     quotaAmount,
@@ -526,6 +573,8 @@ public class WebhookController {
     private Map<String, Object> buildBillingPaymentProps(
             String sessionId,
             String paymentIntentId,
+            String planId,
+            String analyticsPackageType,
             String packageType,
             String featureCode,
             long quotaAmount,
@@ -536,14 +585,52 @@ public class WebhookController {
         props.put("session_id", sessionId);
         props.put("checkout_session_id", sessionId);
         props.put("payment_intent_id", paymentIntentId);
-        props.put("package_type", packageType);
-        props.put("plan_id", packageType);
+        props.put("package_type", analyticsPackageType != null ? analyticsPackageType : packageType);
+        props.put("plan_id", planId != null ? planId : packageType);
         props.put("feature_code", featureCode);
         props.put("quota_amount", quotaAmount);
+        props.put("amount", priceCents);
         props.put("price_cents", priceCents);
         props.put("currency", currency);
         props.put("customer_email", customerEmail);
         return props;
+    }
+
+    private String resolveAnalyticsPackageType(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        String purchaseType = metadata.get("purchase_type");
+        if (purchaseType != null && !purchaseType.isBlank()) {
+            if (purchaseType.startsWith("subscription")) {
+                return "subscription";
+            }
+            return purchaseType;
+        }
+        return metadata.get("package_type");
+    }
+
+    private String resolveAnalyticsPlanId(Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        return firstNonBlank(
+                metadata.get("target_plan_code"),
+                metadata.get("plan_code"),
+                metadata.get("addon_code"),
+                metadata.get("pending_plan_code"),
+                metadata.get("current_plan_code"),
+                metadata.get("package_type")
+        );
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
 }

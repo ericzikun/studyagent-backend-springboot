@@ -46,9 +46,35 @@ public class PaymentController {
                     request.getSuccessUrl(),
                     request.getCancelUrl(),
                     request.getResumeToken());
+            captureCheckoutSessionCreated(
+                    clerkUserId,
+                    request.getPlanCode(),
+                    "subscription",
+                    userInfo == null ? null : userInfo.email,
+                    checkout
+            );
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getPlanCode(),
+                    "subscription",
+                    userInfo == null ? null : userInfo.email,
+                    e.getCode(),
+                    e.getMessage()
+            );
             return mapBillingException(e);
+        } catch (Exception e) {
+            log.error("创建订阅支付会话失败: {}", e.getMessage(), e);
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getPlanCode(),
+                    "subscription",
+                    userInfo == null ? null : userInfo.email,
+                    "UNKNOWN",
+                    e.getMessage()
+            );
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
         }
     }
 
@@ -68,9 +94,35 @@ public class PaymentController {
                     request.getSuccessUrl(),
                     request.getCancelUrl(),
                     request.getResumeToken());
+            captureCheckoutSessionCreated(
+                    clerkUserId,
+                    request.getAddonCode(),
+                    "addon",
+                    userInfo == null ? null : userInfo.email,
+                    checkout
+            );
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getAddonCode(),
+                    "addon",
+                    userInfo == null ? null : userInfo.email,
+                    e.getCode(),
+                    e.getMessage()
+            );
             return mapBillingException(e);
+        } catch (Exception e) {
+            log.error("创建加购支付会话失败: {}", e.getMessage(), e);
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getAddonCode(),
+                    "addon",
+                    userInfo == null ? null : userInfo.email,
+                    "UNKNOWN",
+                    e.getMessage()
+            );
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
         }
     }
 
@@ -91,8 +143,10 @@ public class PaymentController {
             // 埋点：支付会话创建成功
             Map<String, Object> paymentProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
+                    request.getPackageType(),
                     request.getCustomerEmail(),
-                    result.getSessionId()
+                    result.getSessionId(),
+                    result.getCheckoutKind()
             );
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
             analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
@@ -106,7 +160,9 @@ public class PaymentController {
             // 埋点：支付会话创建失败
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
+                    request.getPackageType(),
                     request.getCustomerEmail(),
+                    null,
                     null
             );
             errorProps.put("error_code", e.getCode());
@@ -125,7 +181,9 @@ public class PaymentController {
             // 埋点：支付会话创建失败（未知错误）
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
+                    request.getPackageType(),
                     request.getCustomerEmail(),
+                    null,
                     null
             );
             errorProps.put("error_code", "UNKNOWN");
@@ -225,17 +283,59 @@ public class PaymentController {
         };
     }
 
-    private Map<String, Object> buildCheckoutAnalyticsProps(
+    private void captureCheckoutSessionCreated(
+            String clerkUserId,
+            String planId,
             String packageType,
             String customerEmail,
-            String sessionId
+            CheckoutSessionResult checkout
+    ) {
+        Map<String, Object> paymentProps = buildCheckoutAnalyticsProps(
+                planId,
+                packageType,
+                customerEmail,
+                checkout.getSessionId(),
+                checkout.getCheckoutKind()
+        );
+        analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
+        analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
+    }
+
+    private void captureCheckoutSessionFailed(
+            String clerkUserId,
+            String planId,
+            String packageType,
+            String customerEmail,
+            String errorCode,
+            String errorMessage
+    ) {
+        Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
+                planId,
+                packageType,
+                customerEmail,
+                null,
+                null
+        );
+        errorProps.put("error_code", errorCode);
+        errorProps.put("error_message", errorMessage);
+        analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+        analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
+    }
+
+    private Map<String, Object> buildCheckoutAnalyticsProps(
+            String planId,
+            String packageType,
+            String customerEmail,
+            String sessionId,
+            String checkoutKind
     ) {
         Map<String, Object> props = new HashMap<>();
         props.put("package_type", packageType);
-        props.put("plan_id", packageType);
+        props.put("plan_id", planId);
         props.put("customer_email", customerEmail);
         props.put("session_id", sessionId);
         props.put("checkout_session_id", sessionId);
+        props.put("checkout_kind", checkoutKind);
         return props;
     }
 

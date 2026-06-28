@@ -570,6 +570,57 @@ class PlanQuotaServiceImplTest {
         verify(userAiQuotaMapper, times(1)).selectList(any(Wrapper.class));
     }
 
+    @Test
+    void refreshAllPlanQuotasIfNeeded_createsMissingQuotaRowsForActivePlan() {
+        SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
+        plan.setBillingInterval("month");
+
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "basic_monthly",
+                "active",
+                LocalDateTime.parse("2026-06-27T04:06:06"),
+                LocalDateTime.parse("2026-07-27T04:06:06"));
+        subscription.setStripeSubscriptionId("sub_1");
+
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(subscription);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(), List.of());
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(featureDef("task_create", 1L), featureDef("ai_detection", 3000L), featureDef("humanizer", 1000L));
+        AtomicInteger quotaIds = new AtomicInteger(100);
+        when(userAiQuotaMapper.insert(any(UserAiQuotaEntity.class))).thenAnswer(invocation -> {
+            UserAiQuotaEntity quota = invocation.getArgument(0);
+            quota.setId((long) quotaIds.incrementAndGet());
+            quota.setVersion(0);
+            return 1;
+        });
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenAnswer(invocation -> {
+            UserAiQuotaEntity quota = invocation.getArgument(0);
+            quota.setVersion(quota.getVersion() == null ? 1 : quota.getVersion() + 1);
+            return 1;
+        });
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.refreshAllPlanQuotasIfNeeded("user_1", LocalDateTime.parse("2026-06-27T12:00:00"));
+
+        verify(userSubscriptionMapper).selectByUser("user_1");
+        verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
+        verify(subscriptionPlanMapper).selectOne(any(Wrapper.class));
+        verify(userAiQuotaMapper, times(3)).insert(any(UserAiQuotaEntity.class));
+        verify(userAiQuotaMapper, times(3)).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, times(3)).insert(any(QuotaLedgerEntity.class));
+    }
+
     private SubscriptionPlanEntity plan(String code, long assignment, long detection, long humanizer) {
         SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
         plan.setPlanCode(code);

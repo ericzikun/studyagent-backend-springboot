@@ -67,9 +67,106 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void supportsInvoicePaymentSucceededEvents() {
+        Event event = event("invoice.payment_succeeded", "invoice", null);
+        assertTrue(service().supports(event));
+    }
+
+    @Test
+    void supportsInvoicePaymentPaidEvents() {
+        Event event = event("invoice_payment.paid", "invoice_payment", null);
+        assertTrue(service().supports(event));
+    }
+
+    @Test
     void supportsSubscriptionScheduleEvents() {
         Event event = event("subscription_schedule.updated", "subscription_schedule", null);
         assertTrue(service().supports(event));
+    }
+
+    @Test
+    void invoicePaidRetriesReuseExistingInvoiceOrderBeforePendingOrder() {
+        RechargeOrderEntity existingInvoiceOrder = new RechargeOrderEntity();
+        existingInvoiceOrder.setId(140L);
+        existingInvoiceOrder.setOrderNo("RO_existing");
+        existingInvoiceOrder.setClerkUserId("user_1");
+        existingInvoiceOrder.setOrderType("subscription_initial");
+        existingInvoiceOrder.setPlanCode("basic_monthly");
+        existingInvoiceOrder.setStatus("completed");
+        existingInvoiceOrder.setStripeInvoiceId("in_123");
+        existingInvoiceOrder.setStripeSubscriptionId("sub_current");
+
+        RechargeOrderEntity stalePendingOrder = new RechargeOrderEntity();
+        stalePendingOrder.setId(130L);
+        stalePendingOrder.setOrderNo("RO_stale");
+        stalePendingOrder.setClerkUserId("user_1");
+        stalePendingOrder.setOrderType("subscription_initial");
+        stalePendingOrder.setPlanCode("basic_monthly");
+        stalePendingOrder.setStatus("pending");
+        stalePendingOrder.setStripeSubscriptionId("sub_old");
+
+        assertEquals(
+                existingInvoiceOrder,
+                StripeBillingWebhookService.selectSubscriptionInvoiceOrder(
+                        existingInvoiceOrder,
+                        stalePendingOrder,
+                        "sub_current"));
+    }
+
+    @Test
+    void invoicePaidKeepsPendingOrderWhenInvoiceNotSeenYet() {
+        RechargeOrderEntity stalePendingOrder = new RechargeOrderEntity();
+        stalePendingOrder.setId(130L);
+        stalePendingOrder.setOrderNo("RO_pending");
+        stalePendingOrder.setClerkUserId("user_1");
+        stalePendingOrder.setOrderType("subscription_initial");
+        stalePendingOrder.setPlanCode("basic_monthly");
+        stalePendingOrder.setStatus("pending");
+        stalePendingOrder.setStripeSubscriptionId("sub_current");
+
+        assertEquals(
+                stalePendingOrder,
+                StripeBillingWebhookService.selectSubscriptionInvoiceOrder(
+                        null,
+                        stalePendingOrder,
+                        "sub_current"));
+    }
+
+    @Test
+    void stalePaidEventIsIgnoredAfterSubscriptionWasCanceledLater() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("canceled");
+        existing.setLastSyncedAt(java.time.LocalDateTime.parse("2026-06-27T14:27:48"));
+
+        assertTrue(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_old",
+                java.time.LocalDateTime.parse("2026-06-27T14:21:37").toEpochSecond(java.time.ZoneOffset.UTC)));
+    }
+
+    @Test
+    void stalePaidEventIsIgnoredWhenDifferentSubscriptionIsAlreadyCurrent() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("active");
+        existing.setStripeSubscriptionId("sub_current");
+
+        assertTrue(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_old",
+                null));
+    }
+
+    @Test
+    void currentPaidEventIsNotIgnoredForSameSubscription() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setStatus("active");
+        existing.setStripeSubscriptionId("sub_current");
+        existing.setLastSyncedAt(java.time.LocalDateTime.parse("2026-06-27T14:20:00"));
+
+        assertFalse(StripeBillingWebhookService.shouldIgnorePaidInvoiceSync(
+                existing,
+                "sub_current",
+                java.time.LocalDateTime.parse("2026-06-27T14:21:37").toEpochSecond(java.time.ZoneOffset.UTC)));
     }
 
     @Test

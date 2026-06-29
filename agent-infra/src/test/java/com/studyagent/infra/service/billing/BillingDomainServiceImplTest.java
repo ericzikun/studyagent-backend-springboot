@@ -12,6 +12,7 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.domain.user.UserRepository;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
@@ -74,6 +75,8 @@ class BillingDomainServiceImplTest {
     private RechargeOrderMapper rechargeOrderMapper;
     @Mock
     private PlanQuotaService planQuotaService;
+    @Mock
+    private UserRepository userRepository;
 
     @Test
     void getCatalogMapsActivePlansAndAddons() {
@@ -861,7 +864,8 @@ class BillingDomainServiceImplTest {
                 addonPackageDefMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
-                planQuotaService) {
+                planQuotaService,
+                userRepository) {
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1359,7 +1363,8 @@ class BillingDomainServiceImplTest {
                 addonPackageDefMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
-                planQuotaService);
+                planQuotaService,
+                userRepository);
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -1407,7 +1412,13 @@ class BillingDomainServiceImplTest {
         private com.stripe.exception.StripeException scheduleUpdateFailure;
 
         private TestBillingDomainService() {
-            super(subscriptionPlanMapper, addonPackageDefMapper, userSubscriptionMapper, rechargeOrderMapper, planQuotaService);
+            super(
+                    subscriptionPlanMapper,
+                    addonPackageDefMapper,
+                    userSubscriptionMapper,
+                    rechargeOrderMapper,
+                    planQuotaService,
+                    userRepository);
         }
 
         @Override

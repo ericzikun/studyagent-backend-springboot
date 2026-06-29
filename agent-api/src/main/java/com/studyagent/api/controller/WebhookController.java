@@ -59,6 +59,9 @@ public class WebhookController {
             if (stripeBillingWebhookService.supports(event)) {
                 stripeBillingWebhookService.process(event);
             } else if ("checkout.session.completed".equals(event.getType())) {
+                // 当前新商业化主流程（subscription / addon / manual upgrade）会先被
+                // StripeBillingWebhookService 拦截并处理；这里仅保留给未命中该 service
+                // 的 legacy checkout webhook 路径做兜底。
                 Session session = resolveSession(event);
                 if (session != null) {
                     handleCheckoutSessionCompleted(session, event.getId());

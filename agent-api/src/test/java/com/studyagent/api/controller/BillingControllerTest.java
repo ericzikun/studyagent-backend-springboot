@@ -7,6 +7,7 @@ import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
 import com.studyagent.service.domain.billing.BillingRecordPageResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
+import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.PaymentDomainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -98,6 +99,29 @@ class BillingControllerTest {
         assertThat(result.getData()).containsEntry("url", "https://invoice.stripe.com/i/test_123");
         verify(billingDomainService).createBillingHostedInvoice("user_1", "RO202606150001");
         verifyNoInteractions(paymentDomainService);
+    }
+
+    @Test
+    void accountReturnsEffectiveEntitlementFields() {
+        when(billingDomainService.getCurrentSubscription("admin_user"))
+                .thenReturn(SubscriptionResult.builder()
+                        .tier("free")
+                        .status("free")
+                        .isAdmin(true)
+                        .effectiveMaxFiles(null)
+                        .effectiveMaxFollowupEdits(null)
+                        .effectiveAllowedOutputTypes(List.of("writing", "ppt", "coding"))
+                        .build());
+
+        var result = controller.account("admin_user");
+
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(0);
+        assertThat(result.getData().getIsAdmin()).isTrue();
+        assertThat(result.getData().getEffectiveAllowedOutputTypes())
+                .containsExactly("writing", "ppt", "coding");
+        assertThat(result.getData().getEffectiveMaxFiles()).isNull();
+        assertThat(result.getData().getEffectiveMaxFollowupEdits()).isNull();
+        verify(billingDomainService).getCurrentSubscription("admin_user");
     }
 
     @Test

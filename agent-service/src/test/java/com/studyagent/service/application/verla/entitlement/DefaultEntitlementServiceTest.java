@@ -12,6 +12,8 @@ import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import com.studyagent.service.domain.user.User;
+import com.studyagent.service.domain.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,6 +59,8 @@ class DefaultEntitlementServiceTest {
     private FollowupEditUsageRepository followupEditUsageRepository;
     @Mock
     private VerlaSessionRepository sessionRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private DefaultEntitlementService service;
 
@@ -68,6 +72,7 @@ class DefaultEntitlementServiceTest {
                 artifactRepository,
                 followupEditUsageRepository,
                 sessionRepository,
+                userRepository,
                 new ObjectMapper());
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
     }
@@ -84,6 +89,19 @@ class DefaultEntitlementServiceTest {
         CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
         assertEquals(List.of("ppt"), data.getUnsupportedOutputTypes());
         assertEquals("free", data.getCurrentPlan().getTier());
+    }
+
+    @Test
+    void assertAssignmentOutputAllowedAllowsPptForAdminEvenOnFreePlan() {
+        when(userRepository.findByClerkUserId("admin_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("admin_user")
+                        .isAdmin(Boolean.TRUE)
+                        .build()));
+
+        service.assertAssignmentOutputAllowed(
+                "admin_user",
+                Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)));
     }
 
     @Test
@@ -104,6 +122,17 @@ class DefaultEntitlementServiceTest {
     }
 
     @Test
+    void assertCanReserveUserUploadAllowsAdminBeyondFreeLimit() {
+        when(userRepository.findByClerkUserId("admin_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("admin_user")
+                        .isAdmin(Boolean.TRUE)
+                        .build()));
+
+        service.assertCanReserveUserUpload("admin_user", 74L);
+    }
+
+    @Test
     void reserveFollowupEditReturnsStructuredDataWhenLimitReached() {
         when(followupEditUsageRepository.findByUserMessageId(901L)).thenReturn(null);
         when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
@@ -121,6 +150,30 @@ class DefaultEntitlementServiceTest {
         assertEquals("followup_edit_limit_reached", data.getReasonCode());
         assertEquals(Integer.valueOf(3), data.getMaxFollowupEdits());
         assertEquals(Long.valueOf(3L), data.getUsedFollowupEdits());
+    }
+
+    @Test
+    void reserveFollowupEditAllowsAdminBeyondFreeLimit() {
+        when(userRepository.findByClerkUserId("admin_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("admin_user")
+                        .isAdmin(Boolean.TRUE)
+                        .build()));
+        when(followupEditUsageRepository.findByUserMessageId(901L)).thenReturn(null);
+        when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
+                VerlaArtifact.builder().artifactUid("art_1").sessionId(700L).build()
+        ));
+        when(sessionRepository.findByIdForUpdate(700L)).thenReturn(null);
+        when(followupEditUsageRepository.save(any(FollowupEditUsage.class))).thenAnswer(invocation -> {
+            FollowupEditUsage usage = invocation.getArgument(0);
+            usage.setId(12L);
+            return usage;
+        });
+
+        FollowupEditUsage result = service.reserveFollowupEdit("admin_user", 74L, 901L, List.of("art_1"));
+
+        assertEquals(12L, result.getId());
+        assertEquals(FollowupEditUsage.STATE_RESERVED, result.getState());
     }
 
     @Test
@@ -197,6 +250,7 @@ class DefaultEntitlementServiceTest {
                 artifactRepository,
                 fakeRepository,
                 lockingSessionRepository,
+                userRepository,
                 new ObjectMapper());
         ReflectionTestUtils.setField(concurrentService, "signTtlSeconds", 3600L);
 

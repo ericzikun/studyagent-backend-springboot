@@ -14,6 +14,7 @@ import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import com.studyagent.service.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -44,6 +45,7 @@ public class DefaultEntitlementService implements EntitlementService {
     private final VerlaArtifactRepository artifactRepository;
     private final FollowupEditUsageRepository followupEditUsageRepository;
     private final VerlaSessionRepository sessionRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
     @Value("${verla.attachment.sign-ttl-seconds:3600}")
@@ -51,6 +53,14 @@ public class DefaultEntitlementService implements EntitlementService {
 
     @Override
     public EffectiveEntitlements getEffectiveEntitlements(String clerkUserId) {
+        if (isAdmin(clerkUserId)) {
+            return new EffectiveEntitlements(
+                    null,
+                    "free",
+                    null,
+                    null,
+                    Set.of("writing", "ppt", "coding"));
+        }
         BillingPlan plan = billingDomainService.getEffectivePlanOrFree(clerkUserId);
         return new EffectiveEntitlements(
                 plan == null ? "free" : plan.getPlanCode(),
@@ -58,6 +68,15 @@ public class DefaultEntitlementService implements EntitlementService {
                 plan == null ? Integer.valueOf(3) : plan.getMaxFiles(),
                 plan == null ? Integer.valueOf(3) : plan.getMaxFollowupEdits(),
                 allowedOutputTypes(plan));
+    }
+
+    private boolean isAdmin(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return false;
+        }
+        return userRepository.findByClerkUserId(clerkUserId.trim())
+                .map(user -> Boolean.TRUE.equals(user.getIsAdmin()))
+                .orElse(false);
     }
 
     @Override

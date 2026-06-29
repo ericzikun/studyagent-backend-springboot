@@ -71,7 +71,7 @@ public class AnnouncementApplicationService {
                     .id(a.getPublicId())
                     .title(a.getTitle())
                     .message(a.getMessage())
-                    .content(a.getContent())
+                    .iconUrl(a.getIconUrl())
                     .createdAt(localDateTimeToEpochSeconds(createdBase))
                     .isRead(readIds.contains(a.getPublicId()))
                     .build());

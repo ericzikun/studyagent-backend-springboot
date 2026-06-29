@@ -16,7 +16,7 @@ public class NotificationItemResponse {
     private String id;
     private String title;
     private String message;
-    private String content;
+    private String iconUrl;
     /** Unix 秒级时间戳 */
     private Long createdAt;
     private Boolean isRead;

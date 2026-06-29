@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -11,6 +12,10 @@ public class SubscriptionResult {
     private String tier;
     private String planCode;
     private String status;
+    private Boolean isAdmin;
+    private Integer effectiveMaxFiles;
+    private Integer effectiveMaxFollowupEdits;
+    private List<String> effectiveAllowedOutputTypes;
     private String stripeCustomerId;
     private String stripeSubscriptionId;
     private String stripeScheduleId;

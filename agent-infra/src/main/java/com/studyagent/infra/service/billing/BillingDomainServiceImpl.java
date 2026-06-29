@@ -39,6 +39,7 @@ import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.domain.user.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -92,6 +93,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final UserSubscriptionMapper userSubscriptionMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
     private final PlanQuotaService planQuotaService;
+    private final UserRepository userRepository;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -908,7 +910,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Override
     public SubscriptionResult getCurrentSubscription(String clerkUserId) {
         UserSubscriptionEntity entity = findByUser(clerkUserId);
-        return entity == null ? freeSubscription() : toResult(entity);
+        BillingPlan effectivePlan = getEffectivePlanOrFree(clerkUserId);
+        boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
+                .map(user -> Boolean.TRUE.equals(user.getIsAdmin()))
+                .orElse(false);
+        SubscriptionResult result = entity == null ? freeSubscription() : toResult(entity);
+        result.setIsAdmin(isAdmin);
+        result.setEffectiveMaxFiles(isAdmin ? null : effectivePlan.getMaxFiles());
+        result.setEffectiveMaxFollowupEdits(isAdmin ? null : effectivePlan.getMaxFollowupEdits());
+        result.setEffectiveAllowedOutputTypes(isAdmin
+                ? List.of("writing", "ppt", "coding")
+                : parseAllowedOutputTypes(effectivePlan.getAllowedOutputTypes()));
+        return result;
     }
 
     @Override
@@ -1789,8 +1802,23 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return SubscriptionResult.builder()
                 .tier("free")
                 .status("free")
+                .isAdmin(false)
+                .effectiveMaxFiles(3)
+                .effectiveMaxFollowupEdits(3)
+                .effectiveAllowedOutputTypes(List.of("writing"))
                 .cancelAtPeriodEnd(false)
                 .build();
+    }
+
+    private List<String> parseAllowedOutputTypes(String rawAllowedOutputTypes) {
+        if (rawAllowedOutputTypes == null || rawAllowedOutputTypes.isBlank()) {
+            return List.of("writing");
+        }
+        String[] parsed = GSON.fromJson(rawAllowedOutputTypes, String[].class);
+        if (parsed == null || parsed.length == 0) {
+            return List.of("writing");
+        }
+        return List.of(parsed);
     }
 
     private String withSessionId(String url) {

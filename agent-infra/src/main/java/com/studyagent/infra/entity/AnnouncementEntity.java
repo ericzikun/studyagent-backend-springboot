@@ -22,7 +22,8 @@ public class AnnouncementEntity {
 
     private String message;
 
-    private String content;
+    @TableField("icon_url")
+    private String iconUrl;
 
     @TableField("sort_order")
     private Integer sortOrder;

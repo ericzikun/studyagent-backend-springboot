@@ -126,9 +126,9 @@ public class NotifyApplicationService {
 
             NotifySendResult sendResult = notifySender.send(message);
             if (sendResult == null || !sendResult.isSuccess()) {
-                String detail = sendResult == null ? "dingtalk sender returned null" : StringUtils.defaultIfBlank(sendResult.getErrorMessage(), "dingtalk send failed");
+                String detail = sendResult == null ? "robot sender returned null" : StringUtils.defaultIfBlank(sendResult.getErrorMessage(), "robot send failed");
                 boolean retryable = sendResult != null && sendResult.isRetryable();
-                return buildError(5000, "dingtalk send failed", eventId, sourceService, scene, level, contentType, env,
+                return buildError(5000, "robot send failed", eventId, sourceService, scene, level, contentType, env,
                         "failed", "DOWNSTREAM_ERROR", detail, retryable);
             }
 

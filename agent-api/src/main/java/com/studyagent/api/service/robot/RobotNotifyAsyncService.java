@@ -42,7 +42,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 异步组装钉钉推送文案并调用 {@link RobotNotifyService}。
+ * 异步组装机器人推送文案并调用 {@link RobotNotifyService}。
  */
 @Slf4j
 @Service

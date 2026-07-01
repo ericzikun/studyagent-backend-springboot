@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * 同步调用 Notify API（钉钉），供异步封装使用。
+ * 同步调用 Notify API（默认飞书，钉钉回退），供异步封装使用。
  */
 @Slf4j
 @Service

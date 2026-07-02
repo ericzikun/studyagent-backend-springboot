@@ -73,6 +73,49 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
+    public List<VerlaConversation> findAdminFilteredPaged(String ownerUserId,
+                                                         String segmentQueryKey,
+                                                         String conversationStatusDb,
+                                                         int page,
+                                                         int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
+        return this.baseMapper.selectAdminFilteredPaged(
+                        ownerUserId, segmentQueryKey, conversationStatusDb, s, (p - 1) * s)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countAdminFiltered(String ownerUserId,
+                                   String segmentQueryKey,
+                                   String conversationStatusDb) {
+        return this.baseMapper.countAdminFiltered(ownerUserId, segmentQueryKey, conversationStatusDb);
+    }
+
+    @Override
+    public List<VerlaConversation> searchAdminKeywordPaged(String ownerUserId,
+                                                           String keywordPattern,
+                                                           String segmentQueryKey,
+                                                           String conversationStatusDb,
+                                                           int page,
+                                                           int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
+        return this.baseMapper.searchAdminKeywordPaged(
+                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb, s, (p - 1) * s)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countAdminKeyword(String ownerUserId,
+                                  String keywordPattern,
+                                  String segmentQueryKey,
+                                  String conversationStatusDb) {
+        return this.baseMapper.countAdminKeyword(
+                ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb);
+    }
+
+    @Override
     public int touchOnNewTurn(Long id, Long turnId) {
         return this.baseMapper.touchOnNewTurn(id, turnId);
     }

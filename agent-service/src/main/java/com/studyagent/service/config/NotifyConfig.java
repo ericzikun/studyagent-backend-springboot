@@ -12,13 +12,13 @@ public class NotifyConfig {
     private boolean enabled = false;
     private String apiToken;
     /**
-     * 未显式指定 target 时的路由键，需与 dingtalk 配置文件里 {@code targets.<key>} 一致（通常为 default）。
+     * 未显式指定 target 时的路由键，需与机器人配置文件里 {@code targets.<key>} 一致（通常为 default）。
      */
     private String defaultTarget = "default";
     private String defaultEnv = "online";
-    private DingTalk dingtalk = new DingTalk();
+    private Robot robot = new Robot();
     /**
-     * 内部机器人按业务线选择钉钉 target；值须与 dingtalk 配置文件 {@code targets} 下 key 一致。
+     * 内部机器人按业务线选择路由 target；值须与机器人配置文件 {@code targets} 下 key 一致。
      * 默认均为 {@code default}，即与历史单群行为一致。
      */
     private RobotTarget robotTarget = new RobotTarget();
@@ -36,7 +36,7 @@ public class NotifyConfig {
     }
 
     @Data
-    public static class DingTalk {
+    public static class Robot {
         private String configFile;
     }
 

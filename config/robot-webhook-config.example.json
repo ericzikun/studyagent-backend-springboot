@@ -1,0 +1,20 @@
+{
+  "targets": {
+    "default": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_WITH_DEFAULT_FEISHU_TOKEN",
+      "secret": "REPLACE_WITH_DEFAULT_FEISHU_SECRET"
+    },
+    "assignment": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_ASSIGNMENT_FEISHU_TOKEN",
+      "secret": "REPLACE_ASSIGNMENT_FEISHU_SECRET"
+    },
+    "feedback": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_FEEDBACK_FEISHU_TOKEN",
+      "secret": "REPLACE_FEEDBACK_FEISHU_SECRET"
+    },
+    "report": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_REPORT_FEISHU_TOKEN",
+      "secret": "REPLACE_REPORT_FEISHU_SECRET"
+    }
+  }
+}

@@ -14,49 +14,47 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DingTalkNotifySender implements NotifySender {
+public class RobotNotifySender implements NotifySender {
 
     private final WebClient webClient;
-    private final DingTalkWebhookConfigLoader configLoader;
+    private final RobotWebhookConfigLoader configLoader;
 
     @Override
     public boolean supportsTarget(String target) {
-        // 供 service 层做快速业务校验（4004），避免无效请求进入网络调用。
-        return configLoader.hasEndpoint(target);
+        return configLoader.hasTarget(target);
     }
 
     @Override
     public NotifySendResult send(NotifyMessage message) {
-        // 根据请求里的 target 选择对应机器人 route。
-        DingTalkWebhookConfigLoader.DingTalkEndpoint endpoint = configLoader.getEndpoint(message.getTarget());
-        String webhookUrl = buildSignedWebhookUrl(endpoint.getUrl(), endpoint.getSecret());
-        Map<String, Object> payload = buildPayload(message);
+        RobotWebhookConfigLoader.RobotEndpoint endpoint = configLoader.getEndpoint(message.getTarget());
+        Map<String, Object> payload = buildFeishuPayload(message, endpoint.getSecret());
 
         try {
             String responseBody = webClient.post()
-                    .uri(webhookUrl)
+                    .uri(endpoint.getWebhookUrl())
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(String.class)
                     .block(Duration.ofSeconds(10));
 
-            if (!isDingTalkSuccess(responseBody)) {
-                log.warn("dingtalk send rejected: target={}, response={}", message.getTarget(), responseBody);
+            if (!isFeishuSuccess(responseBody)) {
+                log.warn("feishu send rejected: target={}, response={}", message.getTarget(), responseBody);
                 return NotifySendResult.builder()
                         .success(false)
-                        .errorMessage("dingtalk api rejected message")
+                        .errorMessage("feishu api rejected message")
                         .retryable(false)
                         .build();
             }
@@ -67,7 +65,7 @@ public class DingTalkNotifySender implements NotifySender {
                     .retryable(false)
                     .build();
         } catch (Exception ex) {
-            log.error("dingtalk send error: target={}, message={}", message.getTarget(), ex.getMessage(), ex);
+            log.error("feishu send error: target={}, message={}", message.getTarget(), ex.getMessage(), ex);
             return NotifySendResult.builder()
                     .success(false)
                     .errorMessage(ex.getMessage())
@@ -76,26 +74,42 @@ public class DingTalkNotifySender implements NotifySender {
         }
     }
 
-    private Map<String, Object> buildPayload(NotifyMessage message) {
+    private Map<String, Object> buildFeishuPayload(NotifyMessage message, String secret) {
         String contentType = StringUtils.defaultIfBlank(message.getContentType(), "markdown");
-        if ("text".equalsIgnoreCase(contentType)) {
-            Map<String, Object> text = new LinkedHashMap<>();
-            text.put("content", buildTextMessage(message));
+        Map<String, Object> payload = new LinkedHashMap<>();
 
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("msgtype", "text");
-            payload.put("text", text);
-            return payload;
+        if ("text".equalsIgnoreCase(contentType)) {
+            payload.put("msg_type", "text");
+            payload.put("content", Map.of("text", buildTextMessage(message)));
+        } else {
+            payload.put("msg_type", "post");
+            payload.put("content", Map.of(
+                    "post", Map.of(
+                            "zh_cn", Map.of(
+                                    "title", buildMarkdownTitle(message),
+                                    "content", buildFeishuPostLines(message)
+                            )
+                    )
+            ));
         }
 
-        Map<String, Object> markdown = new LinkedHashMap<>();
-        markdown.put("title", buildMarkdownTitle(message));
-        markdown.put("text", buildMarkdownMessage(message));
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("msgtype", "markdown");
-        payload.put("markdown", markdown);
+        if (StringUtils.isNotBlank(secret)) {
+            long timestamp = System.currentTimeMillis() / 1000;
+            payload.put("timestamp", String.valueOf(timestamp));
+            payload.put("sign", buildFeishuSign(timestamp, secret));
+        }
         return payload;
+    }
+
+    private List<List<Map<String, String>>> buildFeishuPostLines(NotifyMessage message) {
+        List<List<Map<String, String>>> lines = new ArrayList<>();
+        for (String line : buildMarkdownMessage(message).split("\n")) {
+            if (StringUtils.isBlank(line)) {
+                continue;
+            }
+            lines.add(List.of(Map.of("tag", "text", "text", line)));
+        }
+        return lines;
     }
 
     private String buildMarkdownTitle(NotifyMessage message) {
@@ -146,7 +160,6 @@ public class DingTalkNotifySender implements NotifySender {
                         .append(String.valueOf(entry.getValue()));
             }
         }
-
         return builder.toString();
     }
 
@@ -171,46 +184,36 @@ public class DingTalkNotifySender implements NotifySender {
         };
     }
 
-    private boolean isDingTalkSuccess(String responseBody) {
+    private boolean isFeishuSuccess(String responseBody) {
         if (StringUtils.isBlank(responseBody)) {
             return false;
         }
         try {
             JsonObject jsonObject = JsonParser.parseString(responseBody).getAsJsonObject();
-            if (!jsonObject.has("errcode")) {
-                return false;
+            if (jsonObject.has("code")) {
+                return jsonObject.get("code").getAsInt() == 0;
             }
-            return jsonObject.get("errcode").getAsInt() == 0;
+            if (jsonObject.has("StatusCode")) {
+                return jsonObject.get("StatusCode").getAsInt() == 0;
+            }
+            return false;
         } catch (Exception ex) {
             return false;
         }
     }
 
-    private String buildSignedWebhookUrl(String originUrl, String secret) {
-        if (StringUtils.isBlank(secret)) {
-            return originUrl;
-        }
-
+    private String buildFeishuSign(long timestamp, String secret) {
         try {
-            // 钉钉加签机器人要求 query params 中带 timestamp + HMAC 签名。
-            long timestamp = System.currentTimeMillis();
             String stringToSign = timestamp + "\n" + secret;
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] signData = mac.doFinal(stringToSign.getBytes(StandardCharsets.UTF_8));
-            String sign = URLEncoder.encode(Base64.getEncoder().encodeToString(signData), StandardCharsets.UTF_8);
-
-            StringBuilder builder = new StringBuilder(originUrl);
-            builder.append(originUrl.contains("?") ? "&" : "?")
-                    .append("timestamp=").append(timestamp)
-                    .append("&sign=").append(sign);
-            return builder.toString();
+            mac.init(new SecretKeySpec(stringToSign.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return Base64.getEncoder().encodeToString(mac.doFinal());
         } catch (Exception ex) {
-            throw new IllegalStateException("failed to sign dingtalk request", ex);
+            throw new IllegalStateException("failed to sign feishu request", ex);
         }
     }
 
     private String generateDeliveryId() {
-        return "dt_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        return "fs_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 }

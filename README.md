@@ -52,7 +52,7 @@ PORT=8081 BUILD_FIRST=false START_DEPS=false ./start-mock.sh
 
 启动脚本会默认补齐本地 mock 数据库缺失的 `user_profiles` 认证表与 `mq_outbox` Verla / claim 字段；如需跳过可设置 `PATCH_MOCK_DB=false`。
 
-启动脚本也会补齐 `verla_attachments.attachment_origin`，用于区分用户上传附件和 agent 输出附件。
+启动脚本也会补齐 `verla_attachments.attachment_origin`、`deleted_at` 与相关索引，用于区分用户上传附件和 agent 输出附件，并匹配附件软删除查询条件。
 
 启动脚本还会在已存在 Verla 基础会话表时补齐 `verla_editor_contents` 与 `verla_editor_content_versions`，避免本地 mock 数据库漏跑 V2 editor storage SQL 后在打开编辑器内容时运行时报缺表。
 
@@ -102,3 +102,17 @@ http://localhost:8080/swagger-ui.html
 ## 环境配置
 
 参考 `agent-start/src/main/resources/application.yml`
+
+### Assignment 完成邮件
+
+V2 Assignment 完成邮件由 Spring Boot 在 Verla generation 首次完成后 best-effort 触发，使用 Resend template。启用时需要配置：
+
+```bash
+EMAIL_NOTIFICATION_ENABLED=true
+RESEND_API_KEY=re_...
+FRONTEND_URL=https://verla.io
+EMAIL_ASSIGNMENT_COMPLETED_TEMPLATE_ID=tpl_xxx
+```
+
+Resend template 当前只依赖两个变量：`title`（作业名）和 `url`（V2 作业地址）。
+后端发送 payload 不覆盖 `from` 和 `subject`，发件人和邮件标题使用已发布 Resend template 内配置的值。

@@ -11,6 +11,7 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
+import com.studyagent.service.application.verla.notification.AssignmentCompletionNotificationEvent;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
@@ -1651,6 +1652,65 @@ class VerlaTurnOrchestratorTest {
         assertEquals("BODY", hunk.get("anchor"));
         assertEquals("old", hunk.get("originalText"));
         assertEquals("new", hunk.get("proposedText"));
+    }
+
+    @Test
+    void onAssignmentCompleted_publishesEmailNotificationEventOnlyOnFirstCompletion() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        List<Object> publishedEvents = new ArrayList<>();
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                null,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                new FakeArtifactEditProposalRepository(),
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                null,
+                new ObjectMapper(),
+                new NoopQuotaService(),
+                mockEntitlementService(),
+                publishedEvents::add,
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("user_1")
+                .title("Biology report")
+                .build();
+        sessionRepository.session = VerlaSession.builder()
+                .id(700L)
+                .conversationId(74L)
+                .turnId(801L)
+                .status(SessionStatus.RUNNING.name())
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(801L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+
+        orchestrator.onAssignmentCompleted(700L, Map.of("finalResult", "done"));
+        orchestrator.onAssignmentCompleted(700L, Map.of("finalResult", "duplicate"));
+
+        List<AssignmentCompletionNotificationEvent> notifications = publishedEvents.stream()
+                .filter(AssignmentCompletionNotificationEvent.class::isInstance)
+                .map(AssignmentCompletionNotificationEvent.class::cast)
+                .toList();
+        assertEquals(1, notifications.size());
+        AssignmentCompletionNotificationEvent event = notifications.get(0);
+        assertEquals(74L, event.conversationId());
+        assertEquals(801L, event.turnId());
+        assertEquals(700L, event.sessionId());
+        assertEquals("user_1", event.clerkUserId());
+        assertEquals("Biology report", event.title());
     }
 
     private VerlaTurnOrchestrator assignmentChatOrchestrator(

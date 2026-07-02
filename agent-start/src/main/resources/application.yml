@@ -222,8 +222,8 @@ notification:
   email:
     enabled: ${EMAIL_NOTIFICATION_ENABLED:false}
     resend-api-key: ${RESEND_API_KEY:}
-    from-email: ${EMAIL_FROM:Verla <notifications@send.verla.io>}
     frontend-url: ${FRONTEND_URL:https://verla.io}
+    assignment-completed-template-id: ${EMAIL_ASSIGNMENT_COMPLETED_TEMPLATE_ID:}
 
 # 前端服务配置
 frontend:

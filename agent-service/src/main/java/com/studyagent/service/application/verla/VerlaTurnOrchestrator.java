@@ -24,6 +24,7 @@ import com.studyagent.service.application.verla.dto.FileChatAnalysisState;
 import com.studyagent.service.application.verla.dto.FileChatAnalysisStatus;
 import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
 import com.studyagent.service.application.verla.dto.FileChatPanelState;
+import com.studyagent.service.application.verla.notification.AssignmentCompletionNotificationEvent;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
@@ -989,10 +990,10 @@ public class VerlaTurnOrchestrator {
      * AGENT_COMPLETED：agent session SUCCEEDED + turn COMPLETED。
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public void onAgentCompleted(Long agentSessionId, Map<String, Object> result) {
+    public boolean onAgentCompleted(Long agentSessionId, Map<String, Object> result) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
-            return;
+            return false;
         }
         VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
 
@@ -1041,6 +1042,7 @@ public class VerlaTurnOrchestrator {
         }
 
         publishAssignmentRunSlotReleased(agentSessionId);
+        return agentTurnJustFinished;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1432,7 +1434,7 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentCompleted(Long agentSessionId, Map<String, Object> result) {
-        onAgentCompleted(agentSessionId, result);
+        boolean justCompleted = onAgentCompleted(agentSessionId, result);
         VerlaSession s = sessionRepository.findById(agentSessionId);
         if (s != null) {
             VerlaTurn turn = turnRepository.findById(s.getTurnId());
@@ -1442,6 +1444,14 @@ public class VerlaTurnOrchestrator {
                     analyticsService.capture(conversation.getUserId(), AnalyticsEvents.ASSIGNMENT_GENERATION_SUCCEEDED, Map.of(
                             "conversation_id", turn.getConversationId(),
                             "task_type", "assignment"));
+                    if (justCompleted) {
+                        eventPublisher.publishEvent(new AssignmentCompletionNotificationEvent(
+                                conversation.getId(),
+                                turn.getId(),
+                                agentSessionId,
+                                conversation.getUserId(),
+                                conversation.getTitle()));
+                    }
                 }
             }
         }

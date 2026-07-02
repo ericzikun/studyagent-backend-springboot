@@ -462,6 +462,16 @@ public class VerlaAttachmentService {
     public List<VerlaAttachment> listByConversation(String clerkUserId, long conversationId, int limit) {
         ensureUser(clerkUserId);
         conversationService.getOwned(clerkUserId, conversationId);
+        return listByConversationInternal(conversationId, limit);
+    }
+
+    /** Admin 运维只读：跳过 conversation 所有权校验。 */
+    public List<VerlaAttachment> listByConversationForAdmin(long conversationId, int limit) {
+        conversationService.getForInternal(conversationId);
+        return listByConversationInternal(conversationId, limit);
+    }
+
+    private List<VerlaAttachment> listByConversationInternal(long conversationId, int limit) {
         return attachmentRepository.listByConversation(conversationId, limit).stream()
                 .filter(this::isVisibleToUserAttachmentList)
                 .collect(Collectors.toList());

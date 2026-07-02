@@ -50,7 +50,16 @@ public class VerlaCodeProjectService {
     public CodeProject loadProject(String clerkUserId, Long conversationId, String projectUid) {
         ensureLogin(clerkUserId);
         conversationService.getOwned(clerkUserId, conversationId);
+        return loadProjectInternal(conversationId, projectUid);
+    }
 
+    /** Admin 运维只读：跳过 conversation 所有权校验。 */
+    public CodeProject loadProjectForAdmin(Long conversationId, String projectUid) {
+        conversationService.getForInternal(conversationId);
+        return loadProjectInternal(conversationId, projectUid);
+    }
+
+    private CodeProject loadProjectInternal(Long conversationId, String projectUid) {
         if (!StringUtils.hasText(projectUid)) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "projectUid required");
         }
@@ -82,6 +91,26 @@ public class VerlaCodeProjectService {
             }
         }
         return new CodeProject(rootDir, files);
+    }
+
+    /** Admin 运维只读：跳过 conversation 所有权校验。 */
+    public ResolvedFile resolveFileForAdmin(Long conversationId, String projectUid, String relPath) {
+        String safeRelPath = sanitizeRelPath(relPath);
+        CodeProject project = loadProjectForAdmin(conversationId, projectUid);
+        CodeFile file = project.files().stream()
+                .filter(f -> f.relPath().equals(safeRelPath))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ApiCode.TASK_NOT_FOUND, "file"));
+
+        byte[] bytes = readBytes(file);
+        if (bytes == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "file content");
+        }
+        String filename = lastSegment(safeRelPath);
+        String mime = StringUtils.hasText(file.row().getMime())
+                ? file.row().getMime()
+                : "application/octet-stream";
+        return new ResolvedFile(filename, mime, bytes);
     }
 
     /** 单文件懒加载：返回文件名 / mime / 字节。 */

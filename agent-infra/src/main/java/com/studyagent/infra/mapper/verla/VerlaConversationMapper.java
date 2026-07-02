@@ -120,6 +120,107 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
                             @Param("conversationStatus") String conversationStatus);
 
     /**
+     * Admin 运维：跨用户会话列表（可选 ownerUserId / segment / status 过滤）。
+     */
+    @Select("<script>"
+            + "SELECT * FROM verla_conversations WHERE status &lt;&gt; 'deleted' "
+            + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND user_id = #{ownerUserId} </if>"
+            + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
+            + "OR primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
+            + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "</choose>"
+            + "</if>"
+            + " ORDER BY COALESCE(last_active_at, last_message_at, created_at) DESC, id DESC "
+            + "LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<VerlaConversationEntity> selectAdminFilteredPaged(@Param("ownerUserId") String ownerUserId,
+                                                           @Param("segment") String segment,
+                                                           @Param("conversationStatus") String conversationStatus,
+                                                           @Param("limit") int limit,
+                                                           @Param("offset") int offset);
+
+    @Select("<script>"
+            + "SELECT COUNT(*) FROM verla_conversations WHERE status &lt;&gt; 'deleted' "
+            + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND user_id = #{ownerUserId} </if>"
+            + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
+            + "OR primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
+            + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "</choose>"
+            + "</if>"
+            + "</script>")
+    long countAdminFiltered(@Param("ownerUserId") String ownerUserId,
+                            @Param("segment") String segment,
+                            @Param("conversationStatus") String conversationStatus);
+
+    @Select("<script>"
+            + "SELECT DISTINCT c.* FROM verla_conversations c "
+            + "WHERE c.status &lt;&gt; 'deleted' "
+            + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND c.user_id = #{ownerUserId} </if>"
+            + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
+            + "OR c.primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND c.primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
+            + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "</choose>"
+            + "</if>"
+            + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR EXISTS (SELECT 1 FROM verla_messages m "
+            + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
+            + "ORDER BY COALESCE(c.last_active_at, c.last_message_at, c.created_at) DESC, c.id DESC "
+            + "LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<VerlaConversationEntity> searchAdminKeywordPaged(@Param("ownerUserId") String ownerUserId,
+                                                          @Param("keyword") String keyword,
+                                                          @Param("segment") String segment,
+                                                          @Param("conversationStatus") String conversationStatus,
+                                                          @Param("limit") int limit,
+                                                          @Param("offset") int offset);
+
+    @Select("<script>"
+            + "SELECT COUNT(DISTINCT c.id) FROM verla_conversations c "
+            + "WHERE c.status &lt;&gt; 'deleted' "
+            + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND c.user_id = #{ownerUserId} </if>"
+            + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='segment != null'>"
+            + "<choose>"
+            + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
+            + "OR c.primary_intent IN ('ASSIGNMENT','CREATE_ASSIGNMENT')) </when>"
+            + "<when test='segment == \"learning\"'> AND c.primary_intent IN "
+            + "('MATERIALS','LEARNING','FLASHCARDS','QUIZZES','STUDY_GUIDE','CHEAT_SHEET') </when>"
+            + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
+            + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
+            + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "</choose>"
+            + "</if>"
+            + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR EXISTS (SELECT 1 FROM verla_messages m "
+            + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
+            + "</script>")
+    long countAdminKeyword(@Param("ownerUserId") String ownerUserId,
+                           @Param("keyword") String keyword,
+                           @Param("segment") String segment,
+                           @Param("conversationStatus") String conversationStatus);
+
+    /**
      * 自增 version + 同步刷新 last_message_at / last_active_at / last_turn_id / turn_count（按需）
      */
     @Update("UPDATE verla_conversations "

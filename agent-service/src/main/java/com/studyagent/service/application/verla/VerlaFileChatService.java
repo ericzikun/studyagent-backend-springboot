@@ -31,7 +31,19 @@ public class VerlaFileChatService {
             throw new BusinessException(ApiCode.PARAM_ERROR, "objectId required");
         }
         conversationService.getOwned(userId, conversationId);
+        return getPanelInternal(conversationId, objectId, cursor, limit);
+    }
 
+    /** Admin 运维只读：跳过 conversation 所有权校验。 */
+    public FileChatPanelView getPanelForAdmin(Long conversationId, String objectId, Long cursor, int limit) {
+        if (objectId == null || objectId.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "objectId required");
+        }
+        conversationService.getForInternal(conversationId);
+        return getPanelInternal(conversationId, objectId, cursor, limit);
+    }
+
+    private FileChatPanelView getPanelInternal(Long conversationId, String objectId, Long cursor, int limit) {
         VerlaAttachment attachment = attachmentRepository.findByObjectId(objectId);
         if (attachment == null || !conversationId.equals(attachment.getConversationId())) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");

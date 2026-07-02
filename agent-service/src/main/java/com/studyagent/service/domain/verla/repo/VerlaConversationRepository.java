@@ -46,6 +46,36 @@ public interface VerlaConversationRepository {
         return 0L;
     }
 
+    default List<VerlaConversation> findAdminFilteredPaged(String ownerUserId,
+                                                           String segmentQueryKey,
+                                                           String conversationStatusDb,
+                                                           int page,
+                                                           int size) {
+        return List.of();
+    }
+
+    default long countAdminFiltered(String ownerUserId,
+                                    String segmentQueryKey,
+                                    String conversationStatusDb) {
+        return 0L;
+    }
+
+    default List<VerlaConversation> searchAdminKeywordPaged(String ownerUserId,
+                                                            String keywordPattern,
+                                                            String segmentQueryKey,
+                                                            String conversationStatusDb,
+                                                            int page,
+                                                            int size) {
+        return List.of();
+    }
+
+    default long countAdminKeyword(String ownerUserId,
+                                   String keywordPattern,
+                                   String segmentQueryKey,
+                                   String conversationStatusDb) {
+        return 0L;
+    }
+
     /**
      * 写新 turn 后调用：自增 version + last_message_at + last_turn_id + turn_count + 1
      */

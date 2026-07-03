@@ -185,6 +185,43 @@ public class VerlaContextCacheRepositoryConfig {
             }
 
             @Override
+            public List<VerlaConversation> findAdminFilteredPaged(String ownerUserId,
+                                                                  String segmentQueryKey,
+                                                                  String conversationStatusDb,
+                                                                  int page,
+                                                                  int size) {
+                return delegate.findAdminFilteredPaged(
+                        ownerUserId, segmentQueryKey, conversationStatusDb, page, size);
+            }
+
+            @Override
+            public long countAdminFiltered(String ownerUserId,
+                                           String segmentQueryKey,
+                                           String conversationStatusDb) {
+                return delegate.countAdminFiltered(ownerUserId, segmentQueryKey, conversationStatusDb);
+            }
+
+            @Override
+            public List<VerlaConversation> searchAdminKeywordPaged(String ownerUserId,
+                                                                   String keywordPattern,
+                                                                   String segmentQueryKey,
+                                                                   String conversationStatusDb,
+                                                                   int page,
+                                                                   int size) {
+                return delegate.searchAdminKeywordPaged(
+                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb, page, size);
+            }
+
+            @Override
+            public long countAdminKeyword(String ownerUserId,
+                                          String keywordPattern,
+                                          String segmentQueryKey,
+                                          String conversationStatusDb) {
+                return delegate.countAdminKeyword(
+                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb);
+            }
+
+            @Override
             public int touchOnNewTurn(Long id, Long turnId) {
                 int updated = delegate.touchOnNewTurn(id, turnId);
                 if (updated > 0 && id != null) {

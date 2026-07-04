@@ -11,6 +11,7 @@ public record QuotaLedgerItem(
         Long id,
         String ledgerNo,
         String ledgerType,
+        QuotaLedgerDisplayType displayType,
         Long amount,
         String sourceType,
         String sourceId,
@@ -22,6 +23,7 @@ public record QuotaLedgerItem(
         LocalDateTime createdAt,
         String featureCode,
         String quotaUnit,
+        QuotaLedgerPlanTier planTier,
         List<Map<String, Object>> allocations
 ) {
     public Long paidBalanceAfter() {

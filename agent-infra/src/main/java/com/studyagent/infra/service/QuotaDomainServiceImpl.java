@@ -8,6 +8,7 @@ import com.stripe.model.testhelpers.TestClock;
 import com.google.gson.Gson;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
+import com.studyagent.service.domain.quota.AddonGrantService;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
@@ -58,11 +59,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private final UserAddonGrantMapper userAddonGrantMapper;
     private final QuotaLedgerAllocationMapper quotaLedgerAllocationMapper;
     private final PlanQuotaService planQuotaService;
+    private final AddonGrantService addonGrantService;
     private final UserSubscriptionMapper userSubscriptionMapper;
 
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
+    private static final String LEDGER_TYPE_ADDON_EXPIRED = "addon_expired";
     private static final String LEDGER_TYPE_FREE_REFRESH = "free_refresh";
     private static final String LEDGER_TYPE_ADDON_PAUSE = "addon_pause";
     private static final String LEDGER_TYPE_ADDON_RESUME = "addon_resume";
@@ -145,6 +148,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         LocalDateTime now = resolveQuotaNow(clerkUserId, DateTimeFormats.now());
         refreshFreeQuotaIfNeeded(quota, featureDef, now, "balance_query");
         migrateLegacyBalanceToAddonIfNeeded(quota, now);
+        addonGrantService.expireEligible(clerkUserId, featureCode, "balance_query");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
@@ -282,6 +286,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             refreshFreeQuotaIfNeeded(quota, featureDef, now, "consume");
         }
         migrateLegacyBalanceToAddonIfNeeded(quota, now);
+        addonGrantService.expireEligible(clerkUserId, featureCode, "consume");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
@@ -719,6 +724,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         ? biz.get("free_quota_period").getAsString() : "period";
                 yield featureDisplayName + " free quota refreshed (+" + absAmount + " " + unitStr + ", " + period + ")";
             }
+            case LEDGER_TYPE_ADDON_EXPIRED -> "Add-on expired, -" + absAmount + " " + unitStr;
             default -> entity.getLedgerType() + " " + absAmount + " " + unitStr;
         };
     }

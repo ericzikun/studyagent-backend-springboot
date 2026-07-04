@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInt
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
+import com.studyagent.service.domain.quota.AddonGrantService;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
@@ -119,7 +120,24 @@ class QuotaDomainServiceDbTest {
             }
         };
         quotaService = new QuotaDomainServiceImpl(featureDefMapper, packageMapper, quotaMapper,
-                ledgerMapper, grantMapper, allocMapper, noOpPlanQuotaService, null);
+                ledgerMapper, grantMapper, allocMapper, noOpPlanQuotaService, new AddonGrantService() {
+                    @Override
+                    public void grantFromPaidCheckout(String clerkUserId, String addonCode, String stripeSessionId,
+                                                     String paymentIntentId, Instant paidAt) {
+                    }
+
+                    @Override
+                    public void expireEligible(String clerkUserId, String featureCode, String trigger) {
+                    }
+
+                    @Override
+                    public void pauseAll(String clerkUserId, String subscriptionId, String idempotencyKey) {
+                    }
+
+                    @Override
+                    public void resumeEligible(String clerkUserId, String subscriptionId, String idempotencyKey) {
+                    }
+                }, null);
         planService = new PlanQuotaServiceImpl(planMapper, featureDefMapper, quotaMapper, ledgerMapper, null);
         addonService = new AddonGrantServiceImpl(addonMapper, grantMapper, ledgerMapper);
     }

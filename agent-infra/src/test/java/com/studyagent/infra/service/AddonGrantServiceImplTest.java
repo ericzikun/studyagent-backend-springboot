@@ -95,6 +95,36 @@ class AddonGrantServiceImplTest {
     }
 
     @Test
+    void expireEligible_marksExpiredGrantsAndWritesVisibleLedger() {
+        UserAddonGrantEntity expiredGrant = grant("active", LocalDateTime.now().minusDays(1), 2L);
+
+        when(userAddonGrantMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(expiredGrant), List.of());
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        AddonGrantServiceImpl service = new AddonGrantServiceImpl(
+                addonPackageDefMapper,
+                userAddonGrantMapper,
+                quotaLedgerMapper);
+
+        service.expireEligible("user_1", "task_create", "balance_query");
+
+        ArgumentCaptor<UserAddonGrantEntity> grantCaptor = ArgumentCaptor.forClass(UserAddonGrantEntity.class);
+        verify(userAddonGrantMapper).updateById(grantCaptor.capture());
+        assertEquals("expired", grantCaptor.getValue().getStatus());
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
+        assertEquals("addon_expired", ledger.getLedgerType());
+        assertEquals(-2L, ledger.getAmount());
+        assertEquals("task_create", ledger.getFeatureCode());
+        assertEquals("addon-expire:12", ledger.getIdempotencyKey());
+    }
+
+    @Test
     void pauseAll_throws_whenGrantUpdateLosesRace() {
         UserAddonGrantEntity activeGrant = grant("active", LocalDateTime.now().plusDays(3), 2L);
 
@@ -118,8 +148,10 @@ class AddonGrantServiceImplTest {
         UserAddonGrantEntity expiredGrant = grant("paused", LocalDateTime.now().minusDays(1), 1L);
 
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(futureGrant, expiredGrant));
+        when(userAddonGrantMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(futureGrant, expiredGrant), List.of(futureGrant));
         when(userAddonGrantMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
@@ -129,11 +161,17 @@ class AddonGrantServiceImplTest {
 
         service.resumeEligible("user_1", "sub_1", "subscription:sub_1:resume-addons");
 
-        verify(userAddonGrantMapper, times(2)).update(any(), any(Wrapper.class));
-        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+        verify(userAddonGrantMapper, times(1)).update(any(), any(Wrapper.class));
+        verify(userAddonGrantMapper, times(1)).updateById(any(UserAddonGrantEntity.class));
         assertEquals("active", futureGrant.getStatus());
         assertNull(futureGrant.getPausedAt());
         assertEquals("expired", expiredGrant.getStatus());
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
+        assertEquals("addon_expired", ledgers.get(0).getLedgerType());
+        assertEquals("addon_resume", ledgers.get(1).getLedgerType());
     }
 
     private AddonPackageDefEntity addon(String code, String featureCode, long amount, int validityMonths) {

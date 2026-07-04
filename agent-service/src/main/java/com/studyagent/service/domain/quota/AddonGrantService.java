@@ -11,6 +11,8 @@ public interface AddonGrantService {
             Instant paidAt
     );
 
+    void expireEligible(String clerkUserId, String featureCode, String trigger);
+
     void pauseAll(String clerkUserId, String subscriptionId, String idempotencyKey);
 
     void resumeEligible(String clerkUserId, String subscriptionId, String idempotencyKey);

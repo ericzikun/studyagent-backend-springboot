@@ -27,6 +27,7 @@ import java.util.UUID;
 public class AddonGrantServiceImpl implements AddonGrantService {
     private static final Gson GSON = new Gson();
     private static final String LEDGER_TYPE_ADDON_GRANT = "addon_grant";
+    private static final String LEDGER_TYPE_ADDON_EXPIRED = "addon_expired";
     private static final String LEDGER_TYPE_ADDON_PAUSE = "addon_pause";
     private static final String LEDGER_TYPE_ADDON_RESUME = "addon_resume";
 
@@ -98,6 +99,29 @@ public class AddonGrantServiceImpl implements AddonGrantService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void expireEligible(String clerkUserId, String featureCode, String trigger) {
+        if (clerkUserId == null || clerkUserId.isBlank()
+                || featureCode == null || featureCode.isBlank()) {
+            return;
+        }
+        LocalDateTime now = DateTimeFormats.now();
+        List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
+                        .eq(UserAddonGrantEntity::getFeatureCode, featureCode)
+                        .eq(UserAddonGrantEntity::getGrantType, "addon")
+                        .in(UserAddonGrantEntity::getStatus, List.of("active", "paused"))
+                        .le(UserAddonGrantEntity::getExpiresAt, now)
+                        .gt(UserAddonGrantEntity::getRemainingAmount, 0)
+                        .orderByAsc(UserAddonGrantEntity::getExpiresAt)
+                        .orderByAsc(UserAddonGrantEntity::getId));
+        for (UserAddonGrantEntity grant : grants) {
+            expireGrantIfNeeded(grant, now, trigger);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void pauseAll(String clerkUserId, String subscriptionId, String idempotencyKey) {
         if (hasLedger(LEDGER_TYPE_ADDON_PAUSE, idempotencyKey)) {
             return;
@@ -111,13 +135,13 @@ public class AddonGrantServiceImpl implements AddonGrantService {
                         .gt(UserAddonGrantEntity::getRemainingAmount, 0));
         for (UserAddonGrantEntity grant : grants) {
             if (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now)) {
-                grant.setStatus("expired");
+                expireGrantIfNeeded(grant, now, "subscription_pause");
             } else {
                 grant.setStatus("paused");
                 grant.setPausedAt(now);
+                grant.setUpdatedAt(now);
+                updateGrantOrThrow(grant, "pause add-on grants");
             }
-            grant.setUpdatedAt(now);
-            updateGrantOrThrow(grant, "pause add-on grants");
         }
         insertLifecycleLedger(clerkUserId, subscriptionId, idempotencyKey, LEDGER_TYPE_ADDON_PAUSE, now);
     }
@@ -137,13 +161,13 @@ public class AddonGrantServiceImpl implements AddonGrantService {
                         .gt(UserAddonGrantEntity::getRemainingAmount, 0));
         for (UserAddonGrantEntity grant : grants) {
             if (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now)) {
-                grant.setStatus("expired");
+                expireGrantIfNeeded(grant, now, "subscription_resume");
             } else {
                 grant.setStatus("active");
                 grant.setPausedAt(null);
+                grant.setUpdatedAt(now);
+                resumeGrantOrThrow(grant, now);
             }
-            grant.setUpdatedAt(now);
-            resumeGrantOrThrow(grant, now);
         }
         insertLifecycleLedger(clerkUserId, subscriptionId, idempotencyKey, LEDGER_TYPE_ADDON_RESUME, now);
     }
@@ -174,6 +198,48 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         ledger.setSubscriptionId(subscriptionId);
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
+    }
+
+    private void expireGrantIfNeeded(UserAddonGrantEntity grant, LocalDateTime now, String trigger) {
+        if (grant == null) {
+            return;
+        }
+        String previousStatus = grant.getStatus();
+        grant.setStatus("expired");
+        grant.setPausedAt(null);
+        grant.setUpdatedAt(now);
+        updateGrantOrThrow(grant, "expire add-on grant");
+
+        long expiredAmount = defaultLong(grant.getRemainingAmount());
+        if (expiredAmount <= 0 || hasLedger(LEDGER_TYPE_ADDON_EXPIRED, expireIdempotencyKey(grant))) {
+            return;
+        }
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(grant.getClerkUserId());
+        ledger.setFeatureCode(grant.getFeatureCode());
+        ledger.setLedgerType(LEDGER_TYPE_ADDON_EXPIRED);
+        ledger.setAmount(-expiredAmount);
+        ledger.setSourceType("system");
+        ledger.setSourceId(String.valueOf(grant.getId()));
+        ledger.setIdempotencyKey(expireIdempotencyKey(grant));
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(grant.getClerkUserId(), grant.getFeatureCode(), now));
+        ledger.setBizContext(GSON.toJson(Map.of(
+                "grant_id", grant.getId(),
+                "addon_code", grant.getAddonCode() == null ? "" : grant.getAddonCode(),
+                "grant_type", grant.getGrantType() == null ? "" : grant.getGrantType(),
+                "expired_amount", expiredAmount,
+                "expires_at", grant.getExpiresAt() == null ? "" : grant.getExpiresAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                "previous_status", previousStatus == null ? "" : previousStatus,
+                "trigger", trigger == null ? "" : trigger
+        )));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+    }
+
+    private String expireIdempotencyKey(UserAddonGrantEntity grant) {
+        return "addon-expire:" + grant.getId();
     }
 
     private void updateGrantOrThrow(UserAddonGrantEntity grant, String action) {

@@ -4,6 +4,7 @@ public enum QuotaLedgerDisplayType {
     FREE_REFRESH("free_refresh"),
     PLAN_REFRESH("plan_refresh"),
     PLAN_GRANT("plan_grant"),
+    ADDON_EXPIRE("addon_expire"),
     CLEAR("clear"),
     EXPIRE("expire"),
     ADDON_GRANT("addon_grant"),
@@ -30,6 +31,7 @@ public enum QuotaLedgerDisplayType {
                     case "free_refresh" -> FREE_REFRESH;
                     case "plan_refresh" -> PLAN_REFRESH;
                     case "plan_reset", "upgrade_grant" -> PLAN_GRANT;
+                    case "addon_expired" -> ADDON_EXPIRE;
                     case "plan_clear" -> CLEAR;
                     case "plan_expired" -> EXPIRE;
                     case "addon_grant", "recharge" -> ADDON_GRANT;

@@ -150,6 +150,7 @@ public class QuotaController {
                     m.put("sourceType", item.sourceType());
                     m.put("sourceId", item.sourceId());
                     m.put("displayText", item.displayText());
+                    m.put("displayType", item.displayType() != null ? item.displayType().code() : null);
                     m.put("freeBalanceAfter", item.freeBalanceAfter());
                     m.put("planBalanceAfter", item.planBalanceAfter());
                     m.put("addonBalanceAfter", item.addonBalanceAfter());
@@ -160,6 +161,7 @@ public class QuotaController {
                     m.put("createdAtEpoch", DateTimeFormats.toQuotaLedgerCreatedAtEpochSecond(item.createdAt()));
                     m.put("feature_code", item.featureCode());
                     m.put("quota_unit", item.quotaUnit());
+                    m.put("planTier", item.planTier() != null ? item.planTier().code() : null);
                     return m;
                 })
                 .collect(Collectors.toList());

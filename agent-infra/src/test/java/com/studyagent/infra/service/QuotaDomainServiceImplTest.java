@@ -170,6 +170,93 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void getLedgerPage_mapsStructuredDisplayFieldsForVisibleRows() {
+        AiFeatureDefsEntity featureDef = detectionFeature();
+
+        QuotaLedgerEntity visible = new QuotaLedgerEntity();
+        visible.setId(21L);
+        visible.setClerkUserId("user_1");
+        visible.setFeatureCode("ai_detection");
+        visible.setLedgerType("plan_refresh");
+        visible.setAmount(10_000L);
+        visible.setSourceType("subscription");
+        visible.setSourceId("sub_1");
+        visible.setBizContext("{\"plan_code\":\"basic_monthly\"}");
+        visible.setCreatedAt(LocalDateTime.parse("2026-07-01T10:00:00"));
+
+        Page<QuotaLedgerEntity> page = new Page<>(1, 20, 1);
+        page.setRecords(List.of(visible));
+
+        when(quotaLedgerMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(quotaLedgerAllocationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+
+        QuotaLedgerPageResult result = service.getLedgerPage("user_1", null, 1, 20);
+
+        assertEquals(1, result.items().size());
+        assertEquals("plan_refresh", result.items().get(0).displayType().code());
+        assertEquals("basic", result.items().get(0).planTier().code());
+    }
+
+    @Test
+    void getLedgerPage_includesPlanLifecycleRowsWithStructuredDisplayTypes() {
+        AiFeatureDefsEntity featureDef = assignmentFeature();
+
+        QuotaLedgerEntity visible = new QuotaLedgerEntity();
+        visible.setId(31L);
+        visible.setClerkUserId("user_1");
+        visible.setFeatureCode("task_create");
+        visible.setLedgerType("plan_reset");
+        visible.setAmount(3L);
+        visible.setSourceType("invoice");
+        visible.setSourceId("in_1");
+        visible.setBizContext("{\"plan_code\":\"plus_monthly\"}");
+        visible.setCreatedAt(LocalDateTime.parse("2026-07-02T10:00:00"));
+
+        QuotaLedgerEntity hiddenClear = new QuotaLedgerEntity();
+        hiddenClear.setId(32L);
+        hiddenClear.setClerkUserId("user_1");
+        hiddenClear.setFeatureCode("task_create");
+        hiddenClear.setLedgerType("plan_clear");
+        hiddenClear.setAmount(-3L);
+        hiddenClear.setSourceType("subscription");
+        hiddenClear.setSourceId("sub_1");
+        hiddenClear.setCreatedAt(LocalDateTime.parse("2026-07-02T09:00:00"));
+
+        QuotaLedgerEntity hiddenExpired = new QuotaLedgerEntity();
+        hiddenExpired.setId(33L);
+        hiddenExpired.setClerkUserId("user_1");
+        hiddenExpired.setFeatureCode("task_create");
+        hiddenExpired.setLedgerType("plan_expired");
+        hiddenExpired.setAmount(-3L);
+        hiddenExpired.setSourceType("subscription");
+        hiddenExpired.setSourceId("sub_1");
+        hiddenExpired.setCreatedAt(LocalDateTime.parse("2026-07-02T08:00:00"));
+
+        Page<QuotaLedgerEntity> page = new Page<>(1, 20, 3);
+        page.setRecords(List.of(visible, hiddenClear, hiddenExpired));
+
+        when(quotaLedgerMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(page);
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(quotaLedgerAllocationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        QuotaDomainServiceImpl service = service();
+
+        QuotaLedgerPageResult result = service.getLedgerPage("user_1", null, 1, 20);
+
+        assertEquals(3, result.items().size());
+        assertEquals("plan_reset", result.items().get(0).ledgerType());
+        assertEquals("plan_grant", result.items().get(0).displayType().code());
+        assertEquals("plus", result.items().get(0).planTier().code());
+        assertEquals("plan_clear", result.items().get(1).ledgerType());
+        assertEquals("clear", result.items().get(1).displayType().code());
+        assertEquals("plan_expired", result.items().get(2).ledgerType());
+        assertEquals("expire", result.items().get(2).displayType().code());
+    }
+
+    @Test
     void getUserQuota_migratesLegacyDetectionBalanceIntoAddonWords() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("ai_detection");
@@ -1361,6 +1448,17 @@ class QuotaDomainServiceImplTest {
         featureDef.setFeatureCode("task_create");
         featureDef.setFeatureName("Assignment");
         featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("monthly");
+        featureDef.setFreeQuotaAmount(0L);
+        featureDef.setIsActive(true);
+        return featureDef;
+    }
+
+    private AiFeatureDefsEntity detectionFeature() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("ai_detection");
+        featureDef.setFeatureName("AI Detection");
+        featureDef.setQuotaUnit("words");
         featureDef.setFreeQuotaPeriod("monthly");
         featureDef.setFreeQuotaAmount(0L);
         featureDef.setIsActive(true);

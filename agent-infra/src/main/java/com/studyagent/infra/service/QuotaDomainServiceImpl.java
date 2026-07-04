@@ -12,7 +12,9 @@ import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.quota.QuotaLedgerDisplayType;
 import com.studyagent.service.domain.quota.QuotaLedgerItem;
+import com.studyagent.service.domain.quota.QuotaLedgerPlanTier;
 import com.studyagent.service.domain.quota.QuotaLedgerPageResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +77,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private static final String LEDGER_TYPE_COMPENSATION_GRANT = "compensation_grant";
     private static final String LEDGER_TYPE_LEGACY_MIGRATION_GRANT = "legacy_migration_grant";
     private static final String LEDGER_TYPE_LEGACY_MIGRATION_REFUND_GRANT = "legacy_migration_refund_grant";
+    private static final String LEDGER_TYPE_PLAN_CLEAR = "plan_clear";
+    private static final String LEDGER_TYPE_PLAN_EXPIRED = "plan_expired";
     private static final String PERIOD_MONTHLY = "monthly";
     private static final String PERIOD_WEEKLY = "weekly";
     private static final String PERIOD_DAILY = "daily";
@@ -607,10 +611,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         }
 
         String displayText = buildDisplayText(entity, featureDisplayName, quotaUnit);
+        QuotaLedgerDisplayType displayType =
+                QuotaLedgerDisplayType.fromLedgerType(entity.getLedgerType(), entity.getAmount());
         return new QuotaLedgerItem(
                 entity.getId(),
                 entity.getLedgerNo(),
                 entity.getLedgerType(),
+                displayType,
                 entity.getAmount(),
                 entity.getSourceType(),
                 entity.getSourceId(),
@@ -622,8 +629,29 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 entity.getCreatedAt(),
                 entity.getFeatureCode(),
                 quotaUnit,
+                resolvePlanTier(entity, displayType),
                 buildLedgerAllocations(entity.getId())
         );
+    }
+
+    private QuotaLedgerPlanTier resolvePlanTier(
+            QuotaLedgerEntity entity,
+            QuotaLedgerDisplayType displayType) {
+        if (displayType != QuotaLedgerDisplayType.PLAN_REFRESH
+                && displayType != QuotaLedgerDisplayType.PLAN_GRANT) {
+            return null;
+        }
+
+        JsonObject biz = parseBizContext(entity.getBizContext());
+        if (biz == null || !biz.has("plan_code")) {
+            return null;
+        }
+        JsonElement rawPlanCode = biz.get("plan_code");
+        if (rawPlanCode == null || rawPlanCode.isJsonNull()) {
+            return null;
+        }
+
+        return QuotaLedgerPlanTier.fromPlanCode(rawPlanCode.getAsString());
     }
 
     /**

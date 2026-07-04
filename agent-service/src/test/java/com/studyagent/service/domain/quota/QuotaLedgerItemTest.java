@@ -15,6 +15,7 @@ class QuotaLedgerItemTest {
                 1L,
                 "ledger_1",
                 "consume",
+                QuotaLedgerDisplayType.USAGE,
                 -3L,
                 "verla_session",
                 "100",
@@ -26,6 +27,7 @@ class QuotaLedgerItemTest {
                 LocalDateTime.now(),
                 "task_create",
                 "time",
+                null,
                 List.of());
 
         assertEquals(15L, item.paidBalanceAfter());
@@ -37,6 +39,7 @@ class QuotaLedgerItemTest {
                 1L,
                 "ledger_1",
                 "consume",
+                QuotaLedgerDisplayType.USAGE,
                 -3L,
                 "verla_session",
                 "100",
@@ -48,6 +51,7 @@ class QuotaLedgerItemTest {
                 LocalDateTime.now(),
                 "task_create",
                 "time",
+                null,
                 List.of());
 
         assertEquals(6L, item.paidBalanceAfter());

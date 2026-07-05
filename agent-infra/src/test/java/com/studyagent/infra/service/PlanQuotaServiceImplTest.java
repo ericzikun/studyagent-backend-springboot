@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
@@ -208,6 +209,13 @@ class PlanQuotaServiceImplTest {
         UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
         detection.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
         detection.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "basic_monthly",
+                "active",
+                LocalDateTime.parse("2026-06-15T00:00:00"),
+                LocalDateTime.parse("2026-07-15T00:00:00"));
+        subscription.setStripeSubscriptionId("sub_1");
 
         AtomicInteger ledgerChecks = new AtomicInteger();
         when(quotaLedgerMapper.selectOne(any(Wrapper.class)))
@@ -215,6 +223,7 @@ class PlanQuotaServiceImplTest {
         when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment, detection));
         when(userAiQuotaMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
 
         PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
                 subscriptionPlanMapper,
@@ -223,8 +232,8 @@ class PlanQuotaServiceImplTest {
                 quotaLedgerMapper,
                 userSubscriptionMapper);
 
-        service.clearPlanQuota("user_1", "sub_1", "subscription:sub_1:deleted");
-        service.clearPlanQuota("user_1", "sub_1", "subscription:sub_1:deleted");
+        service.clearPlanQuota("user_1", "sub_1", "basic_monthly", "subscription:sub_1:deleted");
+        service.clearPlanQuota("user_1", "sub_1", "basic_monthly", "subscription:sub_1:deleted");
 
         verify(userAiQuotaMapper, times(2)).update(isNull(), any(Wrapper.class));
         verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
@@ -232,6 +241,10 @@ class PlanQuotaServiceImplTest {
         assertNull(assignment.getPlanPeriodStart());
         assertNull(assignment.getPlanPeriodEnd());
         assertEquals(0L, detection.getPlanBalance());
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        assertTrue(ledgerCaptor.getAllValues().get(0).getBizContext().contains("\"plan_code\":\"basic_monthly\""));
     }
 
     @Test
@@ -260,13 +273,43 @@ class PlanQuotaServiceImplTest {
             }
         };
 
-        service.clearPlanQuota("user_1", "sub_test_clock", "subscription:sub_test_clock:deleted");
+        service.clearPlanQuota("user_1", "sub_test_clock", null, "subscription:sub_test_clock:deleted");
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
         verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
         List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
         assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(0).getCreatedAt());
         assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(1).getCreatedAt());
+    }
+
+    @Test
+    void clearPlanQuota_usesExplicitPlanCodeWhenDeletedSubscriptionCanNoLongerBeLoaded() {
+        UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
+        assignment.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
+        assignment.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+        UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
+        detection.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
+        detection.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment, detection));
+        when(userAiQuotaMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(null);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.clearPlanQuota("user_1", "sub_deleted", "basic_monthly", "subscription:sub_deleted:deleted");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        assertTrue(ledgerCaptor.getAllValues().get(0).getBizContext().contains("\"plan_code\":\"basic_monthly\""));
     }
 
     @Test

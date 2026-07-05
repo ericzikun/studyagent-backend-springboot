@@ -643,7 +643,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             QuotaLedgerEntity entity,
             QuotaLedgerDisplayType displayType) {
         if (displayType != QuotaLedgerDisplayType.PLAN_REFRESH
-                && displayType != QuotaLedgerDisplayType.PLAN_GRANT) {
+                && displayType != QuotaLedgerDisplayType.PLAN_GRANT
+                && displayType != QuotaLedgerDisplayType.CLEAR
+                && displayType != QuotaLedgerDisplayType.EXPIRE) {
             return null;
         }
 

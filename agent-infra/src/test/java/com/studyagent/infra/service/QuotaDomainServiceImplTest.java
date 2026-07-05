@@ -226,6 +226,7 @@ class QuotaDomainServiceImplTest {
         hiddenClear.setAmount(-3L);
         hiddenClear.setSourceType("subscription");
         hiddenClear.setSourceId("sub_1");
+        hiddenClear.setBizContext("{\"plan_code\":\"basic_monthly\"}");
         hiddenClear.setCreatedAt(LocalDateTime.parse("2026-07-02T09:00:00"));
 
         QuotaLedgerEntity hiddenExpired = new QuotaLedgerEntity();
@@ -236,6 +237,7 @@ class QuotaDomainServiceImplTest {
         hiddenExpired.setAmount(-3L);
         hiddenExpired.setSourceType("subscription");
         hiddenExpired.setSourceId("sub_1");
+        hiddenExpired.setBizContext("{\"plan_code\":\"plus_monthly\"}");
         hiddenExpired.setCreatedAt(LocalDateTime.parse("2026-07-02T08:00:00"));
 
         QuotaLedgerEntity addonExpired = new QuotaLedgerEntity();
@@ -265,8 +267,10 @@ class QuotaDomainServiceImplTest {
         assertEquals("plus", result.items().get(0).planTier().code());
         assertEquals("plan_clear", result.items().get(1).ledgerType());
         assertEquals("clear", result.items().get(1).displayType().code());
+        assertEquals("basic", result.items().get(1).planTier().code());
         assertEquals("plan_expired", result.items().get(2).ledgerType());
         assertEquals("expire", result.items().get(2).displayType().code());
+        assertEquals("plus", result.items().get(2).planTier().code());
         assertEquals("addon_expired", result.items().get(3).ledgerType());
         assertEquals("addon_expire", result.items().get(3).displayType().code());
     }

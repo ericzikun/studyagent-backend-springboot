@@ -116,7 +116,7 @@ class QuotaDomainServiceDbTest {
             }
 
             @Override
-            public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
+            public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey) {
             }
         };
         quotaService = new QuotaDomainServiceImpl(featureDefMapper, packageMapper, quotaMapper,

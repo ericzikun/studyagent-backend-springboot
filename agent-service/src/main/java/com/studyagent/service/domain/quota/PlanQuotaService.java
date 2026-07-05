@@ -40,5 +40,5 @@ public interface PlanQuotaService {
             String upgradeOrderNo
     );
 
-    void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey);
+    void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey);
 }

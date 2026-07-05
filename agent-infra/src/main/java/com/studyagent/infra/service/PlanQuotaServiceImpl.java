@@ -135,7 +135,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void clearPlanQuota(String clerkUserId, String subscriptionId, String idempotencyKey) {
+    public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey) {
         List<UserAiQuotaEntity> quotas = userAiQuotaMapper.selectList(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
@@ -144,6 +144,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                                 FeatureCode.AI_DETECTION.getCode(),
                                 FeatureCode.HUMANIZER.getCode())));
         LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
+        UserSubscriptionEntity subscription = findSubscriptionForPlanLifecycle(clerkUserId, subscriptionId);
+        String effectivePlanCode = resolveLifecyclePlanCode(planCode, subscription);
         for (UserAiQuotaEntity quota : quotas) {
             if (quota == null || quota.getId() == null) {
                 continue;
@@ -171,6 +173,12 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             ledger.setFreeBalanceAfter(quota.getFreeBalance());
             ledger.setPlanBalanceAfter(0L);
             ledger.setPaidBalanceAfter(quota.getPaidBalance());
+            if (effectivePlanCode != null) {
+                ledger.setBizContext(GSON.toJson(Map.of(
+                        "plan_code", effectivePlanCode,
+                        "subscription_id", subscriptionId == null ? "" : subscriptionId
+                )));
+            }
             ledger.setCreatedAt(now);
             quotaLedgerMapper.insert(ledger);
         }
@@ -725,6 +733,36 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setStripeSubscriptionId(subscriptionId);
         return resolveRefreshTime(subscription, fallbackNow);
+    }
+
+    private UserSubscriptionEntity findSubscriptionForPlanLifecycle(String clerkUserId, String subscriptionId) {
+        if (userSubscriptionMapper == null) {
+            return null;
+        }
+        if (subscriptionId != null && !subscriptionId.isBlank()) {
+            UserSubscriptionEntity bySubscriptionId = userSubscriptionMapper.selectOne(
+                    new LambdaQueryWrapper<UserSubscriptionEntity>()
+                            .eq(UserSubscriptionEntity::getStripeSubscriptionId, subscriptionId)
+                            .last("LIMIT 1"));
+            if (bySubscriptionId != null) {
+                return bySubscriptionId;
+            }
+        }
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return null;
+        }
+        return userSubscriptionMapper.selectByUser(clerkUserId);
+    }
+
+    private String resolveLifecyclePlanCode(String explicitPlanCode, UserSubscriptionEntity subscription) {
+        if (explicitPlanCode != null && !explicitPlanCode.isBlank()) {
+            return explicitPlanCode;
+        }
+        if (subscription == null) {
+            return null;
+        }
+        String subscriptionPlanCode = subscription.getPlanCode();
+        return subscriptionPlanCode == null || subscriptionPlanCode.isBlank() ? null : subscriptionPlanCode;
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {

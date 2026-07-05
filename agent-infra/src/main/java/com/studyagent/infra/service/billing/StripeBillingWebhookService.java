@@ -668,6 +668,7 @@ public class StripeBillingWebhookService {
                     clerkUserId, existing.getStripeSubscriptionId(), subscription.getId());
             return;
         }
+        String previousPlanCode = existing == null ? null : existing.getPlanCode();
 
         SubscriptionPlanEntity plan = deleted ? null : requirePlanBySubscription(subscription);
         LocalDateTime now = LocalDateTime.now();
@@ -690,6 +691,7 @@ public class StripeBillingWebhookService {
             quotaGateway().clearPlanQuota(
                     clerkUserId,
                     subscription.getId(),
+                    previousPlanCode,
                     "subscription:" + subscription.getId() + ":deleted");
             quotaGateway().pauseAddons(
                     clerkUserId,

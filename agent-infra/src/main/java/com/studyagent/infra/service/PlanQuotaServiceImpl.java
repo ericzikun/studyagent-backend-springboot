@@ -143,7 +143,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                                 FeatureCode.TASK_CREATE.getCode(),
                                 FeatureCode.AI_DETECTION.getCode(),
                                 FeatureCode.HUMANIZER.getCode())));
-        LocalDateTime now = DateTimeFormats.now();
+        LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
         for (UserAiQuotaEntity quota : quotas) {
             if (quota == null || quota.getId() == null) {
                 continue;
@@ -389,7 +389,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         SubscriptionPlanEntity plan = requirePlan(planCode);
         LocalDateTime periodStart = DateTimeFormats.fromInstant(quotaPeriodStart);
         LocalDateTime periodEnd = DateTimeFormats.fromInstant(quotaPeriodEnd);
-        LocalDateTime now = DateTimeFormats.now();
+        LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
 
         for (FeatureGrant featureGrant : featureGrants(plan)) {
             String idempotencyKey = idempotencyPrefix + ":" + sourceId + ":"
@@ -716,6 +716,15 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             log.warn("Resolve Stripe test clock time failed for subscription {}", subscription.getStripeSubscriptionId(), e);
             return fallbackNow;
         }
+    }
+
+    LocalDateTime resolveRefreshTime(String subscriptionId, LocalDateTime fallbackNow) {
+        if (subscriptionId == null || subscriptionId.isBlank()) {
+            return fallbackNow;
+        }
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setStripeSubscriptionId(subscriptionId);
+        return resolveRefreshTime(subscription, fallbackNow);
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {

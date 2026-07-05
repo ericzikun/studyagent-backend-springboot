@@ -3,6 +3,7 @@ package com.studyagent.infra.service;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.stripe.Stripe;
 import com.stripe.model.Subscription;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -21,7 +22,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -81,7 +81,7 @@ class PlanQuotaServiceImplTest {
         assertEquals(3L, updated.get(0).getPlanBalance());
         assertEquals(3L, updated.get(1).getPlanBalance());
         assertEquals(2L, updated.get(2).getPlanBalance());
-        assertEquals(LocalDateTime.ofInstant(end, ZoneOffset.UTC), updated.get(0).getPlanPeriodEnd());
+        assertEquals(DateTimeFormats.fromInstant(end), updated.get(0).getPlanPeriodEnd());
     }
 
     @Test
@@ -159,6 +159,48 @@ class PlanQuotaServiceImplTest {
     }
 
     @Test
+    void resetFromPaidInvoice_usesSimulationTimeForLedgerCreatedAt() {
+        SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
+        UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 0L, 0L);
+        UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
+        UserAiQuotaEntity humanizer = quota(13L, "humanizer", 1L, 5L, 0L);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(assignment, detection, humanizer);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper) {
+            @Override
+            LocalDateTime resolveRefreshTime(UserSubscriptionEntity ignored, LocalDateTime fallbackNow) {
+                return LocalDateTime.parse("2026-08-25T12:00:00");
+            }
+        };
+
+        service.resetFromPaidInvoice(
+                "user_1",
+                "sub_test_clock",
+                "basic_monthly",
+                Instant.parse("2026-06-15T00:00:00Z"),
+                Instant.parse("2026-07-15T00:00:00Z"),
+                "in_1");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper, times(3)).insert(ledgerCaptor.capture());
+        List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
+        assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(0).getCreatedAt());
+        assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(1).getCreatedAt());
+        assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(2).getCreatedAt());
+    }
+
+    @Test
     void clearPlanQuota_isIdempotent_andClearsPlanWindow() {
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
         assignment.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
@@ -190,6 +232,41 @@ class PlanQuotaServiceImplTest {
         assertNull(assignment.getPlanPeriodStart());
         assertNull(assignment.getPlanPeriodEnd());
         assertEquals(0L, detection.getPlanBalance());
+    }
+
+    @Test
+    void clearPlanQuota_usesSimulationTimeForLedgerCreatedAt() {
+        UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
+        assignment.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
+        assignment.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+        UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
+        detection.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
+        detection.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(assignment, detection));
+        when(userAiQuotaMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper) {
+            @Override
+            LocalDateTime resolveRefreshTime(UserSubscriptionEntity ignored, LocalDateTime fallbackNow) {
+                return LocalDateTime.parse("2026-08-25T12:00:00");
+            }
+        };
+
+        service.clearPlanQuota("user_1", "sub_test_clock", "subscription:sub_test_clock:deleted");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper, times(2)).insert(ledgerCaptor.capture());
+        List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
+        assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(0).getCreatedAt());
+        assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(1).getCreatedAt());
     }
 
     @Test
@@ -392,7 +469,7 @@ class PlanQuotaServiceImplTest {
 
                 @Override
                 Long retrieveTestClockFrozenTime(String testClockId) {
-                    return LocalDateTime.parse("2026-08-25T12:00:00").toEpochSecond(ZoneOffset.UTC);
+                    return Instant.parse("2026-08-25T12:00:00Z").getEpochSecond();
                 }
             };
 
@@ -400,7 +477,7 @@ class PlanQuotaServiceImplTest {
                     subscription,
                     LocalDateTime.parse("2026-06-24T12:00:00"));
 
-            assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), resolved);
+            assertEquals(DateTimeFormats.fromInstant(Instant.parse("2026-08-25T12:00:00Z")), resolved);
         } finally {
             Stripe.apiKey = originalApiKey;
         }

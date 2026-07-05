@@ -8,6 +8,7 @@ import com.studyagent.infra.entity.UserAddonGrantEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
+import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +36,8 @@ class AddonGrantServiceImplTest {
     private UserAddonGrantMapper userAddonGrantMapper;
     @Mock
     private QuotaLedgerMapper quotaLedgerMapper;
+    @Mock
+    private UserSubscriptionMapper userSubscriptionMapper;
 
     @Test
     void grantFromPaidCheckout_isIdempotent_perStripeSession() {
@@ -51,7 +54,8 @@ class AddonGrantServiceImplTest {
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
                 addonPackageDefMapper,
                 userAddonGrantMapper,
-                quotaLedgerMapper);
+                quotaLedgerMapper,
+                userSubscriptionMapper);
 
         Instant paidAt = Instant.parse("2026-06-15T08:30:00Z");
         service.grantFromPaidCheckout("user_1", "addon_assignment_3", "cs_1", "pi_1", paidAt);
@@ -85,7 +89,8 @@ class AddonGrantServiceImplTest {
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
                 addonPackageDefMapper,
                 userAddonGrantMapper,
-                quotaLedgerMapper);
+                quotaLedgerMapper,
+                userSubscriptionMapper);
 
         service.pauseAll("user_1", "sub_1", "subscription:sub_1:pause-addons");
 
@@ -107,7 +112,8 @@ class AddonGrantServiceImplTest {
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
                 addonPackageDefMapper,
                 userAddonGrantMapper,
-                quotaLedgerMapper);
+                quotaLedgerMapper,
+                userSubscriptionMapper);
 
         service.expireEligible("user_1", "task_create", "balance_query");
 
@@ -125,6 +131,37 @@ class AddonGrantServiceImplTest {
     }
 
     @Test
+    void expireEligible_usesSimulationTimeForTestClock() {
+        LocalDateTime fallbackNow = LocalDateTime.parse("2026-07-05T10:00:00");
+        LocalDateTime simulatedNow = fallbackNow.plusDays(2);
+        UserAddonGrantEntity expiredInSimulation = grant("active", fallbackNow.plusDays(1), 2L);
+
+        when(userAddonGrantMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(expiredInSimulation), List.of());
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        AddonGrantServiceImpl service = new AddonGrantServiceImpl(
+                addonPackageDefMapper,
+                userAddonGrantMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper) {
+            @Override
+            LocalDateTime resolveNow(String clerkUserId, LocalDateTime fallbackNowArg) {
+                return simulatedNow;
+            }
+        };
+
+        service.expireEligible("user_1", "task_create", "balance_query");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        assertEquals("addon_expired", ledgerCaptor.getValue().getLedgerType());
+        assertEquals(simulatedNow, ledgerCaptor.getValue().getCreatedAt());
+    }
+
+    @Test
     void pauseAll_throws_whenGrantUpdateLosesRace() {
         UserAddonGrantEntity activeGrant = grant("active", LocalDateTime.now().plusDays(3), 2L);
 
@@ -135,7 +172,8 @@ class AddonGrantServiceImplTest {
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
                 addonPackageDefMapper,
                 userAddonGrantMapper,
-                quotaLedgerMapper);
+                quotaLedgerMapper,
+                userSubscriptionMapper);
 
         assertThrows(IllegalStateException.class,
                 () -> service.pauseAll("user_1", "sub_1", "subscription:sub_1:pause-addons"));
@@ -157,7 +195,8 @@ class AddonGrantServiceImplTest {
         AddonGrantServiceImpl service = new AddonGrantServiceImpl(
                 addonPackageDefMapper,
                 userAddonGrantMapper,
-                quotaLedgerMapper);
+                quotaLedgerMapper,
+                userSubscriptionMapper);
 
         service.resumeEligible("user_1", "sub_1", "subscription:sub_1:resume-addons");
 

@@ -281,6 +281,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .checkoutUrl(session.getUrl())
                 .expiresAt(session.getExpiresAt())
                 .resumeToken(resumeToken)
+                .quotedAmountCents(plan.getPriceCents())
                 .build();
     }
 
@@ -361,6 +362,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .checkoutUrl(checkoutUrl)
                 .expiresAt(now.plusMinutes(30).toEpochSecond(ZoneOffset.UTC))
                 .resumeToken(resumeToken)
+                .quotedAmountCents(plan.getPriceCents())
                 .build();
     }
 

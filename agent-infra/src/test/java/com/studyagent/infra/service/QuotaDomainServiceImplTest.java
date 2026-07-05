@@ -365,6 +365,88 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void getUserQuota_writesFreeRefreshLedgerWithFullQuotaAmount() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("daily");
+        featureDef.setFreeQuotaAmount(3L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime resolvedNow = LocalDateTime.parse("2026-06-27T10:00:00");
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(115L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(1L);
+        quota.setFreePeriodStart(resolvedNow.minusDays(2));
+        quota.setFreePeriodEnd(resolvedNow.minusHours(1));
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(resolvedNow);
+
+        service.getUserQuota("user_1", "task_create");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
+        assertEquals("free_refresh", ledger.getLedgerType());
+        assertEquals(3L, ledger.getAmount());
+        assertEquals(3L, ledger.getFreeBalanceAfter());
+    }
+
+    @Test
+    void getUserQuota_writesFreeRefreshLedgerEvenWhenBalanceWasAlreadyFull() {
+        AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
+        featureDef.setFeatureCode("task_create");
+        featureDef.setFeatureName("Assignment");
+        featureDef.setQuotaUnit("count");
+        featureDef.setFreeQuotaPeriod("daily");
+        featureDef.setFreeQuotaAmount(3L);
+        featureDef.setIsActive(true);
+
+        LocalDateTime resolvedNow = LocalDateTime.parse("2026-06-27T10:00:00");
+
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(116L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(3L);
+        quota.setFreePeriodStart(resolvedNow.minusDays(2));
+        quota.setFreePeriodEnd(resolvedNow.minusHours(1));
+        quota.setPlanBalance(0L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        QuotaDomainServiceImpl service = serviceWithResolvedNow(resolvedNow);
+
+        service.getUserQuota("user_1", "task_create");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
+        assertEquals("free_refresh", ledger.getLedgerType());
+        assertEquals(3L, ledger.getAmount());
+        assertEquals(3L, ledger.getFreeBalanceAfter());
+    }
+
+    @Test
     void getUserQuota_usesResolvedSimulationTimeForAddonExpiry() {
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");

@@ -762,7 +762,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         quota.setUpdatedAt(now);
         updateQuotaOrThrow(quota, "free_refresh");
 
-        if (delta <= 0) {
+        if (freeQuotaAmount <= 0) {
             return;
         }
 
@@ -771,6 +771,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ctx.put("free_quota_period", configuredPeriod);
         ctx.put("refresh_trigger", trigger);
         ctx.put("previous_free_balance", oldFreeBalance);
+        ctx.put("top_up_delta", delta);
         ctx.put("refreshed_to", freeQuotaAmount);
         if (futureAnchoredWindow) {
             ctx.put("reason", "future_window_reanchored");
@@ -785,7 +786,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ledger.setClerkUserId(quota.getClerkUserId());
         ledger.setFeatureCode(quota.getFeatureCode());
         ledger.setLedgerType(LEDGER_TYPE_FREE_REFRESH);
-        ledger.setAmount(delta);
+        ledger.setAmount(freeQuotaAmount);
         ledger.setSourceType(SOURCE_TYPE_SYSTEM);
         ledger.setSourceId(quota.getFeatureCode());
         ledger.setFreeBalanceAfter(freeQuotaAmount);
@@ -794,8 +795,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
 
-        log.info("免费额度刷新: user={}, feature={}, delta={}, period={}, trigger={}",
-                quota.getClerkUserId(), quota.getFeatureCode(), delta, configuredPeriod, trigger);
+        log.info("免费额度刷新: user={}, feature={}, amount={}, delta={}, period={}, trigger={}",
+                quota.getClerkUserId(), quota.getFeatureCode(), freeQuotaAmount, delta, configuredPeriod, trigger);
     }
 
     private static String normalizePeriod(String period) {

@@ -836,6 +836,35 @@ class StripeBillingWebhookServiceTest {
         assertNull(entity.getStripeSubscriptionId());
     }
 
+    @Test
+    void subscriptionDeletedPassesPreviousPlanCodeToClearPlanQuota() throws Exception {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setId(88L);
+        existing.setClerkUserId("user_1");
+        existing.setTier("basic");
+        existing.setPlanCode("basic_monthly");
+        existing.setStatus("active");
+        existing.setStripeCustomerId("cus_123");
+        existing.setStripeSubscriptionId("sub_123");
+
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_123");
+        subscription.setCustomer("cus_123");
+        subscription.setStatus("canceled");
+        subscription.setMetadata(java.util.Map.of("clerk_user_id", "user_1"));
+
+        invokeSyncSubscription(service(), subscription, true, false);
+
+        verify(billingQuotaGateway).clearPlanQuota(
+                "user_1",
+                "sub_123",
+                "basic_monthly",
+                "subscription:sub_123:deleted");
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,
@@ -872,6 +901,20 @@ class StripeBillingWebhookServiceTest {
                 String.class);
         method.setAccessible(true);
         method.invoke(service, invoice, eventType, eventSubscriptionId);
+    }
+
+    private void invokeSyncSubscription(
+            StripeBillingWebhookService service,
+            Subscription subscription,
+            boolean deleted,
+            boolean activatePendingPlan) throws Exception {
+        var method = service.getClass().getDeclaredMethod(
+                "syncSubscription",
+                Subscription.class,
+                boolean.class,
+                boolean.class);
+        method.setAccessible(true);
+        method.invoke(service, subscription, deleted, activatePendingPlan);
     }
 
     private Event event(String type, String object, String purchaseType) {

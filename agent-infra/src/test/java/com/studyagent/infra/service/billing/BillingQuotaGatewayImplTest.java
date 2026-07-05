@@ -49,4 +49,12 @@ class BillingQuotaGatewayImplTest {
 
         verify(planQuotaService).grantUpgradeFromCheckout("user_1", "sub_1", "pro_yearly", start, end, "upgrade_ord_1");
     }
+
+    @Test
+    void delegatesPlanClearToPlanQuotaServiceWithPlanCode() {
+        BillingQuotaGatewayImpl gateway = new BillingQuotaGatewayImpl(planQuotaService, addonGrantService);
+        gateway.clearPlanQuota("user_1", "sub_1", "basic_monthly", "subscription:sub_1:deleted");
+
+        verify(planQuotaService).clearPlanQuota("user_1", "sub_1", "basic_monthly", "subscription:sub_1:deleted");
+    }
 }

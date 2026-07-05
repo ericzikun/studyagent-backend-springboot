@@ -3,13 +3,19 @@ package com.studyagent.infra.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.google.gson.Gson;
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
+import com.stripe.model.testhelpers.TestClock;
 import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
+import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.AddonGrantService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +40,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
     private final AddonPackageDefMapper addonPackageDefMapper;
     private final UserAddonGrantMapper userAddonGrantMapper;
     private final QuotaLedgerMapper quotaLedgerMapper;
+    private final UserSubscriptionMapper userSubscriptionMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -104,7 +111,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
                 || featureCode == null || featureCode.isBlank()) {
             return;
         }
-        LocalDateTime now = DateTimeFormats.now();
+        LocalDateTime now = resolveNow(clerkUserId, DateTimeFormats.now());
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -126,7 +133,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_PAUSE, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = DateTimeFormats.now();
+        LocalDateTime now = resolveNow(clerkUserId, DateTimeFormats.now());
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -152,7 +159,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_RESUME, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = DateTimeFormats.now();
+        LocalDateTime now = resolveNow(clerkUserId, DateTimeFormats.now());
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -240,6 +247,50 @@ public class AddonGrantServiceImpl implements AddonGrantService {
 
     private String expireIdempotencyKey(UserAddonGrantEntity grant) {
         return "addon-expire:" + grant.getId();
+    }
+
+    LocalDateTime resolveNow(String clerkUserId, LocalDateTime fallbackNow) {
+        if (userSubscriptionMapper == null || clerkUserId == null || clerkUserId.isBlank()) {
+            return fallbackNow;
+        }
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        if (!shouldUseStripeSimulationTime(subscription)) {
+            return fallbackNow;
+        }
+        try {
+            Subscription stripeSubscription = retrieveStripeSubscription(subscription.getStripeSubscriptionId());
+            if (stripeSubscription == null) {
+                return fallbackNow;
+            }
+            String testClockId = stripeSubscription.getTestClock();
+            if (testClockId == null || testClockId.isBlank()) {
+                return fallbackNow;
+            }
+            Long frozenTime = retrieveTestClockFrozenTime(testClockId);
+            if (frozenTime == null) {
+                return fallbackNow;
+            }
+            LocalDateTime simulatedNow = DateTimeFormats.fromInstant(Instant.ofEpochSecond(frozenTime));
+            return simulatedNow.isAfter(fallbackNow) ? simulatedNow : fallbackNow;
+        } catch (StripeException e) {
+            return fallbackNow;
+        }
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {
+        return TestClock.retrieve(testClockId).getFrozenTime();
+    }
+
+    private boolean shouldUseStripeSimulationTime(UserSubscriptionEntity subscription) {
+        if (subscription == null || subscription.getStripeSubscriptionId() == null || subscription.getStripeSubscriptionId().isBlank()) {
+            return false;
+        }
+        String apiKey = Stripe.apiKey;
+        return apiKey != null && apiKey.startsWith("sk_test_");
     }
 
     private void updateGrantOrThrow(UserAddonGrantEntity grant, String action) {

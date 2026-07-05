@@ -139,7 +139,7 @@ class QuotaDomainServiceDbTest {
                     }
                 }, null);
         planService = new PlanQuotaServiceImpl(planMapper, featureDefMapper, quotaMapper, ledgerMapper, null);
-        addonService = new AddonGrantServiceImpl(addonMapper, grantMapper, ledgerMapper);
+        addonService = new AddonGrantServiceImpl(addonMapper, grantMapper, ledgerMapper, null);
     }
 
     @AfterAll

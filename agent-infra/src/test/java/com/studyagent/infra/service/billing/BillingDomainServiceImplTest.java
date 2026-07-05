@@ -887,6 +887,7 @@ class BillingDomainServiceImplTest {
                 "resume_tok_6");
 
         assertEquals("cs_test_initial", result.getSessionId());
+        assertEquals(19999, result.getQuotedAmountCents());
         verify(userSubscriptionMapper, never()).update(isNull(), any(Wrapper.class));
     }
 
@@ -923,6 +924,7 @@ class BillingDomainServiceImplTest {
                 "resume_tok_4");
 
         assertTrue(result.getSessionId().startsWith("mock_cs_"));
+        assertEquals(19188, result.getQuotedAmountCents());
         assertTrue(result.getCheckoutUrl().contains("session_id=" + result.getSessionId()));
         assertEquals("plus", subscription.getTier());
         assertEquals("plus_yearly", subscription.getPlanCode());
@@ -1178,7 +1180,7 @@ class BillingDomainServiceImplTest {
 
         assertEquals("cs_test_retried", result.getSessionId());
         assertEquals("session", result.getCheckoutKind());
-        assertNull(result.getQuotedAmountCents());
+        assertEquals(19188, result.getQuotedAmountCents());
         assertEquals(2, service.checkoutAttempts);
     }
 

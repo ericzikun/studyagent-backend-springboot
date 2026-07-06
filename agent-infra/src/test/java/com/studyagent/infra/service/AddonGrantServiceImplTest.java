@@ -1,6 +1,7 @@
 package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
@@ -15,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,7 +65,7 @@ class AddonGrantServiceImplTest {
         assertEquals(3L, inserted.getInitialAmount());
         assertEquals(3L, inserted.getRemainingAmount());
         assertEquals("active", inserted.getStatus());
-        assertEquals(LocalDateTime.ofInstant(paidAt, ZoneOffset.UTC).plusMonths(2), inserted.getExpiresAt());
+        assertEquals(DateTimeFormats.fromInstant(paidAt).plusMonths(2), inserted.getExpiresAt());
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
         verify(quotaLedgerMapper).insert(ledgerCaptor.capture());

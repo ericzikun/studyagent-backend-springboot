@@ -22,6 +22,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
+import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,6 +72,8 @@ class StripeBillingWebhookServiceTest {
     private BillingQuotaGateway billingQuotaGateway;
     @Mock
     private ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
+    @Mock
+    private ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
     @Mock
     private PlatformTransactionManager transactionManager;
 
@@ -219,6 +222,7 @@ class StripeBillingWebhookServiceTest {
                 rechargeOrderMapper,
                 analyticsService,
                 quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -946,19 +950,22 @@ class StripeBillingWebhookServiceTest {
                 rechargeOrderMapper,
                 analyticsService,
                 quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
                 transactionManager);
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = StripeBillingWebhookService.class.getDeclaredMethod("handleCheckoutCompleted", Session.class);
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
+                "handleCheckoutCompleted", String.class, String.class, Session.class);
         method.setAccessible(true);
-        method.invoke(service, session);
+        method.invoke(service, "evt_test_checkout_completed", "checkout.session.completed", session);
     }
 
     private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = StripeBillingWebhookService.class.getDeclaredMethod("handleCheckoutExpired", Session.class);
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
+                "handleCheckoutExpired", String.class, String.class, Session.class);
         method.setAccessible(true);
-        method.invoke(service, session);
+        method.invoke(service, "evt_test_checkout_expired", "checkout.session.expired", session);
     }
 
     private void invokeHandleInvoiceFailed(
@@ -968,11 +975,12 @@ class StripeBillingWebhookServiceTest {
             String eventSubscriptionId) throws Exception {
         var method = service.getClass().getDeclaredMethod(
                 "handleInvoiceFailed",
+                String.class,
                 Invoice.class,
                 String.class,
                 String.class);
         method.setAccessible(true);
-        method.invoke(service, invoice, eventType, eventSubscriptionId);
+        method.invoke(service, "evt_test_invoice_failed", invoice, eventType, eventSubscriptionId);
     }
 
     private void invokeSyncSubscription(

@@ -14,4 +14,6 @@ public interface AssignmentRunDispatchMonitorRepository {
     int countStartedAssignmentRunsSince(LocalDateTime since);
 
     int countPendingAssignmentRunOutbox();
+
+    int countQueuedAssignmentRunSessions();
 }

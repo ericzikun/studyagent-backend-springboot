@@ -45,4 +45,10 @@ public class AssignmentRunDispatchMonitorRepositoryImpl
         Integer count = mapper.countPendingAssignmentRunOutbox();
         return count == null ? 0 : count;
     }
+
+    @Override
+    public int countQueuedAssignmentRunSessions() {
+        Integer count = mapper.countQueuedAssignmentRunSessions();
+        return count == null ? 0 : count;
+    }
 }

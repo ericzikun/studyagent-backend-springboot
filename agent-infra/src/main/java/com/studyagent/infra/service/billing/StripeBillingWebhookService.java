@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.stripe.Stripe;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.stripe.exception.StripeException;
@@ -15,6 +16,7 @@ import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
 import com.stripe.model.checkout.Session;
+import com.stripe.model.testhelpers.TestClock;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionUpdateParams;
@@ -187,7 +189,7 @@ public class StripeBillingWebhookService {
                     addonCode,
                     session.getId(),
                     session.getPaymentIntent(),
-                    Instant.ofEpochSecond(session.getCreated()));
+                    resolveAddonPaidAt(clerkUserId, session));
             completeOrderBySession(session, addonCode, null);
             capturePaymentSucceeded(
                     clerkUserId,
@@ -240,6 +242,58 @@ public class StripeBillingWebhookService {
                 notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
             }
         }
+    }
+
+    Instant resolveAddonPaidAt(String clerkUserId, Session session) {
+        Instant fallbackPaidAt = Instant.ofEpochSecond(session.getCreated());
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return fallbackPaidAt;
+        }
+
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        if (!shouldUseStripeSimulationTime(subscription)) {
+            return fallbackPaidAt;
+        }
+
+        try {
+            Subscription stripeSubscription = retrieveStripeSubscription(subscription.getStripeSubscriptionId());
+            if (stripeSubscription == null) {
+                return fallbackPaidAt;
+            }
+            String testClockId = stripeSubscription.getTestClock();
+            if (testClockId == null || testClockId.isBlank()) {
+                return fallbackPaidAt;
+            }
+            Long frozenTime = retrieveTestClockFrozenTime(testClockId);
+            if (frozenTime == null) {
+                return fallbackPaidAt;
+            }
+            Instant simulatedPaidAt = Instant.ofEpochSecond(frozenTime);
+            return simulatedPaidAt.isAfter(fallbackPaidAt)
+                    ? simulatedPaidAt
+                    : fallbackPaidAt;
+        } catch (StripeException e) {
+            log.warn("Resolve Stripe test clock time failed for add-on checkout user {}", clerkUserId, e);
+            return fallbackPaidAt;
+        }
+    }
+
+    Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {
+        return TestClock.retrieve(testClockId).getFrozenTime();
+    }
+
+    boolean shouldUseStripeSimulationTime(UserSubscriptionEntity subscription) {
+        if (subscription == null
+                || subscription.getStripeSubscriptionId() == null
+                || subscription.getStripeSubscriptionId().isBlank()) {
+            return false;
+        }
+        String apiKey = Stripe.apiKey;
+        return apiKey != null && apiKey.startsWith("sk_test_");
     }
 
     private void handleCheckoutExpired(String stripeEventId, String stripeEventType, Session session) {

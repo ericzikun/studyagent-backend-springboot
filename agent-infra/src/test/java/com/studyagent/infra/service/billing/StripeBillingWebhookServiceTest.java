@@ -3,6 +3,7 @@ package com.studyagent.infra.service.billing;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
+import com.stripe.Stripe;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
@@ -30,6 +31,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -189,6 +195,73 @@ class StripeBillingWebhookServiceTest {
         assertTrue(service().supports(addon));
         assertTrue(service().supports(manualUpgrade));
         assertFalse(service().supports(legacy));
+    }
+
+    @Test
+    void addonCheckoutUsesSimulationTimeWhenStripeTestClockIsAhead() throws Exception {
+        String originalApiKey = Stripe.apiKey;
+        Stripe.apiKey = "sk_test_123";
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_1");
+        subscription.setStripeSubscriptionId("sub_test_clock");
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_assignment_3");
+        addon.setFeatureCode("task_create");
+        addon.setQuotaAmount(3L);
+        when(addonPackageDefMapper.selectOne(any())).thenReturn(addon);
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                Subscription subscription = new Subscription();
+                subscription.setTestClock("clock_123");
+                return subscription;
+            }
+
+            @Override
+            Long retrieveTestClockFrozenTime(String testClockId) {
+                return LocalDateTime.parse("2026-07-10T12:00:00")
+                        .toEpochSecond(ZoneOffset.UTC);
+            }
+        };
+
+        Session session = new Session();
+        session.setId("cs_addon_1");
+        session.setClientReferenceId("user_1");
+        session.setPaymentStatus("paid");
+        session.setPaymentIntent("pi_addon_1");
+        session.setCreated(LocalDateTime.parse("2026-07-01T08:00:00").toEpochSecond(ZoneOffset.UTC));
+        session.setMetadata(Map.of(
+                "purchase_type", "addon",
+                "addon_code", "addon_assignment_3",
+                "clerk_user_id", "user_1"
+        ));
+
+        try {
+            invokeHandleCheckoutCompleted(service, session);
+
+            verify(billingQuotaGateway).grantAddonFromCheckout(
+                    eq("user_1"),
+                    eq("addon_assignment_3"),
+                    eq("cs_addon_1"),
+                    eq("pi_addon_1"),
+                    eq(Instant.parse("2026-07-10T12:00:00Z")));
+        } finally {
+            Stripe.apiKey = originalApiKey;
+        }
     }
 
     @Test
@@ -882,14 +955,14 @@ class StripeBillingWebhookServiceTest {
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutCompleted", String.class, String.class, Session.class);
         method.setAccessible(true);
         method.invoke(service, "evt_test_checkout_completed", "checkout.session.completed", session);
     }
 
     private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutExpired", String.class, String.class, Session.class);
         method.setAccessible(true);
         method.invoke(service, "evt_test_checkout_expired", "checkout.session.expired", session);

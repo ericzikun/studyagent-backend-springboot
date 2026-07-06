@@ -49,6 +49,27 @@ public interface AssignmentRunDispatchMonitorMapper {
             + "WHERE COALESCE(s.started_at, s.created_at) >= #{since}")
     Integer countStartedAssignmentRunsSince(@Param("since") LocalDateTime since);
 
+    @Select("SELECT COUNT(DISTINCT s.id) "
+            + "FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry') "
+            + "WHERE COALESCE(s.started_at, s.created_at) >= #{start} "
+            + "AND COALESCE(s.started_at, s.created_at) < #{end}")
+    Integer countStartedAssignmentRunsBetween(@Param("start") LocalDateTime start,
+                                              @Param("end") LocalDateTime end);
+
+    @Select("SELECT COUNT(DISTINCT s.id) "
+            + "FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry') "
+            + "WHERE s.status = #{terminalStatus} "
+            + "AND s.ended_at IS NOT NULL "
+            + "AND s.ended_at >= #{start} "
+            + "AND s.ended_at < #{end}")
+    Integer countTerminalAssignmentRunsBetween(@Param("terminalStatus") String terminalStatus,
+                                               @Param("start") LocalDateTime start,
+                                               @Param("end") LocalDateTime end);
+
     @Select("SELECT COUNT(*) FROM mq_outbox "
             + "WHERE status = 0 "
             + "AND action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")

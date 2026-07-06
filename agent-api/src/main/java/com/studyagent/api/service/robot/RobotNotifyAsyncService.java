@@ -14,6 +14,7 @@ import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.TaskFileEntity;
 import com.studyagent.infra.entity.UserProfileEntity;
+import com.studyagent.infra.entity.verla.VerlaConversationEntity;
 import com.studyagent.infra.mapper.FeedbackPromptSessionMapper;
 import com.studyagent.infra.mapper.FeedbackSubmissionMapper;
 import com.studyagent.infra.mapper.FileMapper;
@@ -22,6 +23,7 @@ import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.TaskFileMapper;
 import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.mapper.UserMapper;
+import com.studyagent.infra.mapper.verla.VerlaConversationMapper;
 import com.studyagent.api.util.TaskIdEncoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +53,7 @@ public class RobotNotifyAsyncService {
 
     private static final String ORDER_COMPLETED = "completed";
     private static final int TASK_STATUS_COMPLETED = 3;
+    private static final String PREFIX_VERLA_CONVERSATION_SUBJECT = "verla_conversation:";
     private final RobotNotifyService robotNotifyService;
     private final RechargeOrderMapper rechargeOrderMapper;
     private final UserMapper userMapper;
@@ -60,6 +63,7 @@ public class RobotNotifyAsyncService {
     private final FileMapper fileMapper;
     private final FeedbackPromptSessionMapper feedbackPromptSessionMapper;
     private final FeedbackSubmissionMapper feedbackSubmissionMapper;
+    private final VerlaConversationMapper verlaConversationMapper;
 
     @Value("${app.public-site-url:http://localhost:3000}")
     private String publicSiteUrl;
@@ -217,7 +221,10 @@ public class RobotNotifyAsyncService {
             sb.append("- **反馈时机**: ").append(feedbackTimingCn(session.getTriggerCode())).append("\n");
 
             if ("task".equals(session.getSubjectType())) {
-                if (subjectNumericId == null) {
+                Long verlaConversationId = parseVerlaConversationSubjectId(session.getSubjectId());
+                if (verlaConversationId != null) {
+                    appendVerlaConversationFeedback(sb, clerkUserId, verlaConversationId);
+                } else if (subjectNumericId == null) {
                     sb.append("- **任务**: subject_id 无法解析（非数字且非 Sqids）: ").append(nullToDash(session.getSubjectId())).append("\n");
                 } else {
                     long taskId = subjectNumericId;
@@ -614,6 +621,52 @@ public class RobotNotifyAsyncService {
 
     private static String nullToDash(String s) {
         return s == null || s.isEmpty() ? "—" : s;
+    }
+
+    private void appendVerlaConversationFeedback(StringBuilder sb, String clerkUserId, long conversationId) {
+        VerlaConversationEntity conversation = verlaConversationMapper.selectById(conversationId);
+        if (conversation == null) {
+            sb.append("- **V2 Conversation**: 未找到 conversation id=").append(conversationId).append("\n");
+            return;
+        }
+        boolean oldUser = hasPriorVerlaConversation(clerkUserId, conversationId);
+        sb.append("- **用户类型**: ").append(oldUser ? "老用户" : "新用户").append("\n");
+        sb.append("- **Conversation ID**: ").append(conversationId).append("\n");
+        sb.append("- **标题**: ").append(nullToDash(conversation.getTitle())).append("\n");
+        sb.append("- **主意图**: ").append(nullToDash(conversation.getPrimaryIntent())).append("\n");
+        sb.append("- **状态**: ").append(nullToDash(conversation.getStatus())).append("\n");
+        sb.append("- **任务链接**: ").append(assignmentConversationLink(conversationId)).append("\n");
+    }
+
+    private boolean hasPriorVerlaConversation(String clerkUserId, long currentConversationId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return false;
+        }
+        Long count = verlaConversationMapper.selectCount(
+                new LambdaQueryWrapper<VerlaConversationEntity>()
+                        .eq(VerlaConversationEntity::getUserId, clerkUserId)
+                        .ne(VerlaConversationEntity::getStatus, "deleted")
+                        .lt(VerlaConversationEntity::getId, currentConversationId));
+        return count != null && count > 0;
+    }
+
+    private String assignmentConversationLink(long conversationId) {
+        return publicSiteUrl.replaceAll("/+$", "") + "/assignments/" + conversationId;
+    }
+
+    private static Long parseVerlaConversationSubjectId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim();
+        if (value.startsWith(PREFIX_VERLA_CONVERSATION_SUBJECT)) {
+            value = value.substring(PREFIX_VERLA_CONVERSATION_SUBJECT.length());
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

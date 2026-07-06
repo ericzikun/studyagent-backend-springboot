@@ -28,7 +28,10 @@ import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.StripeWebhookEventMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.service.domain.billing.BillingCheckoutNotifyRequest;
+import com.studyagent.service.domain.billing.BillingPaymentFailedNotifyRequest;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
+import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -87,6 +90,7 @@ public class StripeBillingWebhookService {
     private final RechargeOrderMapper rechargeOrderMapper;
     private final AnalyticsService analyticsService;
     private final ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
+    private final ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
     private final PlatformTransactionManager transactionManager;
 
     public boolean supports(Event event) {
@@ -126,8 +130,10 @@ public class StripeBillingWebhookService {
 
     private void handle(Event event) {
         switch (event.getType()) {
-            case "checkout.session.completed" -> handleCheckoutCompleted(resolveRequired(event, Session.class));
-            case "checkout.session.expired" -> handleCheckoutExpired(resolveRequired(event, Session.class));
+            case "checkout.session.completed" -> handleCheckoutCompleted(
+                    event.getId(), event.getType(), resolveRequired(event, Session.class));
+            case "checkout.session.expired" -> handleCheckoutExpired(
+                    event.getId(), event.getType(), resolveRequired(event, Session.class));
             case "customer.subscription.created", "customer.subscription.updated" ->
                     syncSubscription(event, false, false);
             case "customer.subscription.deleted" -> syncSubscription(event, true, false);
@@ -142,7 +148,11 @@ public class StripeBillingWebhookService {
                             event.getCreated());
             case "invoice_payment.paid" -> handleInvoicePaymentPaid(event);
             case "invoice.payment_failed", "invoice.payment_action_required" ->
-                    handleInvoiceFailed(resolveRequired(event, Invoice.class), event.getType(), resolveInvoiceSubscriptionId(event));
+                    handleInvoiceFailed(
+                            event.getId(),
+                            resolveRequired(event, Invoice.class),
+                            event.getType(),
+                            resolveInvoiceSubscriptionId(event));
             default -> log.info("Ignored Stripe billing event: {}", event.getType());
         }
     }
@@ -160,7 +170,7 @@ public class StripeBillingWebhookService {
         }
     }
 
-    private void handleCheckoutCompleted(Session session) {
+    private void handleCheckoutCompleted(String stripeEventId, String stripeEventType, Session session) {
         Map<String, String> metadata = session.getMetadata();
         String purchaseType = metadata.get("purchase_type");
         String clerkUserId = firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId());
@@ -188,6 +198,7 @@ public class StripeBillingWebhookService {
                     addon.getQuotaAmount(),
                     addonCode
             );
+            notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, addon.getFeatureCode(), addon.getQuotaAmount());
             return;
         }
 
@@ -204,6 +215,7 @@ public class StripeBillingWebhookService {
                         0L,
                         null
                 );
+                notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
                 try {
                     syncSubscription(Subscription.retrieve(session.getSubscription()), false, false);
                 } catch (StripeException e) {
@@ -224,10 +236,13 @@ public class StripeBillingWebhookService {
                     0L,
                     null
             );
+            if ("paid".equals(session.getPaymentStatus())) {
+                notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
+            }
         }
     }
 
-    private void handleCheckoutExpired(Session session) {
+    private void handleCheckoutExpired(String stripeEventId, String stripeEventType, Session session) {
         Map<String, String> metadata = session.getMetadata();
         capturePaymentFailed(
                 firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId()),
@@ -244,6 +259,7 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getStatus, "checkout_expired")
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
         clearPendingUpgradeCheckoutBySession(session.getId());
+        notifyCheckoutExpired(stripeEventId, stripeEventType, session, metadata);
     }
 
     private void handleManualUpgradeCheckoutCompleted(Session session, String clerkUserId) {
@@ -529,7 +545,7 @@ public class StripeBillingWebhookService {
                 "subscription:" + subscription.getId() + ":resume-addons:" + invoice.getId());
     }
 
-    private void handleInvoiceFailed(Invoice invoice, String eventType, String eventSubscriptionId) {
+    private void handleInvoiceFailed(String stripeEventId, Invoice invoice, String eventType, String eventSubscriptionId) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
             return;
@@ -572,6 +588,7 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
         }
         captureInvoicePaymentFailed(entity, order, invoice, eventType);
+        notifyInvoicePaymentFailed(stripeEventId, eventType, entity, order, invoice);
         if ("invoice.payment_failed".equals(eventType) && entity != null) {
             clearPendingUpgradeState(entity, order, eventType);
         }
@@ -1392,6 +1409,101 @@ public class StripeBillingWebhookService {
                 new LambdaQueryWrapper<UserSubscriptionEntity>()
                         .eq(UserSubscriptionEntity::getClerkUserId, clerkUserId)
                         .last("LIMIT 1"));
+    }
+
+    private BillingRobotNotifyGateway billingRobotNotifyGateway() {
+        return billingRobotNotifyGatewayProvider.getIfAvailable();
+    }
+
+    private void notifyCheckoutSucceeded(
+            String stripeEventId,
+            String stripeEventType,
+            Session session,
+            Map<String, String> metadata,
+            String purchaseType,
+            String featureCode,
+            long quotaAmount
+    ) {
+        BillingRobotNotifyGateway gateway = billingRobotNotifyGateway();
+        if (gateway == null) {
+            return;
+        }
+        gateway.notifyCheckoutSucceeded(BillingCheckoutNotifyRequest.builder()
+                .stripeEventId(stripeEventId)
+                .stripeEventType(stripeEventType)
+                .sessionId(session.getId())
+                .clerkUserId(firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId()))
+                .purchaseType(purchaseType)
+                .planCode(metadata.get("plan_code"))
+                .targetPlanCode(metadata.get("target_plan_code"))
+                .addonCode(metadata.get("addon_code"))
+                .featureCode(featureCode)
+                .quotaAmount(quotaAmount)
+                .priceCents(session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0)
+                .currency(session.getCurrency() != null ? session.getCurrency() : "usd")
+                .customerEmail(session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null)
+                .paymentIntentId(session.getPaymentIntent())
+                .build());
+    }
+
+    private void notifyCheckoutExpired(
+            String stripeEventId,
+            String stripeEventType,
+            Session session,
+            Map<String, String> metadata
+    ) {
+        BillingRobotNotifyGateway gateway = billingRobotNotifyGateway();
+        if (gateway == null) {
+            return;
+        }
+        String purchaseType = metadata != null ? metadata.get("purchase_type") : null;
+        gateway.notifyCheckoutExpired(BillingCheckoutNotifyRequest.builder()
+                .stripeEventId(stripeEventId)
+                .stripeEventType(stripeEventType)
+                .sessionId(session.getId())
+                .clerkUserId(firstNonBlank(
+                        metadata != null ? metadata.get("clerk_user_id") : null,
+                        session.getClientReferenceId()))
+                .purchaseType(purchaseType != null ? purchaseType : "subscription")
+                .planCode(metadata != null ? metadata.get("plan_code") : null)
+                .targetPlanCode(metadata != null ? metadata.get("target_plan_code") : null)
+                .addonCode(metadata != null ? metadata.get("addon_code") : null)
+                .featureCode(resolveAnalyticsFeatureCode(metadata))
+                .priceCents(session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0)
+                .currency(session.getCurrency() != null ? session.getCurrency() : "usd")
+                .build());
+    }
+
+    private void notifyInvoicePaymentFailed(
+            String stripeEventId,
+            String eventType,
+            UserSubscriptionEntity entity,
+            RechargeOrderEntity order,
+            Invoice invoice
+    ) {
+        BillingRobotNotifyGateway gateway = billingRobotNotifyGateway();
+        if (gateway == null) {
+            return;
+        }
+        String clerkUserId = entity != null ? entity.getClerkUserId() : order != null ? order.getClerkUserId() : null;
+        String notifyEventId = "payment_failed_" + firstNonBlank(invoice.getPaymentIntent(), invoice.getId());
+        gateway.notifyPaymentFailed(BillingPaymentFailedNotifyRequest.builder()
+                .notifyEventId(notifyEventId)
+                .clerkUserId(clerkUserId)
+                .purchaseType("subscription")
+                .planCode(resolveInvoiceFailedPlanId(entity, order))
+                .addonCode(order != null ? order.getAddonCode() : null)
+                .priceCents(order != null && order.getPriceCents() != null
+                        ? order.getPriceCents()
+                        : (invoice.getAmountDue() != null ? invoice.getAmountDue().intValue() : 0))
+                .currency(order != null && hasText(order.getCurrency())
+                        ? order.getCurrency()
+                        : (invoice.getCurrency() != null ? invoice.getCurrency() : "usd"))
+                .paymentIntentId(invoice.getPaymentIntent())
+                .invoiceId(invoice.getId())
+                .failureReason(eventType)
+                .stripeEventType(eventType)
+                .build());
     }
 
     private BillingQuotaGateway quotaGateway() {

@@ -11,12 +11,15 @@ import com.studyagent.infra.entity.HumanizerTaskEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.TaskEntity;
 import com.studyagent.infra.entity.UserProfileEntity;
+import com.studyagent.infra.entity.verla.VerlaConversationEntity;
 import com.studyagent.infra.mapper.FeedbackPromptSessionMapper;
 import com.studyagent.infra.mapper.FeedbackSubmissionMapper;
 import com.studyagent.infra.mapper.HumanizerTaskMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.mapper.UserMapper;
+import com.studyagent.infra.mapper.verla.AssignmentRunDispatchMonitorMapper;
+import com.studyagent.infra.mapper.verla.VerlaConversationMapper;
 import com.studyagent.api.config.ReportProperties;
 import com.studyagent.service.domain.task.TaskStatus;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +43,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 从 DB 可计算的指标组装日报/周报 Markdown，并异步推送钉钉。
+ * 从 DB 可计算的指标组装日报/周报 Markdown，并异步推送飞书机器人。
  * 不含：DAU、首访来源 Top5、完成→编辑、编辑→消费（需埋点/外部数仓）。
  */
 @Slf4j
@@ -61,6 +64,8 @@ public class DataReportService {
     private final RechargeOrderMapper rechargeOrderMapper;
     private final RobotNotifyService robotNotifyService;
     private final ReportProperties reportProperties;
+    private final VerlaConversationMapper verlaConversationMapper;
+    private final AssignmentRunDispatchMonitorMapper assignmentRunDispatchMonitorMapper;
 
     @Async("robotNotifyExecutor")
     public void pushDailyReportAsync(LocalDate reportDayBjt) {
@@ -71,6 +76,8 @@ public class DataReportService {
             LocalDateTime cmpEnd = end.minusDays(7);
             TaskMetrics cur = collectTaskMetrics(start, end);
             TaskMetrics cmp = collectTaskMetrics(cmpStart, cmpEnd);
+            VerlaTaskMetrics vCur = collectVerlaTaskMetrics(start, end);
+            VerlaTaskMetrics vCmp = collectVerlaTaskMetrics(cmpStart, cmpEnd);
             UserMetrics uCur = collectUserMetrics(start, end);
             UserMetrics uCmp = collectUserMetrics(cmpStart, cmpEnd);
             FeedbackMetrics fCur = collectFeedbackMetrics(start, end);
@@ -78,10 +85,16 @@ public class DataReportService {
 
             int newRegCreated = countUsersCreatedTaskInPeriod(uCur.newUserIds, start, end);
             int newRegCreatedCmp = countUsersCreatedTaskInPeriod(uCmp.newUserIds, cmpStart, cmpEnd);
+            int newRegVerlaCreated = countUsersCreatedVerlaConversationInPeriod(uCur.newUserIds, start, end);
+            int newRegVerlaCreatedCmp = countUsersCreatedVerlaConversationInPeriod(uCmp.newUserIds, cmpStart, cmpEnd);
             double regToCreate = ratio(newRegCreated, uCur.newRegisterCount);
             double regToCreateCmp = ratio(newRegCreatedCmp, uCmp.newRegisterCount);
+            double regToVerlaCreate = ratio(newRegVerlaCreated, uCur.newRegisterCount);
+            double regToVerlaCreateCmp = ratio(newRegVerlaCreatedCmp, uCmp.newRegisterCount);
 
-            String md = buildDailyMarkdown(reportDayBjt, start, end, cur, cmp, uCur, uCmp, fCur, fCmp, regToCreate, regToCreateCmp);
+            String md = buildDailyMarkdown(
+                    reportDayBjt, start, end, cur, cmp, vCur, vCmp, uCur, uCmp, fCur, fCmp,
+                    regToCreate, regToCreateCmp, regToVerlaCreate, regToVerlaCreateCmp);
             String eventId = "daily_report_" + reportDayBjt;
             String title = "📈 " + reportProperties.getTitlePrefix() + "日报 · " + reportDayBjt.format(TITLE_DAY);
             Map<String, Object> meta = new HashMap<>();
@@ -103,6 +116,8 @@ public class DataReportService {
 
             TaskMetrics cur = collectTaskMetrics(start, end);
             TaskMetrics cmp = collectTaskMetrics(cmpStart, cmpEnd);
+            VerlaTaskMetrics vCur = collectVerlaTaskMetrics(start, end);
+            VerlaTaskMetrics vCmp = collectVerlaTaskMetrics(cmpStart, cmpEnd);
             UserMetrics uCur = collectUserMetrics(start, end);
             UserMetrics uCmp = collectUserMetrics(cmpStart, cmpEnd);
             FeedbackMetrics fCur = collectFeedbackMetrics(start, end);
@@ -112,11 +127,18 @@ public class DataReportService {
 
             int newRegCreated = countUsersCreatedTaskInPeriod(uCur.newUserIds, start, end);
             int newRegCreatedCmp = countUsersCreatedTaskInPeriod(uCmp.newUserIds, cmpStart, cmpEnd);
+            int newRegVerlaCreated = countUsersCreatedVerlaConversationInPeriod(uCur.newUserIds, start, end);
+            int newRegVerlaCreatedCmp = countUsersCreatedVerlaConversationInPeriod(uCmp.newUserIds, cmpStart, cmpEnd);
             double regToCreate = ratio(newRegCreated, uCur.newRegisterCount);
             double regToCreateCmp = ratio(newRegCreatedCmp, uCmp.newRegisterCount);
+            double regToVerlaCreate = ratio(newRegVerlaCreated, uCur.newRegisterCount);
+            double regToVerlaCreateCmp = ratio(newRegVerlaCreatedCmp, uCmp.newRegisterCount);
 
             LocalDate weekStart = weekEndExclusiveBjt.minusDays(7);
-            String md = buildWeeklyMarkdown(weekStart, weekEndExclusiveBjt, start, end, cur, cmp, uCur, uCmp, fCur, fCmp, pCur, pCmp, regToCreate, regToCreateCmp);
+            String md = buildWeeklyMarkdown(
+                    weekStart, weekEndExclusiveBjt, start, end, cur, cmp, vCur, vCmp,
+                    uCur, uCmp, fCur, fCmp, pCur, pCmp,
+                    regToCreate, regToCreateCmp, regToVerlaCreate, regToVerlaCreateCmp);
             String eventId = "weekly_report_" + weekEndExclusiveBjt;
             String title = "📈 " + reportProperties.getTitlePrefix() + "周报 · "
                     + weekStart.format(DAY_FMT) + " - " + weekEndExclusiveBjt.minusDays(1).format(DAY_FMT);
@@ -135,12 +157,16 @@ public class DataReportService {
             LocalDateTime end,
             TaskMetrics cur,
             TaskMetrics cmp,
+            VerlaTaskMetrics vCur,
+            VerlaTaskMetrics vCmp,
             UserMetrics uCur,
             UserMetrics uCmp,
             FeedbackMetrics fCur,
             FeedbackMetrics fCmp,
             double regToCreate,
-            double regToCreateCmp
+            double regToCreateCmp,
+            double regToVerlaCreate,
+            double regToVerlaCreateCmp
     ) {
         StringBuilder sb = new StringBuilder();
         sb.append("📈 **").append(reportProperties.getTitlePrefix()).append("数据日报 · ").append(reportDay.format(TITLE_FMT)).append("**\n");
@@ -150,16 +176,20 @@ public class DataReportService {
         sb.append("- DAU / 新用户来源：**暂无**（需登录流水 / referrer 落库）\n");
         sb.append("- 新用户注册：**").append(uCur.newRegisterCount).append("**").append(compareInt(uCur.newRegisterCount, uCmp.newRegisterCount)).append("\n\n");
 
-        sb.append("📝 **任务**\n");
+        sb.append("📝 **任务（V1 legacy tasks）**\n");
         sb.append("- 任务创建数：**").append(cur.taskCreates).append("**").append(compareInt(cur.taskCreates, cmp.taskCreates)).append("\n");
         sb.append("- 任务成功数：**").append(cur.taskSuccess).append("**").append(compareInt(cur.taskSuccess, cmp.taskSuccess)).append("\n");
         sb.append("- 任务失败数：**").append(cur.taskFailed).append("**").append(compareInt(cur.taskFailed, cmp.taskFailed)).append("\n");
         sb.append("- 任务成功比例：**").append(pct1(cur.successRate())).append("**").append(compareRatio(cur.successRate(), cmp.successRate())).append("\n");
         sb.append("- 平均执行时长：**").append(formatDurationAvg(cur.avgCostSeconds)).append("**").append(compareRatio(cur.avgCostSeconds, cmp.avgCostSeconds)).append("\n\n");
 
+        appendVerlaTaskBlock(sb, vCur, vCmp);
+
         sb.append("🔄 **转化**（部分）\n");
-        sb.append("- 注册→创建任务：**").append(pct1(regToCreate * 100)).append("**").append(compareRatio(regToCreate, regToCreateCmp)).append("\n");
-        sb.append("- 创建→完成：**").append(pct1(cur.createToFinishRate())).append("**").append(compareRatio(cur.createToFinishRate() / 100.0, cmp.createToFinishRate() / 100.0)).append("\n");
+        sb.append("- 注册→创建任务(V1)：**").append(pct1(regToCreate * 100)).append("**").append(compareRatio(regToCreate, regToCreateCmp)).append("\n");
+        sb.append("- 注册→创建Conversation(V2)：**").append(pct1(regToVerlaCreate * 100)).append("**").append(compareRatio(regToVerlaCreate, regToVerlaCreateCmp)).append("\n");
+        sb.append("- 创建→完成(V1)：**").append(pct1(cur.createToFinishRate())).append("**").append(compareRatio(cur.createToFinishRate() / 100.0, cmp.createToFinishRate() / 100.0)).append("\n");
+        sb.append("- 创建→完成(V2 Assignment Run)：**").append(pct1(vCur.createToFinishRate())).append("**").append(compareRatio(vCur.createToFinishRate() / 100.0, vCmp.createToFinishRate() / 100.0)).append("\n");
         sb.append("- 完成→编辑 / 编辑→消费：**暂无**（需埋点）\n\n");
 
         sb.append("💬 **反馈**\n");
@@ -179,6 +209,8 @@ public class DataReportService {
             LocalDateTime end,
             TaskMetrics cur,
             TaskMetrics cmp,
+            VerlaTaskMetrics vCur,
+            VerlaTaskMetrics vCmp,
             UserMetrics uCur,
             UserMetrics uCmp,
             FeedbackMetrics fCur,
@@ -186,7 +218,9 @@ public class DataReportService {
             PaymentMetrics pCur,
             PaymentMetrics pCmp,
             double regToCreate,
-            double regToCreateCmp
+            double regToCreateCmp,
+            double regToVerlaCreate,
+            double regToVerlaCreateCmp
     ) {
         StringBuilder sb = new StringBuilder();
         sb.append("📈 **").append(reportProperties.getTitlePrefix()).append("数据周报 · ")
@@ -198,16 +232,20 @@ public class DataReportService {
         sb.append("- DAU 均值 / 新用户来源：**暂无**\n");
         sb.append("- 新用户注册：**").append(uCur.newRegisterCount).append("**").append(compareInt(uCur.newRegisterCount, uCmp.newRegisterCount)).append("\n\n");
 
-        sb.append("📝 **任务**\n");
+        sb.append("📝 **任务（V1 legacy tasks）**\n");
         sb.append("- 任务创建数：**").append(cur.taskCreates).append("**").append(compareInt(cur.taskCreates, cmp.taskCreates)).append("\n");
         sb.append("- 任务成功数：**").append(cur.taskSuccess).append("**").append(compareInt(cur.taskSuccess, cmp.taskSuccess)).append("\n");
         sb.append("- 任务失败数：**").append(cur.taskFailed).append("**").append(compareInt(cur.taskFailed, cmp.taskFailed)).append("\n");
         sb.append("- 任务成功比例：**").append(pct1(cur.successRate())).append("**").append(compareRatio(cur.successRate(), cmp.successRate())).append("\n");
         sb.append("- 平均执行时长：**").append(formatDurationAvg(cur.avgCostSeconds)).append("**").append(compareRatio(cur.avgCostSeconds, cmp.avgCostSeconds)).append("\n\n");
 
+        appendVerlaTaskBlock(sb, vCur, vCmp);
+
         sb.append("🔄 **转化**\n");
-        sb.append("- 注册→创建任务：**").append(pct1(regToCreate * 100)).append("**").append(compareRatio(regToCreate, regToCreateCmp)).append("\n");
-        sb.append("- 创建→完成：**").append(pct1(cur.createToFinishRate())).append("**").append(compareRatio(cur.createToFinishRate() / 100.0, cmp.createToFinishRate() / 100.0)).append("\n");
+        sb.append("- 注册→创建任务(V1)：**").append(pct1(regToCreate * 100)).append("**").append(compareRatio(regToCreate, regToCreateCmp)).append("\n");
+        sb.append("- 注册→创建Conversation(V2)：**").append(pct1(regToVerlaCreate * 100)).append("**").append(compareRatio(regToVerlaCreate, regToVerlaCreateCmp)).append("\n");
+        sb.append("- 创建→完成(V1)：**").append(pct1(cur.createToFinishRate())).append("**").append(compareRatio(cur.createToFinishRate() / 100.0, cmp.createToFinishRate() / 100.0)).append("\n");
+        sb.append("- 创建→完成(V2 Assignment Run)：**").append(pct1(vCur.createToFinishRate())).append("**").append(compareRatio(vCur.createToFinishRate() / 100.0, vCmp.createToFinishRate() / 100.0)).append("\n");
         sb.append("- 完成→编辑 / 编辑→消费：**暂无**\n\n");
 
         sb.append("💰 **付费**（周）\n");
@@ -229,16 +267,36 @@ public class DataReportService {
         return sb.toString();
     }
 
+    private void appendVerlaTaskBlock(StringBuilder sb, VerlaTaskMetrics cur, VerlaTaskMetrics cmp) {
+        sb.append("📝 **任务（V2 Verla）**\n");
+        sb.append("- Conversation 创建数：**").append(cur.conversationCreates).append("**")
+                .append(compareInt(cur.conversationCreates, cmp.conversationCreates)).append("\n");
+        sb.append("- Assignment Run 启动数：**").append(cur.runStarts).append("**")
+                .append(compareInt(cur.runStarts, cmp.runStarts)).append("\n");
+        sb.append("- Assignment 成功数：**").append(cur.runSuccess).append("**")
+                .append(compareInt(cur.runSuccess, cmp.runSuccess)).append("\n");
+        sb.append("- Assignment 失败数：**").append(cur.runFailed).append("**")
+                .append(compareInt(cur.runFailed, cmp.runFailed)).append("\n");
+        sb.append("- Assignment 成功率：**").append(pct1(cur.successRate())).append("**")
+                .append(compareRatio(cur.successRate(), cmp.successRate())).append("\n\n");
+    }
+
     private void appendPaymentDetail(StringBuilder sb, PaymentMetrics p) {
-        sb.append("**Assignment** 订单 **").append(p.ordersTaskCreate).append("** · ").append(moneyUsd(p.centsTaskCreate)).append("\n");
+        sb.append("**V2 订阅** 订单 **").append(p.ordersSubscription).append("** · ").append(moneyUsd(p.centsSubscription)).append("\n");
+        sb.append("  ").append(skuLine(p.skuCountsSubscription)).append("\n");
+        sb.append("**V2 Addon** 订单 **").append(p.ordersAddon).append("** · ").append(moneyUsd(p.centsAddon)).append("\n");
+        sb.append("  ").append(skuLine(p.skuCountsAddon)).append("\n");
+        sb.append("**V1 Assignment** 订单 **").append(p.ordersTaskCreate).append("** · ").append(moneyUsd(p.centsTaskCreate)).append("\n");
         sb.append("  ").append(skuLine(p.skuCountsTaskCreate)).append("\n");
         sb.append("**AI Detection** 订单 **").append(p.ordersAiDetection).append("** · ").append(moneyUsd(p.centsAiDetection)).append("\n");
         sb.append("  ").append(skuLine(p.skuCountsAiDetection)).append("\n");
         sb.append("**Humanizer** 订单 **").append(p.ordersHumanizer).append("** · ").append(moneyUsd(p.centsHumanizer)).append("\n");
         sb.append("  ").append(skuLine(p.skuCountsHumanizer)).append("\n");
-        sb.append("各功能收入占比：\n");
-        long total = p.centsTaskCreate + p.centsAiDetection + p.centsHumanizer;
-        sb.append("  Assignment · ").append(moneyUsd(p.centsTaskCreate)).append("（").append(pctOf(total, p.centsTaskCreate)).append("）\n");
+        sb.append("各品类收入占比：\n");
+        long total = p.centsSubscription + p.centsAddon + p.centsTaskCreate + p.centsAiDetection + p.centsHumanizer;
+        sb.append("  订阅 · ").append(moneyUsd(p.centsSubscription)).append("（").append(pctOf(total, p.centsSubscription)).append("）\n");
+        sb.append("  Addon · ").append(moneyUsd(p.centsAddon)).append("（").append(pctOf(total, p.centsAddon)).append("）\n");
+        sb.append("  Assignment(V1) · ").append(moneyUsd(p.centsTaskCreate)).append("（").append(pctOf(total, p.centsTaskCreate)).append("）\n");
         sb.append("  AI Detection · ").append(moneyUsd(p.centsAiDetection)).append("（").append(pctOf(total, p.centsAiDetection)).append("）\n");
         sb.append("  Humanizer · ").append(moneyUsd(p.centsHumanizer)).append("（").append(pctOf(total, p.centsHumanizer)).append("）\n\n");
     }
@@ -262,6 +320,43 @@ public class DataReportService {
         sb.append("**").append(compareDouble(cur.assignmentAvgScore, cmp.assignmentAvgScore)).append("\n");
         sb.append("- AI Detection 好评率：**").append(pct1(cur.detectionThumbRate())).append("**").append(compareRatio(cur.detectionThumbRate(), cmp.detectionThumbRate())).append("\n");
         sb.append("- Humanizer 好评率：**").append(pct1(cur.humanizerThumbRate())).append("**").append(compareRatio(cur.humanizerThumbRate(), cmp.humanizerThumbRate())).append("\n\n");
+    }
+
+    private VerlaTaskMetrics collectVerlaTaskMetrics(LocalDateTime start, LocalDateTime end) {
+        Long conversationCreates = verlaConversationMapper.selectCount(
+                new LambdaQueryWrapper<VerlaConversationEntity>()
+                        .ne(VerlaConversationEntity::getStatus, "deleted")
+                        .ge(VerlaConversationEntity::getCreatedAt, start)
+                        .lt(VerlaConversationEntity::getCreatedAt, end));
+        Integer runStarts = assignmentRunDispatchMonitorMapper.countStartedAssignmentRunsBetween(start, end);
+        Integer runSuccess = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("SUCCEEDED", start, end);
+        Integer runFailed = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("FAILED", start, end);
+
+        VerlaTaskMetrics metrics = new VerlaTaskMetrics();
+        metrics.conversationCreates = conversationCreates != null ? conversationCreates.intValue() : 0;
+        metrics.runStarts = runStarts != null ? runStarts : 0;
+        metrics.runSuccess = runSuccess != null ? runSuccess : 0;
+        metrics.runFailed = runFailed != null ? runFailed : 0;
+        return metrics;
+    }
+
+    private int countUsersCreatedVerlaConversationInPeriod(Set<String> newUserIds, LocalDateTime start, LocalDateTime end) {
+        if (newUserIds.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (String uid : newUserIds) {
+            Long created = verlaConversationMapper.selectCount(
+                    new LambdaQueryWrapper<VerlaConversationEntity>()
+                            .eq(VerlaConversationEntity::getUserId, uid)
+                            .ne(VerlaConversationEntity::getStatus, "deleted")
+                            .ge(VerlaConversationEntity::getCreatedAt, start)
+                            .lt(VerlaConversationEntity::getCreatedAt, end));
+            if (created != null && created > 0) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private TaskMetrics collectTaskMetrics(LocalDateTime start, LocalDateTime end) {
@@ -440,8 +535,19 @@ public class DataReportService {
             }
             p.totalUsdCents += cents;
             String fc = o.getFeatureCode() != null ? o.getFeatureCode() : "";
+            String orderType = o.getOrderType() != null ? o.getOrderType() : "";
             String pkg = o.getPackageCode() != null ? o.getPackageCode() : "unknown";
-            if (FeatureCode.TASK_CREATE.getCode().equals(fc)) {
+            if (isSubscriptionOrder(orderType, fc)) {
+                p.ordersSubscription++;
+                p.centsSubscription += cents;
+                String plan = o.getPlanCode() != null ? o.getPlanCode() : pkg;
+                p.skuCountsSubscription.merge(plan, 1, Integer::sum);
+            } else if (isAddonOrder(orderType, fc)) {
+                p.ordersAddon++;
+                p.centsAddon += cents;
+                String addon = o.getAddonCode() != null ? o.getAddonCode() : pkg;
+                p.skuCountsAddon.merge(addon, 1, Integer::sum);
+            } else if (FeatureCode.TASK_CREATE.getCode().equals(fc)) {
                 p.ordersTaskCreate++;
                 p.centsTaskCreate += cents;
                 p.skuCountsTaskCreate.merge(pkg, 1, Integer::sum);
@@ -472,6 +578,17 @@ public class DataReportService {
         p.newPayerCount = newPayers;
         p.repurchaseUserCount = repurchase;
         return p;
+    }
+
+    private static boolean isSubscriptionOrder(String orderType, String featureCode) {
+        if ("subscription".equals(featureCode)) {
+            return true;
+        }
+        return orderType.startsWith("subscription");
+    }
+
+    private static boolean isAddonOrder(String orderType, String featureCode) {
+        return "addon".equals(orderType);
     }
 
     /** 每个用户在窗口内订单之前，历史上首次成功付费时间（仅对窗口内出现过的用户查询） */
@@ -597,6 +714,22 @@ public class DataReportService {
         Set<String> newUserIds = new HashSet<>();
     }
 
+    private static final class VerlaTaskMetrics {
+        int conversationCreates;
+        int runStarts;
+        int runSuccess;
+        int runFailed;
+
+        double successRate() {
+            int total = runSuccess + runFailed;
+            return total <= 0 ? 0 : 100.0 * runSuccess / total;
+        }
+
+        double createToFinishRate() {
+            return runStarts <= 0 ? 0 : 100.0 * runSuccess / runStarts;
+        }
+    }
+
     private static final class FeedbackMetrics {
         int assignmentCount;
         int detectionCount;
@@ -624,12 +757,18 @@ public class DataReportService {
         int ordersTaskCreate;
         int ordersAiDetection;
         int ordersHumanizer;
+        int ordersSubscription;
+        int ordersAddon;
         long centsTaskCreate;
         long centsAiDetection;
         long centsHumanizer;
+        long centsSubscription;
+        long centsAddon;
         Map<String, Integer> skuCountsTaskCreate = new HashMap<>();
         Map<String, Integer> skuCountsAiDetection = new HashMap<>();
         Map<String, Integer> skuCountsHumanizer = new HashMap<>();
+        Map<String, Integer> skuCountsSubscription = new HashMap<>();
+        Map<String, Integer> skuCountsAddon = new HashMap<>();
         boolean nonUsdWarning;
 
         double newPayerRatioPct() {

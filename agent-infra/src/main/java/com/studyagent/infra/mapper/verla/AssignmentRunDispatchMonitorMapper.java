@@ -74,4 +74,12 @@ public interface AssignmentRunDispatchMonitorMapper {
             + "WHERE status = 0 "
             + "AND action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")
     Integer countPendingAssignmentRunOutbox();
+
+    /**
+     * 全局排队 session 数：存在 UNSENT run/retry outbox 的去重 session。
+     */
+    @Select("SELECT COUNT(DISTINCT session_id) FROM mq_outbox "
+            + "WHERE status = 0 "
+            + "AND action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")
+    Integer countQueuedAssignmentRunSessions();
 }

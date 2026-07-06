@@ -46,19 +46,13 @@ public class AssignmentRunDispatchMonitorService {
         int maxConcurrency = assignmentRunDispatchGate.maxConcurrency();
 
         List<AssignmentRunDispatchMonitorView.TaskRow> tasks = new ArrayList<>();
-        int queuedCount = 0;
-        int inFlightCount = 0;
         for (AssignmentRunDispatchTaskQueryRow row : rows) {
             VerlaEventInbox latestEvent = eventInboxRepository.findLatestProcessedBySession(
                     row.getSessionId());
-            AssignmentRunDispatchMonitorView.TaskRow task = toTaskRow(row, latestEvent);
-            tasks.add(task);
-            if ("queued".equals(task.getLifecycle())) {
-                queuedCount++;
-            } else if ("dispatching".equals(task.getLifecycle()) || "running".equals(task.getLifecycle())) {
-                inFlightCount++;
-            }
+            tasks.add(toTaskRow(row, latestEvent));
         }
+
+        int queuedCount = monitorRepository.countQueuedAssignmentRunSessions();
 
         AssignmentRunDispatchMonitorView.Summary summary =
                 AssignmentRunDispatchMonitorView.Summary.builder()
@@ -66,7 +60,7 @@ public class AssignmentRunDispatchMonitorService {
                         .maxConcurrency(maxConcurrency)
                         .activeCount(activeCount)
                         .pendingDispatchCount(pendingDispatch)
-                        .inFlightCount(inFlightCount)
+                        .inFlightCount(activeCount)
                         .queuedCount(queuedCount)
                         .completedLast24Hours(monitorRepository.countTerminalAssignmentRunsSince(
                                 "SUCCEEDED", since24h))
@@ -154,11 +148,11 @@ public class AssignmentRunDispatchMonitorService {
         if ("RUNNING".equals(sessionStatus)) {
             return "running";
         }
-        if (VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED.name().equals(lastEventType)) {
-            return "queued";
-        }
         if ("DISPATCHING".equals(sessionStatus)) {
             return "dispatching";
+        }
+        if (VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED.name().equals(lastEventType)) {
+            return "queued";
         }
         return "dispatching";
     }

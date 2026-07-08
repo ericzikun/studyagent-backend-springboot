@@ -222,6 +222,7 @@ class StripeBillingWebhookServiceTest {
                 rechargeOrderMapper,
                 analyticsService,
                 quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {

@@ -350,8 +350,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 plan.getPlanCode(),
                 now.toInstant(ZoneOffset.UTC),
                 quotaPeriodEnd.toInstant(ZoneOffset.UTC),
-                sessionId,
-                "subscription_initial");
+                sessionId);
 
         String checkoutUrl = resolveMockCheckoutSuccessUrl(
                 resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken),

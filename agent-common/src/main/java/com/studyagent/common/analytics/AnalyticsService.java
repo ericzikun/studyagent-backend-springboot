@@ -3,10 +3,7 @@ package com.studyagent.common.analytics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import com.posthog.server.PostHog;
-import com.posthog.server.PostHogCaptureOptions;
-import com.posthog.server.PostHogConfig;
-import com.posthog.server.PostHogInterface;
+import com.posthog.java.PostHog;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -36,31 +33,16 @@ public class AnalyticsService {
     @Value("${posthog.app-version:}")
     private String appVersion;
 
-    @Value("${posthog.debug:false}")
-    private boolean debug;
-
-    @Value("${posthog.flush-at:20}")
-    private int flushAt;
-
-    @Value("${posthog.flush-interval-seconds:5}")
-    private int flushIntervalSeconds;
-
-    private PostHogInterface postHog;
+    private PostHog postHog;
 
     @PostConstruct
     public void init() {
-        if (enabled && apiKey != null && !apiKey.isBlank()) {
+        if (enabled && apiKey != null && !apiKey.isEmpty()) {
             try {
-                PostHogConfig config = PostHogConfig.builder(apiKey)
-                        .host(host)
-                        .debug(debug)
-                        .preloadFeatureFlags(false)
-                        .flushAt(flushAt)
-                        .flushIntervalSeconds(flushIntervalSeconds)
-                        .build();
-                postHog = PostHog.with(config);
-                log.info("PostHog 初始化成功, host={}, flushAt={}, flushIntervalSeconds={}, debug={}",
-                        host, flushAt, flushIntervalSeconds, debug);
+                postHog = new PostHog.Builder(apiKey)
+                    .host(host)
+                    .build();
+                log.info("PostHog 初始化成功, host={}", host);
             } catch (Exception e) {
                 log.error("PostHog 初始化失败: {}", e.getMessage());
             }
@@ -73,8 +55,7 @@ public class AnalyticsService {
     public void destroy() {
         if (postHog != null) {
             try {
-                postHog.flush();
-                postHog.close();
+                postHog.shutdown();
                 log.info("PostHog 连接已关闭");
             } catch (Exception e) {
                 log.warn("PostHog 关闭时出错: {}", e.getMessage());
@@ -90,10 +71,6 @@ public class AnalyticsService {
      * @param properties 事件属性
      */
     public void capture(String distinctId, String event, Map<String, Object> properties) {
-        if (distinctId == null || distinctId.isBlank()) {
-            log.warn("PostHog 跳过事件，distinctId 为空: {}", event);
-            return;
-        }
         if (!enabled || postHog == null) {
             log.debug("PostHog 未启用，跳过事件: {} for user: {}", event, distinctId);
             return;
@@ -102,11 +79,8 @@ public class AnalyticsService {
         try {
             Map<String, Object> props = properties != null ? new HashMap<>(properties) : new HashMap<>();
             applyDefaultEventProperties(props);
-            PostHogCaptureOptions options = PostHogCaptureOptions.builder()
-                    .properties(props)
-                    .build();
-            postHog.capture(distinctId, event, options);
-            log.info("[Analytics] Event queued: {} | User: {} | Properties: {}", event, distinctId, props);
+            postHog.capture(distinctId, event, props);
+            log.info("[Analytics] Event: {} | User: {} | Properties: {}", event, distinctId, props);
         } catch (Exception e) {
             log.error("[Analytics] 发送事件失败: {} - {}", event, e.getMessage());
         }
@@ -126,17 +100,13 @@ public class AnalyticsService {
      * @param properties 用户属性
      */
     public void setUserProperties(String distinctId, Map<String, Object> properties) {
-        if (distinctId == null || distinctId.isBlank()) {
-            log.warn("PostHog 跳过用户属性，distinctId 为空");
-            return;
-        }
         if (!enabled || postHog == null) {
             log.debug("PostHog 未启用，跳过设置用户属性: {}", distinctId);
             return;
         }
 
         try {
-            postHog.identify(distinctId, properties);
+            postHog.capture(distinctId, "$set", properties);
             log.info("[Analytics] Set user properties for: {} | Properties: {}", distinctId, properties);
         } catch (Exception e) {
             log.error("[Analytics] 设置用户属性失败: {}", e.getMessage());
@@ -158,8 +128,6 @@ public class AnalyticsService {
     }
 
     private void applyDefaultEventProperties(Map<String, Object> props) {
-        props.put("event_source", "backend");
-        props.put("event_version", "v2");
         if (environment != null && !environment.isBlank()) {
             props.put("environment", environment.trim());
         }

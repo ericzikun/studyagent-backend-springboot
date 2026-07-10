@@ -49,10 +49,10 @@
             <artifactId>commons-lang3</artifactId>
         </dependency>
 
-        <!-- PostHog 官方 Server SDK -->
+        <!-- PostHog Java SDK (legacy 坐标，与阿里云镜像兼容) -->
         <dependency>
-            <groupId>com.posthog</groupId>
-            <artifactId>posthog-server</artifactId>
+            <groupId>com.posthog.java</groupId>
+            <artifactId>posthog</artifactId>
         </dependency>
 
         <!-- Sqids: V2 public id 编解码 -->
@@ -69,3 +69,4 @@
         </dependency>
     </dependencies>
 </project>
+

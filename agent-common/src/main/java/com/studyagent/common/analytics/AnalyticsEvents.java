@@ -43,9 +43,9 @@ public final class AnalyticsEvents {
     public static final String PAYMENT_COMPLETED = "payment_completed";
 
     /**
-     * 额度账本成功写入并提交。
+     * 充值成功
      */
-    public static final String QUOTA_GRANT_SUCCEEDED = "quota:grant:succeeded";
+    public static final String RECHARGE_SUCCESS = "recharge_success";
 
     /**
      * 查询支付状态

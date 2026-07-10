@@ -22,24 +22,6 @@ public interface PlanQuotaService {
             String invoiceId
     );
 
-    /**
-     * Source-compatible overload for callers that can classify the paid invoice.
-     * Implementations that only override the legacy six-argument method receive this call
-     * without {@code grantType}; analytics-aware implementations must override this overload.
-     */
-    default void resetFromPaidInvoice(
-            String clerkUserId,
-            String subscriptionId,
-            String planCode,
-            Instant quotaPeriodStart,
-            Instant quotaPeriodEnd,
-            String invoiceId,
-            String grantType
-    ) {
-        resetFromPaidInvoice(
-                clerkUserId, subscriptionId, planCode, quotaPeriodStart, quotaPeriodEnd, invoiceId);
-    }
-
     void addFullPlanForUpgrade(
             String clerkUserId,
             String subscriptionId,

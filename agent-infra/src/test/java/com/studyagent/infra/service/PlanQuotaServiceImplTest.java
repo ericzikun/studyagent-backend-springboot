@@ -14,16 +14,11 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -52,8 +47,6 @@ class PlanQuotaServiceImplTest {
     private QuotaLedgerMapper quotaLedgerMapper;
     @Mock
     private UserSubscriptionMapper userSubscriptionMapper;
-    @Mock
-    private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Test
     void resetFromPaidInvoice_isIdempotent_perInvoiceAndFeature() {
@@ -77,12 +70,11 @@ class PlanQuotaServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userSubscriptionMapper);
-        attachPublisher(service);
 
         Instant start = Instant.parse("2026-06-15T00:00:00Z");
         Instant end = Instant.parse("2026-07-15T00:00:00Z");
-        service.resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1", "subscription_initial");
-        service.resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1", "subscription_initial");
+        service.resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1");
+        service.resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1");
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
         verify(userAiQuotaMapper, times(3)).updateById(quotaCaptor.capture());
@@ -91,38 +83,6 @@ class PlanQuotaServiceImplTest {
         assertEquals(3L, updated.get(1).getPlanBalance());
         assertEquals(2L, updated.get(2).getPlanBalance());
         assertEquals(DateTimeFormats.fromInstant(end), updated.get(0).getPlanPeriodEnd());
-
-        ArgumentCaptor<QuotaGrantAnalyticsEvent> analyticsCaptor = ArgumentCaptor.forClass(QuotaGrantAnalyticsEvent.class);
-        verify(quotaGrantAnalyticsPublisher, times(3)).publishAfterCommit(analyticsCaptor.capture());
-        assertTrue(analyticsCaptor.getAllValues().stream()
-                .allMatch(event -> "subscription_initial".equals(event.grantType())));
-    }
-
-    @Test
-    void normalizeResetGrantType_warnsAndFallsBackForUnknownValue() {
-        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
-                subscriptionPlanMapper,
-                aiFeatureDefsMapper,
-                userAiQuotaMapper,
-                quotaLedgerMapper,
-                userSubscriptionMapper);
-        Logger logger = (Logger) LoggerFactory.getLogger(PlanQuotaServiceImpl.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-
-        try {
-            String normalized = ReflectionTestUtils.invokeMethod(
-                    service, "normalizeResetGrantType", "subscription_typo");
-
-            assertEquals("subscription_renewal", normalized);
-            assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().contains("subscription_typo")
-                            && event.getFormattedMessage().contains("subscription_renewal")));
-        } finally {
-            logger.detachAppender(appender);
-            appender.stop();
-        }
     }
 
     @Test
@@ -145,7 +105,6 @@ class PlanQuotaServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userSubscriptionMapper);
-        attachPublisher(service);
 
         service.addFullPlanForUpgrade(
                 "user_1",
@@ -161,10 +120,6 @@ class PlanQuotaServiceImplTest {
         assertEquals(5L, updated.get(0).getPlanBalance());
         assertEquals(4L, updated.get(1).getPlanBalance());
         assertEquals(2L, updated.get(2).getPlanBalance());
-        ArgumentCaptor<QuotaGrantAnalyticsEvent> analyticsCaptor = ArgumentCaptor.forClass(QuotaGrantAnalyticsEvent.class);
-        verify(quotaGrantAnalyticsPublisher, times(3)).publishAfterCommit(analyticsCaptor.capture());
-        assertTrue(analyticsCaptor.getAllValues().stream()
-                .allMatch(event -> "subscription_upgrade".equals(event.grantType())));
     }
 
     @Test
@@ -388,7 +343,6 @@ class PlanQuotaServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userSubscriptionMapper);
-        attachPublisher(service);
 
         service.refreshPlanQuotaIfNeeded("user_1", "task_create", LocalDateTime.parse("2026-03-20T12:00:00"));
 
@@ -398,11 +352,6 @@ class PlanQuotaServiceImplTest {
         assertEquals(3L, updated.getPlanBalance());
         assertEquals(LocalDateTime.parse("2026-03-15T00:00:00"), updated.getPlanPeriodStart());
         assertEquals(LocalDateTime.parse("2026-04-15T00:00:00"), updated.getPlanPeriodEnd());
-        ArgumentCaptor<QuotaGrantAnalyticsEvent> analyticsCaptor = ArgumentCaptor.forClass(QuotaGrantAnalyticsEvent.class);
-        verify(quotaGrantAnalyticsPublisher).publishAfterCommit(analyticsCaptor.capture());
-        assertEquals("subscription_renewal", analyticsCaptor.getValue().grantType());
-        assertEquals("task_create", analyticsCaptor.getValue().featureCode());
-        assertEquals(3L, analyticsCaptor.getValue().quotaAmount());
     }
 
     @Test
@@ -800,10 +749,6 @@ class PlanQuotaServiceImplTest {
         plan.setHumanizerQuota(humanizer);
         plan.setIsActive(true);
         return plan;
-    }
-
-    private void attachPublisher(PlanQuotaServiceImpl service) {
-        ReflectionTestUtils.setField(service, "quotaGrantAnalyticsPublisher", quotaGrantAnalyticsPublisher);
     }
 
     private UserAiQuotaEntity quota(Long id, String featureCode, long free, long plan, long paid) {

@@ -8,7 +8,6 @@ import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,9 +31,6 @@ public class QuotaRechargeService {
     private final QuotaLedgerMapper quotaLedgerMapper;
     private final AiFeaturePackageMapper aiFeaturePackageMapper;
     private final AiFeatureDefsMapper aiFeatureDefsMapper;
-
-    @Autowired
-    private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
     private static final String PERIOD_MONTHLY = "monthly";
@@ -160,8 +156,6 @@ public class QuotaRechargeService {
         ledger.setAmount(quotaAmount);
         ledger.setSourceType(SOURCE_TYPE_ORDER);
         ledger.setSourceId(orderNo);
-        String idempotencyKey = "recharge:" + stripeSessionId + ":" + featureCode;
-        ledger.setIdempotencyKey(idempotencyKey);
         ledger.setFreeBalanceAfter(quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L);
         ledger.setPaidBalanceAfter(newPaidBalance);
         Map<String, Object> bizContext = new HashMap<>();
@@ -172,21 +166,6 @@ public class QuotaRechargeService {
         ledger.setBizContext(new com.google.gson.Gson().toJson(bizContext));
         ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
-
-        if (quotaGrantAnalyticsPublisher != null && quotaAmount > 0) {
-            quotaGrantAnalyticsPublisher.publishAfterCommit(new QuotaGrantAnalyticsEvent(
-                    clerkUserId,
-                    "addon",
-                    featureCode,
-                    quotaAmount,
-                    null,
-                    packageCode,
-                    SOURCE_TYPE_ORDER,
-                    orderNo,
-                    idempotencyKey,
-                    order.getPaidAt(),
-                    null));
-        }
 
         log.info("充值成功: clerk_user_id={}, order_no={}, package={}, quota_amount={}, paid_balance_after={}",
                 clerkUserId, orderNo, packageCode, quotaAmount, newPaidBalance);

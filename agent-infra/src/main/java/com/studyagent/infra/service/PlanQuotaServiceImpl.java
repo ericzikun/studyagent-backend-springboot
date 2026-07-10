@@ -22,7 +22,6 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,18 +48,12 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     private static final String LEDGER_TYPE_PLAN_CLEAR = "plan_clear";
     private static final String LEDGER_TYPE_PLAN_REFRESH = "plan_refresh";
     private static final String LEDGER_TYPE_PLAN_EXPIRED = "plan_expired";
-    private static final String GRANT_TYPE_SUBSCRIPTION_INITIAL = "subscription_initial";
-    private static final String GRANT_TYPE_SUBSCRIPTION_RENEWAL = "subscription_renewal";
-    private static final String GRANT_TYPE_SUBSCRIPTION_UPGRADE = "subscription_upgrade";
 
     private final SubscriptionPlanMapper subscriptionPlanMapper;
     private final AiFeatureDefsMapper aiFeatureDefsMapper;
     private final UserAiQuotaMapper userAiQuotaMapper;
     private final QuotaLedgerMapper quotaLedgerMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
-
-    @Autowired
-    private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -87,26 +80,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             Instant quotaPeriodStart,
             Instant quotaPeriodEnd,
             String invoiceId) {
-        resetFromPaidInvoice(
-                clerkUserId,
-                subscriptionId,
-                planCode,
-                quotaPeriodStart,
-                quotaPeriodEnd,
-                invoiceId,
-                GRANT_TYPE_SUBSCRIPTION_RENEWAL);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void resetFromPaidInvoice(
-            String clerkUserId,
-            String subscriptionId,
-            String planCode,
-            Instant quotaPeriodStart,
-            Instant quotaPeriodEnd,
-            String invoiceId,
-            String grantType) {
         applyPlanGrant(
                 clerkUserId,
                 subscriptionId,
@@ -115,8 +88,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 quotaPeriodEnd,
                 invoiceId,
                 LEDGER_TYPE_PLAN_RESET,
-                false,
-                normalizeResetGrantType(grantType));
+                false);
     }
 
     @Override
@@ -136,8 +108,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 quotaPeriodEnd,
                 invoiceId,
                 LEDGER_TYPE_UPGRADE_GRANT,
-                true,
-                GRANT_TYPE_SUBSCRIPTION_UPGRADE);
+                true);
     }
 
     @Override
@@ -159,8 +130,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 "checkout_upgrade",
                 "checkout-upgrade",
                 LEDGER_TYPE_UPGRADE_GRANT,
-                true,
-                GRANT_TYPE_SUBSCRIPTION_UPGRADE);
+                true);
     }
 
     @Override
@@ -389,18 +359,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         )));
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
-        publishQuotaGrant(
-                clerkUserId,
-                GRANT_TYPE_SUBSCRIPTION_RENEWAL,
-                featureCode,
-                grantAmount,
-                subscription.getPlanCode(),
-                null,
-                "subscription",
-                subscription.getStripeSubscriptionId(),
-                idempotencyKey,
-                windowStart,
-                windowEnd);
     }
 
     private void applyPlanGrant(
@@ -411,8 +369,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             Instant quotaPeriodEnd,
             String invoiceId,
             String ledgerType,
-            boolean additive,
-            String grantType) {
+            boolean additive) {
         applyPlanGrantFromSource(
                 clerkUserId,
                 subscriptionId,
@@ -423,8 +380,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 "invoice",
                 "invoice",
                 ledgerType,
-                additive,
-                grantType);
+                additive);
     }
 
     private void applyPlanGrantFromSource(
@@ -437,8 +393,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             String sourceType,
             String idempotencyPrefix,
             String ledgerType,
-            boolean additive,
-            String grantType) {
+            boolean additive) {
         SubscriptionPlanEntity plan = requirePlan(planCode);
         LocalDateTime periodStart = DateTimeFormats.fromInstant(quotaPeriodStart);
         LocalDateTime periodEnd = DateTimeFormats.fromInstant(quotaPeriodEnd);
@@ -483,18 +438,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             )));
             ledger.setCreatedAt(now);
             quotaLedgerMapper.insert(ledger);
-            publishQuotaGrant(
-                    clerkUserId,
-                    grantType,
-                    featureGrant.featureCode(),
-                    featureGrant.amount(),
-                    planCode,
-                    null,
-                    sourceType,
-                    sourceId,
-                    idempotencyKey,
-                    periodStart,
-                    periodEnd);
         }
     }
 
@@ -555,57 +498,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         )));
         ledger.setCreatedAt(now);
         quotaLedgerMapper.insert(ledger);
-        publishQuotaGrant(
-                clerkUserId,
-                GRANT_TYPE_SUBSCRIPTION_RENEWAL,
-                featureCode,
-                grantAmount,
-                subscription.getPlanCode(),
-                null,
-                "subscription",
-                subscription.getStripeSubscriptionId(),
-                idempotencyKey,
-                windowStart,
-                windowEnd);
-    }
-
-    private String normalizeResetGrantType(String grantType) {
-        if (GRANT_TYPE_SUBSCRIPTION_INITIAL.equals(grantType)
-                || GRANT_TYPE_SUBSCRIPTION_RENEWAL.equals(grantType)) {
-            return grantType;
-        }
-        log.warn("Unknown reset quota grantType={}, fallback={}",
-                grantType, GRANT_TYPE_SUBSCRIPTION_RENEWAL);
-        return GRANT_TYPE_SUBSCRIPTION_RENEWAL;
-    }
-
-    private void publishQuotaGrant(
-            String clerkUserId,
-            String grantType,
-            String featureCode,
-            long quotaAmount,
-            String planCode,
-            String addonCode,
-            String sourceType,
-            String sourceId,
-            String idempotencyKey,
-            LocalDateTime quotaPeriodStart,
-            LocalDateTime quotaPeriodEnd) {
-        if (quotaGrantAnalyticsPublisher == null || quotaAmount <= 0) {
-            return;
-        }
-        quotaGrantAnalyticsPublisher.publishAfterCommit(new QuotaGrantAnalyticsEvent(
-                clerkUserId,
-                grantType,
-                featureCode,
-                quotaAmount,
-                planCode,
-                addonCode,
-                sourceType,
-                sourceId,
-                idempotencyKey,
-                quotaPeriodStart,
-                quotaPeriodEnd));
     }
 
     private void syncAnnualSubscriptionQuotaWindow(

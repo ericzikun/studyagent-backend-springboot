@@ -266,6 +266,15 @@ public class WebhookController {
                 analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
                 analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
 
+                // 埋点：充值成功（积分到账）
+                Map<String, Object> rechargeProps = new HashMap<>();
+                rechargeProps.put("order_no", session.getId());
+                rechargeProps.put("package_code", packageType);
+                rechargeProps.put("quota_amount", quotaAmount);
+                rechargeProps.put("price_cents", priceCents);
+                rechargeProps.put("currency", currency);
+                analyticsService.capture(clerkUserId, AnalyticsEvents.RECHARGE_SUCCESS, rechargeProps);
+
                 robotNotifyAsyncService.notifyPaymentSucceeded(
                         stripeEventId,
                         session.getId(),

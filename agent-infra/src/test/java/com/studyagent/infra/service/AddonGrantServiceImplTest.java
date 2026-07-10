@@ -14,7 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -39,8 +38,6 @@ class AddonGrantServiceImplTest {
     private QuotaLedgerMapper quotaLedgerMapper;
     @Mock
     private UserSubscriptionMapper userSubscriptionMapper;
-    @Mock
-    private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Test
     void grantFromPaidCheckout_isIdempotent_perStripeSession() {
@@ -59,7 +56,6 @@ class AddonGrantServiceImplTest {
                 userAddonGrantMapper,
                 quotaLedgerMapper,
                 userSubscriptionMapper);
-        ReflectionTestUtils.setField(service, "quotaGrantAnalyticsPublisher", quotaGrantAnalyticsPublisher);
 
         Instant paidAt = Instant.parse("2026-06-15T08:30:00Z");
         service.grantFromPaidCheckout("user_1", "addon_assignment_3", "cs_1", "pi_1", paidAt);
@@ -79,12 +75,6 @@ class AddonGrantServiceImplTest {
         verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
         QuotaLedgerEntity ledger = ledgerCaptor.getValue();
         assertNull(ledger.getInvoiceId());
-
-        ArgumentCaptor<QuotaGrantAnalyticsEvent> analyticsCaptor = ArgumentCaptor.forClass(QuotaGrantAnalyticsEvent.class);
-        verify(quotaGrantAnalyticsPublisher).publishAfterCommit(analyticsCaptor.capture());
-        assertEquals("addon", analyticsCaptor.getValue().grantType());
-        assertEquals("addon_assignment_3", analyticsCaptor.getValue().addonCode());
-        assertEquals(3L, analyticsCaptor.getValue().quotaAmount());
     }
 
     @Test

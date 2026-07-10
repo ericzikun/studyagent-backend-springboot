@@ -582,7 +582,8 @@ public class StripeBillingWebhookService {
                     plan.getPlanCode(),
                     periodStart,
                     quotaPeriodEnd,
-                    invoice.getId());
+                    invoice.getId(),
+                    resolvePaidInvoiceGrantType(invoice, selectedInitialOrder));
         }
 
         syncSubscription(subscription, false, true, periodStartEpoch, periodEndEpoch);
@@ -1017,15 +1018,6 @@ public class StripeBillingWebhookService {
         analyticsService.capture(resolvedUserId, AnalyticsEvents.PAYMENT_COMPLETED, paymentProps);
         analyticsService.capture(resolvedUserId, AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED, paymentProps);
 
-        if (quotaAmount != null && quotaAmount > 0 && hasText(rechargePackageCode)) {
-            Map<String, Object> rechargeProps = new HashMap<>();
-            rechargeProps.put("order_no", session.getId());
-            rechargeProps.put("package_code", rechargePackageCode);
-            rechargeProps.put("quota_amount", quotaAmount);
-            rechargeProps.put("price_cents", session.getAmountTotal() == null ? 0 : session.getAmountTotal().intValue());
-            rechargeProps.put("currency", session.getCurrency() == null ? "usd" : session.getCurrency());
-            analyticsService.capture(resolvedUserId, AnalyticsEvents.RECHARGE_SUCCESS, rechargeProps);
-        }
     }
 
     private void capturePaymentFailed(
@@ -1261,6 +1253,14 @@ public class StripeBillingWebhookService {
             }
         }
         return false;
+    }
+
+    static String resolvePaidInvoiceGrantType(Invoice invoice, RechargeOrderEntity selectedOrder) {
+        if ((invoice != null && "subscription_create".equals(invoice.getBillingReason()))
+                || isOrderType(selectedOrder, "subscription_initial")) {
+            return "subscription_initial";
+        }
+        return "subscription_renewal";
     }
 
     static boolean isPendingPlanActivationUpgrade(

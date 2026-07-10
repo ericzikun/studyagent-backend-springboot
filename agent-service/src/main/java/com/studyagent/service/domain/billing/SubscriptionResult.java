@@ -13,6 +13,8 @@ public class SubscriptionResult {
     private String planCode;
     private String status;
     private Boolean isAdmin;
+    /** Quota VIP：额度不扣 + 套餐权益无限，无运营后台。 */
+    private Boolean isQuotaVip;
     private Integer effectiveMaxFiles;
     private Integer effectiveMaxFollowupEdits;
     private List<String> effectiveAllowedOutputTypes;

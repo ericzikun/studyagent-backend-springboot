@@ -8,6 +8,7 @@ import com.studyagent.common.exception.CommercialBlockData;
 import com.studyagent.common.exception.CurrentPlanData;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
@@ -46,6 +47,7 @@ public class DefaultEntitlementService implements EntitlementService {
     private final FollowupEditUsageRepository followupEditUsageRepository;
     private final VerlaSessionRepository sessionRepository;
     private final UserRepository userRepository;
+    private final QuotaVipAccessService quotaVipAccessService;
     private final ObjectMapper objectMapper;
 
     @Value("${verla.attachment.sign-ttl-seconds:3600}")
@@ -53,7 +55,8 @@ public class DefaultEntitlementService implements EntitlementService {
 
     @Override
     public EffectiveEntitlements getEffectiveEntitlements(String clerkUserId) {
-        if (isAdmin(clerkUserId)) {
+        // admin / Quota VIP：产品权益无限（文件数 / 追问 / 产出类型），不含运营后台
+        if (isUnlimitedProductAccess(clerkUserId)) {
             return new EffectiveEntitlements(
                     null,
                     "free",
@@ -68,6 +71,16 @@ public class DefaultEntitlementService implements EntitlementService {
                 plan == null ? Integer.valueOf(3) : plan.getMaxFiles(),
                 plan == null ? Integer.valueOf(3) : plan.getMaxFollowupEdits(),
                 allowedOutputTypes(plan));
+    }
+
+    private boolean isUnlimitedProductAccess(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return false;
+        }
+        if (isAdmin(clerkUserId)) {
+            return true;
+        }
+        return quotaVipAccessService.isQuotaVip(clerkUserId);
     }
 
     private boolean isAdmin(String clerkUserId) {

@@ -26,7 +26,7 @@ public class VerlaSession {
      * 本 session 商业化扣费流水 ID（quota_ledger.id）。
      * <p>
      * V2 verla 链路在 {@code spawnAssignmentClarifySession（finalize）/ spawnCapabilitySession}
-     * 派发命令前同事务回填；run session 自 clarify session 继承。为空表示 admin / 白名单 / 未启用配额。
+     * 派发命令前同事务回填；run session 自 clarify session 继承。为空表示 admin / Quota VIP / 白名单 / 未启用配额。
      * 失败 / 取消时按此反查并退款，保证幂等。
      */
     private Long quotaLedgerId;

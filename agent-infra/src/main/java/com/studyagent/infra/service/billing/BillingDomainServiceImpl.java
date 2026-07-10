@@ -39,6 +39,7 @@ import com.studyagent.service.domain.billing.BillingRecordResult;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -94,6 +95,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final RechargeOrderMapper rechargeOrderMapper;
     private final PlanQuotaService planQuotaService;
     private final UserRepository userRepository;
+    private final QuotaVipAccessService quotaVipAccessService;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -916,11 +918,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
                 .map(user -> Boolean.TRUE.equals(user.getIsAdmin()))
                 .orElse(false);
+        boolean isQuotaVip = quotaVipAccessService.isQuotaVip(clerkUserId);
+        boolean unlimited = isAdmin || isQuotaVip;
         SubscriptionResult result = entity == null ? freeSubscription() : toResult(entity);
         result.setIsAdmin(isAdmin);
-        result.setEffectiveMaxFiles(isAdmin ? null : effectivePlan.getMaxFiles());
-        result.setEffectiveMaxFollowupEdits(isAdmin ? null : effectivePlan.getMaxFollowupEdits());
-        result.setEffectiveAllowedOutputTypes(isAdmin
+        result.setIsQuotaVip(isQuotaVip);
+        result.setEffectiveMaxFiles(unlimited ? null : effectivePlan.getMaxFiles());
+        result.setEffectiveMaxFollowupEdits(unlimited ? null : effectivePlan.getMaxFollowupEdits());
+        result.setEffectiveAllowedOutputTypes(unlimited
                 ? List.of("writing", "ppt", "coding")
                 : parseAllowedOutputTypes(effectivePlan.getAllowedOutputTypes()));
         return result;
@@ -1805,6 +1810,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .tier("free")
                 .status("free")
                 .isAdmin(false)
+                .isQuotaVip(false)
                 .effectiveMaxFiles(3)
                 .effectiveMaxFollowupEdits(3)
                 .effectiveAllowedOutputTypes(List.of("writing"))

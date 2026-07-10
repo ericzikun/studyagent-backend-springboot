@@ -5,6 +5,7 @@ import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -38,7 +39,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * {@link VerlaQuotaServiceImpl} 核心行为单测：
- * - 豁免（admin / 白名单 / 开关关闭）
+ * - 豁免（admin / Quota VIP / 白名单 / 开关关闭）
  * - 余额不足抛 {@link InsufficientQuotaException}
  * - 扣费成功回写 verla_sessions.quota_ledger_id
  * - 并发绑定失败 → 抛 {@link IllegalStateException} 触发外层事务回滚
@@ -50,6 +51,7 @@ class VerlaQuotaServiceImplTest {
     private UserRepository userRepository;
     private VerlaSessionRepository sessionRepository;
     private VerlaQuotaWordCounter wordCounter;
+    private QuotaVipAccessService quotaVipAccessService;
     private VerlaQuotaServiceImpl service;
 
     @BeforeEach
@@ -58,10 +60,12 @@ class VerlaQuotaServiceImplTest {
         userRepository = mock(UserRepository.class);
         sessionRepository = mock(VerlaSessionRepository.class);
         wordCounter = new VerlaQuotaWordCounter();
+        quotaVipAccessService = mock(QuotaVipAccessService.class);
         service = new VerlaQuotaServiceImpl(
-                quotaDomainService, userRepository, sessionRepository, wordCounter);
+                quotaDomainService, userRepository, sessionRepository, wordCounter, quotaVipAccessService);
         ReflectionTestUtils.setField(service, "quotaEnabled", true);
         ReflectionTestUtils.setField(service, "whitelistUserIds", List.of());
+        when(quotaVipAccessService.isQuotaVip(anyString())).thenReturn(false);
     }
 
     private VerlaQuotaContext ctx() {
@@ -120,6 +124,13 @@ class VerlaQuotaServiceImplTest {
         ReflectionTestUtils.setField(service, "whitelistUserIds", List.of("user_w"));
         when(userRepository.findByClerkUserId("user_w")).thenReturn(Optional.empty());
         assertTrue(service.isQuotaExempt("user_w"));
+    }
+
+    @Test
+    void isQuotaExempt_returnsTrue_forQuotaVip() {
+        when(userRepository.findByClerkUserId("user_vip")).thenReturn(Optional.empty());
+        when(quotaVipAccessService.isQuotaVip("user_vip")).thenReturn(true);
+        assertTrue(service.isQuotaExempt("user_vip"));
     }
 
     @Test

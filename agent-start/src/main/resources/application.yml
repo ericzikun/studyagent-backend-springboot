@@ -256,6 +256,11 @@ posthog:
   environment: ${POSTHOG_ENVIRONMENT:}
   # 应用版本标签（建议: v1 / v2）
   app-version: ${POSTHOG_APP_VERSION:}
+  # SDK 调试日志（测试环境排查发送失败时开启）
+  debug: ${POSTHOG_DEBUG:false}
+  # 累积到该数量立即批量发送；其余事件按下面的时间间隔发送
+  flush-at: ${POSTHOG_FLUSH_AT:20}
+  flush-interval-seconds: ${POSTHOG_FLUSH_INTERVAL_SECONDS:5}
 
 # 日志配置
 logging:

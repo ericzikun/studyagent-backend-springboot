@@ -141,6 +141,19 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void paidInvoiceGrantTypeDistinguishesInitialSubscriptionFromRenewal() {
+        Invoice initialInvoice = new Invoice();
+        initialInvoice.setBillingReason("subscription_create");
+        Invoice renewalInvoice = new Invoice();
+        renewalInvoice.setBillingReason("subscription_cycle");
+
+        assertEquals("subscription_initial",
+                StripeBillingWebhookService.resolvePaidInvoiceGrantType(initialInvoice, null));
+        assertEquals("subscription_renewal",
+                StripeBillingWebhookService.resolvePaidInvoiceGrantType(renewalInvoice, null));
+    }
+
+    @Test
     void stalePaidEventIsIgnoredAfterSubscriptionWasCanceledLater() {
         UserSubscriptionEntity existing = new UserSubscriptionEntity();
         existing.setStatus("canceled");
@@ -550,7 +563,7 @@ class StripeBillingWebhookServiceTest {
 
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.PAYMENT_COMPLETED), any());
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED), any());
-        verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.RECHARGE_SUCCESS), any());
+        verify(analyticsService, never()).capture(eq("user_1"), eq("recharge_success"), any());
     }
 
     @Test

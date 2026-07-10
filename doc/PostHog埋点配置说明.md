@@ -17,9 +17,20 @@
 | 事件名称 | 触发时机 | 属性 |
 |---------|---------|------|
 | `payment_session_created` | 用户创建支付会话成功时 | package_type, customer_email, session_id |
+| `billing:checkout:session_created` | 支付会话创建成功的 V2 别名事件 | plan_id, package_type, feature_code, session_id |
 | `payment_session_failed` | 创建支付会话失败时 | package_type, error_code, error_message |
 | `payment_completed` | Stripe 回调确认支付完成时 | session_id, package_type, feature_code, quota_amount, price_cents, currency, customer_email |
-| `recharge_success` | 用户额度充值到账时 | order_no, package_code, quota_amount, price_cents, currency |
+| `billing:payment:succeeded` | Stripe 回调确认支付完成的 V2 别名事件 | session_id, plan_id, package_type, feature_code, quota_amount, price_cents, currency |
+| `quota:grant:succeeded` | 一条正向额度流水成功提交后 | grant_type, feature_code, quota_amount, quota_unit, plan_code/addon_code, source_type, source_id, idempotency_key, quota_period_start/end |
+
+`billing:payment:succeeded` 表示支付成功；`quota:grant:succeeded` 表示额度实际到账。一次订阅可能为多个功能分别产生额度事件。`grant_type` 统一为：
+
+- `subscription_initial`：首次订阅到账
+- `subscription_renewal`：续费周期或年度订阅的月度额度刷新
+- `subscription_upgrade`：升级追加额度
+- `addon`：Add-on 或 legacy one-time package 到账
+
+旧的 `recharge_success` 已停止发送。
 
 ## 配置方法
 
@@ -40,8 +51,19 @@ export POSTHOG_ENABLED=true
 # PostHog API Key（必需）
 export POSTHOG_API_KEY=phc_your_project_api_key_here
 
-# PostHog 服务器地址（可选，默认使用官方云）
-export POSTHOG_HOST=https://app.posthog.com
+# PostHog 服务器地址（可选，默认使用美国区官方云）
+export POSTHOG_HOST=https://us.i.posthog.com
+
+# 环境与应用版本公共属性
+export POSTHOG_ENVIRONMENT=staging
+export POSTHOG_APP_VERSION=v2
+
+# 测试环境排查 SDK 投递时可临时开启
+export POSTHOG_DEBUG=false
+
+# 异步队列达到 20 条或等待 5 秒后发送
+export POSTHOG_FLUSH_AT=20
+export POSTHOG_FLUSH_INTERVAL_SECONDS=5
 ```
 
 ### 3. 不同环境的配置
@@ -54,7 +76,12 @@ export POSTHOG_HOST=https://app.posthog.com
 posthog:
   enabled: true  # 本地测试时启用
   api-key: ${POSTHOG_API_KEY:}
-  host: ${POSTHOG_HOST:https://app.posthog.com}
+  host: ${POSTHOG_HOST:https://us.i.posthog.com}
+  environment: ${POSTHOG_ENVIRONMENT:local}
+  app-version: ${POSTHOG_APP_VERSION:v2}
+  debug: ${POSTHOG_DEBUG:false}
+  flush-at: ${POSTHOG_FLUSH_AT:20}
+  flush-interval-seconds: ${POSTHOG_FLUSH_INTERVAL_SECONDS:5}
 ```
 
 #### 生产环境
@@ -64,7 +91,12 @@ posthog:
 ```bash
 POSTHOG_ENABLED=true
 POSTHOG_API_KEY=phc_live_xxxxxxxxxx
-POSTHOG_HOST=https://app.posthog.com
+POSTHOG_HOST=https://us.i.posthog.com
+POSTHOG_ENVIRONMENT=production
+POSTHOG_APP_VERSION=v2
+POSTHOG_DEBUG=false
+POSTHOG_FLUSH_AT=20
+POSTHOG_FLUSH_INTERVAL_SECONDS=5
 ```
 
 ## 代码示例
@@ -105,9 +137,11 @@ analyticsService.setUserProperties(userId, userProps);
 ## 注意事项
 
 1. **隐私合规**：埋点数据不要包含敏感信息（如密码、完整信用卡号）
-2. **性能影响**：PostHog SDK 使用异步发送，对性能影响极小
+2. **性能影响**：PostHog Server SDK 使用异步队列发送，对业务请求影响很小
 3. **失败处理**：发送失败会记录日志，不会阻断业务流程
 4. **本地开发**：默认禁用，如需测试请设置 `POSTHOG_ENABLED=true`
+5. **用户标识**：空的 `distinctId` 会被跳过，避免事件归入随机或共享 Person
+6. **事务语义**：额度事件在数据库事务提交后才进入 PostHog 队列，回滚不会产生额度成功事件
 
 ## 故障排查
 
@@ -116,8 +150,10 @@ analyticsService.setUserProperties(userId, userProps);
 查看应用日志，应该能看到类似输出：
 
 ```
-[Analytics] Event: user_login_success | User: user_xxx | Properties: {...}
+[Analytics] Event queued: user_login_success | User: user_xxx | Properties: {...}
 ```
+
+这条日志只表示事件已进入 SDK 队列，不表示 PostHog 已确认接收。需要查看 SDK 请求与错误时，在测试环境临时设置 `POSTHOG_DEBUG=true`；应用关闭时会先 flush 再 close。
 
 ### 常见问题
 

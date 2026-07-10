@@ -948,7 +948,8 @@ class BillingDomainServiceImplTest {
                 eq("plus_yearly"),
                 any(Instant.class),
                 any(Instant.class),
-                eq(result.getSessionId()));
+                eq(result.getSessionId()),
+                eq("subscription_initial"));
     }
 
     @Test

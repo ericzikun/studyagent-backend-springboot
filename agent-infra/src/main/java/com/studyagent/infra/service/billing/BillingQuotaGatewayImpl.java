@@ -27,6 +27,19 @@ public class BillingQuotaGatewayImpl implements BillingQuotaGateway {
     }
 
     @Override
+    public void resetFromPaidInvoice(
+            String clerkUserId,
+            String subscriptionId,
+            String planCode,
+            Instant periodStart,
+            Instant periodEnd,
+            String invoiceId,
+            String grantType) {
+        planQuotaService.resetFromPaidInvoice(
+                clerkUserId, subscriptionId, planCode, periodStart, periodEnd, invoiceId, grantType);
+    }
+
+    @Override
     public void addFullPlanForUpgrade(
             String clerkUserId,
             String subscriptionId,

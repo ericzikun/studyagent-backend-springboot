@@ -24,9 +24,11 @@ class BillingQuotaGatewayImplTest {
         Instant end = Instant.parse("2026-07-15T00:00:00Z");
 
         BillingQuotaGatewayImpl gateway = new BillingQuotaGatewayImpl(planQuotaService, addonGrantService);
-        gateway.resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1");
+        gateway.resetFromPaidInvoice(
+                "user_1", "sub_1", "basic_monthly", start, end, "in_1", "subscription_initial");
 
-        verify(planQuotaService).resetFromPaidInvoice("user_1", "sub_1", "basic_monthly", start, end, "in_1");
+        verify(planQuotaService).resetFromPaidInvoice(
+                "user_1", "sub_1", "basic_monthly", start, end, "in_1", "subscription_initial");
     }
 
     @Test

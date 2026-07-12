@@ -6,6 +6,7 @@ import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.QuotaBalance;
 import com.studyagent.service.domain.quota.QuotaDomainService;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -34,6 +35,7 @@ import java.util.Optional;
  *       做乐观保护，并发派发只有一方成功，另一方抛 {@link IllegalStateException} 触发整事务回滚。</li>
  *   <li><b>退款幂等</b>：退款入口先按 sessionId 取 ledgerId；底层 refund 已补全幂等校验
  *       （见 {@code QuotaDomainServiceImpl.refund} 的 {@code original_ledger_id} 去重）。</li>
+ *   <li><b>豁免</b>：admin / DB Quota VIP / env 白名单 / 总开关关闭。</li>
  * </ul>
  */
 @Slf4j
@@ -47,12 +49,16 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     private final UserRepository userRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaQuotaWordCounter wordCounter;
+    private final QuotaVipAccessService quotaVipAccessService;
 
     /** 总开关：false 时全部豁免，方便灰度上线 / 紧急关停。 */
     @Value("${verla.quota.enabled:true}")
     private boolean quotaEnabled;
 
-    /** verla 链路专属白名单（与 1.0 humanizer.whitelist-user-ids 独立配置）。 */
+    /**
+     * 紧急兜底白名单（env）。日常开通请写 {@code quota_vip_users} 表，无需重启。
+     * 与 1.0 {@code humanizer.whitelist-user-ids} 独立。
+     */
     @Value("${verla.quota.whitelist-user-ids:}")
     private List<String> whitelistUserIds;
 
@@ -71,9 +77,13 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         boolean isAdmin = userRepository.findByClerkUserId(clerkUserId)
                 .map(User::getIsAdmin)
                 .orElse(false);
-        boolean isWhitelisted = whitelistUserIds != null
-                && whitelistUserIds.contains(clerkUserId);
-        return isAdmin || isWhitelisted;
+        if (Boolean.TRUE.equals(isAdmin)) {
+            return true;
+        }
+        if (quotaVipAccessService.isQuotaVip(clerkUserId)) {
+            return true;
+        }
+        return whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
     }
 
     @Override
@@ -185,7 +195,7 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
             }
         }
 
-        // 1) admin / 白名单 / 配额关闭 → 直接放行
+        // 1) admin / Quota VIP / env 白名单 / 配额关闭 → 直接放行
         if (isQuotaExempt(ctx.clerkUserId())) {
             log.info("[VerlaQuota] exempt: feature={}, userId={}, sessionId={}",
                     feature.getCode(), ctx.clerkUserId(), ctx.sessionId());
@@ -300,7 +310,7 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
                     .orElse(null);
         }
         if (ledgerId == null) {
-            // 未扣过费（admin / 白名单 / 配额关闭），无需退款
+            // 未扣过费（admin / Quota VIP / 白名单 / 配额关闭），无需退款
             return;
         }
         try {

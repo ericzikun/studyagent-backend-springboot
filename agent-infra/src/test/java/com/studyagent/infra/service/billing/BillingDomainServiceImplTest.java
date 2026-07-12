@@ -12,6 +12,7 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.UserRepository;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
@@ -77,6 +78,8 @@ class BillingDomainServiceImplTest {
     private PlanQuotaService planQuotaService;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private QuotaVipAccessService quotaVipAccessService;
 
     @Test
     void getCatalogMapsActivePlansAndAddons() {
@@ -865,7 +868,8 @@ class BillingDomainServiceImplTest {
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
-                userRepository) {
+                userRepository,
+                quotaVipAccessService) {
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1366,7 +1370,8 @@ class BillingDomainServiceImplTest {
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
-                userRepository);
+                userRepository,
+                quotaVipAccessService);
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -1420,7 +1425,8 @@ class BillingDomainServiceImplTest {
                     userSubscriptionMapper,
                     rechargeOrderMapper,
                     planQuotaService,
-                    userRepository);
+                    userRepository,
+                    quotaVipAccessService);
         }
 
         @Override

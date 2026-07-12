@@ -6,6 +6,7 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.CommercialBlockData;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
+import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.repo.FollowupEditUsageRepository;
@@ -61,6 +62,8 @@ class DefaultEntitlementServiceTest {
     private VerlaSessionRepository sessionRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private QuotaVipAccessService quotaVipAccessService;
 
     private DefaultEntitlementService service;
 
@@ -73,6 +76,7 @@ class DefaultEntitlementServiceTest {
                 followupEditUsageRepository,
                 sessionRepository,
                 userRepository,
+                quotaVipAccessService,
                 new ObjectMapper());
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
     }
@@ -130,6 +134,32 @@ class DefaultEntitlementServiceTest {
                         .build()));
 
         service.assertCanReserveUserUpload("admin_user", 74L);
+    }
+
+    @Test
+    void assertCanReserveUserUploadAllowsQuotaVipBeyondFreeLimit() {
+        when(userRepository.findByClerkUserId("vip_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("vip_user")
+                        .isAdmin(Boolean.FALSE)
+                        .build()));
+        when(quotaVipAccessService.isQuotaVip("vip_user")).thenReturn(true);
+
+        service.assertCanReserveUserUpload("vip_user", 74L);
+    }
+
+    @Test
+    void assertAssignmentOutputAllowedAllowsPptForQuotaVip() {
+        when(userRepository.findByClerkUserId("vip_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("vip_user")
+                        .isAdmin(Boolean.FALSE)
+                        .build()));
+        when(quotaVipAccessService.isQuotaVip("vip_user")).thenReturn(true);
+
+        service.assertAssignmentOutputAllowed(
+                "vip_user",
+                Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)));
     }
 
     @Test
@@ -251,6 +281,7 @@ class DefaultEntitlementServiceTest {
                 fakeRepository,
                 lockingSessionRepository,
                 userRepository,
+                quotaVipAccessService,
                 new ObjectMapper());
         ReflectionTestUtils.setField(concurrentService, "signTtlSeconds", 3600L);
 

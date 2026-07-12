@@ -50,7 +50,7 @@ public interface VerlaQuotaService {
     void refundBySessionId(Long sessionId, String reason);
 
     /**
-     * 是否豁免扣费（admin / 白名单 / 总开关关闭）。
+     * 是否豁免扣费（admin / Quota VIP / env 白名单 / 总开关关闭）。
      * <p>
      * 调用方可在派发前预先判断，方便日志/调试；门面方法本身也会内部判断。
      */

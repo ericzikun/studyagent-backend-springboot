@@ -968,14 +968,14 @@ class StripeBillingWebhookServiceTest {
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutCompleted", String.class, String.class, Session.class);
         method.setAccessible(true);
         method.invoke(service, "evt_test_checkout_completed", "checkout.session.completed", session);
     }
 
     private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutExpired", String.class, String.class, Session.class);
         method.setAccessible(true);
         method.invoke(service, "evt_test_checkout_expired", "checkout.session.expired", session);
@@ -986,7 +986,7 @@ class StripeBillingWebhookServiceTest {
             Invoice invoice,
             String eventType,
             String eventSubscriptionId) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleInvoiceFailed",
                 String.class,
                 Invoice.class,
@@ -1001,7 +1001,7 @@ class StripeBillingWebhookServiceTest {
             Subscription subscription,
             boolean deleted,
             boolean activatePendingPlan) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "syncSubscription",
                 Subscription.class,
                 boolean.class,

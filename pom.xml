@@ -52,8 +52,8 @@
         <commons-lang3.version>3.13.0</commons-lang3.version>
         <gson.version>2.10.1</gson.version>
 
-        <!-- PostHog (使用 legacy SDK，包名 com.posthog.java，与阿里云兼容) -->
-        <posthog.version>1.1.0</posthog.version>
+        <!-- PostHog 官方 Server SDK -->
+        <posthog.version>2.7.0</posthog.version>
 
         <!-- Caffeine：Verla 上下文查询本地缓存（PR-10） -->
         <caffeine.version>3.1.8</caffeine.version>
@@ -135,10 +135,10 @@
                 <version>${gson.version}</version>
             </dependency>
 
-            <!-- PostHog Java SDK (legacy 坐标，阿里云镜像可解析) -->
+            <!-- PostHog 官方 Server SDK -->
             <dependency>
-                <groupId>com.posthog.java</groupId>
-                <artifactId>posthog</artifactId>
+                <groupId>com.posthog</groupId>
+                <artifactId>posthog-server</artifactId>
                 <version>${posthog.version}</version>
             </dependency>
 

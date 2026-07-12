@@ -18,6 +18,7 @@ import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.AddonGrantService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +42,9 @@ public class AddonGrantServiceImpl implements AddonGrantService {
     private final UserAddonGrantMapper userAddonGrantMapper;
     private final QuotaLedgerMapper quotaLedgerMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
+
+    @Autowired
+    private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -102,6 +106,21 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         )));
         ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
+        long grantAmount = defaultLong(addon.getQuotaAmount());
+        if (quotaGrantAnalyticsPublisher != null && grantAmount > 0) {
+            quotaGrantAnalyticsPublisher.publishAfterCommit(new QuotaGrantAnalyticsEvent(
+                    clerkUserId,
+                    "addon",
+                    addon.getFeatureCode(),
+                    grantAmount,
+                    null,
+                    addonCode,
+                    "checkout",
+                    stripeSessionId,
+                    "checkout:" + stripeSessionId + ":addon",
+                    purchaseTime,
+                    grant.getExpiresAt()));
+        }
     }
 
     @Override

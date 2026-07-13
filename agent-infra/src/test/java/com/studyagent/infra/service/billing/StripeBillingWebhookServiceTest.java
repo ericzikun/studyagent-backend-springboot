@@ -986,7 +986,7 @@ class StripeBillingWebhookServiceTest {
             Invoice invoice,
             String eventType,
             String eventSubscriptionId) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleInvoiceFailed",
                 String.class,
                 Invoice.class,
@@ -1001,7 +1001,7 @@ class StripeBillingWebhookServiceTest {
             Subscription subscription,
             boolean deleted,
             boolean activatePendingPlan) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "syncSubscription",
                 Subscription.class,
                 boolean.class,

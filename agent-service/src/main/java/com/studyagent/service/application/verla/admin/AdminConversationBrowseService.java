@@ -34,15 +34,17 @@ public class AdminConversationBrowseService {
                                                         int pageNo,
                                                         int pageSize,
                                                         VerlaConversationListSegment segment,
-                                                        ConversationStatus statusFilter) {
+                                                        ConversationStatus statusFilter,
+                                                        boolean excludeInternalUsers) {
         int page = Math.max(pageNo, 1);
         int size = Math.min(Math.max(pageSize, 1), 100);
         String segmentKey = segment == null ? null : segment.getQueryKey();
         String statusDb = statusFilter == null ? null : statusFilter.getDbValue();
         String owner = normalizeOwnerUserId(ownerUserId);
-        long total = conversationRepository.countAdminFiltered(owner, segmentKey, statusDb);
-        List<VerlaConversation> rows =
-                conversationRepository.findAdminFilteredPaged(owner, segmentKey, statusDb, page, size);
+        long total = conversationRepository.countAdminFiltered(
+                owner, segmentKey, statusDb, excludeInternalUsers);
+        List<VerlaConversation> rows = conversationRepository.findAdminFilteredPaged(
+                owner, segmentKey, statusDb, excludeInternalUsers, page, size);
         return new VerlaConversationListSlice(rows, total, page, size);
     }
 
@@ -51,7 +53,8 @@ public class AdminConversationBrowseService {
                                                           int pageNo,
                                                           int pageSize,
                                                           VerlaConversationListSegment segment,
-                                                          ConversationStatus statusFilter) {
+                                                          ConversationStatus statusFilter,
+                                                          boolean excludeInternalUsers) {
         String trimmed = keyword == null ? "" : keyword.trim();
         if (trimmed.isEmpty()) {
             throw new BusinessException(ApiCode.PARAM_VALIDATION_FAILED, "keyword is required");
@@ -65,9 +68,10 @@ public class AdminConversationBrowseService {
         String segmentKey = segment == null ? null : segment.getQueryKey();
         String statusDb = statusFilter == null ? null : statusFilter.getDbValue();
         String owner = normalizeOwnerUserId(ownerUserId);
-        long total = conversationRepository.countAdminKeyword(owner, keywordPattern, segmentKey, statusDb);
+        long total = conversationRepository.countAdminKeyword(
+                owner, keywordPattern, segmentKey, statusDb, excludeInternalUsers);
         List<VerlaConversation> rows = conversationRepository.searchAdminKeywordPaged(
-                owner, keywordPattern, segmentKey, statusDb, page, size);
+                owner, keywordPattern, segmentKey, statusDb, excludeInternalUsers, page, size);
         return new VerlaConversationListSlice(rows, total, page, size);
     }
 

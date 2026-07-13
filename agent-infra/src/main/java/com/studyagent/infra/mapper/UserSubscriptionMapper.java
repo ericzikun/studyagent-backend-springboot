@@ -14,6 +14,14 @@ public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntit
     @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1 FOR UPDATE")
     UserSubscriptionEntity selectByUserForUpdate(@Param("clerkUserId") String clerkUserId);
 
+    @Select("<script>"
+            + "SELECT * FROM user_subscriptions WHERE clerk_user_id IN "
+            + "<foreach collection='clerkUserIds' item='id' open='(' separator=',' close=')'>"
+            + "#{id}"
+            + "</foreach>"
+            + "</script>")
+    List<UserSubscriptionEntity> selectByClerkUserIds(@Param("clerkUserIds") List<String> clerkUserIds);
+
     @Select("""
             SELECT us.*
             FROM user_subscriptions us

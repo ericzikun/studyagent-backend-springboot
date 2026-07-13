@@ -5,6 +5,7 @@ import com.studyagent.api.web.verla.VerlaPublicId;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.api.common.Result;
@@ -64,7 +65,7 @@ public class VerlaEditorContentController {
             @RequestParam("kind") String kind) {
         ensureLogin(clerkUserId);
         String editorKind = normalizeEditorKind(kind);
-        ensureConversationAndArtifactOwnership(clerkUserId, conversationId, artifactUid);
+        VerlaArtifactEntity artifact = ensureConversationAndArtifactOwnership(clerkUserId, conversationId, artifactUid);
 
         VerlaEditorContentEntity editorContent = editorContentMapper.selectOne(
                 new LambdaQueryWrapper<VerlaEditorContentEntity>()
@@ -109,6 +110,10 @@ public class VerlaEditorContentController {
             }
         }
 
+        if (!parseError) {
+            repairLegacyDocumentTitle(editorContent, editorKind, artifact);
+        }
+
         return Result.success(VerlaEditorContentResponseVO.builder()
                 .conversationId(VerlaPublicIdVoSupport.conversation(conversationId, true))
                 .artifactUid(artifactUid)
@@ -134,7 +139,7 @@ public class VerlaEditorContentController {
             @RequestBody @Valid SaveVerlaEditorContentRequest request) {
         ensureLogin(clerkUserId);
         String editorKind = normalizeEditorKind(kind);
-        ensureConversationAndArtifactOwnership(clerkUserId, conversationId, artifactUid);
+        VerlaArtifactEntity artifact = ensureConversationAndArtifactOwnership(clerkUserId, conversationId, artifactUid);
 
         VerlaEditorContentEntity editorContent = editorContentMapper.selectOne(
                 new LambdaQueryWrapper<VerlaEditorContentEntity>()
@@ -157,7 +162,7 @@ public class VerlaEditorContentController {
             created = true;
         }
 
-        editorContent.setTitle(resolveTitle(request, editorContent.getTitle()));
+        editorContent.setTitle(resolveTitle(request, editorContent.getTitle(), editorKind, created, artifact));
         editorContent.setContentJson(writeJson(request.getContent()));
         editorContent.setMetaJson(writeJson(request.getMeta()));
         editorContent.setSeedArtifactUid(resolveSeedArtifactUid(request.getSeedArtifactUid(), artifactUid));
@@ -205,7 +210,8 @@ public class VerlaEditorContentController {
                 .build());
     }
 
-    private void ensureConversationAndArtifactOwnership(String clerkUserId, Long conversationId, String artifactUid) {
+    private VerlaArtifactEntity ensureConversationAndArtifactOwnership(String clerkUserId, Long conversationId,
+                                                                        String artifactUid) {
         conversationService.getOwned(clerkUserId, conversationId);
         VerlaArtifactEntity artifact = artifactMapper.selectByUid(artifactUid);
         if (artifact == null) {
@@ -214,6 +220,7 @@ public class VerlaEditorContentController {
         if (!conversationId.equals(artifact.getConversationId())) {
             throw new BusinessException(ApiCode.NO_PERMISSION);
         }
+        return artifact;
     }
 
     private Integer findLatestVersionNo(Long editorContentId) {
@@ -268,7 +275,8 @@ public class VerlaEditorContentController {
         return seedArtifactUid.trim();
     }
 
-    private String resolveTitle(SaveVerlaEditorContentRequest request, String existingTitle) {
+    private String resolveTitle(SaveVerlaEditorContentRequest request, String existingTitle, String editorKind,
+                                boolean created, VerlaArtifactEntity artifact) {
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             return request.getTitle().trim();
         }
@@ -285,7 +293,47 @@ public class VerlaEditorContentController {
         if (existingTitle != null && !existingTitle.isBlank()) {
             return existingTitle;
         }
+        if (created && "document".equals(editorKind)) {
+            String artifactSummary = nonBlankSummary(artifact);
+            if (artifactSummary != null) {
+                return artifactSummary;
+            }
+        }
         return "Untitled";
+    }
+
+    private void repairLegacyDocumentTitle(VerlaEditorContentEntity editorContent, String editorKind,
+                                           VerlaArtifactEntity artifact) {
+        if (!"document".equals(editorKind) || !isLegacyUntitled(editorContent.getTitle())) {
+            return;
+        }
+        String artifactSummary = nonBlankSummary(artifact);
+        if (artifactSummary == null) {
+            return;
+        }
+        int repaired = editorContentMapper.update(
+                null,
+                new UpdateWrapper<VerlaEditorContentEntity>()
+                        .eq("id", editorContent.getId())
+                        .eq("editor_kind", "document")
+                        .apply("LOWER(TRIM(title)) = {0}", "untitled")
+                        .set("title", artifactSummary)
+                        .set("updated_at", LocalDateTime.now())
+        );
+        if (repaired > 0) {
+            editorContent.setTitle(artifactSummary);
+        }
+    }
+
+    private boolean isLegacyUntitled(String title) {
+        return title != null && "untitled".equalsIgnoreCase(title.trim());
+    }
+
+    private String nonBlankSummary(VerlaArtifactEntity artifact) {
+        if (artifact == null || artifact.getSummary() == null || artifact.getSummary().isBlank()) {
+            return null;
+        }
+        return artifact.getSummary().trim();
     }
 
     private String writeJson(Object value) {

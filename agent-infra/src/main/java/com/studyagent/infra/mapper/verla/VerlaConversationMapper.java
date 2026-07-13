@@ -120,12 +120,15 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
                             @Param("conversationStatus") String conversationStatus);
 
     /**
-     * Admin 运维：跨用户会话列表（可选 ownerUserId / segment / status 过滤）。
+     * Admin 运维：跨用户会话列表（可选 ownerUserId / segment / status / 内部用户排除）。
      */
     @Select("<script>"
             + "SELECT * FROM verla_conversations WHERE status &lt;&gt; 'deleted' "
             + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND user_id = #{ownerUserId} </if>"
             + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='excludeInternal'>"
+            + " AND user_id NOT IN (SELECT clerk_user_id FROM ops_internal_users WHERE status = 'active') "
+            + "</if>"
             + "<if test='segment != null'>"
             + "<choose>"
             + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
@@ -143,6 +146,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
     List<VerlaConversationEntity> selectAdminFilteredPaged(@Param("ownerUserId") String ownerUserId,
                                                            @Param("segment") String segment,
                                                            @Param("conversationStatus") String conversationStatus,
+                                                           @Param("excludeInternal") boolean excludeInternal,
                                                            @Param("limit") int limit,
                                                            @Param("offset") int offset);
 
@@ -150,6 +154,9 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "SELECT COUNT(*) FROM verla_conversations WHERE status &lt;&gt; 'deleted' "
             + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND user_id = #{ownerUserId} </if>"
             + "<if test='conversationStatus != null'> AND status = #{conversationStatus} </if>"
+            + "<if test='excludeInternal'>"
+            + " AND user_id NOT IN (SELECT clerk_user_id FROM ops_internal_users WHERE status = 'active') "
+            + "</if>"
             + "<if test='segment != null'>"
             + "<choose>"
             + "<when test='segment == \"assignment\"'> AND (primary_intent IS NULL OR primary_intent = '' "
@@ -164,13 +171,17 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "</script>")
     long countAdminFiltered(@Param("ownerUserId") String ownerUserId,
                             @Param("segment") String segment,
-                            @Param("conversationStatus") String conversationStatus);
+                            @Param("conversationStatus") String conversationStatus,
+                            @Param("excludeInternal") boolean excludeInternal);
 
     @Select("<script>"
             + "SELECT DISTINCT c.* FROM verla_conversations c "
             + "WHERE c.status &lt;&gt; 'deleted' "
             + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND c.user_id = #{ownerUserId} </if>"
             + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='excludeInternal'>"
+            + " AND c.user_id NOT IN (SELECT clerk_user_id FROM ops_internal_users WHERE status = 'active') "
+            + "</if>"
             + "<if test='segment != null'>"
             + "<choose>"
             + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
@@ -192,6 +203,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
                                                           @Param("keyword") String keyword,
                                                           @Param("segment") String segment,
                                                           @Param("conversationStatus") String conversationStatus,
+                                                          @Param("excludeInternal") boolean excludeInternal,
                                                           @Param("limit") int limit,
                                                           @Param("offset") int offset);
 
@@ -200,6 +212,9 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "WHERE c.status &lt;&gt; 'deleted' "
             + "<if test='ownerUserId != null and ownerUserId != \"\"'> AND c.user_id = #{ownerUserId} </if>"
             + "<if test='conversationStatus != null'> AND c.status = #{conversationStatus} </if>"
+            + "<if test='excludeInternal'>"
+            + " AND c.user_id NOT IN (SELECT clerk_user_id FROM ops_internal_users WHERE status = 'active') "
+            + "</if>"
             + "<if test='segment != null'>"
             + "<choose>"
             + "<when test='segment == \"assignment\"'> AND (c.primary_intent IS NULL OR c.primary_intent = '' "
@@ -218,7 +233,8 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
     long countAdminKeyword(@Param("ownerUserId") String ownerUserId,
                            @Param("keyword") String keyword,
                            @Param("segment") String segment,
-                           @Param("conversationStatus") String conversationStatus);
+                           @Param("conversationStatus") String conversationStatus,
+                           @Param("excludeInternal") boolean excludeInternal);
 
     /**
      * 自增 version + 同步刷新 last_message_at / last_active_at / last_turn_id / turn_count（按需）

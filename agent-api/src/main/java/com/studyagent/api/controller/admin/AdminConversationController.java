@@ -23,8 +23,11 @@ import com.studyagent.service.application.verla.VerlaConversationDashboardStatus
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaFileChatService;
 import com.studyagent.service.application.verla.admin.AdminConversationBrowseService;
+import com.studyagent.service.application.verla.admin.AdminOwnerProfile;
 import com.studyagent.service.application.verla.admin.VerlaAdminAccessService;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
+import com.studyagent.infra.service.admin.AdminOwnerProfileEnricher;
+import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -68,6 +71,7 @@ public class AdminConversationController {
 
     private final VerlaAdminAccessService adminAccessService;
     private final AdminConversationBrowseService browseService;
+    private final AdminOwnerProfileEnricher ownerProfileEnricher;
     private final VerlaConversationDashboardStatusService dashboardStatusService;
     private final VerlaConversationService conversationService;
     private final VerlaMessageRepository messageRepository;
@@ -90,12 +94,13 @@ public class AdminConversationController {
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(value = "segment", required = false) String segment,
             @RequestParam(value = "status", required = false) String status,
-            @RequestParam(value = "userId", required = false) String ownerUserId) {
+            @RequestParam(value = "userId", required = false) String ownerUserId,
+            @RequestParam(value = "excludeInternalUsers", defaultValue = "false") boolean excludeInternalUsers) {
         adminAccessService.assertAdmin(clerkUserId);
         VerlaConversationListSegment seg = parseSegment(segment);
         ConversationStatus st = parseConversationStatusFilter(status);
         VerlaConversationListSlice slice = browseService.listConversations(
-                ownerUserId, pageNo, pageSize, seg, st);
+                ownerUserId, pageNo, pageSize, seg, st, excludeInternalUsers);
         return Result.success(buildPage(slice));
     }
 
@@ -107,12 +112,13 @@ public class AdminConversationController {
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(value = "segment", required = false) String segment,
             @RequestParam(value = "status", required = false) String status,
-            @RequestParam(value = "userId", required = false) String ownerUserId) {
+            @RequestParam(value = "userId", required = false) String ownerUserId,
+            @RequestParam(value = "excludeInternalUsers", defaultValue = "false") boolean excludeInternalUsers) {
         adminAccessService.assertAdmin(clerkUserId);
         VerlaConversationListSegment seg = parseSegment(segment);
         ConversationStatus st = parseConversationStatusFilter(status);
         VerlaConversationListSlice slice = browseService.searchConversations(
-                ownerUserId, keyword, pageNo, pageSize, seg, st);
+                ownerUserId, keyword, pageNo, pageSize, seg, st, excludeInternalUsers);
         return Result.success(buildPage(slice));
     }
 
@@ -123,8 +129,15 @@ public class AdminConversationController {
         adminAccessService.assertAdmin(clerkUserId);
         VerlaConversation conversation = browseService.requireReadable(cid);
         String dashboardStatus = dashboardStatusService.resolve(conversation);
-        String ownerDisplayName = browseService.resolveOwnerDisplayName(conversation.getUserId());
-        return Result.success(AdminConversationRowVO.from(conversation, dashboardStatus, ownerDisplayName));
+        Map<String, AdminOwnerProfile> profiles =
+                ownerProfileEnricher.resolveProfiles(List.of(conversation));
+        AdminOwnerProfile profile = profiles.get(conversation.getUserId());
+        FeatureCode featureCode = ownerProfileEnricher.resolveFeatureCode(conversation);
+        boolean unlimited = profile != null && (profile.isQuotaVip() || profile.isAdmin());
+        Long remaining = ownerProfileEnricher.resolveRemainingQuota(
+                conversation.getUserId(), featureCode, unlimited);
+        return Result.success(AdminConversationRowVO.from(
+                conversation, dashboardStatus, profile, remaining, unlimited, featureCode));
     }
 
     @GetMapping("/{cid}/messages")
@@ -259,8 +272,24 @@ public class AdminConversationController {
 
     private AdminConversationPageVO buildPage(VerlaConversationListSlice slice) {
         Map<Long, String> dashboardStatuses = dashboardStatusService.resolveAll(slice.records());
-        Map<String, String> ownerDisplayNames = browseService.resolveOwnerDisplayNames(slice.records());
-        return AdminConversationPageVO.fromSlice(slice, dashboardStatuses, ownerDisplayNames);
+        Map<String, AdminOwnerProfile> ownerProfiles =
+                ownerProfileEnricher.resolveProfiles(slice.records());
+        return AdminConversationPageVO.fromSlice(
+                slice,
+                dashboardStatuses,
+                ownerProfiles,
+                conversation -> {
+                    AdminOwnerProfile profile = ownerProfiles.get(conversation.getUserId());
+                    boolean unlimited = profile != null && (profile.isQuotaVip() || profile.isAdmin());
+                    FeatureCode featureCode = ownerProfileEnricher.resolveFeatureCode(conversation);
+                    return ownerProfileEnricher.resolveRemainingQuota(
+                            conversation.getUserId(), featureCode, unlimited);
+                },
+                conversation -> {
+                    AdminOwnerProfile profile = ownerProfiles.get(conversation.getUserId());
+                    return profile != null && (profile.isQuotaVip() || profile.isAdmin());
+                },
+                ownerProfileEnricher::resolveFeatureCode);
     }
 
     private void writeArchive(VerlaCodeProjectService.CodeProject project, OutputStream outputStream)

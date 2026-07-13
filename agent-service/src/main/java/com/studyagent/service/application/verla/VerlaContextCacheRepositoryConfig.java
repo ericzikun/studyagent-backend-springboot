@@ -188,17 +188,20 @@ public class VerlaContextCacheRepositoryConfig {
             public List<VerlaConversation> findAdminFilteredPaged(String ownerUserId,
                                                                   String segmentQueryKey,
                                                                   String conversationStatusDb,
+                                                                  boolean excludeInternal,
                                                                   int page,
                                                                   int size) {
                 return delegate.findAdminFilteredPaged(
-                        ownerUserId, segmentQueryKey, conversationStatusDb, page, size);
+                        ownerUserId, segmentQueryKey, conversationStatusDb, excludeInternal, page, size);
             }
 
             @Override
             public long countAdminFiltered(String ownerUserId,
                                            String segmentQueryKey,
-                                           String conversationStatusDb) {
-                return delegate.countAdminFiltered(ownerUserId, segmentQueryKey, conversationStatusDb);
+                                           String conversationStatusDb,
+                                           boolean excludeInternal) {
+                return delegate.countAdminFiltered(
+                        ownerUserId, segmentQueryKey, conversationStatusDb, excludeInternal);
             }
 
             @Override
@@ -206,19 +209,22 @@ public class VerlaContextCacheRepositoryConfig {
                                                                    String keywordPattern,
                                                                    String segmentQueryKey,
                                                                    String conversationStatusDb,
+                                                                   boolean excludeInternal,
                                                                    int page,
                                                                    int size) {
                 return delegate.searchAdminKeywordPaged(
-                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb, page, size);
+                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb,
+                        excludeInternal, page, size);
             }
 
             @Override
             public long countAdminKeyword(String ownerUserId,
                                           String keywordPattern,
                                           String segmentQueryKey,
-                                          String conversationStatusDb) {
+                                          String conversationStatusDb,
+                                          boolean excludeInternal) {
                 return delegate.countAdminKeyword(
-                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb);
+                        ownerUserId, keywordPattern, segmentQueryKey, conversationStatusDb, excludeInternal);
             }
 
             @Override

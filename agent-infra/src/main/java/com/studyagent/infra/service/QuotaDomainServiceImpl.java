@@ -17,6 +17,7 @@ import com.studyagent.service.domain.quota.QuotaLedgerDisplayType;
 import com.studyagent.service.domain.quota.QuotaLedgerItem;
 import com.studyagent.service.domain.quota.QuotaLedgerPlanTier;
 import com.studyagent.service.domain.quota.QuotaLedgerPageResult;
+import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -151,12 +152,15 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         addonGrantService.expireEligible(clerkUserId, featureCode, "balance_query");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+        boolean paidEntitlementsAvailable = paidEntitlementsAvailable(clerkUserId, now);
+        long planBalance = paidEntitlementsAvailable && quota.getPlanBalance() != null
+                ? quota.getPlanBalance()
+                : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
         long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> addonGrants = reanchorFutureAddonGrantsIfNeeded(
-                findAddonGrantsForBalance(clerkUserId, featureCode),
-                now);
+        List<UserAddonGrantEntity> addonGrants = paidEntitlementsAvailable
+                ? reanchorFutureAddonGrantsIfNeeded(findAddonGrantsForBalance(clerkUserId, featureCode), now)
+                : List.of();
         long addonBalance = addonGrants.stream()
                 .filter(grant -> isGrantConsumable(grant, now))
                 .map(UserAddonGrantEntity::getRemainingAmount)
@@ -289,12 +293,15 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         addonGrantService.expireEligible(clerkUserId, featureCode, "consume");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        long planBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+        boolean paidEntitlementsAvailable = paidEntitlementsAvailable(clerkUserId, now);
+        long planBalance = paidEntitlementsAvailable && quota.getPlanBalance() != null
+                ? quota.getPlanBalance()
+                : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
         long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> activeAddonGrants = reanchorFutureAddonGrantsIfNeeded(
-                findActiveAddonGrants(clerkUserId, featureCode, now),
-                now);
+        List<UserAddonGrantEntity> activeAddonGrants = paidEntitlementsAvailable
+                ? reanchorFutureAddonGrantsIfNeeded(findActiveAddonGrants(clerkUserId, featureCode, now), now)
+                : List.of();
         long addonBalance = activeAddonGrants.stream()
                 .map(UserAddonGrantEntity::getRemainingAmount)
                 .filter(value -> value != null && value > 0)
@@ -1220,6 +1227,18 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         quotaLedgerMapper.insert(ledger);
 
         return newAllocation(POOL_TYPE_ADDON, grant.getId(), amount, now, grant.getExpiresAt());
+    }
+
+    private boolean paidEntitlementsAvailable(String clerkUserId, LocalDateTime now) {
+        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        if (subscription == null) {
+            // Preserve migrated legacy accounts that predate the subscription mirror.
+            return true;
+        }
+        return BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
+                subscription.getStatus(),
+                subscription.getGraceEndAt(),
+                now);
     }
 
     private void updateQuotaOrThrow(UserAiQuotaEntity quota, String action) {

@@ -12,6 +12,11 @@ public class SubscriptionResult {
     private String tier;
     private String planCode;
     private String status;
+    private BillingAccessState accessState;
+    private Boolean canConsumePaidEntitlements;
+    private Boolean canRefreshPlan;
+    private Boolean canPurchaseAddon;
+    private List<String> availableActions;
     private Boolean isAdmin;
     /** Quota VIP：额度不扣 + 套餐权益无限，无运营后台。 */
     private Boolean isQuotaVip;

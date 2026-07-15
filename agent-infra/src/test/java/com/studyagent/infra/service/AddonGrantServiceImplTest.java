@@ -9,6 +9,7 @@ import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -85,6 +86,74 @@ class AddonGrantServiceImplTest {
         assertEquals("addon", analyticsCaptor.getValue().grantType());
         assertEquals("addon_assignment_3", analyticsCaptor.getValue().addonCode());
         assertEquals(3L, analyticsCaptor.getValue().quotaAmount());
+    }
+
+    @Test
+    void grantFromPaidCheckout_usesImmutableOrderSnapshotInsteadOfCurrentCatalog() {
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.insert(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        AddonGrantServiceImpl service = new AddonGrantServiceImpl(
+                addonPackageDefMapper,
+                userAddonGrantMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+        ReflectionTestUtils.setField(service, "quotaGrantAnalyticsPublisher", quotaGrantAnalyticsPublisher);
+
+        Instant paidAt = Instant.parse("2026-07-15T08:30:00Z");
+        service.grantFromPaidCheckout(
+                "user_1",
+                new AddonGrantSnapshot(42L, "addon_assignment_3", "task_create", 3L, 2),
+                "cs_snapshot",
+                "pi_snapshot",
+                paidAt);
+
+        ArgumentCaptor<UserAddonGrantEntity> grantCaptor = ArgumentCaptor.forClass(UserAddonGrantEntity.class);
+        verify(userAddonGrantMapper).insert(grantCaptor.capture());
+        UserAddonGrantEntity grant = grantCaptor.getValue();
+        assertEquals(42L, grant.getSourceOrderId());
+        assertEquals("task_create", grant.getFeatureCode());
+        assertEquals(3L, grant.getInitialAmount());
+        assertEquals(DateTimeFormats.fromInstant(paidAt).plusMonths(2), grant.getExpiresAt());
+        verify(addonPackageDefMapper, never()).selectOne(any(Wrapper.class));
+    }
+
+    @Test
+    void adjustForRefundWithdrawsAvailableQuotaAndRecordsConsumedQuotaAsDebt() {
+        UserAddonGrantEntity grant = new UserAddonGrantEntity();
+        grant.setId(50L);
+        grant.setClerkUserId("user_1");
+        grant.setFeatureCode("task_create");
+        grant.setAddonCode("addon_assignment_3");
+        grant.setStatus("active");
+        grant.setInitialAmount(3L);
+        grant.setRemainingAmount(1L);
+        grant.setReversedAmount(0L);
+        grant.setQuotaDebtAmount(0L);
+        grant.setVersion(0);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(grant);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+
+        AddonGrantServiceImpl service = new AddonGrantServiceImpl(
+                addonPackageDefMapper,
+                userAddonGrantMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.adjustForRefund("pi_refund", "charge:ch_1:300", 300, 300);
+
+        assertEquals(0L, grant.getRemainingAmount());
+        assertEquals(3L, grant.getReversedAmount());
+        assertEquals(2L, grant.getQuotaDebtAmount());
+        assertEquals("refunded", grant.getStatus());
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        assertEquals(-3L, ledgerCaptor.getValue().getAmount());
+        assertEquals("addon_refund_adjustment", ledgerCaptor.getValue().getLedgerType());
     }
 
     @Test

@@ -33,13 +33,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -56,6 +61,7 @@ class StripeBillingWebhookServiceTest {
     static void initTableInfo() {
         MybatisPlusTableInfoTestHelper.initTableInfo(RechargeOrderEntity.class);
         MybatisPlusTableInfoTestHelper.initTableInfo(UserSubscriptionEntity.class);
+        MybatisPlusTableInfoTestHelper.initTableInfo(StripeWebhookEventEntity.class);
     }
 
     @Mock
@@ -78,6 +84,8 @@ class StripeBillingWebhookServiceTest {
     private ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
     @Mock
     private PlatformTransactionManager transactionManager;
+    @Mock
+    private TransactionStatus transactionStatus;
 
     @Test
     void supportsSubscriptionLifecycleEvents() {
@@ -108,6 +116,52 @@ class StripeBillingWebhookServiceTest {
                 StripeBillingWebhookService.calculateNextRetryAt(failedAt, 1));
         assertEquals(failedAt.plusMinutes(60),
                 StripeBillingWebhookService.calculateNextRetryAt(failedAt, 20));
+    }
+
+    @Test
+    void unmappedRefundEventRequiresReviewWithoutRetryFailure() {
+        Event event = reversalEvent(
+                "evt_unmapped_refund",
+                "charge.refunded",
+                "charge",
+                "\"payment_intent\":\"pi_external\",\"amount\":9900,"
+                        + "\"amount_refunded\":9900,\"refunded\":true");
+
+        assertReviewRequired(event);
+    }
+
+    @Test
+    void unmappedDisputeEventRequiresReviewWithoutRetryFailure() {
+        Event event = reversalEvent(
+                "evt_unmapped_dispute",
+                "charge.dispute.created",
+                "dispute",
+                "\"payment_intent\":\"pi_external\",\"charge\":\"ch_external\","
+                        + "\"amount\":9900,\"status\":\"needs_response\"");
+
+        assertReviewRequired(event);
+    }
+
+    @Test
+    void unmappedCreditNoteEventRequiresReviewWithoutRetryFailure() {
+        Event event = reversalEvent(
+                "evt_unmapped_credit_note",
+                "credit_note.created",
+                "credit_note",
+                "\"invoice\":\"in_external\",\"status\":\"issued\"");
+
+        assertReviewRequired(event);
+    }
+
+    @Test
+    void retryWorkerDoesNotCountEventThatWasNotClaimed() {
+        Event event = event("invoice.paid", "invoice", null);
+        StripeWebhookEventEntity due = webhookEvent(event, "failed");
+        StripeWebhookEventEntity alreadySucceeded = webhookEvent(event, "succeeded");
+        when(webhookEventMapper.selectList(any())).thenReturn(List.of(due));
+        when(webhookEventMapper.selectById(event.getId())).thenReturn(alreadySucceeded);
+
+        assertEquals(0, service().retryDueEvents(10));
     }
 
     @Test
@@ -188,7 +242,7 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
-    void fullRefundOfCurrentSubscriptionInvoiceSuspendsCurrentEntitlements() throws Exception {
+    void fullRefundOfCurrentSubscriptionInvoiceCancelsCurrentSubscription() throws Exception {
         RechargeOrderEntity order = new RechargeOrderEntity();
         order.setId(77L);
         order.setOrderType("subscription_renewal");
@@ -202,8 +256,9 @@ class StripeBillingWebhookServiceTest {
         current.setId(88L);
         current.setStripeSubscriptionId("sub_current");
         current.setPlanCode("plus_monthly");
-        when(userSubscriptionMapper.selectOne(any())).thenReturn(current);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        AtomicBoolean canceledInStripe = new AtomicBoolean(false);
         StripeBillingWebhookService service = new StripeBillingWebhookService(
                 webhookEventMapper,
                 userSubscriptionMapper,
@@ -221,6 +276,12 @@ class StripeBillingWebhookServiceTest {
                 subscription.setLatestInvoice("in_current");
                 return subscription;
             }
+
+            Subscription cancelStripeSubscription(Subscription subscription) {
+                canceledInStripe.set(true);
+                subscription.setStatus("canceled");
+                return subscription;
+            }
         };
         String json = """
                 {"id":"evt_subscription_refund","object":"event","created":1781696510,
@@ -236,7 +297,9 @@ class StripeBillingWebhookServiceTest {
                 "user_1", "sub_current", "plus_monthly", "refund:ch_subscription_refund:plan");
         verify(billingQuotaGateway).pauseAddons(
                 "user_1", "sub_current", "refund:ch_subscription_refund:addons");
+        verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
         verify(userSubscriptionMapper).update(isNull(), any());
+        assertTrue(canceledInStripe.get());
     }
 
     @Test
@@ -330,6 +393,65 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void subscriptionUpdatedUsesAuthoritativeRemoteCanceledStateAtSameTimestamp() throws Exception {
+        UserSubscriptionEntity existing = activeSubscription();
+        existing.setId(88L);
+        existing.setPlanCode("plus_monthly");
+        existing.setTier("plus");
+        existing.setLastStripeEventCreatedAt(1781696510L);
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        List<Object> updateValues = new ArrayList<>();
+        when(userSubscriptionMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+        AtomicBoolean retrievedRemote = new AtomicBoolean(false);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                retrievedRemote.set(true);
+                Subscription remote = new Subscription();
+                remote.setId(subscriptionId);
+                remote.setCustomer("cus_123");
+                remote.setStatus("canceled");
+                remote.setMetadata(Map.of("clerk_user_id", "user_1"));
+                return remote;
+            }
+        };
+        String json = """
+                {"id":"evt_active_same_second","object":"event","created":1781696510,
+                 "api_version":"2023-10-16","type":"customer.subscription.updated","data":{"object":{
+                   "id":"sub_active","object":"subscription","customer":"cus_123","status":"active",
+                   "metadata":{"clerk_user_id":"user_1"},
+                   "items":{"object":"list","data":[{"id":"si_1","object":"subscription_item",
+                     "price":{"id":"price_plus","object":"price"}}]}}}}
+                """;
+
+        invokeSyncSubscriptionEvent(
+                service,
+                com.stripe.net.ApiResource.GSON.fromJson(json, Event.class),
+                false,
+                false);
+
+        assertTrue(retrievedRemote.get());
+        assertTrue(updateValues.contains("canceled"));
+        assertFalse(updateValues.contains("active"));
+        verify(billingQuotaGateway).clearPlanQuota(
+                "user_1", "sub_active", "plus_monthly", "subscription:sub_active:deleted");
+    }
+
+    @Test
     void stalePaidEventIsIgnoredWhenDifferentSubscriptionIsAlreadyCurrent() {
         UserSubscriptionEntity existing = new UserSubscriptionEntity();
         existing.setStatus("active");
@@ -396,6 +518,46 @@ class StripeBillingWebhookServiceTest {
         invokeHandle(service(), event);
 
         verify(rechargeOrderMapper).update(isNull(), any());
+        verify(billingQuotaGateway, never()).grantAddonFromCheckout(
+                any(), any(AddonGrantSnapshot.class), any(), any(), any());
+    }
+
+    @Test
+    void paidAddonWithMissingSnapshotIsRefundedWithoutGrant() {
+        RechargeOrderEntity order = addonOrder("cs_missing_snapshot");
+        order.setValidityMonthsSnapshot(null);
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
+                refunded.set(true);
+            }
+        };
+        Event event = checkoutEvent(
+                "checkout.session.async_payment_succeeded",
+                "cs_missing_snapshot",
+                "paid");
+        List<Object> orderUpdateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            orderUpdateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        assertDoesNotThrow(() -> invokeHandle(service, event));
+
+        assertTrue(refunded.get());
+        assertTrue(orderUpdateValues.contains("refunded"));
+        assertTrue(orderUpdateValues.contains("missing_addon_order_snapshot"));
         verify(billingQuotaGateway, never()).grantAddonFromCheckout(
                 any(), any(AddonGrantSnapshot.class), any(), any(), any());
     }
@@ -1252,6 +1414,50 @@ class StripeBillingWebhookServiceTest {
                 "subscription:sub_123:deleted");
     }
 
+    private void assertReviewRequired(Event event) {
+        StripeWebhookEventEntity received = webhookEvent(event, "received");
+        StripeWebhookEventEntity processing = webhookEvent(event, "processing");
+        processing.setAttemptCount(1);
+        when(webhookEventMapper.selectById(event.getId()))
+                .thenReturn(null, received, processing);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        List<Object> updateValues = new ArrayList<>();
+        when(webhookEventMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        assertDoesNotThrow(() -> service().process(event));
+        assertTrue(updateValues.contains("review_required"));
+        assertFalse(updateValues.contains("failed"));
+        assertFalse(updateValues.contains("dead_letter"));
+    }
+
+    private StripeWebhookEventEntity webhookEvent(Event event, String status) {
+        StripeWebhookEventEntity entity = new StripeWebhookEventEntity();
+        entity.setEventId(event.getId());
+        entity.setEventType(event.getType());
+        entity.setStatus(status);
+        entity.setAttemptCount(0);
+        entity.setPayloadJson(com.stripe.net.ApiResource.GSON.toJson(event));
+        entity.setNextRetryAt(LocalDateTime.now().minusMinutes(1));
+        return entity;
+    }
+
+    private Event reversalEvent(
+            String eventId,
+            String eventType,
+            String objectType,
+            String objectFields) {
+        String json = """
+                {"id":"%s","object":"event","created":1781696510,
+                 "api_version":"2023-10-16","type":"%s","data":{"object":{
+                   "id":"obj_external","object":"%s",%s}}}
+                """.formatted(eventId, eventType, objectType, objectFields);
+        return com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,
@@ -1312,6 +1518,20 @@ class StripeBillingWebhookServiceTest {
                 boolean.class);
         method.setAccessible(true);
         method.invoke(service, subscription, deleted, activatePendingPlan);
+    }
+
+    private void invokeSyncSubscriptionEvent(
+            StripeBillingWebhookService service,
+            Event event,
+            boolean deleted,
+            boolean activatePendingPlan) throws Exception {
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
+                "syncSubscription",
+                Event.class,
+                boolean.class,
+                boolean.class);
+        method.setAccessible(true);
+        method.invoke(service, event, deleted, activatePendingPlan);
     }
 
     private Event event(String type, String object, String purchaseType) {

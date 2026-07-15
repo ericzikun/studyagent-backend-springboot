@@ -51,6 +51,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class QuotaDomainServiceImpl implements QuotaDomainService {
+    private enum PaidEntitlementScope {
+        ALL,
+        LEGACY_ONLY,
+        NONE
+    }
+
     private static final Gson GSON = new Gson();
 
     private final AiFeatureDefsMapper aiFeatureDefsMapper;
@@ -152,14 +158,17 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         addonGrantService.expireEligible(clerkUserId, featureCode, "balance_query");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        boolean paidEntitlementsAvailable = paidEntitlementsAvailable(clerkUserId, now);
-        long planBalance = paidEntitlementsAvailable && quota.getPlanBalance() != null
+        PaidEntitlementScope paidScope = resolvePaidEntitlementScope(clerkUserId, now);
+        long planBalance = paidScope == PaidEntitlementScope.ALL && quota.getPlanBalance() != null
                 ? quota.getPlanBalance()
                 : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
-        long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> addonGrants = paidEntitlementsAvailable
-                ? reanchorFutureAddonGrantsIfNeeded(findAddonGrantsForBalance(clerkUserId, featureCode), now)
+        long legacyBalance = paidScope != PaidEntitlementScope.NONE
+                ? legacyBalanceInRuns(featureCode, legacyRawBalance)
+                : 0L;
+        List<UserAddonGrantEntity> addonGrants = paidScope != PaidEntitlementScope.NONE
+                ? reanchorFutureAddonGrantsIfNeeded(filterAddonGrantsForScope(
+                        findAddonGrantsForBalance(clerkUserId, featureCode), paidScope), now)
                 : List.of();
         long addonBalance = addonGrants.stream()
                 .filter(grant -> isGrantConsumable(grant, now))
@@ -293,14 +302,17 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         addonGrantService.expireEligible(clerkUserId, featureCode, "consume");
 
         long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
-        boolean paidEntitlementsAvailable = paidEntitlementsAvailable(clerkUserId, now);
-        long planBalance = paidEntitlementsAvailable && quota.getPlanBalance() != null
+        PaidEntitlementScope paidScope = resolvePaidEntitlementScope(clerkUserId, now);
+        long planBalance = paidScope == PaidEntitlementScope.ALL && quota.getPlanBalance() != null
                 ? quota.getPlanBalance()
                 : 0L;
         long legacyRawBalance = quota.getPaidBalance() != null ? quota.getPaidBalance() : 0L;
-        long legacyBalance = legacyBalanceInRuns(featureCode, legacyRawBalance);
-        List<UserAddonGrantEntity> activeAddonGrants = paidEntitlementsAvailable
-                ? reanchorFutureAddonGrantsIfNeeded(findActiveAddonGrants(clerkUserId, featureCode, now), now)
+        long legacyBalance = paidScope != PaidEntitlementScope.NONE
+                ? legacyBalanceInRuns(featureCode, legacyRawBalance)
+                : 0L;
+        List<UserAddonGrantEntity> activeAddonGrants = paidScope != PaidEntitlementScope.NONE
+                ? reanchorFutureAddonGrantsIfNeeded(filterAddonGrantsForScope(
+                        findActiveAddonGrants(clerkUserId, featureCode, now), paidScope), now)
                 : List.of();
         long addonBalance = activeAddonGrants.stream()
                 .map(UserAddonGrantEntity::getRemainingAmount)
@@ -1229,16 +1241,32 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         return newAllocation(POOL_TYPE_ADDON, grant.getId(), amount, now, grant.getExpiresAt());
     }
 
-    private boolean paidEntitlementsAvailable(String clerkUserId, LocalDateTime now) {
+    private PaidEntitlementScope resolvePaidEntitlementScope(String clerkUserId, LocalDateTime now) {
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         if (subscription == null) {
-            // Preserve migrated legacy accounts that predate the subscription mirror.
-            return true;
+            return PaidEntitlementScope.LEGACY_ONLY;
         }
         return BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
                 subscription.getStatus(),
                 subscription.getGraceEndAt(),
-                now);
+                now)
+                ? PaidEntitlementScope.ALL
+                : PaidEntitlementScope.NONE;
+    }
+
+    private List<UserAddonGrantEntity> filterAddonGrantsForScope(
+            List<UserAddonGrantEntity> grants,
+            PaidEntitlementScope scope) {
+        if (scope == PaidEntitlementScope.ALL) {
+            return grants;
+        }
+        if (scope == PaidEntitlementScope.NONE) {
+            return List.of();
+        }
+        return grants.stream()
+                .filter(grant -> GRANT_TYPE_LEGACY_MIGRATION.equals(grant.getGrantType())
+                        || GRANT_TYPE_LEGACY_MIGRATION_REFUND.equals(grant.getGrantType()))
+                .collect(Collectors.toList());
     }
 
     private void updateQuotaOrThrow(UserAiQuotaEntity quota, String action) {

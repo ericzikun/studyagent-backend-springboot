@@ -2,6 +2,7 @@ package com.studyagent.infra.service.billing;
 
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import com.studyagent.service.domain.quota.AddonGrantService;
+import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -80,6 +81,17 @@ public class BillingQuotaGatewayImpl implements BillingQuotaGateway {
     }
 
     @Override
+    public void grantAddonFromCheckout(
+            String clerkUserId,
+            AddonGrantSnapshot snapshot,
+            String stripeSessionId,
+            String paymentIntentId,
+            Instant paidAt) {
+        addonGrantService.grantFromPaidCheckout(
+                clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
+    }
+
+    @Override
     public void pauseAddons(String clerkUserId, String subscriptionId, String idempotencyKey) {
         addonGrantService.pauseAll(clerkUserId, subscriptionId, idempotencyKey);
     }
@@ -87,5 +99,25 @@ public class BillingQuotaGatewayImpl implements BillingQuotaGateway {
     @Override
     public void resumeEligibleAddons(String clerkUserId, String subscriptionId, String idempotencyKey) {
         addonGrantService.resumeEligible(clerkUserId, subscriptionId, idempotencyKey);
+    }
+
+    @Override
+    public void adjustAddonForRefund(
+            String paymentIntentId,
+            String adjustmentId,
+            long cumulativeRefundCents,
+            long originalPaymentCents) {
+        addonGrantService.adjustForRefund(
+                paymentIntentId, adjustmentId, cumulativeRefundCents, originalPaymentCents);
+    }
+
+    @Override
+    public void freezeAddonForDispute(String paymentIntentId, String disputeId) {
+        addonGrantService.freezeForDispute(paymentIntentId, disputeId);
+    }
+
+    @Override
+    public void restoreAddonAfterDispute(String paymentIntentId, String disputeId) {
+        addonGrantService.restoreAfterDispute(paymentIntentId, disputeId);
     }
 }

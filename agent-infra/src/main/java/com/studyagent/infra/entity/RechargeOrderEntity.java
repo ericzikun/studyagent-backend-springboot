@@ -33,6 +33,8 @@ public class RechargeOrderEntity extends BaseEntity {
     private String addonCode;
     @TableField("quota_amount")
     private Long quotaAmount;
+    @TableField("validity_months_snapshot")
+    private Integer validityMonthsSnapshot;
     @TableField("price_cents")
     private Integer priceCents;
     @TableField("quoted_amount_cents")

@@ -20,6 +20,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -221,7 +222,10 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
-        if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
+        if (subscription == null
+                || !BillingEntitlementPolicy.allowsPlanRefresh(subscription.getStatus())
+                || subscription.getPlanCode() == null
+                || subscription.getPlanCode().isBlank()) {
             return;
         }
 
@@ -235,7 +239,10 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
-        if (lockedSubscription == null || lockedSubscription.getPlanCode() == null || lockedSubscription.getPlanCode().isBlank()) {
+        if (lockedSubscription == null
+                || !BillingEntitlementPolicy.allowsPlanRefresh(lockedSubscription.getStatus())
+                || lockedSubscription.getPlanCode() == null
+                || lockedSubscription.getPlanCode().isBlank()) {
             return;
         }
 
@@ -269,7 +276,10 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
-        if (subscription == null || subscription.getPlanCode() == null || subscription.getPlanCode().isBlank()) {
+        if (subscription == null
+                || !BillingEntitlementPolicy.allowsPlanRefresh(subscription.getStatus())
+                || subscription.getPlanCode() == null
+                || subscription.getPlanCode().isBlank()) {
             return;
         }
 
@@ -282,7 +292,10 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
-        if (lockedSubscription == null || lockedSubscription.getPlanCode() == null || lockedSubscription.getPlanCode().isBlank()) {
+        if (lockedSubscription == null
+                || !BillingEntitlementPolicy.allowsPlanRefresh(lockedSubscription.getStatus())
+                || lockedSubscription.getPlanCode() == null
+                || lockedSubscription.getPlanCode().isBlank()) {
             return;
         }
 

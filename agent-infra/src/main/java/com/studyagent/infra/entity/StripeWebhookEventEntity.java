@@ -22,6 +22,12 @@ public class StripeWebhookEventEntity {
     private Integer attemptCount;
     @TableField("last_error")
     private String lastError;
+    @TableField("payload_json")
+    private String payloadJson;
+    @TableField("next_retry_at")
+    private LocalDateTime nextRetryAt;
+    @TableField("dead_lettered_at")
+    private LocalDateTime deadLetteredAt;
     @TableField("received_at")
     private LocalDateTime receivedAt;
     @TableField("processing_started_at")

@@ -7,6 +7,7 @@ import com.studyagent.infra.entity.QuotaLedgerAllocationEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
 import com.studyagent.infra.entity.UserAiQuotaEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AiFeatureDefsMapper;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.infra.mapper.QuotaLedgerAllocationMapper;
@@ -912,6 +913,31 @@ class QuotaDomainServiceImplTest {
         List<QuotaLedgerAllocationEntity> allocations = captureAllocations(1);
         assertEquals("plan", allocations.get(0).getPoolType());
         assertEquals(1L, allocations.get(0).getAmount());
+    }
+
+    @Test
+    void consume_rejectsPlanAndAddonAfterPastDueGraceExpires() {
+        LocalDateTime now = LocalDateTime.now();
+        UserAiQuotaEntity quota = assignmentQuota(0L, 2L, 0L);
+        UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, now.plusDays(7));
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_1");
+        subscription.setStatus("past_due");
+        subscription.setGraceEndAt(now.minusMinutes(1));
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+
+        QuotaDomainServiceImpl service = service();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> consumeAssignment(service, "session_past_due_expired"));
+
+        assertTrue(ex.getMessage().contains("Insufficient quota"));
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+        verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
     }
 
     @Test

@@ -10,4 +10,6 @@ public class UpgradeChargeQuote {
     String chargeType;
     int remainingAnnualMonthsExcludingCurrent;
     String pricingFormula;
+    int currentNetPaidCents;
+    String sourceInvoiceId;
 }

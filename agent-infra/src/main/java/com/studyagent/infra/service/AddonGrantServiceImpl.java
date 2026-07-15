@@ -17,6 +17,8 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.AddonGrantService;
+import com.studyagent.service.domain.quota.AddonGrantSnapshot;
+import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,9 @@ public class AddonGrantServiceImpl implements AddonGrantService {
     private static final String LEDGER_TYPE_ADDON_EXPIRED = "addon_expired";
     private static final String LEDGER_TYPE_ADDON_PAUSE = "addon_pause";
     private static final String LEDGER_TYPE_ADDON_RESUME = "addon_resume";
+    private static final String LEDGER_TYPE_ADDON_REFUND = "addon_refund_adjustment";
+    private static final String LEDGER_TYPE_ADDON_DISPUTE_FREEZE = "addon_dispute_freeze";
+    private static final String LEDGER_TYPE_ADDON_DISPUTE_RESTORE = "addon_dispute_restore";
 
     private final AddonPackageDefMapper addonPackageDefMapper;
     private final UserAddonGrantMapper userAddonGrantMapper;
@@ -71,19 +76,66 @@ public class AddonGrantServiceImpl implements AddonGrantService {
             throw new IllegalArgumentException("Unknown active addon code: " + addonCode);
         }
 
+        insertGrantFromSnapshot(
+                clerkUserId,
+                new AddonGrantSnapshot(
+                        null,
+                        addonCode,
+                        addon.getFeatureCode(),
+                        defaultLong(addon.getQuotaAmount()),
+                        Math.max(1, defaultInt(addon.getValidityMonths(), 2))),
+                stripeSessionId,
+                paymentIntentId,
+                paidAt);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void grantFromPaidCheckout(
+            String clerkUserId,
+            AddonGrantSnapshot snapshot,
+            String stripeSessionId,
+            String paymentIntentId,
+            Instant paidAt) {
+        UserAddonGrantEntity existing = userAddonGrantMapper.selectOne(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getStripeSessionId, stripeSessionId)
+                        .last("LIMIT 1"));
+        if (existing != null) {
+            return;
+        }
+        if (snapshot == null
+                || snapshot.addonCode() == null
+                || snapshot.featureCode() == null
+                || snapshot.quotaAmount() <= 0
+                || snapshot.validityMonths() <= 0) {
+            throw new IllegalArgumentException("Invalid add-on order snapshot");
+        }
+
+        insertGrantFromSnapshot(clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
+    }
+
+    private void insertGrantFromSnapshot(
+            String clerkUserId,
+            AddonGrantSnapshot snapshot,
+            String stripeSessionId,
+            String paymentIntentId,
+            Instant paidAt) {
+
         LocalDateTime purchaseTime = DateTimeFormats.fromInstant(paidAt);
         UserAddonGrantEntity grant = new UserAddonGrantEntity();
         grant.setClerkUserId(clerkUserId);
-        grant.setFeatureCode(addon.getFeatureCode());
+        grant.setFeatureCode(snapshot.featureCode());
         grant.setGrantType("addon");
-        grant.setAddonCode(addonCode);
+        grant.setAddonCode(snapshot.addonCode());
         grant.setStatus("active");
-        grant.setInitialAmount(defaultLong(addon.getQuotaAmount()));
-        grant.setRemainingAmount(defaultLong(addon.getQuotaAmount()));
+        grant.setInitialAmount(snapshot.quotaAmount());
+        grant.setRemainingAmount(snapshot.quotaAmount());
         grant.setStripeSessionId(stripeSessionId);
         grant.setStripePaymentIntentId(paymentIntentId);
+        grant.setSourceOrderId(snapshot.sourceOrderId());
         grant.setPurchasedAt(purchaseTime);
-        grant.setExpiresAt(purchaseTime.plusMonths(Math.max(1, defaultInt(addon.getValidityMonths(), 2))));
+        grant.setExpiresAt(purchaseTime.plusMonths(snapshot.validityMonths()));
         grant.setVersion(0);
         grant.setCreatedAt(DateTimeFormats.now());
         grant.setUpdatedAt(DateTimeFormats.now());
@@ -92,29 +144,29 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         QuotaLedgerEntity ledger = new QuotaLedgerEntity();
         ledger.setLedgerNo(generateLedgerNo());
         ledger.setClerkUserId(clerkUserId);
-        ledger.setFeatureCode(addon.getFeatureCode());
+        ledger.setFeatureCode(snapshot.featureCode());
         ledger.setLedgerType(LEDGER_TYPE_ADDON_GRANT);
-        ledger.setAmount(defaultLong(addon.getQuotaAmount()));
+        ledger.setAmount(snapshot.quotaAmount());
         ledger.setSourceType("checkout");
         ledger.setSourceId(stripeSessionId);
         ledger.setIdempotencyKey("checkout:" + stripeSessionId + ":addon");
-        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, addon.getFeatureCode(), DateTimeFormats.now()));
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(clerkUserId, snapshot.featureCode(), DateTimeFormats.now()));
         ledger.setBizContext(GSON.toJson(Map.of(
-                "addon_code", addonCode,
+                "addon_code", snapshot.addonCode(),
                 "stripe_session_id", stripeSessionId,
                 "stripe_payment_intent_id", paymentIntentId == null ? "" : paymentIntentId
         )));
         ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
-        long grantAmount = defaultLong(addon.getQuotaAmount());
+        long grantAmount = snapshot.quotaAmount();
         if (quotaGrantAnalyticsPublisher != null && grantAmount > 0) {
             quotaGrantAnalyticsPublisher.publishAfterCommit(new QuotaGrantAnalyticsEvent(
                     clerkUserId,
                     "addon",
-                    addon.getFeatureCode(),
+                    snapshot.featureCode(),
                     grantAmount,
                     null,
-                    addonCode,
+                    snapshot.addonCode(),
                     "checkout",
                     stripeSessionId,
                     "checkout:" + stripeSessionId + ":addon",
@@ -196,6 +248,149 @@ public class AddonGrantServiceImpl implements AddonGrantService {
             }
         }
         insertLifecycleLedger(clerkUserId, subscriptionId, idempotencyKey, LEDGER_TYPE_ADDON_RESUME, now);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adjustForRefund(
+            String paymentIntentId,
+            String adjustmentId,
+            long cumulativeRefundCents,
+            long originalPaymentCents) {
+        String idempotencyKey = "addon-refund:" + adjustmentId;
+        if (hasLedger(LEDGER_TYPE_ADDON_REFUND, idempotencyKey)) {
+            return;
+        }
+        if (paymentIntentId == null || paymentIntentId.isBlank()
+                || originalPaymentCents <= 0 || cumulativeRefundCents <= 0) {
+            throw new IllegalArgumentException("Invalid add-on refund adjustment");
+        }
+        UserAddonGrantEntity grant = userAddonGrantMapper.selectOne(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getStripePaymentIntentId, paymentIntentId)
+                        .last("LIMIT 1"));
+        if (grant == null) {
+            throw new IllegalStateException("Add-on grant not found for refund: " + paymentIntentId);
+        }
+
+        long initial = defaultLong(grant.getInitialAmount());
+        long cappedRefund = Math.min(cumulativeRefundCents, originalPaymentCents);
+        long targetReversed = cappedRefund == originalPaymentCents
+                ? initial
+                : (initial * cappedRefund) / originalPaymentCents;
+        long alreadyReversed = defaultLong(grant.getReversedAmount());
+        long delta = Math.max(0L, targetReversed - alreadyReversed);
+        if (delta == 0L) {
+            return;
+        }
+        long remaining = defaultLong(grant.getRemainingAmount());
+        long withdrawn = Math.min(remaining, delta);
+        long debt = delta - withdrawn;
+        grant.setRemainingAmount(remaining - withdrawn);
+        grant.setReversedAmount(alreadyReversed + delta);
+        grant.setQuotaDebtAmount(defaultLong(grant.getQuotaDebtAmount()) + debt);
+        if (cappedRefund == originalPaymentCents) {
+            grant.setStatus("refunded");
+        }
+        LocalDateTime now = DateTimeFormats.now();
+        grant.setUpdatedAt(now);
+        updateGrantOrThrow(grant, "apply add-on refund");
+
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(grant.getClerkUserId());
+        ledger.setFeatureCode(grant.getFeatureCode());
+        ledger.setLedgerType(LEDGER_TYPE_ADDON_REFUND);
+        ledger.setAmount(-delta);
+        ledger.setSourceType("refund");
+        ledger.setSourceId(adjustmentId);
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(
+                grant.getClerkUserId(), grant.getFeatureCode(), now));
+        ledger.setBizContext(GSON.toJson(Map.of(
+                "grant_id", grant.getId(),
+                "payment_intent_id", paymentIntentId,
+                "cumulative_refund_cents", cappedRefund,
+                "original_payment_cents", originalPaymentCents,
+                "withdrawn_amount", withdrawn,
+                "quota_debt_amount", debt)));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void freezeForDispute(String paymentIntentId, String disputeId) {
+        String idempotencyKey = "addon-dispute-freeze:" + disputeId;
+        if (hasLedger(LEDGER_TYPE_ADDON_DISPUTE_FREEZE, idempotencyKey)) {
+            return;
+        }
+        UserAddonGrantEntity grant = requireGrantByPaymentIntent(paymentIntentId, "dispute");
+        LocalDateTime now = DateTimeFormats.now();
+        if (!"refunded".equals(grant.getStatus())) {
+            if (!"disputed".equals(grant.getStatus())) {
+                grant.setPreDisputeStatus(grant.getStatus());
+            }
+            grant.setStatus("disputed");
+            grant.setUpdatedAt(now);
+            updateGrantOrThrow(grant, "freeze disputed add-on");
+        }
+        insertDisputeLedger(grant, disputeId, idempotencyKey, LEDGER_TYPE_ADDON_DISPUTE_FREEZE, now);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void restoreAfterDispute(String paymentIntentId, String disputeId) {
+        String idempotencyKey = "addon-dispute-restore:" + disputeId;
+        if (hasLedger(LEDGER_TYPE_ADDON_DISPUTE_RESTORE, idempotencyKey)) {
+            return;
+        }
+        UserAddonGrantEntity grant = requireGrantByPaymentIntent(paymentIntentId, "dispute restoration");
+        LocalDateTime now = DateTimeFormats.now();
+        if ("disputed".equals(grant.getStatus())) {
+            UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(grant.getClerkUserId());
+            boolean subscriptionAllowsUse = subscription != null
+                    && BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
+                            subscription.getStatus(), subscription.getGraceEndAt(), now);
+            boolean unexpired = grant.getExpiresAt() == null || grant.getExpiresAt().isAfter(now);
+            grant.setStatus(unexpired && subscriptionAllowsUse ? "active" : "paused");
+            grant.setPreDisputeStatus(null);
+            grant.setUpdatedAt(now);
+            updateGrantOrThrow(grant, "restore disputed add-on");
+        }
+        insertDisputeLedger(grant, disputeId, idempotencyKey, LEDGER_TYPE_ADDON_DISPUTE_RESTORE, now);
+    }
+
+    private UserAddonGrantEntity requireGrantByPaymentIntent(String paymentIntentId, String action) {
+        UserAddonGrantEntity grant = userAddonGrantMapper.selectOne(
+                new LambdaQueryWrapper<UserAddonGrantEntity>()
+                        .eq(UserAddonGrantEntity::getStripePaymentIntentId, paymentIntentId)
+                        .last("LIMIT 1"));
+        if (grant == null) {
+            throw new IllegalStateException("Add-on grant not found for " + action + ": " + paymentIntentId);
+        }
+        return grant;
+    }
+
+    private void insertDisputeLedger(
+            UserAddonGrantEntity grant,
+            String disputeId,
+            String idempotencyKey,
+            String ledgerType,
+            LocalDateTime now) {
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(grant.getClerkUserId());
+        ledger.setFeatureCode(grant.getFeatureCode());
+        ledger.setLedgerType(ledgerType);
+        ledger.setAmount(0L);
+        ledger.setSourceType("dispute");
+        ledger.setSourceId(disputeId);
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setAddonBalanceAfter(sumActiveAddonBalance(
+                grant.getClerkUserId(), grant.getFeatureCode(), now));
+        ledger.setCreatedAt(now);
+        quotaLedgerMapper.insert(ledger);
     }
 
     private boolean hasLedger(String ledgerType, String idempotencyKey) {

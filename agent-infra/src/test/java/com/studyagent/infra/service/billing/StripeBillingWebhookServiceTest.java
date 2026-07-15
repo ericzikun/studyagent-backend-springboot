@@ -14,6 +14,7 @@ import com.stripe.param.SubscriptionUpdateParams;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
+import com.studyagent.infra.entity.StripeWebhookEventEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
@@ -23,6 +24,7 @@ import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
+import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -84,6 +86,31 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void receiveStoresRawPayloadForInternalRetry() throws Exception {
+        Event event = event("customer.subscription.updated", "subscription", null);
+
+        var method = StripeBillingWebhookService.class.getDeclaredMethod("receive", Event.class);
+        method.setAccessible(true);
+        method.invoke(service(), event);
+
+        ArgumentCaptor<StripeWebhookEventEntity> captor =
+                ArgumentCaptor.forClass(StripeWebhookEventEntity.class);
+        verify(webhookEventMapper).insert(captor.capture());
+        assertTrue(captor.getValue().getPayloadJson().contains("customer.subscription.updated"));
+        assertNull(captor.getValue().getNextRetryAt());
+    }
+
+    @Test
+    void webhookRetryBackoffIsBounded() {
+        LocalDateTime failedAt = LocalDateTime.parse("2026-07-15T10:00:00");
+
+        assertEquals(failedAt.plusMinutes(1),
+                StripeBillingWebhookService.calculateNextRetryAt(failedAt, 1));
+        assertEquals(failedAt.plusMinutes(60),
+                StripeBillingWebhookService.calculateNextRetryAt(failedAt, 20));
+    }
+
+    @Test
     void supportsInvoicePaymentSucceededEvents() {
         Event event = event("invoice.payment_succeeded", "invoice", null);
         assertTrue(service().supports(event));
@@ -93,6 +120,123 @@ class StripeBillingWebhookServiceTest {
     void supportsInvoicePaymentPaidEvents() {
         Event event = event("invoice_payment.paid", "invoice_payment", null);
         assertTrue(service().supports(event));
+    }
+
+    @Test
+    void chargeRefundedAdjustsAddonGrantFromCumulativeRefund() throws Exception {
+        RechargeOrderEntity order = addonOrder("cs_refunded");
+        order.setStripePaymentIntentId("pi_refunded");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        String json = """
+                {
+                  "id":"evt_charge_refunded",
+                  "object":"event",
+                  "created":1781696510,
+                  "api_version":"2023-10-16",
+                  "type":"charge.refunded",
+                  "data":{"object":{
+                    "id":"ch_refunded",
+                    "object":"charge",
+                    "payment_intent":"pi_refunded",
+                    "amount":9900,
+                    "amount_refunded":9900,
+                    "refunded":true
+                  }}
+                }
+                """;
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+
+        assertTrue(service().supports(event));
+        invokeHandle(service(), event);
+
+        verify(billingQuotaGateway).adjustAddonForRefund(
+                "pi_refunded", "charge:ch_refunded:9900", 9900L, 9900L);
+        verify(rechargeOrderMapper).update(isNull(), any());
+    }
+
+    @Test
+    void disputeCreatedFreezesAddonGrant() throws Exception {
+        RechargeOrderEntity order = addonOrder("cs_disputed");
+        order.setStripePaymentIntentId("pi_disputed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        String json = """
+                {
+                  "id":"evt_dispute_created",
+                  "object":"event",
+                  "created":1781696510,
+                  "api_version":"2023-10-16",
+                  "type":"charge.dispute.created",
+                  "data":{"object":{
+                    "id":"dp_1",
+                    "object":"dispute",
+                    "payment_intent":"pi_disputed",
+                    "charge":"ch_disputed",
+                    "amount":9900,
+                    "status":"needs_response"
+                  }}
+                }
+                """;
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+
+        assertTrue(service().supports(event));
+        invokeHandle(service(), event);
+
+        verify(billingQuotaGateway).freezeAddonForDispute("pi_disputed", "dp_1");
+        verify(rechargeOrderMapper).update(isNull(), any());
+    }
+
+    @Test
+    void fullRefundOfCurrentSubscriptionInvoiceSuspendsCurrentEntitlements() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(77L);
+        order.setOrderType("subscription_renewal");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("plus_monthly");
+        order.setStripePaymentIntentId("pi_subscription_refund");
+        order.setStripeSubscriptionId("sub_current");
+        order.setStripeInvoiceId("in_current");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        UserSubscriptionEntity current = activeSubscription();
+        current.setId(88L);
+        current.setStripeSubscriptionId("sub_current");
+        current.setPlanCode("plus_monthly");
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(current);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                Subscription subscription = new Subscription();
+                subscription.setId(subscriptionId);
+                subscription.setLatestInvoice("in_current");
+                return subscription;
+            }
+        };
+        String json = """
+                {"id":"evt_subscription_refund","object":"event","created":1781696510,
+                 "api_version":"2023-10-16","type":"charge.refunded","data":{"object":{
+                   "id":"ch_subscription_refund","object":"charge",
+                   "payment_intent":"pi_subscription_refund","amount":1999,
+                   "amount_refunded":1999,"refunded":true}}}
+                """;
+
+        invokeHandle(service, com.stripe.net.ApiResource.GSON.fromJson(json, Event.class));
+
+        verify(billingQuotaGateway).clearPlanQuota(
+                "user_1", "sub_current", "plus_monthly", "refund:ch_subscription_refund:plan");
+        verify(billingQuotaGateway).pauseAddons(
+                "user_1", "sub_current", "refund:ch_subscription_refund:addons");
+        verify(userSubscriptionMapper).update(isNull(), any());
     }
 
     @Test
@@ -175,6 +319,17 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void subscriptionEventWatermarkRejectsOlderEvents() {
+        UserSubscriptionEntity existing = new UserSubscriptionEntity();
+        existing.setLastStripeEventCreatedAt(200L);
+        existing.setLastStripeEventId("evt_newer");
+
+        assertTrue(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 199L));
+        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 200L));
+        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 201L));
+    }
+
+    @Test
     void stalePaidEventIsIgnoredWhenDifferentSubscriptionIsAlreadyCurrent() {
         UserSubscriptionEntity existing = new UserSubscriptionEntity();
         existing.setStatus("active");
@@ -211,6 +366,50 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void asyncAddonPaymentSuccessUsesNormalFulfillment() throws Exception {
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(addonOrder("cs_test_async_paid"));
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(activeSubscription());
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Event event = checkoutEvent(
+                "checkout.session.async_payment_succeeded",
+                "cs_test_async_paid",
+                "paid");
+
+        invokeHandle(service(), event);
+
+        verify(billingQuotaGateway).grantAddonFromCheckout(
+                eq("user_1"),
+                eq(new AddonGrantSnapshot(42L, "addon_assignment_3", "task_create", 3L, 2)),
+                eq("cs_test_async_paid"),
+                eq("pi_test_async_paid"),
+                any());
+    }
+
+    @Test
+    void asyncAddonPaymentFailureMarksOrderFailedWithoutGrant() throws Exception {
+        Event event = checkoutEvent(
+                "checkout.session.async_payment_failed",
+                "cs_test_async_failed",
+                "unpaid");
+
+        invokeHandle(service(), event);
+
+        verify(rechargeOrderMapper).update(isNull(), any());
+        verify(billingQuotaGateway, never()).grantAddonFromCheckout(
+                any(), any(AddonGrantSnapshot.class), any(), any(), any());
+    }
+
+    @Test
+    void paymentFailureGraceEndsThreeDaysAfterFailure() {
+        LocalDateTime failedAt = LocalDateTime.parse("2026-07-15T10:00:00");
+
+        assertEquals(
+                LocalDateTime.parse("2026-07-18T10:00:00"),
+                StripeBillingWebhookService.calculateGraceEnd(failedAt, 3));
+    }
+
+    @Test
     void addonCheckoutUsesSimulationTimeWhenStripeTestClockIsAhead() throws Exception {
         String originalApiKey = Stripe.apiKey;
         Stripe.apiKey = "sk_test_123";
@@ -219,13 +418,10 @@ class StripeBillingWebhookServiceTest {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setClerkUserId("user_1");
         subscription.setStripeSubscriptionId("sub_test_clock");
+        subscription.setStatus("active");
         when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
 
-        AddonPackageDefEntity addon = new AddonPackageDefEntity();
-        addon.setAddonCode("addon_assignment_3");
-        addon.setFeatureCode("task_create");
-        addon.setQuotaAmount(3L);
-        when(addonPackageDefMapper.selectOne(any())).thenReturn(addon);
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(addonOrder("cs_addon_1"));
 
         StripeBillingWebhookService service = new StripeBillingWebhookService(
                 webhookEventMapper,
@@ -268,7 +464,7 @@ class StripeBillingWebhookServiceTest {
 
             verify(billingQuotaGateway).grantAddonFromCheckout(
                     eq("user_1"),
-                    eq("addon_assignment_3"),
+                    eq(new AddonGrantSnapshot(42L, "addon_assignment_3", "task_create", 3L, 2)),
                     eq("cs_addon_1"),
                     eq("pi_addon_1"),
                     eq(Instant.parse("2026-07-10T12:00:00Z")));
@@ -616,11 +812,10 @@ class StripeBillingWebhookServiceTest {
 
     @Test
     void checkoutCompletedForAddonCapturesSuccessAnalytics() throws Exception {
-        AddonPackageDefEntity addon = new AddonPackageDefEntity();
-        addon.setAddonCode("addon_assignment_3");
-        addon.setFeatureCode("assignment");
-        addon.setQuotaAmount(3L);
-        when(addonPackageDefMapper.selectOne(any())).thenReturn(addon);
+        RechargeOrderEntity order = addonOrder("cs_test_addon_paid");
+        order.setFeatureCode("assignment");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(activeSubscription());
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Session session = new Session();
@@ -640,6 +835,79 @@ class StripeBillingWebhookServiceTest {
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.PAYMENT_COMPLETED), any());
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED), any());
         verify(analyticsService, never()).capture(eq("user_1"), eq("recharge_success"), any());
+    }
+
+    @Test
+    void checkoutCompletedForAddonUsesOrderSnapshotNotMutableCatalog() throws Exception {
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(addonOrder("cs_snapshot"));
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(activeSubscription());
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Session session = new Session();
+        session.setId("cs_snapshot");
+        session.setPaymentIntent("pi_snapshot");
+        session.setPaymentStatus("paid");
+        session.setAmountTotal(9900L);
+        session.setCurrency("usd");
+        session.setCreated(1781696510L);
+        session.setMetadata(Map.of(
+                "purchase_type", "addon",
+                "clerk_user_id", "user_1",
+                "addon_code", "addon_assignment_3"));
+
+        invokeHandleCheckoutCompleted(service(), session);
+
+        verify(billingQuotaGateway).grantAddonFromCheckout(
+                eq("user_1"),
+                eq(new AddonGrantSnapshot(42L, "addon_assignment_3", "task_create", 3L, 2)),
+                eq("cs_snapshot"),
+                eq("pi_snapshot"),
+                any());
+        verify(addonPackageDefMapper, never()).selectOne(any());
+    }
+
+    @Test
+    void paidAddonCheckoutRefundsWhenSubscriptionBecameIneligibleBeforeFulfillment() throws Exception {
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(addonOrder("cs_refund"));
+        UserSubscriptionEntity pastDue = activeSubscription();
+        pastDue.setStatus("past_due");
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(pastDue);
+        int[] refundCalls = {0};
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            void refundIneligibleAddon(String paymentIntentId, String stripeSessionId) {
+                assertEquals("pi_refund", paymentIntentId);
+                assertEquals("cs_refund", stripeSessionId);
+                refundCalls[0]++;
+            }
+        };
+
+        Session session = new Session();
+        session.setId("cs_refund");
+        session.setPaymentIntent("pi_refund");
+        session.setPaymentStatus("paid");
+        session.setAmountTotal(9900L);
+        session.setCurrency("usd");
+        session.setMetadata(Map.of(
+                "purchase_type", "addon",
+                "clerk_user_id", "user_1",
+                "addon_code", "addon_assignment_3"));
+
+        invokeHandleCheckoutCompleted(service, session);
+
+        assertEquals(1, refundCalls[0]);
+        verify(billingQuotaGateway, never()).grantAddonFromCheckout(
+                any(), any(AddonGrantSnapshot.class), any(), any(), any());
+        verify(rechargeOrderMapper).update(isNull(), any());
     }
 
     @Test
@@ -785,6 +1053,36 @@ class StripeBillingWebhookServiceTest {
         assertNull(entity.getPendingUpgradeExpiresAt());
         assertNull(entity.getGraceEndAt());
         assertEquals("cus_123", entity.getStripeCustomerId());
+    }
+
+    @Test
+    void applyActiveSubscriptionClearsPreviousPaymentFailureGrace() {
+        UserSubscriptionEntity entity = new UserSubscriptionEntity();
+        entity.setGraceEndAt(LocalDateTime.parse("2026-07-18T10:00:00"));
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("basic_monthly");
+        plan.setTier("basic");
+        plan.setBillingInterval("month");
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_123");
+        subscription.setCustomer("cus_123");
+        subscription.setStatus("active");
+        subscription.setCurrentPeriodStart(1781696510L);
+        subscription.setCurrentPeriodEnd(1784288510L);
+
+        service().applySubscription(
+                entity,
+                subscription,
+                plan,
+                false,
+                false,
+                null,
+                null,
+                LocalDateTime.parse("2026-07-15T10:00:00"));
+
+        assertNull(entity.getGraceEndAt());
     }
 
     @Test
@@ -974,6 +1272,12 @@ class StripeBillingWebhookServiceTest {
         method.invoke(service, "evt_test_checkout_completed", "checkout.session.completed", session);
     }
 
+    private void invokeHandle(StripeBillingWebhookService service, Event event) throws Exception {
+        var method = StripeBillingWebhookService.class.getDeclaredMethod("handle", Event.class);
+        method.setAccessible(true);
+        method.invoke(service, event);
+    }
+
     private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
         var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutExpired", String.class, String.class, Session.class);
@@ -1024,5 +1328,56 @@ class StripeBillingWebhookServiceTest {
                 }
                 """.formatted(type, object, metadata);
         return com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+    }
+
+    private Event checkoutEvent(String type, String sessionId, String paymentStatus) {
+        String json = """
+                {
+                  "id":"evt_test_async",
+                  "object":"event",
+                  "created":1781696510,
+                  "api_version":"2023-10-16",
+                  "type":"%s",
+                  "data":{"object":{
+                    "id":"%s",
+                    "object":"checkout.session",
+                    "created":1781696510,
+                    "payment_status":"%s",
+                    "payment_intent":"pi_test_async_paid",
+                    "amount_total":9900,
+                    "currency":"usd",
+                    "metadata":{
+                      "purchase_type":"addon",
+                      "clerk_user_id":"user_1",
+                      "addon_code":"addon_assignment_3"
+                    }
+                  }}
+                }
+                """.formatted(type, sessionId, paymentStatus);
+        return com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+    }
+
+    private RechargeOrderEntity addonOrder(String stripeSessionId) {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(42L);
+        order.setOrderType("addon");
+        order.setClerkUserId("user_1");
+        order.setAddonCode("addon_assignment_3");
+        order.setFeatureCode("task_create");
+        order.setQuotaAmount(3L);
+        order.setValidityMonthsSnapshot(2);
+        order.setPriceCents(9900);
+        order.setCurrency("usd");
+        order.setStripeSessionId(stripeSessionId);
+        order.setStatus("pending");
+        return order;
+    }
+
+    private UserSubscriptionEntity activeSubscription() {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_1");
+        subscription.setStripeSubscriptionId("sub_active");
+        subscription.setStatus("active");
+        return subscription;
     }
 }

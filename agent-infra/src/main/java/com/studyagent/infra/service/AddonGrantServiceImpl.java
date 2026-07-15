@@ -348,7 +348,7 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         UserAddonGrantEntity grant = requireGrantByPaymentIntent(paymentIntentId, "dispute restoration");
         LocalDateTime now = DateTimeFormats.now();
         if ("disputed".equals(grant.getStatus())) {
-            UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(grant.getClerkUserId());
+            UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(grant.getClerkUserId());
             boolean subscriptionAllowsUse = subscription != null
                     && BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
                             subscription.getStatus(), subscription.getGraceEndAt(), now);

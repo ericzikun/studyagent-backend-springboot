@@ -1707,6 +1707,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (addon.getStripePriceId() == null || !addon.getStripePriceId().startsWith("price_")) {
             throw new BillingDomainException("ADDON_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + addonCode);
         }
+        if (addon.getValidityMonths() == null || addon.getValidityMonths() <= 0) {
+            throw new BillingDomainException(
+                    "INVALID_ADDON_SNAPSHOT",
+                    "Add-on validity must be positive: " + addonCode);
+        }
         return addon;
     }
 

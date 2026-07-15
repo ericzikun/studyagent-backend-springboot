@@ -148,15 +148,19 @@ public class StripeBillingWebhookService {
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
 
-    public void process(Event event) {
+    public boolean process(Event event) {
         receive(event);
         if (!claim(event.getId())) {
-            return;
+            return false;
         }
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         try {
             transaction.executeWithoutResult(status -> handle(event));
             markSucceeded(event.getId());
+            return true;
+        } catch (ReviewRequiredException e) {
+            markReviewRequired(event.getId(), e.getMessage());
+            return false;
         } catch (RuntimeException e) {
             markFailed(event.getId(), e);
             throw e;
@@ -214,7 +218,7 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStripePaymentIntentId, charge.getPaymentIntent())
                         .last("LIMIT 1"));
         if (order == null) {
-            throw new IllegalStateException(
+            throw new ReviewRequiredException(
                     "Billing order not found for refunded charge: " + charge.getId());
         }
         long cumulativeRefund = Math.min(charge.getAmountRefunded(), charge.getAmount());
@@ -228,20 +232,20 @@ public class StripeBillingWebhookService {
             updateOrderRefundState(order, fullRefund ? "refunded" : "partially_refunded", charge.getId());
             return;
         }
-        if (fullRefund && suspendCurrentSubscriptionForRefund(order, charge)) {
+        if (fullRefund && cancelCurrentSubscriptionForRefund(order, charge)) {
             updateOrderRefundState(order, "refunded", "subscription_full_refund:" + charge.getId());
             return;
         }
         updateOrderRefundState(order, "review_required", "subscription_refund:" + charge.getId());
     }
 
-    private boolean suspendCurrentSubscriptionForRefund(
+    private boolean cancelCurrentSubscriptionForRefund(
             RechargeOrderEntity order,
             Charge charge) {
         if (!hasText(order.getStripeSubscriptionId()) || !hasText(order.getStripeInvoiceId())) {
             return false;
         }
-        UserSubscriptionEntity current = findByUser(order.getClerkUserId());
+        UserSubscriptionEntity current = userSubscriptionMapper.selectByUserForUpdate(order.getClerkUserId());
         if (current == null
                 || !order.getStripeSubscriptionId().equals(current.getStripeSubscriptionId())) {
             return false;
@@ -251,9 +255,16 @@ public class StripeBillingWebhookService {
             if (remote == null || !order.getStripeInvoiceId().equals(remote.getLatestInvoice())) {
                 return false;
             }
+            Subscription canceled = "canceled".equals(remote.getStatus())
+                    ? remote
+                    : cancelStripeSubscription(remote);
+            if (canceled == null || !"canceled".equals(canceled.getStatus())) {
+                throw new IllegalStateException(
+                        "Stripe subscription was not canceled after full refund: " + remote.getId());
+            }
         } catch (StripeException e) {
             throw new IllegalStateException(
-                    "Verify current subscription invoice for refund failed: " + charge.getId(), e);
+                    "Cancel current subscription for refund failed: " + charge.getId(), e);
         }
         quotaGateway().clearPlanQuota(
                 order.getClerkUserId(),
@@ -264,12 +275,10 @@ public class StripeBillingWebhookService {
                 order.getClerkUserId(),
                 order.getStripeSubscriptionId(),
                 "refund:" + charge.getId() + ":addons");
-        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                .eq(UserSubscriptionEntity::getId, current.getId())
-                .eq(UserSubscriptionEntity::getStripeSubscriptionId, order.getStripeSubscriptionId())
-                .set(UserSubscriptionEntity::getStatus, "unpaid")
-                .set(UserSubscriptionEntity::getGraceEndAt, null)
-                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+        current.setStatus("canceled");
+        current.setUpdatedAt(LocalDateTime.now());
+        normalizeDeletedSubscriptionState(current);
+        updateSubscriptionEntity(current, true);
         return true;
     }
 
@@ -290,7 +299,7 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStripePaymentIntentId, dispute.getPaymentIntent())
                         .last("LIMIT 1"));
         if (order == null) {
-            throw new IllegalStateException("Billing order not found for dispute: " + dispute.getId());
+            throw new ReviewRequiredException("Billing order not found for dispute: " + dispute.getId());
         }
         boolean fundsRestored = "charge.dispute.funds_reinstated".equals(eventType)
                 || ("charge.dispute.closed".equals(eventType) && "won".equals(dispute.getStatus()));
@@ -316,7 +325,7 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getStripeInvoiceId, creditNote.getInvoice())
                         .last("LIMIT 1"));
         if (order == null) {
-            throw new IllegalStateException("Billing order not found for credit note: " + creditNote.getId());
+            throw new ReviewRequiredException("Billing order not found for credit note: " + creditNote.getId());
         }
         updateOrderRefundState(order, "review_required", eventType + ":" + creditNote.getId());
     }
@@ -346,6 +355,9 @@ public class StripeBillingWebhookService {
             }
             String addonCode = metadata.get("addon_code");
             RechargeOrderEntity order = requireAddonOrderSnapshot(session, clerkUserId, addonCode);
+            if (order == null) {
+                return;
+            }
             UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
             if (subscription == null
                     || !BillingEntitlementPolicy.allowsAddonPurchase(subscription.getStatus())) {
@@ -470,6 +482,10 @@ public class StripeBillingWebhookService {
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
         return Subscription.retrieve(subscriptionId);
+    }
+
+    Subscription cancelStripeSubscription(Subscription subscription) throws StripeException {
+        return subscription.cancel();
     }
 
     Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {
@@ -930,7 +946,23 @@ public class StripeBillingWebhookService {
     }
 
     private void syncSubscription(Event event, boolean deleted, boolean activatePendingPlan) {
-        Subscription subscription = resolveRequired(event, Subscription.class);
+        Subscription eventSubscription = resolveRequired(event, Subscription.class);
+        Subscription subscription = eventSubscription;
+        boolean authoritativeDeleted = deleted;
+        try {
+            Subscription remote = retrieveStripeSubscription(eventSubscription.getId());
+            if (remote != null) {
+                subscription = remote;
+                authoritativeDeleted = "canceled".equals(remote.getStatus());
+            }
+        } catch (StripeException e) {
+            if (!deleted) {
+                throw new IllegalStateException(
+                        "Retrieve authoritative Stripe subscription failed: " + eventSubscription.getId(), e);
+            }
+            log.warn("Use subscription.deleted payload after Stripe retrieve failed: subscription={}",
+                    eventSubscription.getId(), e);
+        }
         String clerkUserId = resolveUserId(subscription);
         UserSubscriptionEntity existing = findByUser(clerkUserId);
         if (isStaleSubscriptionEvent(existing, event.getCreated())) {
@@ -940,10 +972,10 @@ public class StripeBillingWebhookService {
         }
         syncSubscription(
                 subscription,
-                deleted,
+                authoritativeDeleted,
                 activatePendingPlan,
-                resolveSubscriptionPeriodStart(event),
-                resolveSubscriptionPeriodEnd(event));
+                null,
+                null);
         if (event.getCreated() != null) {
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getClerkUserId, clerkUserId)
@@ -1692,13 +1724,20 @@ public class StripeBillingWebhookService {
                         .last("LIMIT 1"));
         if (order == null
                 || !clerkUserId.equals(order.getClerkUserId())
-                || !addonCode.equals(order.getAddonCode())
-                || order.getFeatureCode() == null
+                || !addonCode.equals(order.getAddonCode())) {
+            throw new IllegalStateException("Invalid or missing add-on order: " + session.getId());
+        }
+        if (order.getFeatureCode() == null
                 || order.getQuotaAmount() == null
                 || order.getQuotaAmount() <= 0
                 || order.getValidityMonthsSnapshot() == null
                 || order.getValidityMonthsSnapshot() <= 0) {
-            throw new IllegalStateException("Invalid or missing add-on order snapshot: " + session.getId());
+            refundAddonCheckout(
+                    session.getPaymentIntent(),
+                    session.getId(),
+                    "missing_addon_order_snapshot");
+            markAddonOrderRefunded(session.getId(), "missing_addon_order_snapshot");
+            return null;
         }
         if (session.getAmountTotal() != null
                 && order.getPriceCents() != null
@@ -1714,23 +1753,30 @@ public class StripeBillingWebhookService {
     }
 
     void refundIneligibleAddon(String paymentIntentId, String stripeSessionId) {
+        refundAddonCheckout(
+                paymentIntentId,
+                stripeSessionId,
+                "subscription_ineligible_at_fulfillment");
+    }
+
+    void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
         if (!hasText(paymentIntentId)) {
             throw new IllegalStateException(
-                    "Cannot refund ineligible add-on without PaymentIntent: " + stripeSessionId);
+                    "Cannot refund add-on without PaymentIntent: " + stripeSessionId);
         }
         RefundCreateParams params = RefundCreateParams.builder()
                 .setPaymentIntent(paymentIntentId)
-                .putMetadata("reason", "subscription_ineligible_at_fulfillment")
+                .putMetadata("reason", reason)
                 .putMetadata("checkout_session_id", stripeSessionId)
                 .build();
         RequestOptions options = RequestOptions.builder()
-                .setIdempotencyKey("addon-ineligible-refund:" + stripeSessionId)
+                .setIdempotencyKey("addon-refund:" + stripeSessionId + ":" + reason)
                 .build();
         try {
             Refund.create(params, options);
         } catch (StripeException e) {
             throw new IllegalStateException(
-                    "Refund ineligible add-on Checkout failed: " + stripeSessionId, e);
+                    "Refund add-on Checkout failed: " + stripeSessionId, e);
         }
     }
 
@@ -1903,6 +1949,7 @@ public class StripeBillingWebhookService {
         if (current == null
                 || "succeeded".equals(current.getStatus())
                 || "ignored".equals(current.getStatus())
+                || "review_required".equals(current.getStatus())
                 || "dead_letter".equals(current.getStatus())) {
             return false;
         }
@@ -1952,6 +1999,20 @@ public class StripeBillingWebhookService {
                 .set(StripeWebhookEventEntity::getProcessedAt, now));
     }
 
+    private void markReviewRequired(String eventId, String reason) {
+        String message = reason == null ? "Manual billing review required" : reason;
+        if (message.length() > 2000) {
+            message = message.substring(0, 2000);
+        }
+        webhookEventMapper.update(null, new LambdaUpdateWrapper<StripeWebhookEventEntity>()
+                .eq(StripeWebhookEventEntity::getEventId, eventId)
+                .set(StripeWebhookEventEntity::getStatus, "review_required")
+                .set(StripeWebhookEventEntity::getLastError, message)
+                .set(StripeWebhookEventEntity::getNextRetryAt, null)
+                .set(StripeWebhookEventEntity::getDeadLetteredAt, null)
+                .set(StripeWebhookEventEntity::getProcessedAt, LocalDateTime.now()));
+    }
+
     public int retryDueEvents(int batchSize) {
         if (batchSize <= 0) {
             return 0;
@@ -1967,8 +2028,9 @@ public class StripeBillingWebhookService {
         for (StripeWebhookEventEntity due : dueEvents) {
             try {
                 Event event = com.stripe.net.ApiResource.GSON.fromJson(due.getPayloadJson(), Event.class);
-                process(event);
-                succeeded++;
+                if (process(event)) {
+                    succeeded++;
+                }
             } catch (RuntimeException e) {
                 log.warn("Stripe webhook internal retry failed: event={}", due.getEventId(), e);
             }
@@ -1980,6 +2042,12 @@ public class StripeBillingWebhookService {
         int exponent = Math.max(0, Math.min(6, attemptCount - 1));
         long delayMinutes = Math.min(60L, 1L << exponent);
         return failedAt.plusMinutes(delayMinutes);
+    }
+
+    private static final class ReviewRequiredException extends RuntimeException {
+        private ReviewRequiredException(String message) {
+            super(message);
+        }
     }
 
     private String resolveObjectId(Event event) {

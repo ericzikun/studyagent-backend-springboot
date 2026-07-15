@@ -1108,6 +1108,7 @@ class BillingDomainServiceImplTest {
         addon.setFeatureCode("ai_detection");
         addon.setStripePriceId("price_addon_detection_5");
         addon.setQuotaAmount(20000L);
+        addon.setValidityMonths(2);
         addon.setPriceCents(499);
         addon.setCurrency("usd");
         addon.setIsActive(true);
@@ -1143,6 +1144,43 @@ class BillingDomainServiceImplTest {
         assertEquals("pending", order.getStatus());
         assertEquals("cs_test_retried", order.getStripeSessionId());
         assertEquals("sub_123", order.getStripeSubscriptionId());
+    }
+
+    @Test
+    void createAddonCheckoutRejectsNonPositiveValiditySnapshot() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(19L);
+        subscription.setClerkUserId("user_5");
+        subscription.setStatus("active");
+        subscription.setStripeCustomerId("cus_123");
+        subscription.setStripeSubscriptionId("sub_123");
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_detection_5");
+        addon.setFeatureCode("ai_detection");
+        addon.setStripePriceId("price_addon_detection_5");
+        addon.setQuotaAmount(20000L);
+        addon.setValidityMonths(0);
+        addon.setPriceCents(499);
+        addon.setCurrency("usd");
+        addon.setIsActive(true);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(addonPackageDefMapper.selectOne(any(Wrapper.class))).thenReturn(addon);
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createAddonCheckout(
+                        "user_5",
+                        "user@example.com",
+                        "addon_detection_5",
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        "resume_tok_5"));
+
+        assertEquals("INVALID_ADDON_SNAPSHOT", exception.getCode());
+        assertEquals(0, service.checkoutAttempts);
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
@@ -290,6 +291,31 @@ class AddonGrantServiceImplTest {
         List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
         assertEquals("addon_expired", ledgers.get(0).getLedgerType());
         assertEquals("addon_resume", ledgers.get(1).getLedgerType());
+    }
+
+    @Test
+    void restoreAfterDisputeLocksSubscriptionBeforeReactivatingGrant() {
+        UserAddonGrantEntity disputed = grant("disputed", LocalDateTime.now().plusDays(3), 2L);
+        disputed.setStripePaymentIntentId("pi_disputed");
+        UserSubscriptionEntity active = new UserSubscriptionEntity();
+        active.setClerkUserId("user_1");
+        active.setStatus("active");
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAddonGrantMapper.selectOne(any(Wrapper.class))).thenReturn(disputed);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(active);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(disputed));
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+        AddonGrantServiceImpl service = new AddonGrantServiceImpl(
+                addonPackageDefMapper,
+                userAddonGrantMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.restoreAfterDispute("pi_disputed", "dp_1");
+
+        verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
+        assertEquals("active", disputed.getStatus());
     }
 
     private AddonPackageDefEntity addon(String code, String featureCode, long amount, int validityMonths) {

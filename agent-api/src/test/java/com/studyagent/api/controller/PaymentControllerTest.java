@@ -84,4 +84,21 @@ class PaymentControllerTest {
         assertThat(result.getMeta().getStatusCode())
                 .isEqualTo(ApiCode.SUBSCRIPTION_CHANGE_PENDING.getCode());
     }
+
+    @Test
+    void paymentResolutionRequiredUsesDedicatedBusinessCode() {
+        PaymentController.SubscriptionCheckoutRequest request =
+                new PaymentController.SubscriptionCheckoutRequest();
+        request.setPlanCode("plus_monthly");
+        when(billingDomainService.createSubscriptionCheckout(
+                "user_a", null, "plus_monthly", null, null, null))
+                .thenThrow(new BillingDomainException(
+                        "PAYMENT_RESOLUTION_REQUIRED",
+                        "Resolve the existing subscription payment before changing plans"));
+
+        var result = controller.createSubscriptionCheckout(request, "user_a", null);
+
+        assertThat(result.getMeta().getStatusCode())
+                .isEqualTo(ApiCode.PAYMENT_RESOLUTION_REQUIRED.getCode());
+    }
 }

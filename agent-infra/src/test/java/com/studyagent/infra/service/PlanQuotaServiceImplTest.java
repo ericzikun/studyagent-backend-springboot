@@ -406,6 +406,32 @@ class PlanQuotaServiceImplTest {
     }
 
     @Test
+    void refreshPlanQuotaIfNeeded_doesNotRefreshPastDueSubscription() {
+        UserSubscriptionEntity subscription = subscription(
+                "user_1",
+                "pro_yearly",
+                "past_due",
+                LocalDateTime.parse("2026-01-15T00:00:00"),
+                LocalDateTime.parse("2026-12-15T00:00:00"));
+        subscription.setGraceEndAt(LocalDateTime.parse("2026-03-23T12:00:00"));
+
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+
+        service.refreshPlanQuotaIfNeeded("user_1", "task_create", LocalDateTime.parse("2026-03-20T12:00:00"));
+
+        verify(userSubscriptionMapper, never()).selectByUserForUpdate("user_1");
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+    }
+
+    @Test
     void refreshPlanQuotaIfNeeded_resetsTrialingYearlyUpgradeCarryoverAfterFirstMonth() {
         SubscriptionPlanEntity plan = plan("pro_yearly", 16L, 100_000L, 60_000L);
         plan.setBillingInterval("year");

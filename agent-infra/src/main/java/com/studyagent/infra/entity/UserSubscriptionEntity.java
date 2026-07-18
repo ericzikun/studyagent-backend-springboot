@@ -46,6 +46,10 @@ public class UserSubscriptionEntity extends BaseEntity {
     private LocalDateTime graceEndAt;
     @TableField("last_synced_at")
     private LocalDateTime lastSyncedAt;
+    @TableField("last_stripe_event_created_at")
+    private Long lastStripeEventCreatedAt;
+    @TableField("last_stripe_event_id")
+    private String lastStripeEventId;
     @Version
     private Integer version;
 }

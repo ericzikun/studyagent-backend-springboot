@@ -430,7 +430,9 @@ public class StripeBillingWebhookService {
         }
 
         if ("subscription_upgrade_manual".equals(purchaseType)) {
-            handleManualUpgradeCheckoutCompleted(session, clerkUserId);
+            if (!handleManualUpgradeCheckoutCompleted(session, clerkUserId)) {
+                return;
+            }
             capturePaymentSucceeded(
                     clerkUserId,
                     session,
@@ -540,11 +542,11 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
-    private void handleManualUpgradeCheckoutCompleted(Session session, String clerkUserId) {
+    private boolean handleManualUpgradeCheckoutCompleted(Session session, String clerkUserId) {
         if (!"paid".equals(session.getPaymentStatus())) {
             log.info("Manual subscription upgrade checkout is not paid yet: session={}, payment_status={}",
                     session.getId(), session.getPaymentStatus());
-            return;
+            return false;
         }
         String orderNo = session.getMetadata().get("upgrade_order_no");
         RechargeOrderEntity order = rechargeOrderMapper.selectOne(
@@ -553,9 +555,9 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getOrderType, "subscription_upgrade_manual")
                         .last("LIMIT 1"));
         if (order == null || "completed".equals(order.getStatus())) {
-            return;
+            return false;
         }
-        attemptManualUpgradeSwitch(order, clerkUserId, session.getId(), session.getPaymentIntent());
+        return attemptManualUpgradeSwitch(order, clerkUserId, session.getId(), session.getPaymentIntent());
     }
 
     public void retryManualUpgradeSwitch(String orderNo) {
@@ -577,7 +579,7 @@ public class StripeBillingWebhookService {
                 order.getStripePaymentIntentId());
     }
 
-    private void attemptManualUpgradeSwitch(
+    boolean attemptManualUpgradeSwitch(
             RechargeOrderEntity order,
             String clerkUserId,
             String stripeSessionId,
@@ -586,12 +588,12 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Manual subscription upgrade order has no clerk user id: " + order.getOrderNo());
         }
         if (!markManualUpgradeOrderSwitching(order, stripeSessionId, stripePaymentIntentId)) {
-            return;
+            return false;
         }
         UserSubscriptionEntity current = findByUser(clerkUserId);
         Subscription subscription;
         try {
-            subscription = Subscription.retrieve(order.getStripeSubscriptionId());
+            subscription = retrieveStripeSubscription(order.getStripeSubscriptionId());
             if (current != null) {
                 releasePendingScheduleIfPresent(current, subscription);
             }
@@ -607,14 +609,13 @@ public class StripeBillingWebhookService {
                     order,
                     currentPlan,
                     targetPlan,
-                    LocalDateTime.now(ZoneOffset.UTC));
-            Subscription updated = subscription.update(buildManualUpgradeUpdateParams(
-                    item,
-                    targetPlan,
-                    clerkUserId,
-                    strategy), RequestOptions.builder()
-                    .setIdempotencyKey("manual-upgrade-switch:" + order.getOrderNo())
-                    .build());
+                    resolveStripeSubscriptionNow(subscription, LocalDateTime.now(ZoneOffset.UTC)));
+            Subscription updated = updateStripeSubscription(
+                    subscription,
+                    buildManualUpgradeUpdateParams(item, targetPlan, clerkUserId, strategy),
+                    RequestOptions.builder()
+                            .setIdempotencyKey("manual-upgrade-switch:" + order.getOrderNo())
+                            .build());
             Long periodStartEpoch = resolvePeriodEpoch(null, resolveSubscriptionPeriodStart(updated));
             Long periodEndEpoch = resolvePeriodEpoch(null, resolveSubscriptionPeriodEnd(updated));
             Instant periodStart = instant(periodStartEpoch);
@@ -636,6 +637,7 @@ public class StripeBillingWebhookService {
                     quotaPeriodEnd,
                     order.getOrderNo());
             completeManualUpgradeOrder(order, updated, stripeSessionId, stripePaymentIntentId, periodStartEpoch);
+            return true;
         } catch (StripeException | IllegalStateException e) {
             rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                     .eq(RechargeOrderEntity::getId, order.getId())
@@ -643,7 +645,9 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getFailureReason, e.getMessage())
                     .setSql("switch_attempts = switch_attempts + 1")
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
-            throw new IllegalStateException("Manual subscription upgrade switch failed", e);
+            log.warn("Manual subscription upgrade switch deferred for order {}: {}",
+                    order.getOrderNo(), e.getMessage());
+            return false;
         } catch (RuntimeException e) {
             rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                     .eq(RechargeOrderEntity::getId, order.getId())
@@ -652,6 +656,13 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
             throw e;
         }
+    }
+
+    Subscription updateStripeSubscription(
+            Subscription subscription,
+            SubscriptionUpdateParams params,
+            RequestOptions options) throws StripeException {
+        return subscription.update(params, options);
     }
 
     static ManualUpgradeSwitchStrategy resolveManualUpgradeSwitchStrategy(
@@ -693,6 +704,28 @@ public class StripeBillingWebhookService {
                     nowUtc.plusYears(1).toEpochSecond(ZoneOffset.UTC));
         }
         return new ManualUpgradeSwitchStrategy(ManualUpgradeSwitchMode.KEEP_BILLING_CYCLE, null);
+    }
+
+    LocalDateTime resolveStripeSubscriptionNow(
+            Subscription subscription,
+            LocalDateTime fallbackNow) {
+        String apiKey = Stripe.apiKey;
+        String testClockId = subscription == null ? null : subscription.getTestClock();
+        if (apiKey == null
+                || !apiKey.startsWith("sk_test_")
+                || !hasText(testClockId)) {
+            return fallbackNow;
+        }
+        try {
+            Long frozenTime = retrieveTestClockFrozenTime(testClockId);
+            return frozenTime == null
+                    ? fallbackNow
+                    : LocalDateTime.ofInstant(Instant.ofEpochSecond(frozenTime), ZoneOffset.UTC);
+        } catch (StripeException e) {
+            log.warn("Resolve Stripe test clock time failed for subscription {}",
+                    subscription.getId(), e);
+            return fallbackNow;
+        }
     }
 
     static SubscriptionUpdateParams buildManualUpgradeUpdateParams(

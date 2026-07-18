@@ -938,6 +938,94 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void createSubscriptionCheckoutRequiresPaymentResolutionForRecoverableDelinquency() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(29L);
+        subscription.setClerkUserId("user_delinquent");
+        subscription.setTier("basic");
+        subscription.setPlanCode("basic_monthly");
+        subscription.setStripeCustomerId("cus_123");
+        subscription.setStripeSubscriptionId("sub_123");
+
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 3999);
+        targetPlan.setStripePriceId("price_plus_monthly");
+        targetPlan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_delinquent")).thenReturn(subscription);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        for (String status : new String[]{"past_due", "unpaid", "incomplete"}) {
+            subscription.setStatus(status);
+            BillingDomainException exception = assertThrows(
+                    BillingDomainException.class,
+                    () -> service.createSubscriptionCheckout(
+                            "user_delinquent",
+                            "user@example.com",
+                            "plus_monthly",
+                            "http://localhost:3001/payment-success",
+                            "http://localhost:3001/payment-canceled",
+                            null));
+            assertEquals("PAYMENT_RESOLUTION_REQUIRED", exception.getCode());
+        }
+
+        assertEquals(0, service.checkoutAttempts);
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void createSubscriptionCheckoutAllowsFreshCheckoutAfterIncompleteExpired() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(30L);
+        subscription.setClerkUserId("user_expired");
+        subscription.setTier("basic");
+        subscription.setPlanCode("basic_monthly");
+        subscription.setStatus("incomplete_expired");
+        subscription.setStripeCustomerId("cus_123");
+        subscription.setStripeSubscriptionId("sub_old");
+
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 3999);
+        targetPlan.setStripePriceId("price_plus_monthly");
+        targetPlan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_expired")).thenReturn(subscription);
+
+        BillingDomainServiceImpl service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                userSubscriptionMapper,
+                rechargeOrderMapper,
+                planQuotaService,
+                userRepository,
+                quotaVipAccessService) {
+            @Override
+            Session createStripeCheckoutSession(SessionCreateParams params) {
+                Session session = new Session();
+                session.setId("cs_test_fresh_after_expired");
+                session.setUrl("https://checkout.stripe.com/c/pay/cs_test_fresh_after_expired");
+                session.setExpiresAt(123456789L);
+                return session;
+            }
+        };
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_expired",
+                "user@example.com",
+                "plus_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                null);
+
+        assertEquals("cs_test_fresh_after_expired", result.getSessionId());
+    }
+
+    @Test
     void createSubscriptionCheckoutReusesExistingOpenSessionForSameUserAndPlan() throws Exception {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(19L);

@@ -3,9 +3,12 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
+import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotPayloadView;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotView;
+import com.studyagent.service.domain.mq.MqOutbox;
+import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -40,6 +43,10 @@ public class AssignmentRuntimeSnapshotService {
     private static final int MESSAGE_LIMIT = 100;
     private static final int EVENT_SCAN_LIMIT = 100;
 
+    private static final List<String> GATED_ASSIGNMENT_RUN_ACTIONS = List.of(
+            VerlaCommandAction.CMD_ASSIGNMENT_RUN.getCode(),
+            VerlaCommandAction.CMD_AGENT_RETRY.getCode());
+
     private final VerlaMessageRepository messageRepository;
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaEventInboxRepository eventInboxRepository;
@@ -47,6 +54,7 @@ public class AssignmentRuntimeSnapshotService {
     private final VerlaWorkforceTaskRepository taskRepository;
     private final VerlaWorkforceTaskOutputRepository taskOutputRepository;
     private final VerlaArtifactEditProposalRepository editProposalRepository;
+    private final MqOutboxRepository mqOutboxRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -66,6 +74,7 @@ public class AssignmentRuntimeSnapshotService {
         List<Map<String, Object>> agentNodes = withPersistedNodeDetails(
                 progressEstimator.foldAgentNodes(recentEvents),
                 resolveCurrentSessionId(recentEvents));
+        Map<String, Object> progress = resolveSnapshotProgress(recentEvents, stateEvent);
 
         return AssignmentRuntimeSnapshotView.builder()
                 .conversationId(conversationId)
@@ -74,7 +83,7 @@ public class AssignmentRuntimeSnapshotService {
                 .payload(AssignmentRuntimeSnapshotPayloadView.builder()
                         .messages(messages)
                         .stateEventPayload(stateEvent == null ? null : stateEvent.payload())
-                        .progress(progressEstimator.resolveProgress(recentEvents))
+                        .progress(progress)
                         .agentNodes(agentNodes)
                         .artifacts(artifacts == null ? List.of() : artifacts)
                         .artifactEditProposal(resolveActiveEditProposal(conversationId))
@@ -249,6 +258,16 @@ public class AssignmentRuntimeSnapshotService {
         return messages;
     }
 
+    private Map<String, Object> resolveSnapshotProgress(
+            List<VerlaEventInbox> recentEvents,
+            ResolvedStateEvent stateEvent) {
+        if (stateEvent != null
+                && VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCHED.name().equals(stateEvent.stateEventType())) {
+            return dispatchedProgress(stateEvent.payload());
+        }
+        return progressEstimator.resolveProgress(recentEvents);
+    }
+
     private ResolvedStateEvent resolveStateEvent(List<VerlaEventInbox> recentEvents) {
         if (recentEvents == null || recentEvents.isEmpty()) {
             return null;
@@ -260,10 +279,49 @@ public class AssignmentRuntimeSnapshotService {
             }
             String resolved = mapStateEventType(type);
             if (resolved != null) {
-                return new ResolvedStateEvent(resolved, sanitizedPayload(event));
+                ResolvedStateEvent resolvedEvent =
+                        new ResolvedStateEvent(resolved, sanitizedPayload(event));
+                if (VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED.name().equals(resolved)) {
+                    return correctStaleDispatchQueuedForEvent(event, resolvedEvent);
+                }
+                return resolvedEvent;
             }
         }
         return null;
+    }
+
+    private ResolvedStateEvent correctStaleDispatchQueuedForEvent(
+            VerlaEventInbox event,
+            ResolvedStateEvent stateEvent) {
+        Long sessionId = event == null ? null : event.getSessionId();
+        if (sessionId == null) {
+            return stateEvent;
+        }
+        Integer outboxStatus = mqOutboxRepository.findLatestStatusBySessionIdAndActions(
+                sessionId, GATED_ASSIGNMENT_RUN_ACTIONS);
+        if (outboxStatus == null || outboxStatus == MqOutbox.STATUS_UNSENT) {
+            return stateEvent;
+        }
+        return new ResolvedStateEvent(
+                VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCHED.name(),
+                dispatchedProgress(stateEvent.payload()));
+    }
+
+    private static Map<String, Object> dispatchedProgress(Map<String, Object> source) {
+        Map<String, Object> progress = new LinkedHashMap<>();
+        progress.put("label", "Starting assignment workflow");
+        progress.put("reason", "dispatch_gate_released");
+        if (source != null) {
+            Object maxConcurrency = source.get("maxConcurrency");
+            if (maxConcurrency != null) {
+                progress.put("maxConcurrency", maxConcurrency);
+            }
+            Object activeCount = source.get("activeCount");
+            if (activeCount != null) {
+                progress.put("activeCount", activeCount);
+            }
+        }
+        return progress;
     }
 
     private String mapStateEventType(VerlaAgentEventType type) {
@@ -271,7 +329,7 @@ public class AssignmentRuntimeSnapshotService {
             case ASSIGNMENT_AGENT_FLOW_COMPLETED, ASSIGNMENT_AGENT_FLOW_FAILED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED -> type.name();
             case ASSIGNMENT_AGENT_FLOW_STARTED -> VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_STARTED.name();
-            case ASSIGNMENT_RUN_DISPATCH_QUEUED -> type.name();
+            case ASSIGNMENT_RUN_DISPATCHED, ASSIGNMENT_RUN_DISPATCH_QUEUED -> type.name();
             case ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_CLARIFY_STREAM_CHUNK ->
                     VerlaAgentEventType.ASSIGNMENT_CLARIFY_STARTED.name();
             case ASSIGNMENT_CLARIFY_COMPLETED -> type.name();

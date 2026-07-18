@@ -117,6 +117,20 @@ class OutboxDispatchSchedulerTest {
         assertThat(mqOutboxRepository.findPendingCalled).isFalse();
         assertThat(mqOutboxRepository.sentId).isEqualTo(1001L);
         assertThat(mqOutboxRepository.sentWorkerId).isEqualTo("worker-claimed");
+        assertThat(queueEvents.dispatchedMessage).isSameAs(claimed);
+        assertThat(queueEvents.deferredMessage).isNull();
+    }
+
+    @Test
+    void shouldNotifyDispatchedAfterAssignmentRunBrokerAck() {
+        MqOutbox message = claimedVerlaCommand("cmd.assignment.run", 0, 3, "worker-claimed");
+        rabbitTemplate.confirmAck = true;
+
+        scheduler.sendMessage(message);
+
+        assertThat(mqOutboxRepository.sentId).isEqualTo(1001L);
+        assertThat(queueEvents.dispatchedMessage).isSameAs(message);
+        assertThat(queueEvents.deferredMessage).isNull();
     }
 
     @Test
@@ -354,21 +368,41 @@ class OutboxDispatchSchedulerTest {
     }
 
     private static AssignmentRunDispatchQueueEvents noopQueueEvents() {
-        return message -> {
+        return new AssignmentRunDispatchQueueEvents() {
+            @Override
+            public void notifyDeferred(MqOutbox message) {
+            }
+
+            @Override
+            public void notifyDispatched(MqOutbox message) {
+            }
         };
     }
 
     private static CapabilityRunDispatchQueueEvents noopCapabilityQueueEvents() {
-        return message -> {
+        return new CapabilityRunDispatchQueueEvents() {
+            @Override
+            public void notifyDeferred(MqOutbox message) {
+            }
+
+            @Override
+            public void notifyDispatched(MqOutbox message) {
+            }
         };
     }
 
     private static class RecordingQueueEvents implements AssignmentRunDispatchQueueEvents {
         MqOutbox deferredMessage;
+        MqOutbox dispatchedMessage;
 
         @Override
         public void notifyDeferred(MqOutbox message) {
             this.deferredMessage = message;
+        }
+
+        @Override
+        public void notifyDispatched(MqOutbox message) {
+            this.dispatchedMessage = message;
         }
     }
 
@@ -527,6 +561,11 @@ class OutboxDispatchSchedulerTest {
         @Override
         public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
+        }
+
+        @Override
+        public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return null;
         }
     }
 
@@ -696,6 +735,11 @@ class OutboxDispatchSchedulerTest {
         @Override
         public synchronized int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
+        }
+
+        @Override
+        public synchronized Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return null;
         }
 
         private boolean isClaimable(MqOutbox row, LocalDateTime currentTime) {

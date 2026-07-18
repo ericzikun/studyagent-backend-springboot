@@ -3,6 +3,8 @@ package com.studyagent.service.application.verla;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.service.application.verla.dto.AssignmentRuntimeSnapshotView;
+import com.studyagent.service.domain.mq.MqOutbox;
+import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaArtifactEditProposal;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -37,6 +39,7 @@ class AssignmentRuntimeSnapshotServiceTest {
     private FakeEventInboxRepository eventInboxRepository;
     private FakeWorkforceTaskOutputRepository taskOutputRepository;
     private FakeWorkforceTaskRepository workforceTaskRepository;
+    private FakeMqOutboxRepository mqOutboxRepository;
     private AssignmentRuntimeSnapshotService service;
 
     @BeforeEach
@@ -47,6 +50,7 @@ class AssignmentRuntimeSnapshotServiceTest {
         eventInboxRepository = new FakeEventInboxRepository();
         taskOutputRepository = new FakeWorkforceTaskOutputRepository();
         workforceTaskRepository = new FakeWorkforceTaskRepository();
+        mqOutboxRepository = new FakeMqOutboxRepository();
         AssignmentRuntimeProgressEstimator progressEstimator =
                 new AssignmentRuntimeProgressEstimator(
                         new ObjectMapper(),
@@ -60,6 +64,7 @@ class AssignmentRuntimeSnapshotServiceTest {
                 workforceTaskRepository,
                 taskOutputRepository,
                 editProposalRepository,
+                mqOutboxRepository,
                 new ObjectMapper());
     }
 
@@ -113,6 +118,24 @@ class AssignmentRuntimeSnapshotServiceTest {
         assertEquals(false, snapshot.payload().stateEventPayload().get("isReadyForGeneration"));
         assertEquals("[Mock] Deep understanding ready",
                 snapshot.payload().stateEventPayload().get("summary"));
+    }
+
+    @Test
+    void getSnapshot_rewritesStaleDispatchQueuedWhenOutboxAlreadySent() {
+        eventInboxRepository.add(91L, event(
+                1600L,
+                91L,
+                501L,
+                VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED,
+                "{\"payload\":{\"queuePosition\":2,\"maxConcurrency\":2,\"activeCount\":3,\"reason\":\"dispatch_gate\"}}"));
+        mqOutboxRepository.statusBySession.put(501L, MqOutbox.STATUS_SENT);
+
+        AssignmentRuntimeSnapshotView snapshot = service.getSnapshot(91L);
+
+        assertEquals(VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCHED.name(), snapshot.stateEventType());
+        assertEquals("Starting assignment workflow", snapshot.payload().stateEventPayload().get("label"));
+        assertEquals("Starting assignment workflow", snapshot.payload().progress().get("label"));
+        assertNull(snapshot.payload().progress().get("queuePosition"));
     }
 
     @Test
@@ -552,6 +575,85 @@ class AssignmentRuntimeSnapshotServiceTest {
         @Override
         public VerlaWorkforceTaskOutput upsertBySessionNode(VerlaWorkforceTaskOutput patch) {
             return patch;
+        }
+    }
+
+    private static class FakeMqOutboxRepository implements MqOutboxRepository {
+        private final Map<Long, Integer> statusBySession = new HashMap<>();
+
+        @Override
+        public MqOutbox save(MqOutbox mqOutbox) {
+            return mqOutbox;
+        }
+
+        @Override
+        public MqOutbox findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public MqOutbox findByEventId(String eventId) {
+            return null;
+        }
+
+        @Override
+        public List<MqOutbox> findPendingMessages(int limit, LocalDateTime currentTime) {
+            return List.of();
+        }
+
+        @Override
+        public List<MqOutbox> claimPendingMessages(
+                int limit, String workerId, LocalDateTime currentTime, LocalDateTime leaseUntil) {
+            return List.of();
+        }
+
+        @Override
+        public MqOutbox claimMessage(
+                Long id, String workerId, LocalDateTime currentTime, LocalDateTime leaseUntil) {
+            return null;
+        }
+
+        @Override
+        public void markAsSent(Long id) {
+        }
+
+        @Override
+        public void markAsSent(Long id, String workerId) {
+        }
+
+        @Override
+        public void markForRetry(Long id, String errorMessage, LocalDateTime nextRetryAt) {
+        }
+
+        @Override
+        public void markForRetry(Long id, String workerId, String errorMessage, LocalDateTime nextRetryAt) {
+        }
+
+        @Override
+        public void markAsFailed(Long id, String errorMessage) {
+        }
+
+        @Override
+        public void markAsFailed(Long id, String workerId, String errorMessage) {
+        }
+
+        @Override
+        public void releaseClaim(Long id, String workerId) {
+        }
+
+        @Override
+        public int countDeferredAssignmentRunAhead(Long id, LocalDateTime createdAt) {
+            return 0;
+        }
+
+        @Override
+        public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
+            return 0;
+        }
+
+        @Override
+        public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return statusBySession.get(sessionId);
         }
     }
 }

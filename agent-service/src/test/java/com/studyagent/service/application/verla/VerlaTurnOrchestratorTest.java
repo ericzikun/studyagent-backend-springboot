@@ -2248,5 +2248,10 @@ class VerlaTurnOrchestratorTest {
         public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
         }
+
+        @Override
+        public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return null;
+        }
     }
 }

@@ -171,6 +171,7 @@ public class OutboxDispatchScheduler {
                 mqOutboxRepository.markAsSent(message.getId(), message.getWorkerId());
                 log.info("Broker ack: eventId={}, action={}, exchange={}, rk={}",
                         message.getEventId(), message.getAction(), exchange, routingKey);
+                notifyDispatchedIfNeeded(message);
             } else {
                 handleSendFailure(message, "Broker NACK: " + confirm.getReason());
             }
@@ -219,6 +220,26 @@ public class OutboxDispatchScheduler {
                 .setHeader("sessionId", message.getSessionId())
                 .setHeader("action", message.getAction())
                 .build();
+    }
+
+    /**
+     * 门控命令成功发往 MQ 后通知前端离开排队态（进入派发中）。
+     * 通知失败不影响已发送的 outbox。
+     */
+    private void notifyDispatchedIfNeeded(MqOutbox message) {
+        if (message == null) {
+            return;
+        }
+        try {
+            if (AssignmentRunDispatchActions.isGated(message.getAction())) {
+                assignmentRunDispatchQueueEvents.notifyDispatched(message);
+            } else if (CapabilityRunDispatchActions.isGated(message.getAction())) {
+                capabilityRunDispatchQueueEvents.notifyDispatched(message);
+            }
+        } catch (Exception e) {
+            log.warn("[Verla/run-dispatch] dispatched notify failed outboxId={} action={}: {}",
+                    message.getId(), message.getAction(), e.getMessage());
+        }
     }
 
     private boolean shouldDeferAssignmentRunDispatch(MqOutbox message) {

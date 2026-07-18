@@ -1,6 +1,8 @@
 package com.studyagent.infra.mq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.service.application.verla.dispatch.AssignmentRunDispatchQueueEvents;
+import com.studyagent.service.application.verla.dispatch.CapabilityRunDispatchQueueEvents;
 import com.studyagent.service.domain.mq.MqOutbox;
 import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
@@ -74,9 +76,23 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
                 new ObjectMapper(),
                 unlimitedAssignmentRunDispatchGate(),
                 unlimitedCapabilityRunDispatchGate(),
-                message -> {
+                new AssignmentRunDispatchQueueEvents() {
+                    @Override
+                    public void notifyDeferred(MqOutbox message) {
+                    }
+
+                    @Override
+                    public void notifyDispatched(MqOutbox message) {
+                    }
                 },
-                message -> {
+                new CapabilityRunDispatchQueueEvents() {
+                    @Override
+                    public void notifyDeferred(MqOutbox message) {
+                    }
+
+                    @Override
+                    public void notifyDispatched(MqOutbox message) {
+                    }
                 });
 
         scheduler.sendMessage(verlaCommand(exchangeName, "missing.routing.key"));
@@ -197,6 +213,11 @@ class OutboxDispatchSchedulerRabbitIntegrationTest {
         @Override
         public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
+        }
+
+        @Override
+        public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return null;
         }
     }
 

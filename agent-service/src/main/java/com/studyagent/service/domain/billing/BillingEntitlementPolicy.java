@@ -50,6 +50,13 @@ public final class BillingEntitlementPolicy {
         return allowsPlanRefresh(status);
     }
 
+    public static boolean requiresPaymentResolution(String status) {
+        String normalized = normalize(status);
+        return "past_due".equals(normalized)
+                || "unpaid".equals(normalized)
+                || "incomplete".equals(normalized);
+    }
+
     private static String normalize(String status) {
         return status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
     }

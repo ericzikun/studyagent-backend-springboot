@@ -170,6 +170,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (lockedSubscription != null) {
             userSubscription = lockedSubscription;
         }
+        if (BillingEntitlementPolicy.requiresPaymentResolution(userSubscription.getStatus())
+                && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
+            throw new BillingDomainException(
+                    "PAYMENT_RESOLUTION_REQUIRED",
+                    "Resolve the existing subscription payment before changing plans");
+        }
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
             return createManualUpgradeCheckout(

@@ -275,6 +275,7 @@ public class PaymentController {
             case "ADDON_REQUIRES_PAID_MEMBER" -> Result.error(ApiCode.ADDON_REQUIRES_PAID_MEMBER);
             case "SUBSCRIPTION_ALREADY_EXISTS" -> Result.error(ApiCode.SUBSCRIPTION_ALREADY_EXISTS);
             case "SUBSCRIPTION_CHANGE_PENDING" -> Result.error(ApiCode.SUBSCRIPTION_CHANGE_PENDING);
+            case "PAYMENT_RESOLUTION_REQUIRED" -> Result.error(ApiCode.PAYMENT_RESOLUTION_REQUIRED);
             case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
             case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
             case "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS",

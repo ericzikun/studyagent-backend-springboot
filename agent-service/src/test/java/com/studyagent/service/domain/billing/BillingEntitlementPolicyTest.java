@@ -36,4 +36,16 @@ class BillingEntitlementPolicyTest {
             assertThat(BillingEntitlementPolicy.allowsPaidEntitlementConsumption(status, null, now)).isFalse();
         }
     }
+
+    @Test
+    void recoverablePaymentStatusesRequireResolutionBeforePlanChanges() {
+        for (String status : new String[]{"past_due", "unpaid", "incomplete"}) {
+            assertThat(BillingEntitlementPolicy.requiresPaymentResolution(status)).isTrue();
+        }
+        for (String status : new String[]{
+                "active", "trialing", "incomplete_expired", "paused", "canceled", "free", null
+        }) {
+            assertThat(BillingEntitlementPolicy.requiresPaymentResolution(status)).isFalse();
+        }
+    }
 }

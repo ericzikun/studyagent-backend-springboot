@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.stripe.Stripe;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
@@ -636,6 +637,41 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void manualUpgradeUsesStripeTestClockAsBillingNow() {
+        String originalApiKey = Stripe.apiKey;
+        Stripe.apiKey = "sk_test_123";
+        Subscription subscription = new Subscription();
+        subscription.setTestClock("clock_upgrade");
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Long retrieveTestClockFrozenTime(String testClockId) {
+                return LocalDateTime.parse("2028-07-17T05:20:39")
+                        .toEpochSecond(ZoneOffset.UTC);
+            }
+        };
+
+        try {
+            assertEquals(
+                    LocalDateTime.parse("2028-07-17T05:20:39"),
+                    service.resolveStripeSubscriptionNow(
+                            subscription,
+                            LocalDateTime.parse("2026-07-18T05:20:39")));
+        } finally {
+            Stripe.apiKey = originalApiKey;
+        }
+    }
+
+    @Test
     void resolvesInvoiceSubscriptionIdFromCloverParentDetails() {
         String json = """
                 {
@@ -750,6 +786,86 @@ class StripeBillingWebhookServiceTest {
         service.markManualUpgradeOrderSwitching(order, "cs_test_123", "pi_test_123");
 
         verify(rechargeOrderMapper).update(isNull(), any());
+    }
+
+    @Test
+    void manualUpgradeSwitchFailurePersistsRetryableOrderWithoutThrowing() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(31L);
+        order.setOrderNo("RO_TEST_CLOCK_FAILURE");
+        order.setPlanCode("plus_monthly");
+        order.setTargetPlanCode("pro_monthly");
+        order.setStripeSubscriptionId("sub_test_clock");
+        order.setUpgradeChargeType("monthly_full");
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(current);
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setPlanCode("plus_monthly");
+        currentPlan.setBillingInterval("month");
+        SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setPlanCode("pro_monthly");
+        targetPlan.setBillingInterval("month");
+        targetPlan.setStripePriceId("price_pro_monthly");
+        when(subscriptionPlanMapper.selectOne(any())).thenReturn(currentPlan, targetPlan);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_test_clock");
+        SubscriptionItem item = new SubscriptionItem();
+        item.setId("si_test_clock");
+        item.setQuantity(1L);
+        subscription.setItems(new com.stripe.model.SubscriptionItemCollection());
+        subscription.getItems().setData(List.of(item));
+
+        List<Object> updateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return subscription;
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) throws InvalidRequestException {
+                throw new InvalidRequestException(
+                        "trial_end must be in the future",
+                        "trial_end",
+                        "req_test_clock",
+                        "invalid_request_error",
+                        400,
+                        null);
+            }
+        };
+
+        assertFalse(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_paid_upgrade",
+                "pi_paid_upgrade"));
+        assertTrue(updateValues.contains("switch_failed"));
+        assertTrue(updateValues.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .anyMatch(value -> value.contains("trial_end must be in the future")));
     }
 
     @Test

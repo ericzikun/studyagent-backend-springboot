@@ -2,6 +2,7 @@ package com.studyagent.api.controller;
 
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.payment.PaymentDomainService;
 import com.studyagent.service.domain.payment.SessionStatusResult;
@@ -65,5 +66,22 @@ class PaymentControllerTest {
 
         assertThat(result.getMeta().getStatusCode()).isEqualTo(ApiCode.NO_PERMISSION.getCode());
         assertThat(result.getData()).isNull();
+    }
+
+    @Test
+    void subscriptionChangePendingUsesDedicatedBusinessCode() {
+        PaymentController.SubscriptionCheckoutRequest request =
+                new PaymentController.SubscriptionCheckoutRequest();
+        request.setPlanCode("pro_monthly");
+        when(billingDomainService.createSubscriptionCheckout(
+                "user_a", null, "pro_monthly", null, null, null))
+                .thenThrow(new BillingDomainException(
+                        "SUBSCRIPTION_CHANGE_PENDING",
+                        "The previous upgrade payment is still being applied"));
+
+        var result = controller.createSubscriptionCheckout(request, "user_a", null);
+
+        assertThat(result.getMeta().getStatusCode())
+                .isEqualTo(ApiCode.SUBSCRIPTION_CHANGE_PENDING.getCode());
     }
 }

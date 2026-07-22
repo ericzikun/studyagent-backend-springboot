@@ -26,7 +26,9 @@ clerk:
   secret-key: ${CLERK_SECRET_KEY:sk_test_xxx}
   publishable-key: ${CLERK_PUBLISHABLE_KEY:pk_test_xxx}
   api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
-  frontend-api-url: ${CLERK_FRONTEND_API_URL:}
+  jwt-key: ${CLERK_JWT_KEY:}
+  # 关闭 dev-bypass 使用真实 Clerk 时，显式填写实际 localhost 前端来源。
+  authorized-parties: ${CLERK_AUTHORIZED_PARTIES:}
 
 # 本地开发：跳过 Clerk 鉴权，header X-Dev-User / query dev_user 决定 clerkUserId
 # ⚠️ 仅本地有效，生产/Docker 环境（application-prod.yml / application-docker.yml）默认不开。

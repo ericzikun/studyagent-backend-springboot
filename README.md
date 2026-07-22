@@ -103,6 +103,22 @@ http://localhost:8080/swagger-ui.html
 
 参考 `agent-start/src/main/resources/application.yml`
 
+### Clerk JWT 验签
+
+所有受保护 API（包括 Verla SSE）都会通过 Clerk 官方 SDK 验证 session token 签名，
+不再接受只解码 payload 的 JWT。推荐在生产环境配置 Clerk Dashboard API keys 页提供的
+JWT 公钥，以便无网络完成验签：
+
+```bash
+CLERK_JWT_KEY='-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----'
+CLERK_AUTHORIZED_PARTIES='https://verla.io,https://www.verla.io'
+```
+
+`CLERK_JWT_KEY` 未配置时，后端会使用 `CLERK_SECRET_KEY` 让 SDK 获取并缓存 JWKS。
+两项验证配置都缺失、签名无效或 JWKS 不可用时，认证将失败关闭，不会降级为未验签解析。
+SSE 迁移期间仍兼容 `access_token` 查询参数，但该 Token 与 Authorization header Token
+执行完全相同的验签。
+
 ### Assignment 完成邮件
 
 V2 Assignment 完成邮件由 Spring Boot 在 Verla generation 首次完成后 best-effort 触发，使用 Resend template。启用时需要配置：

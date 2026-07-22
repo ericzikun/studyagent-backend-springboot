@@ -5,7 +5,13 @@ package com.studyagent.service.domain.user;
  */
 public interface ClerkClient {
     /**
-     * 验证 Clerk token
+     * 使用 Clerk 信任密钥验证 session token 的签名和有效期，并返回已认证身份。
+     * 实现不得把只解码、未验签的 JWT claims 用作认证依据。
+     *
+     * @param token Clerk session token，可带 Bearer 前缀
+     * @return 由已验证 claims 构造的用户信息
+     * @throws IllegalArgumentException token 无效时抛出
+     * @throws IllegalStateException 验签配置或基础设施不可用时抛出
      */
     UserInfo verifyToken(String token);
     
@@ -31,4 +37,3 @@ public interface ClerkClient {
         public Boolean emailVerified;
     }
 }
-

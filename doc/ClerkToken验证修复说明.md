@@ -1,174 +1,42 @@
-# Clerk Token 验证修复说明
+# Clerk Token 验签说明
 
-## 🐛 问题
+## 认证边界
 
-调用 `verifyToken` 方法时返回 401 Unauthorized：
-```
-org.springframework.web.reactive.function.client.WebClientResponseException$Unauthorized: 
-401 Unauthorized from GET https://api.clerk.dev/v1/users/me
-```
+Spring Boot 所有调用 `ClerkClient.verifyToken()` 的路径统一使用 Clerk Java SDK
+验证 session token。系统只信任通过以下检查的 claims：
 
-## 🔍 原因分析
+- 当前 Clerk 实例的 JWT 签名；
+- Token 有效期和生效时间；
+- 配置存在时的 authorized parties；
+- 必须存在的用户标识 `sub`。
 
-1. **错误的 API Endpoint**: 使用了 Backend API 的 `/users/me` endpoint
-   - Backend API (`https://api.clerk.dev/v1/users/me`) 需要 **Secret Key** 认证
-   - 不能使用 **Session Token** 来调用
+系统不再解码并信任未验签 JWT payload，也不会在 SDK、JWKS 或网络异常时降级认证。
 
-2. **正确的验证方式**: 应该使用 Frontend API 的 `/v1/me` endpoint
-   - Frontend API (`https://<your-app>.clerk.accounts.dev/v1/me`) 接受 **Session Token**
-   - 这是验证用户 session token 的正确方式
+## 推荐配置
 
-## ✅ 已修复
-
-### 1. 修改验证逻辑
-
-**文件**: `agent-infra/src/main/java/com/studyagent/infra/client/clerk/ClerkClientImpl.java`
-
-**修改内容**:
-- ✅ 优先使用 Frontend API 的 `/v1/me` endpoint（使用 session token）
-- ✅ 完善用户信息提取逻辑（邮箱、显示名称、头像等）
-- ✅ 添加错误处理和日志
-
-### 2. 添加配置项
-
-**文件**: `agent-start/src/main/resources/application.yml`
-
-**新增配置**:
-```yaml
-clerk:
-  frontend-api-url: ${CLERK_FRONTEND_API_URL:}
-```
-
-## 🔧 配置步骤
-
-### 1. 获取 Frontend API URL
-
-从 Clerk Dashboard 获取你的 Frontend API URL：
-- 格式：`https://<your-app>.clerk.accounts.dev`
-- 例如：`https://splendid-roughy-33.clerk.accounts.dev`
-
-### 2. 配置环境变量
-
-#### 方式 1: 使用 `.env` 文件（推荐）
-
-在 `studyagent-backend/.env` 文件中添加：
+从 Clerk Dashboard 的 API keys 页面取得 JWT 公钥，并通过部署平台注入：
 
 ```bash
-# Clerk Frontend API URL（用于验证 session token）
-CLERK_FRONTEND_API_URL=https://splendid-roughy-33.clerk.accounts.dev
+CLERK_SECRET_KEY=sk_live_xxx
+CLERK_PUBLISHABLE_KEY=pk_live_xxx
+CLERK_JWT_KEY='-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----'
+CLERK_AUTHORIZED_PARTIES='https://verla.io,https://www.verla.io'
 ```
 
-#### 方式 2: 使用 `application-local.yml`
+`CLERK_JWT_KEY` 支持真实换行和字面量 `\n`。配置公钥后验签不依赖 Clerk 网络；
+未配置公钥时，SDK 使用 `CLERK_SECRET_KEY` 获取并缓存 JWKS。
 
-在 `agent-start/src/main/resources/application-local.yml` 中添加：
+不要把真实 Secret Key、JWT 或用户 session token 写入仓库、日志和 URL 示例。
 
-```yaml
-clerk:
-  frontend-api-url: https://splendid-roughy-33.clerk.accounts.dev
-```
+## SSE 兼容
 
-#### 方式 3: 使用系统环境变量
+迁移期间 `GET /v1/verla/conversations/{cid}/events` 仍可从 `access_token` 查询参数
+取得 Token。该 Token 只是在拦截器中的提取位置不同，后续与 Authorization header
+中的 Token 使用完全相同的签名验证。
 
-```bash
-export CLERK_FRONTEND_API_URL=https://splendid-roughy-33.clerk.accounts.dev
-```
+## 验证重点
 
-### 3. 验证配置
-
-重启 SpringBoot 后端后，检查日志：
-
-```
-Frontend API 验证成功，用户 ID: user_xxxxx
-```
-
-## 📝 配置示例
-
-### 完整的 `.env` 配置
-
-```bash
-# Clerk 配置
-CLERK_SECRET_KEY=sk_test_xxxxx
-CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
-CLERK_API_URL=https://api.clerk.dev/v1
-CLERK_FRONTEND_API_URL=https://splendid-roughy-33.clerk.accounts.dev
-```
-
-### 完整的 `application-local.yml` 配置
-
-```yaml
-clerk:
-  secret-key: ${CLERK_SECRET_KEY:sk_test_xxx}
-  publishable-key: ${CLERK_PUBLISHABLE_KEY:pk_test_xxx}
-  api-url: ${CLERK_API_URL:https://api.clerk.dev/v1}
-  frontend-api-url: ${CLERK_FRONTEND_API_URL:https://splendid-roughy-33.clerk.accounts.dev}
-```
-
-## 🔄 验证流程
-
-### 1. Token 验证流程
-
-```
-前端发送请求
-  ↓
-Authorization: Bearer <session_token>
-  ↓
-SpringBoot 后端接收
-  ↓
-调用 ClerkClientImpl.verifyToken()
-  ↓
-使用 Frontend API: https://<your-app>.clerk.accounts.dev/v1/me
-  ↓
-返回用户信息
-```
-
-### 2. API 调用示例
-
-**Frontend API** (正确 ✅):
-```http
-GET https://splendid-roughy-33.clerk.accounts.dev/v1/me
-Authorization: Bearer <session_token>
-```
-
-**Backend API** (错误 ❌):
-```http
-GET https://api.clerk.dev/v1/users/me
-Authorization: Bearer <session_token>  # ❌ 需要 Secret Key，不是 Session Token
-```
-
-## ⚠️ 注意事项
-
-1. **Frontend API vs Backend API**:
-   - Frontend API: 用于验证 session token，接受用户 token
-   - Backend API: 用于服务器端操作，需要 Secret Key
-
-2. **配置优先级**:
-   - 环境变量 > application.yml > 默认值
-   - 如果 `CLERK_FRONTEND_API_URL` 未配置，验证会失败
-
-3. **错误处理**:
-   - 如果 Frontend API 不可用，会记录警告日志
-   - 建议始终配置 Frontend API URL
-
-## 🚀 测试
-
-### 1. 测试 Token 验证
-
-```bash
-# 使用有效的 session token 测试
-curl -X GET "http://localhost:8080/v1/auth/me" \
-  -H "Authorization: Bearer <your_session_token>"
-```
-
-### 2. 检查日志
-
-查看日志文件 `logs/studyagent-backend.log`，应该看到：
-```
-Frontend API 验证成功，用户 ID: user_xxxxx
-```
-
-## 📚 参考
-
-- [Clerk Frontend API Documentation](https://clerk.com/docs/reference/frontend-api)
-- [Clerk Backend API Documentation](https://clerk.com/docs/reference/backend-api)
-- Python 后端实现参考：`curve-master/backend/app/services/clerk_service.py`
+- 使用真实有效 Clerk Token 调用普通受保护 API 和 Verla SSE，应正常通过。
+- 篡改 payload、使用其他密钥签名或使用过期 Token，应返回 401。
+- JWT 公钥配置错误或 JWKS 不可用时，应返回认证服务不可用，且不得建立 SSE 连接。
 

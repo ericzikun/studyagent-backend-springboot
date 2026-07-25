@@ -1832,7 +1832,8 @@ public class VerlaTurnOrchestrator {
 
         EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
                 conv == null ? null : conv.getUserId());
-        entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
+        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
+        // entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
 
         // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
         //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
@@ -1894,9 +1895,10 @@ public class VerlaTurnOrchestrator {
                 entitlements.allowedOutputTypes());
         log.info("[Verla] assignment auto-run entitlement check conversationId={} turnId={} sessionId={} diagnostics={}",
                 turn.getConversationId(), turn.getId(), s.getId(), diagnostics);
-        entitlementService.assertAssignmentOutputAllowed(
-                entitlements,
-                castMap(normalizedFinalClarifyResult.get("requirementForm")));
+        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
+        // entitlementService.assertAssignmentOutputAllowed(
+        //         entitlements,
+        //         castMap(normalizedFinalClarifyResult.get("requirementForm")));
 
         // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
         verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());

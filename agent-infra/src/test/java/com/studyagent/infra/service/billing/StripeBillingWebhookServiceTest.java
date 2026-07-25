@@ -2545,7 +2545,7 @@ class StripeBillingWebhookServiceTest {
             Subscription subscription,
             boolean deleted,
             boolean activatePendingPlan) throws Exception {
-        var method = service.getClass().getDeclaredMethod(
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "syncSubscription",
                 Subscription.class,
                 boolean.class,

@@ -39,6 +39,14 @@ public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntit
             @Param("clerkUserId") String clerkUserId,
             @Param("now") LocalDateTime now);
 
+    @Select("<script>"
+            + "SELECT * FROM user_subscriptions WHERE clerk_user_id IN "
+            + "<foreach collection='clerkUserIds' item='id' open='(' separator=',' close=')'>"
+            + "#{id}"
+            + "</foreach>"
+            + "</script>")
+    List<UserSubscriptionEntity> selectByClerkUserIds(@Param("clerkUserIds") List<String> clerkUserIds);
+
     @Select("""
             SELECT us.*
             FROM user_subscriptions us

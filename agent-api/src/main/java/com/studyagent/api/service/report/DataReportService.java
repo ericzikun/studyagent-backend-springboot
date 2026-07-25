@@ -21,6 +21,7 @@ import com.studyagent.infra.mapper.UserMapper;
 import com.studyagent.infra.mapper.verla.AssignmentRunDispatchMonitorMapper;
 import com.studyagent.infra.mapper.verla.VerlaConversationMapper;
 import com.studyagent.api.config.ReportProperties;
+import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.service.domain.task.TaskStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -269,16 +270,29 @@ public class DataReportService {
 
     private void appendVerlaTaskBlock(StringBuilder sb, VerlaTaskMetrics cur, VerlaTaskMetrics cmp) {
         sb.append("📝 **任务（V2 Verla）**\n");
-        sb.append("- Conversation 创建数：**").append(cur.conversationCreates).append("**")
+        sb.append("- Conversation 创建合计：**").append(cur.conversationCreates).append("**")
                 .append(compareInt(cur.conversationCreates, cmp.conversationCreates)).append("\n");
+        sb.append("  - Assignment：**").append(cur.assignmentConversationCreates).append("**")
+                .append(compareInt(cur.assignmentConversationCreates, cmp.assignmentConversationCreates)).append("\n");
+        sb.append("  - AI Detection：**").append(cur.detectionConversationCreates).append("**")
+                .append(compareInt(cur.detectionConversationCreates, cmp.detectionConversationCreates)).append("\n");
+        sb.append("  - Humanizer：**").append(cur.humanizerConversationCreates).append("**")
+                .append(compareInt(cur.humanizerConversationCreates, cmp.humanizerConversationCreates)).append("\n");
         sb.append("- Assignment Run 启动数：**").append(cur.runStarts).append("**")
                 .append(compareInt(cur.runStarts, cmp.runStarts)).append("\n");
-        sb.append("- Assignment 成功数：**").append(cur.runSuccess).append("**")
-                .append(compareInt(cur.runSuccess, cmp.runSuccess)).append("\n");
-        sb.append("- Assignment 失败数：**").append(cur.runFailed).append("**")
-                .append(compareInt(cur.runFailed, cmp.runFailed)).append("\n");
-        sb.append("- Assignment 成功率：**").append(pct1(cur.successRate())).append("**")
-                .append(compareRatio(cur.successRate(), cmp.successRate())).append("\n\n");
+        sb.append("- Assignment 成功 / 失败：**").append(cur.runSuccess).append(" / ").append(cur.runFailed).append("**")
+                .append("（成功率 **").append(pct1(cur.successRate())).append("** · ")
+                .append(trimParen(compareRatio(cur.successRate(), cmp.successRate()))).append("）\n");
+        sb.append("- AI Detection Run 启动数：**").append(cur.detectionRunStarts).append("**")
+                .append(compareInt(cur.detectionRunStarts, cmp.detectionRunStarts)).append("\n");
+        sb.append("- AI Detection 成功 / 失败：**").append(cur.detectionRunSuccess).append(" / ").append(cur.detectionRunFailed).append("**")
+                .append("（成功率 **").append(pct1(cur.detectionSuccessRate())).append("** · ")
+                .append(trimParen(compareRatio(cur.detectionSuccessRate(), cmp.detectionSuccessRate()))).append("）\n");
+        sb.append("- Humanizer Run 启动数：**").append(cur.humanizerRunStarts).append("**")
+                .append(compareInt(cur.humanizerRunStarts, cmp.humanizerRunStarts)).append("\n");
+        sb.append("- Humanizer 成功 / 失败：**").append(cur.humanizerRunSuccess).append(" / ").append(cur.humanizerRunFailed).append("**")
+                .append("（成功率 **").append(pct1(cur.humanizerSuccessRate())).append("** · ")
+                .append(trimParen(compareRatio(cur.humanizerSuccessRate(), cmp.humanizerSuccessRate()))).append("）\n\n");
     }
 
     private void appendPaymentDetail(StringBuilder sb, PaymentMetrics p) {
@@ -322,22 +336,56 @@ public class DataReportService {
         sb.append("- Humanizer 好评率：**").append(pct1(cur.humanizerThumbRate())).append("**").append(compareRatio(cur.humanizerThumbRate(), cmp.humanizerThumbRate())).append("\n\n");
     }
 
-    private VerlaTaskMetrics collectVerlaTaskMetrics(LocalDateTime start, LocalDateTime end) {
-        Long conversationCreates = verlaConversationMapper.selectCount(
-                new LambdaQueryWrapper<VerlaConversationEntity>()
-                        .ne(VerlaConversationEntity::getStatus, "deleted")
-                        .ge(VerlaConversationEntity::getCreatedAt, start)
-                        .lt(VerlaConversationEntity::getCreatedAt, end));
-        Integer runStarts = assignmentRunDispatchMonitorMapper.countStartedAssignmentRunsBetween(start, end);
-        Integer runSuccess = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("SUCCEEDED", start, end);
-        Integer runFailed = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("FAILED", start, end);
+    private VerlaTaskMetrics collectVerlaTaskMetrics(LocalDateTime startBjt, LocalDateTime endBjt) {
+        // conversations：BJT 墙钟；sessions/outbox：UTC 墙钟 → 查 Run 时换窗
+        LocalDateTime startUtc = ReportSessionTimeWindows.bjtWallToUtcWall(startBjt);
+        LocalDateTime endUtc = ReportSessionTimeWindows.bjtWallToUtcWall(endBjt);
 
         VerlaTaskMetrics metrics = new VerlaTaskMetrics();
-        metrics.conversationCreates = conversationCreates != null ? conversationCreates.intValue() : 0;
+        metrics.conversationCreates = countConversationsBetween(startBjt, endBjt, null);
+        metrics.assignmentConversationCreates = countConversationsBetween(startBjt, endBjt, "ASSIGNMENT");
+        metrics.detectionConversationCreates = countConversationsBetween(startBjt, endBjt, "AI_DETECTION");
+        metrics.humanizerConversationCreates = countConversationsBetween(startBjt, endBjt, "AI_HUMANIZER");
+
+        Integer runStarts = assignmentRunDispatchMonitorMapper.countStartedAssignmentRunsBetween(startUtc, endUtc);
+        Integer runSuccess = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("SUCCEEDED", startUtc, endUtc);
+        Integer runFailed = assignmentRunDispatchMonitorMapper.countTerminalAssignmentRunsBetween("FAILED", startUtc, endUtc);
         metrics.runStarts = runStarts != null ? runStarts : 0;
         metrics.runSuccess = runSuccess != null ? runSuccess : 0;
         metrics.runFailed = runFailed != null ? runFailed : 0;
+
+        String detectionAction = VerlaCommandAction.CMD_DETECTION_RUN.getCode();
+        Integer detectionStarts = assignmentRunDispatchMonitorMapper.countStartedRunsByActionBetween(detectionAction, startUtc, endUtc);
+        Integer detectionSuccess = assignmentRunDispatchMonitorMapper.countTerminalRunsByActionBetween(
+                detectionAction, "SUCCEEDED", startUtc, endUtc);
+        Integer detectionFailed = assignmentRunDispatchMonitorMapper.countTerminalRunsByActionBetween(
+                detectionAction, "FAILED", startUtc, endUtc);
+        metrics.detectionRunStarts = detectionStarts != null ? detectionStarts : 0;
+        metrics.detectionRunSuccess = detectionSuccess != null ? detectionSuccess : 0;
+        metrics.detectionRunFailed = detectionFailed != null ? detectionFailed : 0;
+
+        String humanizerAction = VerlaCommandAction.CMD_HUMANIZER_RUN.getCode();
+        Integer humanizerStarts = assignmentRunDispatchMonitorMapper.countStartedRunsByActionBetween(humanizerAction, startUtc, endUtc);
+        Integer humanizerSuccess = assignmentRunDispatchMonitorMapper.countTerminalRunsByActionBetween(
+                humanizerAction, "SUCCEEDED", startUtc, endUtc);
+        Integer humanizerFailed = assignmentRunDispatchMonitorMapper.countTerminalRunsByActionBetween(
+                humanizerAction, "FAILED", startUtc, endUtc);
+        metrics.humanizerRunStarts = humanizerStarts != null ? humanizerStarts : 0;
+        metrics.humanizerRunSuccess = humanizerSuccess != null ? humanizerSuccess : 0;
+        metrics.humanizerRunFailed = humanizerFailed != null ? humanizerFailed : 0;
         return metrics;
+    }
+
+    private int countConversationsBetween(LocalDateTime startBjt, LocalDateTime endBjt, String primaryIntent) {
+        LambdaQueryWrapper<VerlaConversationEntity> wrapper = new LambdaQueryWrapper<VerlaConversationEntity>()
+                .ne(VerlaConversationEntity::getStatus, "deleted")
+                .ge(VerlaConversationEntity::getCreatedAt, startBjt)
+                .lt(VerlaConversationEntity::getCreatedAt, endBjt);
+        if (primaryIntent != null) {
+            wrapper.eq(VerlaConversationEntity::getPrimaryIntent, primaryIntent);
+        }
+        Long count = verlaConversationMapper.selectCount(wrapper);
+        return count != null ? count.intValue() : 0;
     }
 
     private int countUsersCreatedVerlaConversationInPeriod(Set<String> newUserIds, LocalDateTime start, LocalDateTime end) {
@@ -716,13 +764,32 @@ public class DataReportService {
 
     private static final class VerlaTaskMetrics {
         int conversationCreates;
+        int assignmentConversationCreates;
+        int detectionConversationCreates;
+        int humanizerConversationCreates;
         int runStarts;
         int runSuccess;
         int runFailed;
+        int detectionRunStarts;
+        int detectionRunSuccess;
+        int detectionRunFailed;
+        int humanizerRunStarts;
+        int humanizerRunSuccess;
+        int humanizerRunFailed;
 
         double successRate() {
             int total = runSuccess + runFailed;
             return total <= 0 ? 0 : 100.0 * runSuccess / total;
+        }
+
+        double detectionSuccessRate() {
+            int total = detectionRunSuccess + detectionRunFailed;
+            return total <= 0 ? 0 : 100.0 * detectionRunSuccess / total;
+        }
+
+        double humanizerSuccessRate() {
+            int total = humanizerRunSuccess + humanizerRunFailed;
+            return total <= 0 ? 0 : 100.0 * humanizerRunSuccess / total;
         }
 
         double createToFinishRate() {

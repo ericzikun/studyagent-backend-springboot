@@ -70,6 +70,33 @@ public interface AssignmentRunDispatchMonitorMapper {
                                                @Param("start") LocalDateTime start,
                                                @Param("end") LocalDateTime end);
 
+    /**
+     * 按单一 outbox action 统计启动 session 数（Detection / Humanizer 等）。
+     * 调用方需传入与 session 落库时区一致的时间窗（报表侧对 UTC 墙钟做 BJT→UTC 换算）。
+     */
+    @Select("SELECT COUNT(DISTINCT s.id) "
+            + "FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "AND o.action = #{action} "
+            + "WHERE COALESCE(s.started_at, s.created_at) >= #{start} "
+            + "AND COALESCE(s.started_at, s.created_at) < #{end}")
+    Integer countStartedRunsByActionBetween(@Param("action") String action,
+                                            @Param("start") LocalDateTime start,
+                                            @Param("end") LocalDateTime end);
+
+    @Select("SELECT COUNT(DISTINCT s.id) "
+            + "FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "AND o.action = #{action} "
+            + "WHERE s.status = #{terminalStatus} "
+            + "AND s.ended_at IS NOT NULL "
+            + "AND s.ended_at >= #{start} "
+            + "AND s.ended_at < #{end}")
+    Integer countTerminalRunsByActionBetween(@Param("action") String action,
+                                             @Param("terminalStatus") String terminalStatus,
+                                             @Param("start") LocalDateTime start,
+                                             @Param("end") LocalDateTime end);
+
     @Select("SELECT COUNT(*) FROM mq_outbox "
             + "WHERE status = 0 "
             + "AND action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")

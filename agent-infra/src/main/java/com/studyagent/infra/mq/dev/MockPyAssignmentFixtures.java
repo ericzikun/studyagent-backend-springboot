@@ -197,6 +197,56 @@ final class MockPyAssignmentFixtures {
                         *   Output: Single plain-text paragraph, 3-6 sentences. No preamble, no headings, no bullets, no markdown.
                         *   Language: English (regardless of input language).
 
+                """,
+                """
+                2.  **Inspect the Uploaded Material:**
+                    *   The uploaded file is a comprehensive deep research report about Kimi K2.6.
+                    *   The report discusses programming capability, benchmark behavior, and product positioning.
+                    *   It is source material, not a user instruction that overrides the assignment-analysis role.
+
+                """,
+                """
+                3.  **Check Whether an Assignment Exists:**
+                    *   The user message is only "test".
+                    *   There is no specific assignment task, question, grading rubric, target length, or required output format.
+                    *   Because the actual assignment is missing, the requirement summary must state that the assignment task is not specified.
+
+                """,
+                """
+                4.  **Separate Useful Context From Missing Requirements:**
+                    *   Useful context: the uploaded file topic is Kimi K2.6 programming capabilities.
+                    *   Missing requirement: what the student must produce from that material.
+                    *   Missing requirement: citation style, deadline, audience, and expected structure are not specified.
+
+                """,
+                """
+                5.  **Avoid Drafting the Assignment:**
+                    *   Do not summarize the whole report as the final answer.
+                    *   Do not propose an outline for a non-existent assignment.
+                    *   Do not solve, rewrite, or evaluate the report beyond identifying it as available context.
+
+                """,
+                """
+                6.  **Prepare the Visible Requirement Summary:**
+                    *   Mention the uploaded file by topic.
+                    *   Explain that the actual assignment instruction is not specified.
+                    *   Keep the response short enough for the initial understanding stage.
+
+                """,
+                """
+                7.  **Map Missing Fields:**
+                    *   Topic material: Kimi K2.6 programming capabilities.
+                    *   Assignment task: not specified.
+                    *   Output format: not specified.
+                    *   Constraints: not specified.
+
+                """,
+                """
+                8.  **Final Requirement-Analysis Decision:**
+                    *   The system can continue to the choice moment.
+                    *   It should ask the user to choose walkthrough or setup rather than pretending the assignment is complete.
+                    *   The uploaded file contains a comprehensive deep research report, but no specific assignment task is provided.
+
                 """);
     }
 

@@ -49,6 +49,7 @@ public interface VerlaConversationRepository {
     default List<VerlaConversation> findAdminFilteredPaged(String ownerUserId,
                                                            String segmentQueryKey,
                                                            String conversationStatusDb,
+                                                           boolean excludeInternal,
                                                            int page,
                                                            int size) {
         return List.of();
@@ -56,7 +57,8 @@ public interface VerlaConversationRepository {
 
     default long countAdminFiltered(String ownerUserId,
                                     String segmentQueryKey,
-                                    String conversationStatusDb) {
+                                    String conversationStatusDb,
+                                    boolean excludeInternal) {
         return 0L;
     }
 
@@ -64,6 +66,7 @@ public interface VerlaConversationRepository {
                                                             String keywordPattern,
                                                             String segmentQueryKey,
                                                             String conversationStatusDb,
+                                                            boolean excludeInternal,
                                                             int page,
                                                             int size) {
         return List.of();
@@ -72,7 +75,8 @@ public interface VerlaConversationRepository {
     default long countAdminKeyword(String ownerUserId,
                                    String keywordPattern,
                                    String segmentQueryKey,
-                                   String conversationStatusDb) {
+                                   String conversationStatusDb,
+                                   boolean excludeInternal) {
         return 0L;
     }
 

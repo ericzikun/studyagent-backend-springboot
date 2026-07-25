@@ -101,6 +101,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final PlanQuotaService planQuotaService;
     private final UserRepository userRepository;
     private final QuotaVipAccessService quotaVipAccessService;
+    private final UserSubscriptionBootstrapService userSubscriptionBootstrapService;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -146,6 +147,23 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CheckoutSessionResult createSubscriptionCheckout(
+            String clerkUserId,
+            String customerEmail,
+            String planCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken) {
+        userSubscriptionBootstrapService.ensureExists(clerkUserId);
+        return createSubscriptionCheckoutLocked(
+                clerkUserId,
+                customerEmail,
+                planCode,
+                requestedSuccessUrl,
+                requestedCancelUrl,
+                resumeToken);
+    }
+
+    private CheckoutSessionResult createSubscriptionCheckoutLocked(
             String clerkUserId,
             String customerEmail,
             String planCode,
@@ -284,20 +302,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken,
             SessionCreateParams params) throws StripeException {
         Session session = createStripeCheckoutSession(params);
-        insertPendingOrder(
-                clerkUserId,
-                "subscription_initial",
-                "subscription",
-                planCode,
-                planCode,
-                null,
-                0L,
-                null,
-                plan.getPriceCents(),
-                plan.getCurrency(),
-                session.getId(),
-                null,
-                session.getSubscription());
+        try {
+            insertPendingOrder(
+                    clerkUserId,
+                    "subscription_initial",
+                    "subscription",
+                    planCode,
+                    planCode,
+                    null,
+                    0L,
+                    null,
+                    plan.getPriceCents(),
+                    plan.getCurrency(),
+                    session.getId(),
+                    null,
+                    session.getSubscription());
+        } catch (RuntimeException e) {
+            expireCheckoutAfterPersistenceFailure(session, e);
+            throw e;
+        }
         return CheckoutSessionResult.builder()
                 .checkoutKind("session")
                 .sessionId(session.getId())
@@ -321,7 +344,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .in(RechargeOrderEntity::getStatus,
                                 List.of("pending", "pending_checkout", "checkout_created"))
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
-                        .last("LIMIT 1"));
+                        .last("LIMIT 1 FOR UPDATE"));
         if (pending == null || !hasText(pending.getStripeSessionId())) {
             return null;
         }
@@ -496,20 +519,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 throw stripeFailure("Create add-on Checkout failed", retryException);
             }
         }
-        insertPendingOrder(
-                clerkUserId,
-                "addon",
-                addon.getFeatureCode(),
-                addonCode,
-                null,
-                addonCode,
-                addon.getQuotaAmount(),
-                addon.getValidityMonths(),
-                addon.getPriceCents(),
-                addon.getCurrency(),
-                session.getId(),
-                session.getPaymentIntent(),
-                userSubscription.getStripeSubscriptionId());
+        try {
+            insertPendingOrder(
+                    clerkUserId,
+                    "addon",
+                    addon.getFeatureCode(),
+                    addonCode,
+                    null,
+                    addonCode,
+                    addon.getQuotaAmount(),
+                    addon.getValidityMonths(),
+                    addon.getPriceCents(),
+                    addon.getCurrency(),
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    userSubscription.getStripeSubscriptionId());
+        } catch (RuntimeException e) {
+            expireCheckoutAfterPersistenceFailure(session, e);
+            throw e;
+        }
         return CheckoutSessionResult.builder()
                 .checkoutKind("session")
                 .sessionId(session.getId())
@@ -909,8 +937,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .setIdempotencyKey(buildManualUpgradeCheckoutIdempotencyKey(orderNo))
                     .build();
             Session session = createStripeCheckoutSession(params, options);
-            insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
-            markPendingUpgradeCheckout(current, orderNo, session);
+            try {
+                insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
+                markPendingUpgradeCheckout(current, orderNo, session);
+            } catch (RuntimeException e) {
+                expireCheckoutAfterPersistenceFailure(session, e);
+                throw e;
+            }
 
             return CheckoutSessionResult.builder()
                     .checkoutKind("session")
@@ -925,6 +958,27 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .build();
         } catch (StripeException e) {
             throw stripeFailure("Create manual subscription upgrade Checkout failed", e);
+        }
+    }
+
+    private void expireCheckoutAfterPersistenceFailure(
+            Session session,
+            RuntimeException persistenceFailure) {
+        if (session == null || !hasText(session.getId())) {
+            return;
+        }
+        try {
+            expireStripeCheckoutSession(session);
+            log.warn(
+                    "Expired Stripe Checkout after local billing persistence failure: session={}",
+                    session.getId());
+        } catch (StripeException | RuntimeException compensationFailure) {
+            persistenceFailure.addSuppressed(compensationFailure);
+            log.error(
+                    "Failed to expire Stripe Checkout after local billing persistence failure: "
+                            + "session={}",
+                    session.getId(),
+                    compensationFailure);
         }
     }
 
@@ -1431,16 +1485,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return entity;
         }
         LocalDateTime now = LocalDateTime.now();
-        entity = new UserSubscriptionEntity();
-        entity.setClerkUserId(clerkUserId);
-        entity.setTier("free");
-        entity.setStatus("free");
-        entity.setCancelAtPeriodEnd(false);
-        entity.setVersion(0);
-        entity.setCreatedAt(now);
-        entity.setUpdatedAt(now);
-        userSubscriptionMapper.insert(entity);
-        return entity;
+        userSubscriptionMapper.insertFreeIfAbsent(clerkUserId, now);
+        UserSubscriptionEntity persisted =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (persisted == null) {
+            throw new IllegalStateException(
+                    "Failed to create or load user subscription: " + clerkUserId);
+        }
+        return persisted;
     }
 
     private String ensureStripeCustomer(

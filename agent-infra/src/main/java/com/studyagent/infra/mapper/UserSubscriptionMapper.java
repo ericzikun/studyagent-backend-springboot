@@ -2,9 +2,11 @@ package com.studyagent.infra.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntity> {
@@ -13,6 +15,29 @@ public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntit
 
     @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1 FOR UPDATE")
     UserSubscriptionEntity selectByUserForUpdate(@Param("clerkUserId") String clerkUserId);
+
+    @Insert("""
+            INSERT IGNORE INTO user_subscriptions (
+                clerk_user_id,
+                tier,
+                status,
+                cancel_at_period_end,
+                version,
+                created_at,
+                updated_at
+            ) VALUES (
+                #{clerkUserId},
+                'free',
+                'free',
+                0,
+                0,
+                #{now},
+                #{now}
+            )
+            """)
+    int insertFreeIfAbsent(
+            @Param("clerkUserId") String clerkUserId,
+            @Param("now") LocalDateTime now);
 
     @Select("""
             SELECT us.*

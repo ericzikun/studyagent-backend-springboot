@@ -295,6 +295,7 @@ public class PaymentController {
                     ? Result.error(ApiCode.PRICE_CONFIG_ERROR, args[0], args[1])
                     : Result.error(ApiCode.PRICE_CONFIG_ERROR, e.getMessage());
             case "PRICE_NOT_FOUND" -> Result.error(ApiCode.PRICE_NOT_FOUND, args != null && args.length > 0 ? args[0] : e.getMessage());
+            case "SESSION_OWNER_MISMATCH" -> Result.error(ApiCode.NO_PERMISSION);
             case "INTERNAL_ERROR" -> Result.error(ApiCode.INTERNAL_ERROR, e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(e.getMessage());

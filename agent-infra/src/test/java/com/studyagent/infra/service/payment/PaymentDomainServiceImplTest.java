@@ -2,7 +2,11 @@ package com.studyagent.infra.service.payment;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.studyagent.infra.entity.AiFeaturePackageEntity;
+import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
+import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.service.domain.payment.PaymentDomainException;
+import com.stripe.model.checkout.Session;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -12,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +25,8 @@ class PaymentDomainServiceImplTest {
 
     @Mock
     private AiFeaturePackageMapper aiFeaturePackageMapper;
+    @Mock
+    private RechargeOrderMapper rechargeOrderMapper;
 
     @Test
     void getPaymentConfigIncludesFeatureUnits() {
@@ -43,7 +50,8 @@ class PaymentDomainServiceImplTest {
 
         when(aiFeaturePackageMapper.selectList(any(Wrapper.class))).thenReturn(List.of(detection, assignment));
 
-        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper);
+        PaymentDomainServiceImpl service =
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
         ReflectionTestUtils.setField(service, "stripePublishableKey", "pk_test_123");
 
         var result = service.getPaymentConfig();
@@ -57,7 +65,8 @@ class PaymentDomainServiceImplTest {
 
     @Test
     void getSessionStatusReturnsPaidForMockCheckoutSession() {
-        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper);
+        PaymentDomainServiceImpl service =
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
         ReflectionTestUtils.setField(service, "paymentCheckoutMockEnabled", true);
 
         var result = service.getSessionStatus("mock_cs_123");
@@ -66,5 +75,31 @@ class PaymentDomainServiceImplTest {
         assertEquals("complete", result.getStatus());
         assertEquals("paid", result.getPaymentStatus());
         assertEquals("usd", result.getCurrency());
+    }
+
+    @Test
+    void getSessionStatusRejectsStripeMetadataThatConflictsWithLocalOrderOwner() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setStripeSessionId("cs_owner_conflict");
+        order.setClerkUserId("user_local_owner");
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+
+        PaymentDomainServiceImpl service =
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper) {
+                    @Override
+                    Session retrieveStripeCheckoutSession(String sessionId) {
+                        Session session = new Session();
+                        session.setId(sessionId);
+                        session.setMetadata(java.util.Map.of(
+                                "clerk_user_id", "user_metadata_owner"));
+                        return session;
+                    }
+                };
+
+        PaymentDomainException error = assertThrows(
+                PaymentDomainException.class,
+                () -> service.getSessionStatus("cs_owner_conflict"));
+
+        assertEquals("SESSION_OWNER_MISMATCH", error.getCode());
     }
 }

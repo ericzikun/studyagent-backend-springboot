@@ -81,6 +81,8 @@ class BillingDomainServiceImplTest {
     private UserRepository userRepository;
     @Mock
     private QuotaVipAccessService quotaVipAccessService;
+    @Mock
+    private UserSubscriptionBootstrapService userSubscriptionBootstrapService;
 
     @Test
     void getCatalogMapsActivePlansAndAddons() {
@@ -911,7 +913,8 @@ class BillingDomainServiceImplTest {
                 rechargeOrderMapper,
                 planQuotaService,
                 userRepository,
-                quotaVipAccessService) {
+                quotaVipAccessService,
+                userSubscriptionBootstrapService) {
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1002,7 +1005,8 @@ class BillingDomainServiceImplTest {
                 rechargeOrderMapper,
                 planQuotaService,
                 userRepository,
-                quotaVipAccessService) {
+                quotaVipAccessService,
+                userSubscriptionBootstrapService) {
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1023,6 +1027,150 @@ class BillingDomainServiceImplTest {
                 null);
 
         assertEquals("cs_test_fresh_after_expired", result.getSessionId());
+    }
+
+    @Test
+    void createSubscriptionCheckoutLocksPendingInitialOrderBeforeCreatingStripeSession() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(31L);
+        subscription.setClerkUserId("user_lock_pending");
+        subscription.setTier("free");
+        subscription.setStatus("free");
+        subscription.setStripeCustomerId("cus_lock_pending");
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_lock_pending")).thenReturn(subscription);
+
+        BillingDomainServiceImpl service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                userSubscriptionMapper,
+                rechargeOrderMapper,
+                planQuotaService,
+                userRepository,
+                quotaVipAccessService,
+                userSubscriptionBootstrapService) {
+            @Override
+            Session createStripeCheckoutSession(SessionCreateParams params) {
+                Session session = new Session();
+                session.setId("cs_test_lock_pending");
+                session.setUrl("https://checkout.stripe.com/c/pay/cs_test_lock_pending");
+                session.setExpiresAt(Instant.now().plusSeconds(1800).getEpochSecond());
+                return session;
+            }
+        };
+        setStripeSecretKey(service, "sk_test_123");
+
+        service.createSubscriptionCheckout(
+                "user_lock_pending",
+                "user@example.com",
+                "basic_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                null);
+
+        ArgumentCaptor<Wrapper> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(rechargeOrderMapper).selectOne(queryCaptor.capture());
+        assertTrue(queryCaptor.getValue().getCustomSqlSegment().contains("LIMIT 1 FOR UPDATE"));
+    }
+
+    @Test
+    void createSubscriptionCheckoutBootstrapsSubscriptionRowBeforeLocking() throws Exception {
+        UserSubscriptionEntity concurrentSubscription = new UserSubscriptionEntity();
+        concurrentSubscription.setId(32L);
+        concurrentSubscription.setClerkUserId("user_concurrent_first_checkout");
+        concurrentSubscription.setTier("free");
+        concurrentSubscription.setStatus("free");
+        concurrentSubscription.setStripeCustomerId("cus_concurrent");
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        RechargeOrderEntity pending = new RechargeOrderEntity();
+        pending.setId(203L);
+        pending.setClerkUserId("user_concurrent_first_checkout");
+        pending.setOrderType("subscription_initial");
+        pending.setPlanCode("basic_monthly");
+        pending.setStripeSessionId("cs_concurrent_open");
+        pending.setStatus("pending");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(concurrentSubscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_concurrent_first_checkout"))
+                .thenReturn(concurrentSubscription);
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(pending);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.checkoutSessionStatus = "open";
+        service.checkoutSessionUrl = "https://checkout.stripe.com/c/pay/cs_concurrent_open";
+        service.checkoutSessionExpiresAt = Instant.now().plusSeconds(1800).getEpochSecond();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_concurrent_first_checkout",
+                "user@example.com",
+                "basic_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                null);
+
+        assertEquals("cs_concurrent_open", result.getSessionId());
+        assertEquals(0, service.checkoutAttempts);
+        verify(userSubscriptionBootstrapService).ensureExists(
+                "user_concurrent_first_checkout");
+        verify(userSubscriptionMapper, never()).insert(any(UserSubscriptionEntity.class));
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void initialCheckoutExpiresStripeSessionWhenLocalOrderInsertFails() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(33L);
+        subscription.setClerkUserId("user_order_failure");
+        subscription.setTier("free");
+        subscription.setStatus("free");
+        subscription.setStripeCustomerId("cus_order_failure");
+
+        SubscriptionPlanEntity targetPlan = plan("basic_monthly", "basic", "month", 1999);
+        targetPlan.setStripePriceId("price_basic_monthly");
+        targetPlan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_order_failure"))
+                .thenReturn(subscription);
+        when(rechargeOrderMapper.insert(any(RechargeOrderEntity.class)))
+                .thenThrow(new IllegalStateException("simulated order insert failure"));
+
+        TestBillingDomainService service = new TestBillingDomainService() {
+            @Override
+            Session createStripeCheckoutSession(SessionCreateParams params) {
+                Session session = new Session();
+                session.setId("cs_orphan_candidate");
+                session.setUrl("https://checkout.stripe.com/c/pay/cs_orphan_candidate");
+                session.setExpiresAt(Instant.now().plusSeconds(1800).getEpochSecond());
+                return session;
+            }
+        };
+        setStripeSecretKey(service, "sk_test_123");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.createSubscriptionCheckout(
+                        "user_order_failure",
+                        "user@example.com",
+                        "basic_monthly",
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        null));
+
+        assertEquals("cs_orphan_candidate", service.expiredCheckoutSessionId);
     }
 
     @Test
@@ -1635,7 +1783,8 @@ class BillingDomainServiceImplTest {
                 rechargeOrderMapper,
                 planQuotaService,
                 userRepository,
-                quotaVipAccessService);
+                quotaVipAccessService,
+                userSubscriptionBootstrapService);
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -1656,7 +1805,7 @@ class BillingDomainServiceImplTest {
         field.set(service, value);
     }
 
-    private final class TestBillingDomainService extends BillingDomainServiceImpl {
+    private class TestBillingDomainService extends BillingDomainServiceImpl {
         private int checkoutAttempts;
         private int portalAttempts;
         private int invoiceRetrieveAttempts;
@@ -1694,7 +1843,8 @@ class BillingDomainServiceImplTest {
                     rechargeOrderMapper,
                     planQuotaService,
                     userRepository,
-                    quotaVipAccessService);
+                    quotaVipAccessService,
+                    userSubscriptionBootstrapService);
         }
 
         @Override

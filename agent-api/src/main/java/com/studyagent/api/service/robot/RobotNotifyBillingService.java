@@ -7,6 +7,7 @@ import com.studyagent.infra.entity.UserProfileEntity;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.service.domain.billing.BillingCheckoutNotifyRequest;
 import com.studyagent.service.domain.billing.BillingPaymentFailedNotifyRequest;
+import com.studyagent.service.domain.billing.BillingReviewNotifyRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -129,6 +130,38 @@ public class RobotNotifyBillingService {
             );
         } catch (Exception e) {
             log.warn("notifyPaymentFailed failed: {}", e.getMessage(), e);
+        }
+    }
+
+    @Async("robotNotifyExecutor")
+    public void notifyBillingReviewRequired(BillingReviewNotifyRequest request) {
+        try {
+            String title = "商业化事件需人工处理";
+            StringBuilder sb = new StringBuilder();
+            sb.append("**Stripe 事件**: ")
+                    .append(nullToDash(request.getStripeEventType()))
+                    .append("\n\n");
+            sb.append("- **处理状态**: ").append(nullToDash(request.getStatus())).append("\n");
+            sb.append("- **事件 ID**: ").append(nullToDash(request.getStripeEventId())).append("\n");
+            sb.append("- **对象 ID**: ").append(nullToDash(request.getObjectId())).append("\n");
+            sb.append("- **尝试次数**: ").append(request.getAttemptCount()).append("\n");
+            sb.append("- **原因**: ").append(nullToDash(request.getReason())).append("\n");
+            sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
+            Map<String, Object> meta = new HashMap<>();
+            meta.put("kind", "billing_review_required");
+            meta.put("stripe_event_id", request.getStripeEventId());
+            meta.put("stripe_event_type", request.getStripeEventType());
+            meta.put("status", request.getStatus());
+            robotNotifyService.dispatch(
+                    RobotNotifyRouteKind.ASSIGNMENT,
+                    "billing_review_" + request.getStripeEventId() + "_" + request.getStatus(),
+                    "notify.billing.review-required",
+                    title,
+                    truncate(sb.toString(), 2000),
+                    meta
+            );
+        } catch (Exception e) {
+            log.warn("notifyBillingReviewRequired failed: {}", e.getMessage(), e);
         }
     }
 

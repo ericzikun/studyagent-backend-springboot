@@ -1,5 +1,7 @@
 package com.studyagent.infra.service.billing;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
@@ -8,6 +10,7 @@ import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
+import com.stripe.model.Price;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
@@ -24,6 +27,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
+import com.studyagent.service.domain.billing.BillingReviewNotifyRequest;
 import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
 import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import org.junit.jupiter.api.BeforeAll;
@@ -127,8 +131,13 @@ class StripeBillingWebhookServiceTest {
                 "charge",
                 "\"payment_intent\":\"pi_external\",\"amount\":9900,"
                         + "\"amount_refunded\":9900,\"refunded\":true");
+        when(billingRobotNotifyGatewayProvider.getIfAvailable())
+                .thenReturn(org.mockito.Mockito.mock(BillingRobotNotifyGateway.class));
 
         assertReviewRequired(event);
+
+        verify(billingRobotNotifyGatewayProvider.getIfAvailable())
+                .notifyBillingReviewRequired(any());
     }
 
     @Test
@@ -155,6 +164,33 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void matchedCreditNoteMarksOrderForReviewAndSendsAlert() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(41L);
+        order.setOrderType("subscription_renewal");
+        order.setStripeInvoiceId("in_credit_note");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        BillingRobotNotifyGateway notifyGateway =
+                org.mockito.Mockito.mock(BillingRobotNotifyGateway.class);
+        when(billingRobotNotifyGatewayProvider.getIfAvailable()).thenReturn(notifyGateway);
+        Event event = reversalEvent(
+                "evt_matched_credit_note",
+                "credit_note.created",
+                "credit_note",
+                "\"invoice\":\"in_credit_note\",\"status\":\"issued\"");
+
+        invokeHandle(service(), event);
+
+        verify(rechargeOrderMapper).update(isNull(), any());
+        ArgumentCaptor<BillingReviewNotifyRequest> notification =
+                ArgumentCaptor.forClass(BillingReviewNotifyRequest.class);
+        verify(notifyGateway).notifyBillingReviewRequired(notification.capture());
+        assertEquals("evt_matched_credit_note", notification.getValue().getStripeEventId());
+        assertEquals("review_required", notification.getValue().getStatus());
+        assertEquals("obj_external", notification.getValue().getObjectId());
+    }
+
+    @Test
     void retryWorkerDoesNotCountEventThatWasNotClaimed() {
         Event event = event("invoice.paid", "invoice", null);
         StripeWebhookEventEntity due = webhookEvent(event, "failed");
@@ -163,6 +199,41 @@ class StripeBillingWebhookServiceTest {
         when(webhookEventMapper.selectById(event.getId())).thenReturn(alreadySucceeded);
 
         assertEquals(0, service().retryDueEvents(10));
+    }
+
+    @Test
+    void retryWorkerSelectsFailedAndStaleReceivedOrProcessingEvents() {
+        when(webhookEventMapper.selectList(any())).thenReturn(List.of());
+
+        assertEquals(0, service().retryDueEvents(10));
+
+        ArgumentCaptor<Wrapper> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(webhookEventMapper).selectList(queryCaptor.capture());
+        LambdaQueryWrapper<?> query = (LambdaQueryWrapper<?>) queryCaptor.getValue();
+        String sql = query.getCustomSqlSegment();
+        List<Object> values = new ArrayList<>(query.getParamNameValuePairs().values());
+        assertTrue(values.contains("failed"));
+        assertTrue(values.contains("received"));
+        assertTrue(values.contains("processing"));
+        assertTrue(sql.contains("next_retry_at"));
+        assertTrue(sql.contains("received_at"));
+        assertTrue(sql.contains("processing_started_at"));
+    }
+
+    @Test
+    void staleProcessingClaimComparesOriginalProcessingTimestamp() throws Exception {
+        Event event = event("invoice.paid", "invoice", null);
+        StripeWebhookEventEntity stale = webhookEvent(event, "processing");
+        stale.setProcessingStartedAt(LocalDateTime.now().minusMinutes(10));
+        when(webhookEventMapper.selectById(event.getId())).thenReturn(stale);
+        when(webhookEventMapper.update(isNull(), any())).thenReturn(1);
+
+        assertTrue(invokeClaim(service(), event.getId()));
+
+        ArgumentCaptor<LambdaUpdateWrapper<StripeWebhookEventEntity>> updateCaptor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(webhookEventMapper).update(isNull(), updateCaptor.capture());
+        assertTrue(updateCaptor.getValue().getSqlSegment().contains("processing_started_at"));
     }
 
     @Test
@@ -243,6 +314,138 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void subscriptionDisputeFreezesPaidAccessAndAddons() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(78L);
+        order.setOrderType("subscription_renewal");
+        order.setClerkUserId("user_1");
+        order.setStripePaymentIntentId("pi_subscription_dispute");
+        order.setStripeSubscriptionId("sub_disputed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+
+        UserSubscriptionEntity current = activeSubscription();
+        current.setId(89L);
+        current.setStripeSubscriptionId("sub_disputed");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        List<Object> subscriptionUpdateValues = new ArrayList<>();
+        when(userSubscriptionMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            subscriptionUpdateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+        Event event = reversalEvent(
+                "evt_subscription_dispute",
+                "charge.dispute.created",
+                "dispute",
+                "\"payment_intent\":\"pi_subscription_dispute\","
+                        + "\"charge\":\"ch_subscription_dispute\","
+                        + "\"amount\":1999,\"status\":\"needs_response\"");
+
+        invokeHandle(service(), event);
+
+        assertTrue(subscriptionUpdateValues.contains("unpaid"));
+        verify(billingQuotaGateway).pauseAddons(
+                "user_1",
+                "sub_disputed",
+                "dispute:obj_external:pause-addons");
+        verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
+    }
+
+    @Test
+    void subscriptionDisputeWonRestoresAuthoritativeAccessAndAddons() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(79L);
+        order.setOrderType("subscription_renewal");
+        order.setStatus("disputed");
+        order.setClerkUserId("user_1");
+        order.setStripePaymentIntentId("pi_subscription_dispute_won");
+        order.setStripeSubscriptionId("sub_disputed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+
+        UserSubscriptionEntity current = activeSubscription();
+        current.setId(90L);
+        current.setStatus("unpaid");
+        current.setStripeSubscriptionId("sub_disputed");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_monthly");
+        plan.setTier("plus");
+        plan.setStripePriceId("price_plus");
+        plan.setBillingInterval("month");
+        when(subscriptionPlanMapper.selectOne(any())).thenReturn(plan);
+
+        Subscription authoritative = new Subscription();
+        authoritative.setId("sub_disputed");
+        authoritative.setCustomer("cus_disputed");
+        authoritative.setStatus("active");
+        authoritative.setMetadata(Map.of("clerk_user_id", "user_1"));
+        authoritative.setLatestInvoice("in_paid_during_dispute");
+        authoritative.setCurrentPeriodStart(1782864000L);
+        authoritative.setCurrentPeriodEnd(1785542400L);
+        SubscriptionItem item = new SubscriptionItem();
+        Price price = new Price();
+        price.setId("price_plus");
+        item.setPrice(price);
+        authoritative.setItems(new com.stripe.model.SubscriptionItemCollection());
+        authoritative.getItems().setData(List.of(item));
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return authoritative;
+            }
+
+            @Override
+            Invoice retrieveStripeInvoice(String invoiceId) {
+                Invoice invoice = new Invoice();
+                invoice.setId(invoiceId);
+                invoice.setStatus("paid");
+                invoice.setPaid(true);
+                invoice.setSubscription("sub_disputed");
+                return invoice;
+            }
+        };
+        Event event = reversalEvent(
+                "evt_subscription_dispute_won",
+                "charge.dispute.closed",
+                "dispute",
+                "\"payment_intent\":\"pi_subscription_dispute_won\","
+                        + "\"charge\":\"ch_subscription_dispute_won\","
+                        + "\"amount\":1999,\"status\":\"won\"");
+
+        invokeHandle(service, event);
+
+        verify(userSubscriptionMapper, org.mockito.Mockito.atLeastOnce())
+                .selectByUserForUpdate("user_1");
+        verify(userSubscriptionMapper).update(isNull(), any());
+        verify(billingQuotaGateway).resetFromPaidInvoice(
+                eq("user_1"),
+                eq("sub_disputed"),
+                eq("plus_monthly"),
+                any(),
+                any(),
+                eq("in_paid_during_dispute"),
+                any());
+        verify(billingQuotaGateway).resumeEligibleAddons(
+                "user_1",
+                "sub_disputed",
+                "subscription:sub_disputed:resume-addons:in_paid_during_dispute");
+    }
+
+    @Test
     void fullRefundOfCurrentSubscriptionInvoiceCancelsCurrentSubscription() throws Exception {
         RechargeOrderEntity order = new RechargeOrderEntity();
         order.setId(77L);
@@ -299,6 +502,66 @@ class StripeBillingWebhookServiceTest {
         verify(billingQuotaGateway).pauseAddons(
                 "user_1", "sub_current", "refund:ch_subscription_refund:addons");
         verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
+        verify(userSubscriptionMapper).update(isNull(), any());
+        assertTrue(canceledInStripe.get());
+    }
+
+    @Test
+    void fullRefundOfCurrentManualUpgradeCancelsCurrentSubscriptionWithoutInvoice() throws Exception {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(78L);
+        order.setOrderType("subscription_upgrade_manual");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("pro_monthly");
+        order.setStripePaymentIntentId("pi_manual_upgrade_refund");
+        order.setStripeSubscriptionId("sub_current");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        UserSubscriptionEntity current = activeSubscription();
+        current.setId(89L);
+        current.setStripeSubscriptionId("sub_current");
+        current.setPlanCode("pro_monthly");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+        AtomicBoolean canceledInStripe = new AtomicBoolean(false);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                Subscription subscription = new Subscription();
+                subscription.setId(subscriptionId);
+                subscription.setLatestInvoice("in_unrelated");
+                return subscription;
+            }
+
+            @Override
+            Subscription cancelStripeSubscription(Subscription subscription) {
+                canceledInStripe.set(true);
+                subscription.setStatus("canceled");
+                return subscription;
+            }
+        };
+        String json = """
+                {"id":"evt_manual_upgrade_refund","object":"event","created":1781696510,
+                 "api_version":"2023-10-16","type":"charge.refunded","data":{"object":{
+                   "id":"ch_manual_upgrade_refund","object":"charge",
+                   "payment_intent":"pi_manual_upgrade_refund","amount":9588,
+                   "amount_refunded":9588,"refunded":true}}}
+                """;
+
+        invokeHandle(service, com.stripe.net.ApiResource.GSON.fromJson(json, Event.class));
+
+        verify(billingQuotaGateway).clearPlanQuota(
+                "user_1", "sub_current", "pro_monthly", "refund:ch_manual_upgrade_refund:plan");
+        verify(billingQuotaGateway).pauseAddons(
+                "user_1", "sub_current", "refund:ch_manual_upgrade_refund:addons");
         verify(userSubscriptionMapper).update(isNull(), any());
         assertTrue(canceledInStripe.get());
     }
@@ -383,14 +646,221 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
-    void subscriptionEventWatermarkRejectsOlderEvents() {
+    void subscriptionEventWatermarkRejectsOlderOrDuplicateEventsButNotSameSecondPeers() {
         UserSubscriptionEntity existing = new UserSubscriptionEntity();
         existing.setLastStripeEventCreatedAt(200L);
         existing.setLastStripeEventId("evt_newer");
 
-        assertTrue(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 199L));
-        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 200L));
-        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(existing, 201L));
+        assertTrue(StripeBillingWebhookService.isStaleSubscriptionEvent(
+                existing, 199L, "evt_older_time"));
+        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(
+                existing, 200L, "evt_earlier_id"));
+        assertTrue(StripeBillingWebhookService.isStaleSubscriptionEvent(
+                existing, 200L, "evt_newer"));
+        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(
+                existing, 200L, "evt_z_later_id"));
+        assertFalse(StripeBillingWebhookService.isStaleSubscriptionEvent(
+                existing, 201L, "evt_later_time"));
+    }
+
+    @Test
+    void invoiceFailureDoesNotDowngradeWhenStripeSubscriptionIsActive() throws Exception {
+        UserSubscriptionEntity existing = activeSubscription();
+        existing.setId(91L);
+        existing.setStripeSubscriptionId("sub_recovered");
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        when(userSubscriptionMapper.selectByUserForUpdate(existing.getClerkUserId()))
+                .thenReturn(existing);
+
+        Subscription authoritative = new Subscription();
+        authoritative.setId("sub_recovered");
+        authoritative.setStatus("active");
+
+        List<Object> updateValues = new ArrayList<>();
+        when(userSubscriptionMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return authoritative;
+            }
+        };
+        Invoice invoice = new Invoice();
+        invoice.setId("in_old_failure");
+
+        invokeHandleInvoiceFailed(
+                service,
+                invoice,
+                "invoice.payment_failed",
+                "sub_recovered",
+                200L,
+                "evt_old_failure");
+
+        assertFalse(updateValues.contains("past_due"));
+        verify(rechargeOrderMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void invoiceFailureDoesNotReleaseOpenSubscriptionDisputeHold() throws Exception {
+        UserSubscriptionEntity existing = activeSubscription();
+        existing.setId(92L);
+        existing.setStatus("unpaid");
+        existing.setStripeSubscriptionId("sub_disputed");
+        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        when(userSubscriptionMapper.selectByUserForUpdate(existing.getClerkUserId()))
+                .thenReturn(existing);
+
+        RechargeOrderEntity disputed = new RechargeOrderEntity();
+        disputed.setOrderType("subscription_renewal");
+        disputed.setStatus("disputed");
+        disputed.setStripeSubscriptionId("sub_disputed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(disputed);
+
+        Subscription authoritative = new Subscription();
+        authoritative.setId("sub_disputed");
+        authoritative.setStatus("past_due");
+        List<Object> updateValues = new ArrayList<>();
+        when(userSubscriptionMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return authoritative;
+            }
+        };
+        Invoice invoice = new Invoice();
+        invoice.setId("in_failure_during_dispute");
+
+        invokeHandleInvoiceFailed(
+                service,
+                invoice,
+                "invoice.payment_failed",
+                "sub_disputed",
+                201L,
+                "evt_failure_during_dispute");
+
+        assertFalse(updateValues.contains("past_due"));
+        assertFalse(updateValues.contains("active"));
+    }
+
+    @Test
+    void paidInvoiceDoesNotReleaseOpenSubscriptionDisputeHold() throws Exception {
+        UserSubscriptionEntity existing = activeSubscription();
+        existing.setId(93L);
+        existing.setStatus("unpaid");
+        existing.setStripeSubscriptionId("sub_disputed");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
+
+        RechargeOrderEntity disputed = new RechargeOrderEntity();
+        disputed.setOrderType("subscription_renewal");
+        disputed.setStatus("disputed");
+        disputed.setStripeSubscriptionId("sub_disputed");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(disputed);
+        Subscription authoritative = new Subscription();
+        authoritative.setId("sub_disputed");
+        authoritative.setStatus("active");
+        authoritative.setMetadata(Map.of("clerk_user_id", "user_1"));
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return authoritative;
+            }
+        };
+        Invoice invoice = new Invoice();
+        invoice.setId("in_paid_during_dispute");
+        invoice.setSubscription("sub_disputed");
+
+        invokeHandleInvoicePaid(service, invoice, "sub_disputed", 202L);
+
+        verify(billingQuotaGateway, never()).resetFromPaidInvoice(
+                any(), any(), any(), any(), any(), any(), any());
+        verify(billingQuotaGateway, never()).addFullPlanForUpgrade(
+                any(), any(), any(), any(), any(), any());
+        verify(billingQuotaGateway, never()).resumeEligibleAddons(
+                any(), any(), any());
+        verify(userSubscriptionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void paidInvoiceDoesNotGrantEntitlementsWhenAuthoritativeSubscriptionIsCanceled() throws Exception {
+        UserSubscriptionEntity existing = activeSubscription();
+        existing.setId(94L);
+        existing.setPlanCode("plus_monthly");
+        existing.setStripeSubscriptionId("sub_canceled");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(null);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Subscription authoritative = new Subscription();
+        authoritative.setId("sub_canceled");
+        authoritative.setStatus("canceled");
+        authoritative.setMetadata(Map.of("clerk_user_id", "user_1"));
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return authoritative;
+            }
+        };
+        Invoice invoice = new Invoice();
+        invoice.setId("in_historical_paid");
+        invoice.setSubscription("sub_canceled");
+
+        invokeHandleInvoicePaid(service, invoice, "sub_canceled", 203L);
+
+        verify(billingQuotaGateway, never()).resetFromPaidInvoice(
+                any(), any(), any(), any(), any(), any(), any());
+        verify(billingQuotaGateway, never()).addFullPlanForUpgrade(
+                any(), any(), any(), any(), any(), any());
+        verify(billingQuotaGateway, never()).resumeEligibleAddons(
+                any(), any(), any());
+        verify(billingQuotaGateway).clearPlanQuota(
+                "user_1",
+                "sub_canceled",
+                "plus_monthly",
+                "subscription:sub_canceled:deleted");
     }
 
     @Test
@@ -400,7 +870,8 @@ class StripeBillingWebhookServiceTest {
         existing.setPlanCode("plus_monthly");
         existing.setTier("plus");
         existing.setLastStripeEventCreatedAt(1781696510L);
-        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        existing.setLastStripeEventId("evt_z_previously_processed");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
         List<Object> updateValues = new ArrayList<>();
         when(userSubscriptionMapper.update(isNull(), any())).thenAnswer(invocation -> {
@@ -559,6 +1030,36 @@ class StripeBillingWebhookServiceTest {
         assertTrue(refunded.get());
         assertTrue(orderUpdateValues.contains("refunded"));
         assertTrue(orderUpdateValues.contains("missing_addon_order_snapshot"));
+        verify(billingQuotaGateway, never()).grantAddonFromCheckout(
+                any(), any(AddonGrantSnapshot.class), any(), any(), any());
+    }
+
+    @Test
+    void paidAddonWithoutLocalOrderIsRefundedWithoutDeadLetterRetry() {
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
+                refunded.set(true);
+            }
+        };
+        Event event = checkoutEvent(
+                "checkout.session.async_payment_succeeded",
+                "cs_missing_order",
+                "paid");
+
+        assertDoesNotThrow(() -> invokeHandle(service, event));
+
+        assertTrue(refunded.get());
         verify(billingQuotaGateway, never()).grantAddonFromCheckout(
                 any(), any(AddonGrantSnapshot.class), any(), any(), any());
     }
@@ -793,6 +1294,7 @@ class StripeBillingWebhookServiceTest {
         RechargeOrderEntity order = new RechargeOrderEntity();
         order.setId(31L);
         order.setOrderNo("RO_TEST_CLOCK_FAILURE");
+        order.setClerkUserId("user_1");
         order.setPlanCode("plus_monthly");
         order.setTargetPlanCode("pro_monthly");
         order.setStripeSubscriptionId("sub_test_clock");
@@ -800,7 +1302,10 @@ class StripeBillingWebhookServiceTest {
 
         UserSubscriptionEntity current = new UserSubscriptionEntity();
         current.setClerkUserId("user_1");
-        when(userSubscriptionMapper.selectOne(any())).thenReturn(current);
+        current.setStatus("active");
+        current.setPlanCode("plus_monthly");
+        current.setStripeSubscriptionId("sub_test_clock");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
         currentPlan.setPlanCode("plus_monthly");
@@ -866,6 +1371,340 @@ class StripeBillingWebhookServiceTest {
                 .filter(String.class::isInstance)
                 .map(String.class::cast)
                 .anyMatch(value -> value.contains("trial_end must be in the future")));
+    }
+
+    @Test
+    void paidManualUpgradeWithChangedSourcePlanIsRefundedWithoutSwitching() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(32L);
+        order.setOrderNo("RO_STALE_UPGRADE");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("plus_monthly");
+        order.setTargetPlanCode("pro_monthly");
+        order.setStripeSubscriptionId("sub_current");
+        order.setStripePaymentIntentId("pi_stale_upgrade");
+        order.setBizContext("""
+                {
+                  "source_invoice_id":"null",
+                  "current_net_paid_cents":0,
+                  "old_period_start":"2026-07-01T00:00",
+                  "old_period_end":"2026-08-01T00:00"
+                }
+                """);
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setStatus("active");
+        current.setPlanCode("basic_monthly");
+        current.setStripeSubscriptionId("sub_current");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-07-01T00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-08-01T00:00"));
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_current");
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        AtomicBoolean switched = new AtomicBoolean(false);
+        List<Object> updateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return subscription;
+            }
+
+            @Override
+            void refundCheckoutPayment(
+                    String paymentIntentId,
+                    String stripeReferenceId,
+                    String reason,
+                    String idempotencyPrefix) {
+                refunded.set(true);
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) {
+                switched.set(true);
+                return source;
+            }
+        };
+
+        assertFalse(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_stale_upgrade",
+                "pi_stale_upgrade"));
+        assertTrue(refunded.get());
+        assertFalse(switched.get());
+        assertTrue(updateValues.contains("refunded"));
+        assertTrue(updateValues.stream().anyMatch(
+                value -> value instanceof String text && text.contains("source_plan_changed")));
+    }
+
+    @Test
+    void paidManualUpgradeWithCorruptQuoteSnapshotIsRefundedWithoutSwitching() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(34L);
+        order.setOrderNo("RO_CORRUPT_UPGRADE_SNAPSHOT");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("plus_monthly");
+        order.setTargetPlanCode("pro_monthly");
+        order.setStripeSubscriptionId("sub_current");
+        order.setStripePaymentIntentId("pi_corrupt_upgrade");
+        order.setBizContext("{\"current_net_paid_cents\":1999}");
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setStatus("active");
+        current.setPlanCode("plus_monthly");
+        current.setStripeSubscriptionId("sub_current");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_current");
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        AtomicBoolean switched = new AtomicBoolean(false);
+        List<Object> updateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return subscription;
+            }
+
+            @Override
+            void refundCheckoutPayment(
+                    String paymentIntentId,
+                    String stripeReferenceId,
+                    String reason,
+                    String idempotencyPrefix) {
+                refunded.set(true);
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) {
+                switched.set(true);
+                return source;
+            }
+        };
+
+        assertFalse(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_corrupt_upgrade",
+                "pi_corrupt_upgrade"));
+        assertTrue(refunded.get());
+        assertFalse(switched.get());
+        assertTrue(updateValues.contains("refunded"));
+        assertTrue(updateValues.stream().anyMatch(
+                value -> value instanceof String text && text.contains("quote_snapshot_invalid")));
+    }
+
+    @Test
+    void paidManualUpgradeDuringDisputeIsRefundedWithoutSwitchingOrQuotaGrant() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(35L);
+        order.setOrderNo("RO_UPGRADE_DURING_DISPUTE");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("plus_monthly");
+        order.setTargetPlanCode("pro_monthly");
+        order.setStripeSubscriptionId("sub_disputed");
+        order.setStripePaymentIntentId("pi_upgrade_during_dispute");
+        order.setBizContext("""
+                {
+                  "source_invoice_id":"null",
+                  "current_net_paid_cents":0,
+                  "old_period_start":"2026-07-01T00:00",
+                  "old_period_end":"2026-08-01T00:00"
+                }
+                """);
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setStatus("unpaid");
+        current.setPlanCode("plus_monthly");
+        current.setStripeSubscriptionId("sub_disputed");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-07-01T00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-08-01T00:00"));
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_disputed");
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        AtomicBoolean switched = new AtomicBoolean(false);
+        when(rechargeOrderMapper.update(isNull(), any())).thenReturn(1);
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return subscription;
+            }
+
+            @Override
+            void refundCheckoutPayment(
+                    String paymentIntentId,
+                    String stripeReferenceId,
+                    String reason,
+                    String idempotencyPrefix) {
+                refunded.set(true);
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) {
+                switched.set(true);
+                return source;
+            }
+        };
+
+        assertFalse(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_upgrade_during_dispute",
+                "pi_upgrade_during_dispute"));
+        assertTrue(refunded.get());
+        assertFalse(switched.get());
+        verify(quotaGatewayProvider, never()).getIfAvailable();
+    }
+
+    @Test
+    void paidAnnualUpgradeWithChangedSourceInvoiceIsRefundedWithoutSwitching() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(33L);
+        order.setOrderNo("RO_STALE_ANNUAL_UPGRADE");
+        order.setClerkUserId("user_1");
+        order.setPlanCode("plus_yearly");
+        order.setTargetPlanCode("pro_yearly");
+        order.setStripeSubscriptionId("sub_annual");
+        order.setStripePaymentIntentId("pi_stale_annual_upgrade");
+        order.setBizContext("""
+                {
+                  "source_invoice_id":"in_original_quote",
+                  "current_net_paid_cents":11988,
+                  "old_period_start":"2026-01-01T00:00",
+                  "old_period_end":"2027-01-01T00:00"
+                }
+                """);
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setClerkUserId("user_1");
+        current.setStatus("active");
+        current.setPlanCode("plus_yearly");
+        current.setStripeSubscriptionId("sub_annual");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-01-01T00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2027-01-01T00:00"));
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+
+        SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setPlanCode("plus_yearly");
+        currentPlan.setStripePriceId("price_plus_yearly");
+        when(subscriptionPlanMapper.selectOne(any())).thenReturn(currentPlan);
+
+        Subscription subscription = new Subscription();
+        subscription.setId("sub_annual");
+        subscription.setLatestInvoice("in_newer_cycle");
+        SubscriptionItem item = new SubscriptionItem();
+        Price price = new Price();
+        price.setId("price_plus_yearly");
+        item.setPrice(price);
+        subscription.setItems(new com.stripe.model.SubscriptionItemCollection());
+        subscription.getItems().setData(List.of(item));
+
+        AtomicBoolean refunded = new AtomicBoolean(false);
+        AtomicBoolean switched = new AtomicBoolean(false);
+        List<Object> updateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return subscription;
+            }
+
+            @Override
+            void refundCheckoutPayment(
+                    String paymentIntentId,
+                    String stripeReferenceId,
+                    String reason,
+                    String idempotencyPrefix) {
+                refunded.set(true);
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) {
+                switched.set(true);
+                return source;
+            }
+        };
+
+        assertFalse(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_stale_annual_upgrade",
+                "pi_stale_annual_upgrade"));
+        assertTrue(refunded.get());
+        assertFalse(switched.get());
+        assertTrue(updateValues.stream().anyMatch(
+                value -> value instanceof String text && text.contains("source_invoice_changed")));
     }
 
     @Test
@@ -1150,6 +1989,12 @@ class StripeBillingWebhookServiceTest {
         UserSubscriptionEntity pastDue = activeSubscription();
         pastDue.setStatus("past_due");
         when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(pastDue);
+        List<Object> orderUpdateValues = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            orderUpdateValues.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
         int[] refundCalls = {0};
         StripeBillingWebhookService service = new StripeBillingWebhookService(
                 webhookEventMapper,
@@ -1183,9 +2028,33 @@ class StripeBillingWebhookServiceTest {
         invokeHandleCheckoutCompleted(service, session);
 
         assertEquals(1, refundCalls[0]);
+        assertTrue(orderUpdateValues.contains("pi_refund"));
+        assertTrue(orderUpdateValues.contains("subscription_ineligible_at_fulfillment"));
         verify(billingQuotaGateway, never()).grantAddonFromCheckout(
                 any(), any(AddonGrantSnapshot.class), any(), any(), any());
         verify(rechargeOrderMapper).update(isNull(), any());
+    }
+
+    @Test
+    void chargeRefundedForAutoRefundedAddonDoesNotAdjustMissingGrant() throws Exception {
+        RechargeOrderEntity order = addonOrder("cs_auto_refunded");
+        order.setStatus("refunded");
+        order.setFailureReason("subscription_ineligible_at_fulfillment");
+        order.setStripePaymentIntentId("pi_auto_refunded");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+
+        String json = """
+                {"id":"evt_auto_addon_refund","object":"event","created":1781696510,
+                 "api_version":"2023-10-16","type":"charge.refunded","data":{"object":{
+                   "id":"ch_auto_addon_refund","object":"charge",
+                   "payment_intent":"pi_auto_refunded","amount":9900,
+                   "amount_refunded":9900,"refunded":true}}}
+                """;
+
+        invokeHandle(service(), com.stripe.net.ApiResource.GSON.fromJson(json, Event.class));
+
+        verify(billingQuotaGateway, never()).adjustAddonForRefund(any(), any(), any(Long.class), any(Long.class));
+        verify(rechargeOrderMapper, never()).update(isNull(), any());
     }
 
     @Test
@@ -1213,6 +2082,7 @@ class StripeBillingWebhookServiceTest {
         entity.setPlanCode("basic_monthly");
         entity.setStripeSubscriptionId("sub_123");
         when(userSubscriptionMapper.selectOne(any())).thenReturn(entity);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(entity);
 
         RechargeOrderEntity order = new RechargeOrderEntity();
         order.setId(101L);
@@ -1229,7 +2099,32 @@ class StripeBillingWebhookServiceTest {
         invoice.setCurrency("usd");
         invoice.setSubscription("sub_123");
 
-        invokeHandleInvoiceFailed(service(), invoice, "invoice.payment_failed", "sub_123");
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                Subscription subscription = new Subscription();
+                subscription.setId(subscriptionId);
+                subscription.setStatus("past_due");
+                return subscription;
+            }
+        };
+
+        invokeHandleInvoiceFailed(
+                service,
+                invoice,
+                "invoice.payment_failed",
+                "sub_123",
+                1781696510L,
+                "evt_test_invoice_failed");
 
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_FAILED), any());
     }
@@ -1512,7 +2407,7 @@ class StripeBillingWebhookServiceTest {
         existing.setStripeCustomerId("cus_123");
         existing.setStripeSubscriptionId("sub_123");
 
-        when(userSubscriptionMapper.selectOne(any())).thenReturn(existing);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Subscription subscription = new Subscription();
@@ -1600,6 +2495,12 @@ class StripeBillingWebhookServiceTest {
         method.invoke(service, event);
     }
 
+    private boolean invokeClaim(StripeBillingWebhookService service, String eventId) throws Exception {
+        var method = StripeBillingWebhookService.class.getDeclaredMethod("claim", String.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(service, eventId);
+    }
+
     private void invokeHandleCheckoutExpired(StripeBillingWebhookService service, Session session) throws Exception {
         var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleCheckoutExpired", String.class, String.class, Session.class);
@@ -1611,15 +2512,32 @@ class StripeBillingWebhookServiceTest {
             StripeBillingWebhookService service,
             Invoice invoice,
             String eventType,
-            String eventSubscriptionId) throws Exception {
+            String eventSubscriptionId,
+            Long eventCreated,
+            String eventId) throws Exception {
         var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleInvoiceFailed",
                 String.class,
                 Invoice.class,
                 String.class,
-                String.class);
+                String.class,
+                Long.class);
         method.setAccessible(true);
-        method.invoke(service, "evt_test_invoice_failed", invoice, eventType, eventSubscriptionId);
+        method.invoke(service, eventId, invoice, eventType, eventSubscriptionId, eventCreated);
+    }
+
+    private void invokeHandleInvoicePaid(
+            StripeBillingWebhookService service,
+            Invoice invoice,
+            String eventSubscriptionId,
+            Long eventCreated) throws Exception {
+        var method = StripeBillingWebhookService.class.getDeclaredMethod(
+                "handleInvoicePaid",
+                Invoice.class,
+                String.class,
+                Long.class);
+        method.setAccessible(true);
+        method.invoke(service, invoice, eventSubscriptionId, eventCreated);
     }
 
     private void invokeSyncSubscription(

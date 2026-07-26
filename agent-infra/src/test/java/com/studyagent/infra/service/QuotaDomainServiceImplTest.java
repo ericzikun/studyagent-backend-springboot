@@ -7,6 +7,7 @@ import com.studyagent.infra.entity.QuotaLedgerAllocationEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.UserAddonGrantEntity;
 import com.studyagent.infra.entity.UserAiQuotaEntity;
+import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AiFeatureDefsMapper;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.infra.mapper.QuotaLedgerAllocationMapper;
@@ -326,8 +327,44 @@ class QuotaDomainServiceImplTest {
         verify(addonGrantService).expireEligible("user_1", "ai_detection", "balance_query");
         assertEquals(210_000L, balance.addonBalance());
         assertEquals(0L, balance.legacyBalance());
-        assertEquals(240_000L, balance.paidBalance());
-        assertEquals(240_001L, balance.totalAvailable());
+        assertEquals(210_000L, balance.paidBalance());
+        assertEquals(210_001L, balance.totalAvailable());
+    }
+
+    @Test
+    void getUserQuotaWithoutSubscriptionExposesOnlyExplicitLegacyEntitlements() {
+        AiFeatureDefsEntity featureDef = assignmentFeature();
+        UserAiQuotaEntity quota = new UserAiQuotaEntity();
+        quota.setId(12L);
+        quota.setClerkUserId("user_1");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(0L);
+        quota.setPlanBalance(5L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(0);
+        UserAddonGrantEntity regularGrant = new UserAddonGrantEntity();
+        regularGrant.setId(301L);
+        regularGrant.setGrantType("addon");
+        regularGrant.setStatus("active");
+        regularGrant.setRemainingAmount(3L);
+        regularGrant.setExpiresAt(LocalDateTime.now().plusMonths(1));
+        UserAddonGrantEntity legacyGrant = new UserAddonGrantEntity();
+        legacyGrant.setId(302L);
+        legacyGrant.setGrantType("legacy_migration_refund");
+        legacyGrant.setStatus("active");
+        legacyGrant.setRemainingAmount(2L);
+        legacyGrant.setExpiresAt(LocalDateTime.now().plusMonths(1));
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(featureDef);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(regularGrant, legacyGrant));
+
+        QuotaBalance balance = service().getUserQuota("user_1", "task_create");
+
+        assertEquals(0L, balance.planBalance());
+        assertEquals(2L, balance.addonBalance());
+        assertEquals(2L, balance.totalAvailable());
+        assertEquals(1, balance.addonItems().size());
     }
 
     @Test
@@ -537,6 +574,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void getUserQuota_reanchorsFutureAddonGrantBackToResolvedNow() {
+        stubActiveSubscription();
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");
         featureDef.setFeatureName("Assignment");
@@ -733,6 +771,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_prefersFree_thenPlan_thenAddon_thenLegacy() {
+        stubActiveSubscription();
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");
         featureDef.setFeatureName("Assignment");
@@ -864,6 +903,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_assignment_debitsFreeBeforePlanAndAddon() {
+        stubActiveSubscription();
         UserAiQuotaEntity quota = assignmentQuota(1L, 2L, 0L);
         UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
 
@@ -890,6 +930,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_assignment_debitsPlanBeforeAddonWhenFreeExhausted() {
+        stubActiveSubscription();
         UserAiQuotaEntity quota = assignmentQuota(0L, 2L, 0L);
         UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
 
@@ -915,7 +956,33 @@ class QuotaDomainServiceImplTest {
     }
 
     @Test
+    void consume_rejectsPlanAndAddonAfterPastDueGraceExpires() {
+        LocalDateTime now = LocalDateTime.now();
+        UserAiQuotaEntity quota = assignmentQuota(0L, 2L, 0L);
+        UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, now.plusDays(7));
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_1");
+        subscription.setStatus("past_due");
+        subscription.setGraceEndAt(now.minusMinutes(1));
+
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(assignmentFeature());
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
+
+        QuotaDomainServiceImpl service = service();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> consumeAssignment(service, "session_past_due_expired"));
+
+        assertTrue(ex.getMessage().contains("Insufficient quota"));
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+        verify(userAddonGrantMapper, never()).updateById(any(UserAddonGrantEntity.class));
+        verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+    }
+
+    @Test
     void consume_assignment_debitsActiveAddonWhenFreeAndPlanExhausted() {
+        stubActiveSubscription();
         UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
         UserAddonGrantEntity addonGrant = addonGrant(99L, "active", 3L, LocalDateTime.now().plusDays(7));
 
@@ -979,6 +1046,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_assignmentUsesEarliestExpiringAddonFirst() {
+        stubActiveSubscription();
         UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
         UserAddonGrantEntity earlierGrant = addonGrant(100L, "active", 3L, LocalDateTime.now().plusDays(1));
         UserAddonGrantEntity laterGrant = addonGrant(101L, "active", 3L, LocalDateTime.now().plusDays(7));
@@ -1003,6 +1071,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_assignmentSpansMultipleAddonsAcrossSequentialCreations() {
+        stubActiveSubscription();
         UserAiQuotaEntity quota = assignmentQuota(0L, 0L, 0L);
         UserAddonGrantEntity firstGrant = addonGrant(100L, "active", 1L, LocalDateTime.now().plusDays(1));
         UserAddonGrantEntity secondGrant = addonGrant(101L, "active", 3L, LocalDateTime.now().plusDays(7));
@@ -1392,6 +1461,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_throwsAndSkipsLedger_whenOptimisticUpdateLosesRace() throws Exception {
+        stubActiveSubscription();
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");
         featureDef.setFeatureName("Assignment");
@@ -1476,6 +1546,7 @@ class QuotaDomainServiceImplTest {
 
     @Test
     void consume_throwsAndSkipsLedger_whenAddonGrantUpdateLosesRace() {
+        stubActiveSubscription();
         AiFeatureDefsEntity featureDef = new AiFeatureDefsEntity();
         featureDef.setFeatureCode("task_create");
         featureDef.setFeatureName("Assignment");
@@ -1539,6 +1610,13 @@ class QuotaDomainServiceImplTest {
                 planQuotaService,
                 addonGrantService,
                 userSubscriptionMapper);
+    }
+
+    private void stubActiveSubscription() {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_1");
+        subscription.setStatus("active");
+        when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
     }
 
     private QuotaDomainServiceImpl serviceWithResolvedNow(LocalDateTime resolvedNow) {

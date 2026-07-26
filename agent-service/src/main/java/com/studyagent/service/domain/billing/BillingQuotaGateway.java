@@ -1,6 +1,7 @@
 package com.studyagent.service.domain.billing;
 
 import java.time.Instant;
+import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 
 /**
  * Integration contract implemented by the quota owner.
@@ -62,7 +63,38 @@ public interface BillingQuotaGateway {
             Instant paidAt
     );
 
+    default void grantAddonFromCheckout(
+            String clerkUserId,
+            AddonGrantSnapshot snapshot,
+            String stripeSessionId,
+            String paymentIntentId,
+            Instant paidAt
+    ) {
+        grantAddonFromCheckout(
+                clerkUserId,
+                snapshot.addonCode(),
+                stripeSessionId,
+                paymentIntentId,
+                paidAt);
+    }
+
     void pauseAddons(String clerkUserId, String subscriptionId, String idempotencyKey);
 
     void resumeEligibleAddons(String clerkUserId, String subscriptionId, String idempotencyKey);
+
+    default void adjustAddonForRefund(
+            String paymentIntentId,
+            String adjustmentId,
+            long cumulativeRefundCents,
+            long originalPaymentCents) {
+        throw new UnsupportedOperationException("Add-on refund adjustments are not implemented");
+    }
+
+    default void freezeAddonForDispute(String paymentIntentId, String disputeId) {
+        throw new UnsupportedOperationException("Add-on dispute freezing is not implemented");
+    }
+
+    default void restoreAddonAfterDispute(String paymentIntentId, String disputeId) {
+        throw new UnsupportedOperationException("Add-on dispute restoration is not implemented");
+    }
 }

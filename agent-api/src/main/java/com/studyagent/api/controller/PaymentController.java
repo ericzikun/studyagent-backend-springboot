@@ -128,11 +128,22 @@ public class PaymentController {
 
     @PostMapping("/create-checkout-session")
     public Result<Map<String, Object>> createCheckoutSession(
-            @RequestBody CreateCheckoutSessionRequest request) {
+            @RequestBody CreateCheckoutSessionRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
+            @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        if (request.getClerkUserId() != null
+                && !request.getClerkUserId().isBlank()
+                && !clerkUserId.equals(request.getClerkUserId())) {
+            return Result.error(ApiCode.NO_PERMISSION);
+        }
+        String customerEmail = userInfo == null ? null : userInfo.email;
         try {
             CreateCheckoutSessionCommand command = CreateCheckoutSessionCommand.builder()
-                    .clerkUserId(request.getClerkUserId())
-                    .customerEmail(request.getCustomerEmail())
+                    .clerkUserId(clerkUserId)
+                    .customerEmail(customerEmail)
                     .packageType(request.getPackageType())
                     .successUrl(request.getSuccessUrl())
                     .cancelUrl(request.getCancelUrl())
@@ -144,12 +155,12 @@ public class PaymentController {
             Map<String, Object> paymentProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
                     request.getPackageType(),
-                    request.getCustomerEmail(),
+                    customerEmail,
                     result.getSessionId(),
                     result.getCheckoutKind()
             );
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
 
             Map<String, Object> data = new HashMap<>();
             data.put("sessionId", result.getSessionId());
@@ -161,14 +172,14 @@ public class PaymentController {
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
                     request.getPackageType(),
-                    request.getCustomerEmail(),
+                    customerEmail,
                     null,
                     null
             );
             errorProps.put("error_code", e.getCode());
             errorProps.put("error_message", e.getMessage());
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
 
             if ("STRIPE_ERROR".equals(e.getCode()) && e.getCause() instanceof com.stripe.exception.StripeException) {
                 log.error("Stripe API 错误: {}", e.getMessage(), e);
@@ -182,14 +193,14 @@ public class PaymentController {
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
                     request.getPackageType(),
-                    request.getCustomerEmail(),
+                    customerEmail,
                     null,
                     null
             );
             errorProps.put("error_code", "UNKNOWN");
             errorProps.put("error_message", e.getMessage());
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
-            analyticsService.capture(request.getClerkUserId(), AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_FAILED, errorProps);
+            analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_FAILED, errorProps);
 
             return Result.error(ApiCode.PAYMENT_SESSION_CREATE_FAILED);
         }
@@ -197,12 +208,19 @@ public class PaymentController {
 
     @GetMapping("/session-status")
     public Result<Map<String, Object>> getSessionStatus(
-            @RequestParam(value = "sessionId", required = false) String sessionId) {
+            @RequestParam(value = "sessionId", required = false) String sessionId,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
         if (sessionId == null || sessionId.isEmpty()) {
             return Result.error(ApiCode.SESSION_ID_REQUIRED);
         }
         try {
             SessionStatusResult result = paymentDomainService.getSessionStatus(sessionId);
+            if (result.getClerkUserId() == null || !clerkUserId.equals(result.getClerkUserId())) {
+                return Result.error(ApiCode.NO_PERMISSION);
+            }
 
             Map<String, Object> data = new HashMap<>();
             data.put("sessionId", result.getSessionId());
@@ -210,9 +228,7 @@ public class PaymentController {
             data.put("paymentStatus", result.getPaymentStatus());
             data.put("amountTotal", result.getAmountTotal());
             data.put("currency", result.getCurrency());
-            data.put("customerEmail", result.getCustomerEmail());
             data.put("createdAt", result.getCreatedAt());
-            data.put("clerkUserId", result.getClerkUserId());
             return Result.success(data);
         } catch (PaymentDomainException e) {
             if ("STRIPE_ERROR".equals(e.getCode())) {
@@ -258,6 +274,8 @@ public class PaymentController {
             case "INVALID_ADDON", "ADDON_PRICE_NOT_CONFIGURED" -> Result.error(ApiCode.INVALID_ADDON, e.getMessage());
             case "ADDON_REQUIRES_PAID_MEMBER" -> Result.error(ApiCode.ADDON_REQUIRES_PAID_MEMBER);
             case "SUBSCRIPTION_ALREADY_EXISTS" -> Result.error(ApiCode.SUBSCRIPTION_ALREADY_EXISTS);
+            case "SUBSCRIPTION_CHANGE_PENDING" -> Result.error(ApiCode.SUBSCRIPTION_CHANGE_PENDING);
+            case "PAYMENT_RESOLUTION_REQUIRED" -> Result.error(ApiCode.PAYMENT_RESOLUTION_REQUIRED);
             case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
             case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
             case "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS",
@@ -277,6 +295,7 @@ public class PaymentController {
                     ? Result.error(ApiCode.PRICE_CONFIG_ERROR, args[0], args[1])
                     : Result.error(ApiCode.PRICE_CONFIG_ERROR, e.getMessage());
             case "PRICE_NOT_FOUND" -> Result.error(ApiCode.PRICE_NOT_FOUND, args != null && args.length > 0 ? args[0] : e.getMessage());
+            case "SESSION_OWNER_MISMATCH" -> Result.error(ApiCode.NO_PERMISSION);
             case "INTERNAL_ERROR" -> Result.error(ApiCode.INTERNAL_ERROR, e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(e.getMessage());

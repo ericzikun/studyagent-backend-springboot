@@ -25,6 +25,12 @@ public class UserAddonGrantEntity extends BaseEntity {
     private Long initialAmount;
     @TableField("remaining_amount")
     private Long remainingAmount;
+    @TableField("reversed_amount")
+    private Long reversedAmount;
+    @TableField("quota_debt_amount")
+    private Long quotaDebtAmount;
+    @TableField("pre_dispute_status")
+    private String preDisputeStatus;
     @TableField("stripe_session_id")
     private String stripeSessionId;
     @TableField("stripe_payment_intent_id")

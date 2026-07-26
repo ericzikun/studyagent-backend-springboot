@@ -7,6 +7,7 @@ import com.stripe.Stripe;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
+import com.stripe.model.Charge;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
@@ -28,10 +29,12 @@ import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingAddon;
+import com.studyagent.service.domain.billing.BillingAccessState;
 import com.studyagent.service.domain.billing.BillingCatalogResult;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
+import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
 import com.studyagent.service.domain.billing.BillingRecordPageResult;
@@ -68,6 +71,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class BillingDomainServiceImpl implements BillingDomainService {
+    private record UpgradeCreditBasis(int netPaidCents, String sourceInvoiceId) {
+    }
     private static final Set<String> BLOCKING_SUBSCRIPTION_STATUSES = Set.of(
             "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
     );
@@ -96,6 +101,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final PlanQuotaService planQuotaService;
     private final UserRepository userRepository;
     private final QuotaVipAccessService quotaVipAccessService;
+    private final UserSubscriptionBootstrapService userSubscriptionBootstrapService;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -147,6 +153,23 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedSuccessUrl,
             String requestedCancelUrl,
             String resumeToken) {
+        userSubscriptionBootstrapService.ensureExists(clerkUserId);
+        return createSubscriptionCheckoutLocked(
+                clerkUserId,
+                customerEmail,
+                planCode,
+                requestedSuccessUrl,
+                requestedCancelUrl,
+                resumeToken);
+    }
+
+    private CheckoutSessionResult createSubscriptionCheckoutLocked(
+            String clerkUserId,
+            String customerEmail,
+            String planCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken) {
         boolean mockCheckout = shouldUseMockCheckout();
         if (!mockCheckout) {
             requireStripeConfigured();
@@ -161,6 +184,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     requestedSuccessUrl,
                     resumeToken);
         }
+        UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (lockedSubscription != null) {
+            userSubscription = lockedSubscription;
+        }
+        if (BillingEntitlementPolicy.requiresPaymentResolution(userSubscription.getStatus())
+                && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
+            throw new BillingDomainException(
+                    "PAYMENT_RESOLUTION_REQUIRED",
+                    "Resolve the existing subscription payment before changing plans");
+        }
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
             return createManualUpgradeCheckout(
@@ -171,6 +204,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     requestedSuccessUrl,
                     requestedCancelUrl,
                     resumeToken);
+        }
+
+        CheckoutSessionResult reusableCheckout = findReusableInitialCheckout(
+                clerkUserId, planCode, plan, resumeToken);
+        if (reusableCheckout != null) {
+            return reusableCheckout;
         }
 
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
@@ -263,19 +302,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken,
             SessionCreateParams params) throws StripeException {
         Session session = createStripeCheckoutSession(params);
-        insertPendingOrder(
-                clerkUserId,
-                "subscription_initial",
-                "subscription",
-                planCode,
-                planCode,
-                null,
-                0L,
-                plan.getPriceCents(),
-                plan.getCurrency(),
-                session.getId(),
-                null,
-                session.getSubscription());
+        try {
+            insertPendingOrder(
+                    clerkUserId,
+                    "subscription_initial",
+                    "subscription",
+                    planCode,
+                    planCode,
+                    null,
+                    0L,
+                    null,
+                    plan.getPriceCents(),
+                    plan.getCurrency(),
+                    session.getId(),
+                    null,
+                    session.getSubscription());
+        } catch (RuntimeException e) {
+            expireCheckoutAfterPersistenceFailure(session, e);
+            throw e;
+        }
         return CheckoutSessionResult.builder()
                 .checkoutKind("session")
                 .sessionId(session.getId())
@@ -285,6 +330,64 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .resumeToken(resumeToken)
                 .quotedAmountCents(plan.getPriceCents())
                 .build();
+    }
+
+    private CheckoutSessionResult findReusableInitialCheckout(
+            String clerkUserId,
+            String planCode,
+            SubscriptionPlanEntity plan,
+            String resumeToken) {
+        RechargeOrderEntity pending = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .eq(RechargeOrderEntity::getOrderType, "subscription_initial")
+                        .in(RechargeOrderEntity::getStatus,
+                                List.of("pending", "pending_checkout", "checkout_created"))
+                        .orderByDesc(RechargeOrderEntity::getCreatedAt)
+                        .last("LIMIT 1 FOR UPDATE"));
+        if (pending == null || !hasText(pending.getStripeSessionId())) {
+            return null;
+        }
+        try {
+            Session session = retrieveStripeCheckoutSession(pending.getStripeSessionId());
+            long nowEpoch = Instant.now().getEpochSecond();
+            boolean notExpired = session.getExpiresAt() == null || session.getExpiresAt() > nowEpoch;
+            boolean samePlan = planCode.equals(pending.getPlanCode());
+            if (samePlan
+                    && "open".equals(session.getStatus())
+                    && notExpired
+                    && hasText(session.getUrl())) {
+                return CheckoutSessionResult.builder()
+                        .checkoutKind("session")
+                        .sessionId(session.getId())
+                        .referenceId(session.getId())
+                        .checkoutUrl(session.getUrl())
+                        .expiresAt(session.getExpiresAt())
+                        .resumeToken(resumeToken)
+                        .quotedAmountCents(plan.getPriceCents())
+                        .build();
+            }
+            if ("complete".equals(session.getStatus()) || "paid".equals(session.getPaymentStatus())) {
+                throw new BillingDomainException(
+                        "SUBSCRIPTION_CHANGE_PENDING",
+                        "The existing subscription payment is still being applied");
+            }
+            if ("open".equals(session.getStatus())) {
+                expireStripeCheckoutSession(session);
+            }
+            markCheckoutOrderExpired(pending.getId(), "stripe_session_not_reusable");
+            return null;
+        } catch (StripeException e) {
+            throw stripeFailure("Inspect existing subscription Checkout failed", e);
+        }
+    }
+
+    private void markCheckoutOrderExpired(Long orderId, String reason) {
+        rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getId, orderId)
+                .set(RechargeOrderEntity::getStatus, "checkout_expired")
+                .set(RechargeOrderEntity::getFailureReason, reason)
+                .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
     private CheckoutSessionResult createMockSubscriptionCheckout(
@@ -416,19 +519,25 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 throw stripeFailure("Create add-on Checkout failed", retryException);
             }
         }
-        insertPendingOrder(
-                clerkUserId,
-                "addon",
-                addon.getFeatureCode(),
-                addonCode,
-                null,
-                addonCode,
-                addon.getQuotaAmount(),
-                addon.getPriceCents(),
-                addon.getCurrency(),
-                session.getId(),
-                session.getPaymentIntent(),
-                userSubscription.getStripeSubscriptionId());
+        try {
+            insertPendingOrder(
+                    clerkUserId,
+                    "addon",
+                    addon.getFeatureCode(),
+                    addonCode,
+                    null,
+                    addonCode,
+                    addon.getQuotaAmount(),
+                    addon.getValidityMonths(),
+                    addon.getPriceCents(),
+                    addon.getCurrency(),
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    userSubscription.getStripeSubscriptionId());
+        } catch (RuntimeException e) {
+            expireCheckoutAfterPersistenceFailure(session, e);
+            throw e;
+        }
         return CheckoutSessionResult.builder()
                 .checkoutKind("session")
                 .sessionId(session.getId())
@@ -791,12 +900,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         clearPendingUpgradeStateForRetry(current);
         String customerId = ensureStripeCustomer(current, clerkUserId, customerEmail);
+        UpgradeCreditBasis creditBasis = resolveUpgradeCreditBasis(currentPlan, targetPlan, current);
         UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
                 currentPlan,
                 targetPlan,
                 current.getQuotaPeriodStart() != null ? current.getQuotaPeriodStart() : current.getCurrentPeriodStart(),
                 current.getCurrentPeriodEnd(),
-                LocalDateTime.now());
+                LocalDateTime.now(),
+                creditBasis.netPaidCents(),
+                creditBasis.sourceInvoiceId());
         String orderNo = generateOrderNo();
 
         try {
@@ -825,8 +937,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .setIdempotencyKey(buildManualUpgradeCheckoutIdempotencyKey(orderNo))
                     .build();
             Session session = createStripeCheckoutSession(params, options);
-            insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
-            markPendingUpgradeCheckout(current, orderNo, session);
+            try {
+                insertPendingUpgradeOrder(orderNo, clerkUserId, currentPlan, targetPlan, current, quote, session);
+                markPendingUpgradeCheckout(current, orderNo, session);
+            } catch (RuntimeException e) {
+                expireCheckoutAfterPersistenceFailure(session, e);
+                throw e;
+            }
 
             return CheckoutSessionResult.builder()
                     .checkoutKind("session")
@@ -841,6 +958,27 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .build();
         } catch (StripeException e) {
             throw stripeFailure("Create manual subscription upgrade Checkout failed", e);
+        }
+    }
+
+    private void expireCheckoutAfterPersistenceFailure(
+            Session session,
+            RuntimeException persistenceFailure) {
+        if (session == null || !hasText(session.getId())) {
+            return;
+        }
+        try {
+            expireStripeCheckoutSession(session);
+            log.warn(
+                    "Expired Stripe Checkout after local billing persistence failure: session={}",
+                    session.getId());
+        } catch (StripeException | RuntimeException compensationFailure) {
+            persistenceFailure.addSuppressed(compensationFailure);
+            log.error(
+                    "Failed to expire Stripe Checkout after local billing persistence failure: "
+                            + "session={}",
+                    session.getId(),
+                    compensationFailure);
         }
     }
 
@@ -866,6 +1004,42 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
     }
 
+    private UpgradeCreditBasis resolveUpgradeCreditBasis(
+            SubscriptionPlanEntity currentPlan,
+            SubscriptionPlanEntity targetPlan,
+            UserSubscriptionEntity current) {
+        if (!"year".equals(currentPlan.getBillingInterval())
+                || !"year".equals(targetPlan.getBillingInterval())) {
+            return new UpgradeCreditBasis(0, null);
+        }
+        try {
+            Subscription subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+            String invoiceId = subscription == null ? null : subscription.getLatestInvoice();
+            if (!hasText(invoiceId)) {
+                throw new BillingDomainException(
+                        "UPGRADE_QUOTE_UNAVAILABLE",
+                        "The settled source invoice is unavailable; retry after billing sync");
+            }
+            Invoice invoice = retrieveStripeInvoice(invoiceId);
+            long amountPaid = invoice.getAmountPaid() == null ? 0L : invoice.getAmountPaid();
+            Long subtotal = invoice.getSubtotalExcludingTax() != null
+                    ? invoice.getSubtotalExcludingTax()
+                    : invoice.getSubtotal();
+            long netBeforeRefund = subtotal == null
+                    ? amountPaid
+                    : Math.min(amountPaid, Math.max(0L, subtotal));
+            long refunded = 0L;
+            if (hasText(invoice.getCharge())) {
+                Charge charge = retrieveStripeCharge(invoice.getCharge());
+                refunded = charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded();
+            }
+            long netPaid = Math.max(0L, netBeforeRefund - refunded);
+            return new UpgradeCreditBasis((int) Math.min(Integer.MAX_VALUE, netPaid), invoiceId);
+        } catch (StripeException e) {
+            throw stripeFailure("Resolve settled invoice for upgrade quote failed", e);
+        }
+    }
+
     private Subscription resumeCancellationBeforePaidPlanChangeIfNeeded(
             UserSubscriptionEntity current,
             Subscription subscription) throws StripeException {
@@ -887,6 +1061,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (current == null || !hasText(current.getClerkUserId())) {
             return;
         }
+        expirePendingUpgradeCheckoutSessions(current.getClerkUserId());
         LocalDateTime now = LocalDateTime.now();
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getClerkUserId, current.getClerkUserId())
@@ -910,6 +1085,35 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         current.setPendingUpgradeOrderNo(null);
         current.setPendingUpgradeExpiresAt(null);
         current.setUpdatedAt(now);
+    }
+
+    private void expirePendingUpgradeCheckoutSessions(String clerkUserId) {
+        List<RechargeOrderEntity> pendingOrders = rechargeOrderMapper.selectList(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .in(RechargeOrderEntity::getOrderType,
+                                List.of("subscription_upgrade", "subscription_upgrade_manual"))
+                        .in(RechargeOrderEntity::getStatus,
+                                List.of("pending", "pending_checkout", "checkout_created"))
+                        .isNotNull(RechargeOrderEntity::getStripeSessionId));
+        for (RechargeOrderEntity order : pendingOrders) {
+            if (!hasText(order.getStripeSessionId())) {
+                continue;
+            }
+            try {
+                Session session = retrieveStripeCheckoutSession(order.getStripeSessionId());
+                if ("complete".equals(session.getStatus()) || "paid".equals(session.getPaymentStatus())) {
+                    throw new BillingDomainException(
+                            "SUBSCRIPTION_CHANGE_PENDING",
+                            "The previous upgrade payment is still being applied");
+                }
+                if ("open".equals(session.getStatus())) {
+                    expireStripeCheckoutSession(session);
+                }
+            } catch (StripeException e) {
+                throw stripeFailure("Expire previous upgrade Checkout failed", e);
+            }
+        }
     }
 
     @Override
@@ -1281,16 +1485,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return entity;
         }
         LocalDateTime now = LocalDateTime.now();
-        entity = new UserSubscriptionEntity();
-        entity.setClerkUserId(clerkUserId);
-        entity.setTier("free");
-        entity.setStatus("free");
-        entity.setCancelAtPeriodEnd(false);
-        entity.setVersion(0);
-        entity.setCreatedAt(now);
-        entity.setUpdatedAt(now);
-        userSubscriptionMapper.insert(entity);
-        return entity;
+        userSubscriptionMapper.insertFreeIfAbsent(clerkUserId, now);
+        UserSubscriptionEntity persisted =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (persisted == null) {
+            throw new IllegalStateException(
+                    "Failed to create or load user subscription: " + clerkUserId);
+        }
+        return persisted;
     }
 
     private String ensureStripeCustomer(
@@ -1341,8 +1543,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Invoice.retrieve(invoiceId);
     }
 
+    Charge retrieveStripeCharge(String chargeId) throws StripeException {
+        return Charge.retrieve(chargeId);
+    }
+
     Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
         return Session.retrieve(sessionId);
+    }
+
+    Session expireStripeCheckoutSession(Session session) throws StripeException {
+        return session.expire();
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
@@ -1555,6 +1765,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (addon.getStripePriceId() == null || !addon.getStripePriceId().startsWith("price_")) {
             throw new BillingDomainException("ADDON_PRICE_NOT_CONFIGURED", "Stripe Price is not configured: " + addonCode);
         }
+        if (addon.getValidityMonths() == null || addon.getValidityMonths() <= 0) {
+            throw new BillingDomainException(
+                    "INVALID_ADDON_SNAPSHOT",
+                    "Add-on validity must be positive: " + addonCode);
+        }
         return addon;
     }
 
@@ -1581,6 +1796,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String planCode,
             String addonCode,
             long quotaAmount,
+            Integer validityMonthsSnapshot,
             int priceCents,
             String currency,
             String stripeSessionId,
@@ -1596,6 +1812,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         order.setPlanCode(planCode);
         order.setAddonCode(addonCode);
         order.setQuotaAmount(quotaAmount);
+        order.setValidityMonthsSnapshot(validityMonthsSnapshot);
         order.setPriceCents(priceCents);
         order.setCurrency(currency == null ? "usd" : currency);
         order.setStripeSessionId(stripeSessionId);
@@ -1666,6 +1883,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 "target_interval", targetPlan.getBillingInterval(),
                 "remaining_annual_months_excluding_current", quote.getRemainingAnnualMonthsExcludingCurrent(),
                 "pricing_formula", quote.getPricingFormula(),
+                "source_invoice_id", String.valueOf(quote.getSourceInvoiceId()),
+                "current_net_paid_cents", quote.getCurrentNetPaidCents(),
                 "old_period_start", String.valueOf(current.getCurrentPeriodStart()),
                 "old_period_end", String.valueOf(current.getCurrentPeriodEnd())
         )));
@@ -1789,10 +2008,24 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if ("canceled".equalsIgnoreCase(status)) {
             status = "free";
         }
+        BillingAccessState accessState = BillingEntitlementPolicy.resolveAccessState(
+                status,
+                Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()),
+                entity.getGraceEndAt(),
+                LocalDateTime.now());
+        boolean canConsume = BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
+                status, entity.getGraceEndAt(), LocalDateTime.now());
+        boolean canRefresh = BillingEntitlementPolicy.allowsPlanRefresh(status);
+        boolean canPurchaseAddon = BillingEntitlementPolicy.allowsAddonPurchase(status);
         return SubscriptionResult.builder()
                 .tier(entity.getTier())
                 .planCode(entity.getPlanCode())
                 .status(status)
+                .accessState(accessState)
+                .canConsumePaidEntitlements(canConsume)
+                .canRefreshPlan(canRefresh)
+                .canPurchaseAddon(canPurchaseAddon)
+                .availableActions(resolveAvailableActions(accessState, canPurchaseAddon))
                 .stripeCustomerId(entity.getStripeCustomerId())
                 .stripeSubscriptionId(entity.getStripeSubscriptionId())
                 .stripeScheduleId(entity.getStripeScheduleId())
@@ -1810,6 +2043,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return SubscriptionResult.builder()
                 .tier("free")
                 .status("free")
+                .accessState(BillingAccessState.TERMINATED)
+                .canConsumePaidEntitlements(false)
+                .canRefreshPlan(false)
+                .canPurchaseAddon(false)
+                .availableActions(List.of("subscribe"))
                 .isAdmin(false)
                 .isQuotaVip(false)
                 .effectiveMaxFiles(3)
@@ -1817,6 +2055,22 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .effectiveAllowedOutputTypes(List.of("writing"))
                 .cancelAtPeriodEnd(false)
                 .build();
+    }
+
+    private List<String> resolveAvailableActions(
+            BillingAccessState accessState,
+            boolean canPurchaseAddon) {
+        java.util.ArrayList<String> actions = new java.util.ArrayList<>();
+        if (canPurchaseAddon) {
+            actions.add("purchase_addon");
+        }
+        switch (accessState) {
+            case ACTIVE -> actions.addAll(List.of("change_plan", "cancel_subscription"));
+            case ACTIVE_ENDING -> actions.add("resume_subscription");
+            case GRACE, PAYMENT_PENDING, SUSPENDED -> actions.add("resolve_payment");
+            case TERMINATED -> actions.add("subscribe");
+        }
+        return List.copyOf(actions);
     }
 
     private List<String> parseAllowedOutputTypes(String rawAllowedOutputTypes) {

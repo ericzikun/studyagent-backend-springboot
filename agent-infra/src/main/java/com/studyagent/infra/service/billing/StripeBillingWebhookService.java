@@ -37,6 +37,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingCheckoutNotifyRequest;
 import com.studyagent.service.domain.billing.BillingPaymentFailedNotifyRequest;
+import com.studyagent.service.domain.billing.BillingReviewNotifyRequest;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
@@ -57,6 +58,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -72,6 +74,14 @@ public class StripeBillingWebhookService {
     record ManualUpgradeSwitchStrategy(
             ManualUpgradeSwitchMode mode,
             Long trialEndEpoch
+    ) {
+    }
+
+    record ManualUpgradeQuoteSnapshot(
+            String sourceInvoiceId,
+            Integer currentNetPaidCents,
+            LocalDateTime oldPeriodStart,
+            LocalDateTime oldPeriodEnd
     ) {
     }
 
@@ -108,6 +118,11 @@ public class StripeBillingWebhookService {
             "credit_note.updated",
             "credit_note.voided"
     );
+    private static final Set<String> ADDON_AUTO_REFUND_REASONS = Set.of(
+            "subscription_ineligible_at_fulfillment",
+            "invalid_or_missing_addon_order",
+            "missing_addon_order_snapshot"
+    );
 
     private final StripeWebhookEventMapper webhookEventMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
@@ -124,6 +139,9 @@ public class StripeBillingWebhookService {
 
     @Value("${billing.webhook-retry.max-attempts:8}")
     private int webhookRetryMaxAttempts = 8;
+
+    @Value("${billing.webhook-retry.processing-timeout-minutes:5}")
+    private long webhookProcessingTimeoutMinutes = 5L;
 
     public boolean supports(Event event) {
         if (SUBSCRIPTION_EVENTS.contains(event.getType())) {
@@ -195,18 +213,27 @@ public class StripeBillingWebhookService {
                             event.getId(),
                             resolveRequired(event, Invoice.class),
                             event.getType(),
-                            resolveInvoiceSubscriptionId(event));
-            case "charge.refunded" -> handleChargeRefunded(resolveRequired(event, Charge.class));
+                            resolveInvoiceSubscriptionId(event),
+                            event.getCreated());
+            case "charge.refunded" -> handleChargeRefunded(
+                    event.getId(),
+                    resolveRequired(event, Charge.class));
             case "charge.dispute.created", "charge.dispute.funds_withdrawn",
                     "charge.dispute.funds_reinstated", "charge.dispute.closed" ->
-                    handleChargeDispute(event.getType(), resolveRequired(event, Dispute.class));
+                    handleChargeDispute(
+                            event.getId(),
+                            event.getType(),
+                            resolveRequired(event, Dispute.class));
             case "credit_note.created", "credit_note.updated", "credit_note.voided" ->
-                    handleCreditNote(event.getType(), resolveRequired(event, CreditNote.class));
+                    handleCreditNote(
+                            event.getId(),
+                            event.getType(),
+                            resolveRequired(event, CreditNote.class));
             default -> log.info("Ignored Stripe billing event: {}", event.getType());
         }
     }
 
-    private void handleChargeRefunded(Charge charge) {
+    private void handleChargeRefunded(String stripeEventId, Charge charge) {
         if (!hasText(charge.getPaymentIntent())
                 || charge.getAmount() == null
                 || charge.getAmountRefunded() == null
@@ -224,6 +251,9 @@ public class StripeBillingWebhookService {
         long cumulativeRefund = Math.min(charge.getAmountRefunded(), charge.getAmount());
         boolean fullRefund = cumulativeRefund >= charge.getAmount();
         if ("addon".equals(order.getOrderType())) {
+            if (isAutoRefundedAddonOrder(order)) {
+                return;
+            }
             quotaGateway().adjustAddonForRefund(
                     charge.getPaymentIntent(),
                     "charge:" + charge.getId() + ":" + cumulativeRefund,
@@ -236,13 +266,26 @@ public class StripeBillingWebhookService {
             updateOrderRefundState(order, "refunded", "subscription_full_refund:" + charge.getId());
             return;
         }
-        updateOrderRefundState(order, "review_required", "subscription_refund:" + charge.getId());
+        markOrderReviewRequired(
+                order,
+                stripeEventId,
+                "charge.refunded",
+                charge.getId(),
+                "subscription_refund:" + charge.getId());
+    }
+
+    private boolean isAutoRefundedAddonOrder(RechargeOrderEntity order) {
+        return "refunded".equals(order.getStatus())
+                && hasText(order.getFailureReason())
+                && ADDON_AUTO_REFUND_REASONS.contains(order.getFailureReason());
     }
 
     private boolean cancelCurrentSubscriptionForRefund(
             RechargeOrderEntity order,
             Charge charge) {
-        if (!hasText(order.getStripeSubscriptionId()) || !hasText(order.getStripeInvoiceId())) {
+        boolean manualUpgrade = "subscription_upgrade_manual".equals(order.getOrderType());
+        if (!hasText(order.getStripeSubscriptionId())
+                || (!manualUpgrade && !hasText(order.getStripeInvoiceId()))) {
             return false;
         }
         UserSubscriptionEntity current = userSubscriptionMapper.selectByUserForUpdate(order.getClerkUserId());
@@ -252,7 +295,8 @@ public class StripeBillingWebhookService {
         }
         try {
             Subscription remote = retrieveStripeSubscription(order.getStripeSubscriptionId());
-            if (remote == null || !order.getStripeInvoiceId().equals(remote.getLatestInvoice())) {
+            if (remote == null
+                    || (!manualUpgrade && !order.getStripeInvoiceId().equals(remote.getLatestInvoice()))) {
                 return false;
             }
             Subscription canceled = "canceled".equals(remote.getStatus())
@@ -290,7 +334,27 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
-    private void handleChargeDispute(String eventType, Dispute dispute) {
+    private void markOrderReviewRequired(
+            RechargeOrderEntity order,
+            String stripeEventId,
+            String stripeEventType,
+            String objectId,
+            String reason) {
+        updateOrderRefundState(order, "review_required", reason);
+        notifyBillingReviewRequired(BillingReviewNotifyRequest.builder()
+                .stripeEventId(stripeEventId)
+                .stripeEventType(stripeEventType)
+                .objectId(objectId)
+                .status("review_required")
+                .reason(reason)
+                .attemptCount(1)
+                .build());
+    }
+
+    private void handleChargeDispute(
+            String stripeEventId,
+            String eventType,
+            Dispute dispute) {
         if (!hasText(dispute.getPaymentIntent())) {
             throw new IllegalStateException("Dispute has no PaymentIntent: " + dispute.getId());
         }
@@ -313,10 +377,139 @@ public class StripeBillingWebhookService {
             }
             return;
         }
-        updateOrderRefundState(order, "review_required", eventType + ":" + dispute.getId());
+        if (order.getOrderType() == null || !order.getOrderType().startsWith("subscription")) {
+            markOrderReviewRequired(
+                    order,
+                    stripeEventId,
+                    eventType,
+                    dispute.getId(),
+                    eventType + ":" + dispute.getId());
+            return;
+        }
+        if (fundsRestored) {
+            restoreSubscriptionAfterDispute(order, dispute, stripeEventId, eventType);
+        } else {
+            freezeSubscriptionForDispute(order, dispute, stripeEventId, eventType);
+        }
     }
 
-    private void handleCreditNote(String eventType, CreditNote creditNote) {
+    private void freezeSubscriptionForDispute(
+            RechargeOrderEntity order,
+            Dispute dispute,
+            String stripeEventId,
+            String eventType) {
+        if (!hasText(order.getStripeSubscriptionId())) {
+            markOrderReviewRequired(
+                    order,
+                    stripeEventId,
+                    eventType,
+                    dispute.getId(),
+                    eventType + ":" + dispute.getId());
+            return;
+        }
+        UserSubscriptionEntity current =
+                userSubscriptionMapper.selectByUserForUpdate(order.getClerkUserId());
+        if (current == null
+                || !order.getStripeSubscriptionId().equals(current.getStripeSubscriptionId())) {
+            markOrderReviewRequired(
+                    order,
+                    stripeEventId,
+                    eventType,
+                    dispute.getId(),
+                    eventType + ":" + dispute.getId());
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getStatus, "unpaid")
+                .set(UserSubscriptionEntity::getGraceEndAt, null)
+                .set(UserSubscriptionEntity::getLastSyncedAt, now)
+                .set(UserSubscriptionEntity::getUpdatedAt, now));
+        quotaGateway().pauseAddons(
+                order.getClerkUserId(),
+                order.getStripeSubscriptionId(),
+                "dispute:" + dispute.getId() + ":pause-addons");
+        updateOrderRefundState(order, "disputed", eventType + ":" + dispute.getId());
+    }
+
+    private void restoreSubscriptionAfterDispute(
+            RechargeOrderEntity order,
+            Dispute dispute,
+            String stripeEventId,
+            String eventType) {
+        if (!hasText(order.getStripeSubscriptionId())) {
+            markOrderReviewRequired(
+                    order,
+                    stripeEventId,
+                    eventType,
+                    dispute.getId(),
+                    "dispute_won:" + dispute.getId());
+            return;
+        }
+        UserSubscriptionEntity current =
+                userSubscriptionMapper.selectByUserForUpdate(order.getClerkUserId());
+        if (current == null
+                || !order.getStripeSubscriptionId().equals(current.getStripeSubscriptionId())) {
+            markOrderReviewRequired(
+                    order,
+                    stripeEventId,
+                    eventType,
+                    dispute.getId(),
+                    "dispute_won:" + dispute.getId());
+            return;
+        }
+        try {
+            Subscription authoritative =
+                    retrieveStripeSubscription(order.getStripeSubscriptionId());
+            updateOrderRefundState(order, "completed", "dispute_won:" + dispute.getId());
+            order.setStatus("completed");
+            boolean replayedLatestPaidInvoice =
+                    replayLatestPaidInvoiceAfterDispute(authoritative);
+            if (!replayedLatestPaidInvoice) {
+                syncSubscription(
+                        authoritative,
+                        "canceled".equals(authoritative.getStatus()),
+                        false);
+            }
+            if (!replayedLatestPaidInvoice
+                    && BillingEntitlementPolicy.allowsAddonPurchase(authoritative.getStatus())) {
+                quotaGateway().resumeEligibleAddons(
+                        order.getClerkUserId(),
+                        order.getStripeSubscriptionId(),
+                        "dispute:" + dispute.getId() + ":resume-addons");
+            }
+        } catch (StripeException e) {
+            throw new IllegalStateException(
+                    "Restore authoritative subscription after dispute failed: " + dispute.getId(),
+                    e);
+        }
+    }
+
+    private boolean replayLatestPaidInvoiceAfterDispute(
+            Subscription authoritative) throws StripeException {
+        if (authoritative == null
+                || !BillingEntitlementPolicy.allowsPlanRefresh(authoritative.getStatus())
+                || !hasText(authoritative.getLatestInvoice())) {
+            return false;
+        }
+        Invoice latestInvoice = retrieveStripeInvoice(authoritative.getLatestInvoice());
+        if (latestInvoice == null
+                || (!Boolean.TRUE.equals(latestInvoice.getPaid())
+                        && !"paid".equals(latestInvoice.getStatus()))) {
+            return false;
+        }
+        handleInvoicePaid(
+                latestInvoice,
+                authoritative.getId(),
+                null);
+        return true;
+    }
+
+    private void handleCreditNote(
+            String stripeEventId,
+            String eventType,
+            CreditNote creditNote) {
         if (!hasText(creditNote.getInvoice())) {
             throw new IllegalStateException("Credit note has no Invoice: " + creditNote.getId());
         }
@@ -327,7 +520,12 @@ public class StripeBillingWebhookService {
         if (order == null) {
             throw new ReviewRequiredException("Billing order not found for credit note: " + creditNote.getId());
         }
-        updateOrderRefundState(order, "review_required", eventType + ":" + creditNote.getId());
+        markOrderReviewRequired(
+                order,
+                stripeEventId,
+                eventType,
+                creditNote.getId(),
+                eventType + ":" + creditNote.getId());
     }
 
     private void handleInvoicePaymentPaid(Event event) {
@@ -362,7 +560,10 @@ public class StripeBillingWebhookService {
             if (subscription == null
                     || !BillingEntitlementPolicy.allowsAddonPurchase(subscription.getStatus())) {
                 refundIneligibleAddon(session.getPaymentIntent(), session.getId());
-                markAddonOrderRefunded(session.getId(), "subscription_ineligible_at_fulfillment");
+                markAddonOrderRefunded(
+                        session.getId(),
+                        session.getPaymentIntent(),
+                        "subscription_ineligible_at_fulfillment");
                 capturePaymentFailed(
                         clerkUserId,
                         session,
@@ -587,13 +788,25 @@ public class StripeBillingWebhookService {
         if (!hasText(clerkUserId)) {
             throw new IllegalStateException("Manual subscription upgrade order has no clerk user id: " + order.getOrderNo());
         }
+        UserSubscriptionEntity current =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
         if (!markManualUpgradeOrderSwitching(order, stripeSessionId, stripePaymentIntentId)) {
             return false;
         }
-        UserSubscriptionEntity current = findByUser(clerkUserId);
         Subscription subscription;
         try {
             subscription = retrieveStripeSubscription(order.getStripeSubscriptionId());
+            String staleReason = resolveManualUpgradeStaleReason(order, current, subscription);
+            if (staleReason != null) {
+                refundCheckoutPayment(
+                        firstNonBlank(stripePaymentIntentId, order.getStripePaymentIntentId()),
+                        firstNonBlank(stripeSessionId, order.getStripeSessionId()),
+                        staleReason,
+                        "manual-upgrade-refund");
+                markManualUpgradeRefunded(order, staleReason);
+                clearPendingUpgradeCheckoutByOrderNo(order.getOrderNo());
+                return false;
+            }
             if (current != null) {
                 releasePendingScheduleIfPresent(current, subscription);
             }
@@ -656,6 +869,153 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
             throw e;
         }
+    }
+
+    private String resolveManualUpgradeStaleReason(
+            RechargeOrderEntity order,
+            UserSubscriptionEntity current,
+            Subscription subscription) throws StripeException {
+        String bizContext = order.getBizContext();
+        ManualUpgradeQuoteSnapshot snapshot;
+        try {
+            snapshot = parseManualUpgradeQuoteSnapshot(bizContext);
+        } catch (IllegalStateException e) {
+            return "upgrade_quote_snapshot_invalid";
+        }
+        if (snapshot == null && hasText(bizContext)) {
+            return "upgrade_quote_snapshot_invalid";
+        }
+        if (current == null
+                || !Objects.equals(order.getClerkUserId(), current.getClerkUserId())) {
+            return "upgrade_source_owner_changed";
+        }
+        if (!BillingEntitlementPolicy.allowsPlanRefresh(current.getStatus())) {
+            return "upgrade_source_subscription_ineligible";
+        }
+        if (!Objects.equals(order.getStripeSubscriptionId(), current.getStripeSubscriptionId())
+                || subscription == null
+                || !Objects.equals(order.getStripeSubscriptionId(), subscription.getId())) {
+            return "upgrade_source_subscription_changed";
+        }
+        if (!Objects.equals(order.getPlanCode(), current.getPlanCode())) {
+            return "upgrade_source_plan_changed";
+        }
+        if (snapshot == null) {
+            // Orders created before quote snapshots were introduced still
+            // receive owner, subscription, eligibility and plan validation.
+            return null;
+        }
+        if (!sameTime(snapshot.oldPeriodStart(), current.getCurrentPeriodStart())
+                || !sameTime(snapshot.oldPeriodEnd(), current.getCurrentPeriodEnd())) {
+            return "upgrade_source_period_changed";
+        }
+
+        Long remotePeriodStart = resolveSubscriptionPeriodStart(subscription);
+        Long remotePeriodEnd = resolveSubscriptionPeriodEnd(subscription);
+        if (snapshot.oldPeriodStart() != null
+                && remotePeriodStart != null
+                && !snapshot.oldPeriodStart().equals(fromEpoch(remotePeriodStart))) {
+            return "upgrade_source_period_changed";
+        }
+        if (snapshot.oldPeriodEnd() != null
+                && remotePeriodEnd != null
+                && !snapshot.oldPeriodEnd().equals(fromEpoch(remotePeriodEnd))) {
+            return "upgrade_source_period_changed";
+        }
+
+        SubscriptionPlanEntity currentPlan = requirePlan(order.getPlanCode());
+        if (!hasText(currentPlan.getStripePriceId())
+                || subscription.getItems() == null
+                || subscription.getItems().getData() == null
+                || subscription.getItems().getData().size() != 1
+                || subscription.getItems().getData().get(0).getPrice() == null
+                || !currentPlan.getStripePriceId().equals(
+                        subscription.getItems().getData().get(0).getPrice().getId())) {
+            return "upgrade_source_price_changed";
+        }
+
+        if (hasText(snapshot.sourceInvoiceId())) {
+            if (!snapshot.sourceInvoiceId().equals(subscription.getLatestInvoice())) {
+                return "upgrade_source_invoice_changed";
+            }
+            Invoice invoice = retrieveStripeInvoice(snapshot.sourceInvoiceId());
+            int currentNetPaid = resolveInvoiceNetPaidCents(invoice);
+            if (snapshot.currentNetPaidCents() == null
+                    || currentNetPaid != snapshot.currentNetPaidCents()) {
+                return "upgrade_source_credit_changed";
+            }
+        }
+        return null;
+    }
+
+    private ManualUpgradeQuoteSnapshot parseManualUpgradeQuoteSnapshot(String bizContext) {
+        if (!hasText(bizContext)) {
+            return null;
+        }
+        try {
+            JsonObject json = com.stripe.net.ApiResource.GSON.fromJson(bizContext, JsonObject.class);
+            if (json == null
+                    || !json.has("old_period_start")
+                    || !json.has("old_period_end")
+                    || !json.has("current_net_paid_cents")) {
+                return null;
+            }
+            String sourceInvoiceId = normalizeSnapshotText(readString(json, "source_invoice_id"));
+            Integer netPaid = json.get("current_net_paid_cents").isJsonNull()
+                    ? null
+                    : json.get("current_net_paid_cents").getAsInt();
+            return new ManualUpgradeQuoteSnapshot(
+                    sourceInvoiceId,
+                    netPaid,
+                    parseSnapshotTime(readString(json, "old_period_start")),
+                    parseSnapshotTime(readString(json, "old_period_end")));
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Invalid manual-upgrade quote snapshot", e);
+        }
+    }
+
+    private static String normalizeSnapshotText(String value) {
+        return value == null || value.isBlank() || "null".equalsIgnoreCase(value)
+                ? null
+                : value;
+    }
+
+    private static LocalDateTime parseSnapshotTime(String value) {
+        String normalized = normalizeSnapshotText(value);
+        return normalized == null ? null : LocalDateTime.parse(normalized);
+    }
+
+    private static boolean sameTime(LocalDateTime expected, LocalDateTime actual) {
+        return expected == null ? actual == null : expected.equals(actual);
+    }
+
+    private int resolveInvoiceNetPaidCents(Invoice invoice) throws StripeException {
+        if (invoice == null) {
+            throw new IllegalStateException("Upgrade source invoice is missing");
+        }
+        long amountPaid = invoice.getAmountPaid() == null ? 0L : invoice.getAmountPaid();
+        Long subtotal = invoice.getSubtotalExcludingTax() != null
+                ? invoice.getSubtotalExcludingTax()
+                : invoice.getSubtotal();
+        long netBeforeRefund = subtotal == null
+                ? amountPaid
+                : Math.min(amountPaid, Math.max(0L, subtotal));
+        long refunded = 0L;
+        if (hasText(invoice.getCharge())) {
+            Charge charge = retrieveStripeCharge(invoice.getCharge());
+            refunded = charge == null || charge.getAmountRefunded() == null
+                    ? 0L
+                    : charge.getAmountRefunded();
+        }
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, netBeforeRefund - refunded));
+    }
+
+    private void markManualUpgradeRefunded(RechargeOrderEntity order, String reason) {
+        rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getId, order.getId())
+                .set(RechargeOrderEntity::getStatus, "refunded")
+                .set(RechargeOrderEntity::getFailureReason, reason)
+                .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
     Subscription updateStripeSubscription(
@@ -758,18 +1118,41 @@ public class StripeBillingWebhookService {
         }
         Subscription subscription;
         try {
-            subscription = Subscription.retrieve(subscriptionId);
+            subscription = retrieveStripeSubscription(subscriptionId);
         } catch (StripeException e) {
             throw new IllegalStateException("Retrieve invoice subscription failed: " + subscriptionId, e);
         }
-        SubscriptionPlanEntity plan = requirePlanBySubscription(subscription);
         String clerkUserId = resolveUserId(subscription);
-        UserSubscriptionEntity existing = findByUser(clerkUserId);
+        UserSubscriptionEntity existing =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
         if (shouldIgnorePaidInvoiceSync(existing, subscriptionId, eventCreatedEpoch)) {
             log.info("Ignore stale paid invoice sync: invoice={}, subscription={}, user={}",
                     invoice.getId(), subscriptionId, clerkUserId);
             return;
         }
+        if (hasOpenSubscriptionDispute(clerkUserId, subscriptionId)) {
+            log.info(
+                    "Keep subscription quota frozen while paid invoice arrives during "
+                            + "an open dispute: invoice={}, subscription={}, user={}",
+                    invoice.getId(),
+                    subscriptionId,
+                    clerkUserId);
+            return;
+        }
+        if (!BillingEntitlementPolicy.allowsPlanRefresh(subscription.getStatus())) {
+            log.info(
+                    "Skip paid-invoice entitlement grant because authoritative subscription "
+                            + "is ineligible: invoice={}, subscription={}, status={}",
+                    invoice.getId(),
+                    subscriptionId,
+                    subscription.getStatus());
+            syncSubscription(
+                    subscription,
+                    "canceled".equals(subscription.getStatus()),
+                    false);
+            return;
+        }
+        SubscriptionPlanEntity plan = requirePlanBySubscription(subscription);
         RechargeOrderEntity existingInvoiceOrder = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
@@ -857,7 +1240,12 @@ public class StripeBillingWebhookService {
                 "subscription:" + subscription.getId() + ":resume-addons:" + invoice.getId());
     }
 
-    private void handleInvoiceFailed(String stripeEventId, Invoice invoice, String eventType, String eventSubscriptionId) {
+    private void handleInvoiceFailed(
+            String stripeEventId,
+            Invoice invoice,
+            String eventType,
+            String eventSubscriptionId,
+            Long eventCreatedAt) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
             return;
@@ -867,14 +1255,61 @@ public class StripeBillingWebhookService {
                         .eq(UserSubscriptionEntity::getStripeSubscriptionId, subscriptionId)
                         .last("LIMIT 1"));
         if (entity != null) {
+            UserSubscriptionEntity locked =
+                    userSubscriptionMapper.selectByUserForUpdate(entity.getClerkUserId());
+            if (locked != null) {
+                entity = locked;
+            }
+            if (isStaleSubscriptionEvent(entity, eventCreatedAt, stripeEventId)) {
+                log.info("Ignore stale invoice failure event: event={}, invoice={}, subscription={}",
+                        stripeEventId, invoice.getId(), subscriptionId);
+                return;
+            }
+            if (hasOpenSubscriptionDispute(entity.getClerkUserId(), subscriptionId)) {
+                advanceSubscriptionEventWatermark(entity, eventCreatedAt, stripeEventId);
+                log.info(
+                        "Keep subscription access frozen while invoice failure arrives during "
+                                + "an open dispute: event={}, invoice={}, subscription={}",
+                        stripeEventId,
+                        invoice.getId(),
+                        subscriptionId);
+                return;
+            }
+            Subscription authoritative;
+            try {
+                authoritative = retrieveStripeSubscription(subscriptionId);
+            } catch (StripeException e) {
+                throw new IllegalStateException(
+                        "Retrieve authoritative Stripe subscription failed: " + subscriptionId, e);
+            }
+            String authoritativeStatus = authoritative == null ? null : authoritative.getStatus();
+            if (!isPaymentProblemStatus(authoritativeStatus)) {
+                advanceSubscriptionEventWatermark(entity, eventCreatedAt, stripeEventId);
+                log.info(
+                        "Ignore historical invoice failure because Stripe subscription is {}: "
+                                + "event={}, invoice={}, subscription={}",
+                        authoritativeStatus,
+                        stripeEventId,
+                        invoice.getId(),
+                        subscriptionId);
+                return;
+            }
             LocalDateTime now = LocalDateTime.now();
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, entity.getId())
-                    .set(UserSubscriptionEntity::getStatus,
-                            "invoice.payment_action_required".equals(eventType) ? "incomplete" : "past_due")
-                    .set("invoice.payment_failed".equals(eventType),
+                    .set(UserSubscriptionEntity::getStatus, authoritativeStatus)
+                    .set("past_due".equals(authoritativeStatus),
                             UserSubscriptionEntity::getGraceEndAt,
                             calculateGraceEnd(now, paymentGraceDays))
+                    .set(!"past_due".equals(authoritativeStatus),
+                            UserSubscriptionEntity::getGraceEndAt,
+                            null)
+                    .set(eventCreatedAt != null,
+                            UserSubscriptionEntity::getLastStripeEventCreatedAt,
+                            eventCreatedAt)
+                    .set(hasText(stripeEventId),
+                            UserSubscriptionEntity::getLastStripeEventId,
+                            stripeEventId)
                     .set(UserSubscriptionEntity::getLastSyncedAt, now)
                     .set(UserSubscriptionEntity::getUpdatedAt, now));
         }
@@ -908,6 +1343,16 @@ public class StripeBillingWebhookService {
         if ("invoice.payment_failed".equals(eventType) && entity != null) {
             clearPendingUpgradeState(entity, order, eventType);
         }
+    }
+
+    private static boolean isPaymentProblemStatus(String status) {
+        return status != null && Set.of(
+                        "past_due",
+                        "unpaid",
+                        "incomplete",
+                        "incomplete_expired",
+                        "paused")
+                .contains(status.trim().toLowerCase());
     }
 
     boolean markManualUpgradeOrderSwitching(
@@ -997,8 +1442,9 @@ public class StripeBillingWebhookService {
                     eventSubscription.getId(), e);
         }
         String clerkUserId = resolveUserId(subscription);
-        UserSubscriptionEntity existing = findByUser(clerkUserId);
-        if (isStaleSubscriptionEvent(existing, event.getCreated())) {
+        UserSubscriptionEntity existing =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (isStaleSubscriptionEvent(existing, event.getCreated(), event.getId())) {
             log.info("Ignore stale Stripe subscription event: event={}, subscription={}, user={}",
                     event.getId(), subscription.getId(), clerkUserId);
             return;
@@ -1014,18 +1460,56 @@ public class StripeBillingWebhookService {
                     .eq(UserSubscriptionEntity::getClerkUserId, clerkUserId)
                     .and(wrapper -> wrapper.isNull(UserSubscriptionEntity::getLastStripeEventCreatedAt)
                             .or()
-                            .le(UserSubscriptionEntity::getLastStripeEventCreatedAt, event.getCreated()))
+                            .lt(UserSubscriptionEntity::getLastStripeEventCreatedAt, event.getCreated())
+                            .or(equalCreated -> equalCreated
+                                    .eq(UserSubscriptionEntity::getLastStripeEventCreatedAt, event.getCreated())
+                                    .and(eventId -> eventId
+                                            .isNull(UserSubscriptionEntity::getLastStripeEventId)
+                                            .or()
+                                            .lt(UserSubscriptionEntity::getLastStripeEventId, event.getId()))))
                     .set(UserSubscriptionEntity::getLastStripeEventCreatedAt, event.getCreated())
                     .set(UserSubscriptionEntity::getLastStripeEventId, event.getId())
                     .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
         }
     }
 
-    static boolean isStaleSubscriptionEvent(UserSubscriptionEntity existing, Long eventCreatedAt) {
-        return existing != null
-                && existing.getLastStripeEventCreatedAt() != null
-                && eventCreatedAt != null
-                && eventCreatedAt < existing.getLastStripeEventCreatedAt();
+    static boolean isStaleSubscriptionEvent(
+            UserSubscriptionEntity existing,
+            Long eventCreatedAt,
+            String eventId) {
+        if (existing == null
+                || existing.getLastStripeEventCreatedAt() == null
+                || eventCreatedAt == null) {
+            return false;
+        }
+        int createdComparison = eventCreatedAt.compareTo(existing.getLastStripeEventCreatedAt());
+        if (createdComparison != 0) {
+            return createdComparison < 0;
+        }
+        if (eventId == null
+                || eventId.isBlank()
+                || existing.getLastStripeEventId() == null
+                || existing.getLastStripeEventId().isBlank()) {
+            return false;
+        }
+        // Stripe event IDs are unique but do not encode chronological order.
+        // Events created in the same second must still reconcile against the
+        // authoritative Subscription; only the exact same event is stale.
+        return eventId.equals(existing.getLastStripeEventId());
+    }
+
+    private void advanceSubscriptionEventWatermark(
+            UserSubscriptionEntity entity,
+            Long eventCreatedAt,
+            String eventId) {
+        if (entity == null || entity.getId() == null || eventCreatedAt == null) {
+            return;
+        }
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, entity.getId())
+                .set(UserSubscriptionEntity::getLastStripeEventCreatedAt, eventCreatedAt)
+                .set(hasText(eventId), UserSubscriptionEntity::getLastStripeEventId, eventId)
+                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
     private void syncSubscription(
@@ -1035,7 +1519,8 @@ public class StripeBillingWebhookService {
             Long periodStartOverride,
             Long periodEndOverride) {
         String clerkUserId = resolveUserId(subscription);
-        UserSubscriptionEntity existing = findByUser(clerkUserId);
+        UserSubscriptionEntity existing =
+                userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
         if (deleted && existing != null
                 && existing.getStripeSubscriptionId() != null
                 && !subscription.getId().equals(existing.getStripeSubscriptionId())) {
@@ -1047,6 +1532,18 @@ public class StripeBillingWebhookService {
 
         SubscriptionPlanEntity plan = deleted ? null : requirePlanBySubscription(subscription);
         LocalDateTime now = LocalDateTime.now();
+        if (!deleted
+                && existing != null
+                && hasOpenSubscriptionDispute(
+                        clerkUserId,
+                        existing.getStripeSubscriptionId())) {
+            log.info(
+                    "Keep subscription access frozen while dispute is open: "
+                            + "user={}, subscription={}",
+                    clerkUserId,
+                    existing.getStripeSubscriptionId());
+            return;
+        }
         if (existing == null) {
             existing = new UserSubscriptionEntity();
             existing.setClerkUserId(clerkUserId);
@@ -1073,6 +1570,26 @@ public class StripeBillingWebhookService {
                     subscription.getId(),
                     "subscription:" + subscription.getId() + ":pause-addons");
         }
+    }
+
+    private boolean hasOpenSubscriptionDispute(
+            String clerkUserId,
+            String subscriptionId) {
+        if (!hasText(clerkUserId) || !hasText(subscriptionId)) {
+            return false;
+        }
+        RechargeOrderEntity disputed = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .eq(RechargeOrderEntity::getStripeSubscriptionId, subscriptionId)
+                        .likeRight(RechargeOrderEntity::getOrderType, "subscription")
+                        .eq(RechargeOrderEntity::getStatus, "disputed")
+                        .last("LIMIT 1 FOR UPDATE"));
+        return disputed != null
+                && "disputed".equals(disputed.getStatus())
+                && disputed.getOrderType() != null
+                && disputed.getOrderType().startsWith("subscription")
+                && subscriptionId.equals(disputed.getStripeSubscriptionId());
     }
 
     void handleSubscriptionScheduleEvent(SubscriptionSchedule schedule) {
@@ -1756,9 +2273,17 @@ public class StripeBillingWebhookService {
                         .eq(RechargeOrderEntity::getOrderType, "addon")
                         .last("LIMIT 1"));
         if (order == null
-                || !clerkUserId.equals(order.getClerkUserId())
-                || !addonCode.equals(order.getAddonCode())) {
-            throw new IllegalStateException("Invalid or missing add-on order: " + session.getId());
+                || !java.util.Objects.equals(clerkUserId, order.getClerkUserId())
+                || !java.util.Objects.equals(addonCode, order.getAddonCode())) {
+            refundAddonCheckout(
+                    session.getPaymentIntent(),
+                    session.getId(),
+                    "invalid_or_missing_addon_order");
+            markAddonOrderRefunded(
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    "invalid_or_missing_addon_order");
+            return null;
         }
         if (order.getFeatureCode() == null
                 || order.getQuotaAmount() == null
@@ -1769,7 +2294,10 @@ public class StripeBillingWebhookService {
                     session.getPaymentIntent(),
                     session.getId(),
                     "missing_addon_order_snapshot");
-            markAddonOrderRefunded(session.getId(), "missing_addon_order_snapshot");
+            markAddonOrderRefunded(
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    "missing_addon_order_snapshot");
             return null;
         }
         if (session.getAmountTotal() != null
@@ -1793,31 +2321,59 @@ public class StripeBillingWebhookService {
     }
 
     void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
+        refundCheckoutPayment(
+                paymentIntentId,
+                stripeSessionId,
+                reason,
+                "addon-refund");
+    }
+
+    void refundCheckoutPayment(
+            String paymentIntentId,
+            String stripeReferenceId,
+            String reason,
+            String idempotencyPrefix) {
         if (!hasText(paymentIntentId)) {
             throw new IllegalStateException(
-                    "Cannot refund add-on without PaymentIntent: " + stripeSessionId);
+                    "Cannot refund Checkout without PaymentIntent: " + stripeReferenceId);
         }
         RefundCreateParams params = RefundCreateParams.builder()
                 .setPaymentIntent(paymentIntentId)
-                .putMetadata("reason", reason)
-                .putMetadata("checkout_session_id", stripeSessionId)
+                // Keep Stripe parameters stable across retries. The detailed,
+                // mutable reason remains on the local order.
+                .putMetadata("reason", idempotencyPrefix)
+                .putMetadata("checkout_reference_id", stripeReferenceId)
                 .build();
         RequestOptions options = RequestOptions.builder()
-                .setIdempotencyKey("addon-refund:" + stripeSessionId + ":" + reason)
+                .setIdempotencyKey(idempotencyPrefix + ":" + stripeReferenceId)
                 .build();
         try {
             Refund.create(params, options);
         } catch (StripeException e) {
             throw new IllegalStateException(
-                    "Refund add-on Checkout failed: " + stripeSessionId, e);
+                    "Refund Checkout failed: " + stripeReferenceId, e);
         }
     }
 
-    private void markAddonOrderRefunded(String stripeSessionId, String reason) {
+    Invoice retrieveStripeInvoice(String invoiceId) throws StripeException {
+        return Invoice.retrieve(invoiceId);
+    }
+
+    Charge retrieveStripeCharge(String chargeId) throws StripeException {
+        return Charge.retrieve(chargeId);
+    }
+
+    private void markAddonOrderRefunded(
+            String stripeSessionId,
+            String paymentIntentId,
+            String reason) {
         LocalDateTime now = LocalDateTime.now();
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getStripeSessionId, stripeSessionId)
                 .eq(RechargeOrderEntity::getOrderType, "addon")
+                .set(hasText(paymentIntentId),
+                        RechargeOrderEntity::getStripePaymentIntentId,
+                        paymentIntentId)
                 .set(RechargeOrderEntity::getStatus, "refunded")
                 .set(RechargeOrderEntity::getFailureReason, reason)
                 .set(RechargeOrderEntity::getUpdatedAt, now));
@@ -1986,7 +2542,8 @@ public class StripeBillingWebhookService {
                 || "dead_letter".equals(current.getStatus())) {
             return false;
         }
-        LocalDateTime staleBefore = LocalDateTime.now().minusMinutes(5);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime staleBefore = webhookRecoveryCutoff(now);
         if ("processing".equals(current.getStatus())
                 && current.getProcessingStartedAt() != null
                 && current.getProcessingStartedAt().isAfter(staleBefore)) {
@@ -1995,8 +2552,11 @@ public class StripeBillingWebhookService {
         int updated = webhookEventMapper.update(null, new LambdaUpdateWrapper<StripeWebhookEventEntity>()
                 .eq(StripeWebhookEventEntity::getEventId, eventId)
                 .eq(StripeWebhookEventEntity::getStatus, current.getStatus())
+                .eq("processing".equals(current.getStatus()),
+                        StripeWebhookEventEntity::getProcessingStartedAt,
+                        current.getProcessingStartedAt())
                 .set(StripeWebhookEventEntity::getStatus, "processing")
-                .set(StripeWebhookEventEntity::getProcessingStartedAt, LocalDateTime.now())
+                .set(StripeWebhookEventEntity::getProcessingStartedAt, now)
                 .set(StripeWebhookEventEntity::getLastError, null)
                 .setSql("attempt_count = attempt_count + 1"));
         return updated == 1;
@@ -2030,6 +2590,9 @@ public class StripeBillingWebhookService {
                         deadLetter ? null : calculateNextRetryAt(now, attemptCount))
                 .set(StripeWebhookEventEntity::getDeadLetteredAt, deadLetter ? now : null)
                 .set(StripeWebhookEventEntity::getProcessedAt, now));
+        if (deadLetter) {
+            notifyBillingReviewRequired(current, "dead_letter", message, attemptCount);
+        }
     }
 
     private void markReviewRequired(String eventId, String reason) {
@@ -2037,6 +2600,7 @@ public class StripeBillingWebhookService {
         if (message.length() > 2000) {
             message = message.substring(0, 2000);
         }
+        StripeWebhookEventEntity current = webhookEventMapper.selectById(eventId);
         webhookEventMapper.update(null, new LambdaUpdateWrapper<StripeWebhookEventEntity>()
                 .eq(StripeWebhookEventEntity::getEventId, eventId)
                 .set(StripeWebhookEventEntity::getStatus, "review_required")
@@ -2044,18 +2608,64 @@ public class StripeBillingWebhookService {
                 .set(StripeWebhookEventEntity::getNextRetryAt, null)
                 .set(StripeWebhookEventEntity::getDeadLetteredAt, null)
                 .set(StripeWebhookEventEntity::getProcessedAt, LocalDateTime.now()));
+        int attemptCount = current == null || current.getAttemptCount() == null
+                ? 0
+                : current.getAttemptCount();
+        notifyBillingReviewRequired(current, "review_required", message, attemptCount);
+    }
+
+    private void notifyBillingReviewRequired(
+            StripeWebhookEventEntity event,
+            String status,
+            String reason,
+            int attemptCount) {
+        notifyBillingReviewRequired(BillingReviewNotifyRequest.builder()
+                .stripeEventId(event == null ? null : event.getEventId())
+                .stripeEventType(event == null ? null : event.getEventType())
+                .objectId(event == null ? null : event.getObjectId())
+                .status(status)
+                .reason(reason)
+                .attemptCount(attemptCount)
+                .build());
+    }
+
+    private void notifyBillingReviewRequired(BillingReviewNotifyRequest request) {
+        BillingRobotNotifyGateway gateway = billingRobotNotifyGateway();
+        if (gateway == null) {
+            return;
+        }
+        try {
+            gateway.notifyBillingReviewRequired(request);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Billing review notification failed: event={}, status={}",
+                    request.getStripeEventId(),
+                    request.getStatus(),
+                    e);
+        }
     }
 
     public int retryDueEvents(int batchSize) {
         if (batchSize <= 0) {
             return 0;
         }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime staleBefore = webhookRecoveryCutoff(now);
         List<StripeWebhookEventEntity> dueEvents = webhookEventMapper.selectList(
                 new LambdaQueryWrapper<StripeWebhookEventEntity>()
-                        .eq(StripeWebhookEventEntity::getStatus, "failed")
-                        .le(StripeWebhookEventEntity::getNextRetryAt, LocalDateTime.now())
                         .isNotNull(StripeWebhookEventEntity::getPayloadJson)
-                        .orderByAsc(StripeWebhookEventEntity::getNextRetryAt)
+                        .and(candidate -> candidate
+                                .and(failed -> failed
+                                        .eq(StripeWebhookEventEntity::getStatus, "failed")
+                                        .isNotNull(StripeWebhookEventEntity::getNextRetryAt)
+                                        .le(StripeWebhookEventEntity::getNextRetryAt, now))
+                                .or(received -> received
+                                        .eq(StripeWebhookEventEntity::getStatus, "received")
+                                        .le(StripeWebhookEventEntity::getReceivedAt, staleBefore))
+                                .or(processing -> processing
+                                        .eq(StripeWebhookEventEntity::getStatus, "processing")
+                                        .le(StripeWebhookEventEntity::getProcessingStartedAt, staleBefore)))
+                        .orderByAsc(StripeWebhookEventEntity::getReceivedAt)
                         .last("LIMIT " + batchSize));
         int succeeded = 0;
         for (StripeWebhookEventEntity due : dueEvents) {
@@ -2069,6 +2679,13 @@ public class StripeBillingWebhookService {
             }
         }
         return succeeded;
+    }
+
+    private LocalDateTime webhookRecoveryCutoff(LocalDateTime now) {
+        long timeoutMinutes = webhookProcessingTimeoutMinutes > 0
+                ? webhookProcessingTimeoutMinutes
+                : 5L;
+        return now.minusMinutes(timeoutMinutes);
     }
 
     static LocalDateTime calculateNextRetryAt(LocalDateTime failedAt, int attemptCount) {

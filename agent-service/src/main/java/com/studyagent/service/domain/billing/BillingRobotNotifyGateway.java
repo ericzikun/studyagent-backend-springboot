@@ -13,4 +13,6 @@ public interface BillingRobotNotifyGateway {
     void notifyCheckoutExpired(BillingCheckoutNotifyRequest request);
 
     void notifyPaymentFailed(BillingPaymentFailedNotifyRequest request);
+
+    void notifyBillingReviewRequired(BillingReviewNotifyRequest request);
 }

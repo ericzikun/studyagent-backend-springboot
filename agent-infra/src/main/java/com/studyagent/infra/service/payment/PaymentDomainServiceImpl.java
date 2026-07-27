@@ -8,7 +8,9 @@ import com.stripe.model.checkout.Session;
 import com.stripe.param.PriceListParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import com.studyagent.infra.entity.AiFeaturePackageEntity;
+import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
+import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.service.domain.payment.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ import java.util.Map;
 public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     private final AiFeaturePackageMapper aiFeaturePackageMapper;
+    private final RechargeOrderMapper rechargeOrderMapper;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -167,10 +170,26 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         }
         Session session;
         try {
-            session = Session.retrieve(sessionId);
+            session = retrieveStripeCheckoutSession(sessionId);
         } catch (StripeException e) {
             throw new PaymentDomainException("STRIPE_ERROR", "Query session failed: " + e.getMessage(), e);
         }
+        String metadataOwner = session.getMetadata() == null
+                ? null
+                : session.getMetadata().get("clerk_user_id");
+        RechargeOrderEntity localOrder = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeSessionId, sessionId)
+                        .last("LIMIT 1"));
+        String localOwner = localOrder == null ? null : localOrder.getClerkUserId();
+        if (hasText(metadataOwner)
+                && hasText(localOwner)
+                && !metadataOwner.equals(localOwner)) {
+            throw new PaymentDomainException(
+                    "SESSION_OWNER_MISMATCH",
+                    "Stripe Checkout owner does not match the local billing order");
+        }
+        String verifiedOwner = hasText(localOwner) ? localOwner : metadataOwner;
         return SessionStatusResult.builder()
                 .sessionId(session.getId())
                 .status(session.getStatus())
@@ -179,8 +198,16 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 .currency(session.getCurrency())
                 .customerEmail(session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null)
                 .createdAt(session.getCreated())
-                .clerkUserId(session.getMetadata() != null ? session.getMetadata().get("clerk_user_id") : null)
+                .clerkUserId(verifiedOwner)
                 .build();
+    }
+
+    Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
+        return Session.retrieve(sessionId);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     @Override

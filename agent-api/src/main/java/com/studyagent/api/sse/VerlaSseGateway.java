@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
@@ -82,7 +83,8 @@ public class VerlaSseGateway implements VerlaSsePublisher {
 
         long now = System.currentTimeMillis();
         SseEmitter em = new SseEmitter(sseProperties.getEmitterTimeoutMs());
-        EmitterRegistration reg = new EmitterRegistration(em, clerkUserId, now);
+        long replayAfter = (lastEventId != null && lastEventId > 0) ? lastEventId : 0L;
+        EmitterRegistration reg = new EmitterRegistration(em, clerkUserId, now, replayAfter);
         CopyOnWriteArrayList<EmitterRegistration> list = emitters.computeIfAbsent(
                 conversationId, k -> new CopyOnWriteArrayList<>());
         evictOldestIfNeeded(conversationId, list);
@@ -104,12 +106,16 @@ public class VerlaSseGateway implements VerlaSsePublisher {
             return em;
         }
 
-        long replayAfter = (lastEventId != null && lastEventId > 0) ? lastEventId : 0L;
+        boolean replaySucceeded = false;
         try {
-            replay(conversationId, replayAfter, reg);
+            replaySucceeded = replay(conversationId, replayAfter, reg);
         } catch (Exception e) {
             log.warn("[Verla/sse] replay failed cid={} after={}: {}",
                     conversationId, replayAfter, e.getMessage());
+        }
+        if (!replaySucceeded || !finishReplay(reg, conversationId)) {
+            completeQuietly(em);
+            remove(conversationId, reg);
         }
         return em;
     }
@@ -131,7 +137,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         Iterator<EmitterRegistration> it = list.iterator();
         while (it.hasNext()) {
             EmitterRegistration reg = it.next();
-            if (sendOne(reg, payload, conversationId)) {
+            if (sendLive(reg, payload, conversationId)) {
                 reg.touchBusinessWrite();
             }
         }
@@ -145,7 +151,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         emitters.forEach((cid, list) -> {
             for (EmitterRegistration reg : list) {
                 try {
-                    reg.emitter.send(SseEmitter.event().name("ping").data("h"));
+                    sendHeartbeat(reg);
                 } catch (Exception e) {
                     remove(cid, reg);
                 }
@@ -214,7 +220,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         }
     }
 
-    private void replay(Long conversationId, long afterId, EmitterRegistration reg) {
+    private boolean replay(Long conversationId, long afterId, EmitterRegistration reg) {
         long cursor = afterId;
         boolean fullCatchUp = afterId == 0L;
         while (true) {
@@ -229,8 +235,10 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     continue;
                 }
                 VerlaSseEventPayload p = toReplayPayload(row);
-                if (sendOne(reg, p, conversationId)) {
+                if (sendReplay(reg, p, conversationId)) {
                     reg.touchBusinessWrite();
+                } else {
+                    return false;
                 }
                 cursor = row.getId();
             }
@@ -238,6 +246,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 break;
             }
         }
+        return true;
     }
 
     private static boolean shouldOmitPlanIntentReplay(String eventType) {
@@ -248,13 +257,63 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 || "PLAN_INTENT_RESOLVED".equals(eventType);
     }
 
-    /** @return true when send succeeded */
-    private boolean sendOne(EmitterRegistration reg, VerlaSseEventPayload payload, Long conversationId) {
+    /**
+     * Live events published while inbox replay is running are buffered by id.
+     * This prevents a newly published id=101 from reaching the browser before
+     * the reconnect replay writes id=100 on the same emitter.
+     */
+    private boolean sendLive(EmitterRegistration reg, VerlaSseEventPayload payload, Long conversationId) {
+        Long eventId = payload.getId();
+        if (eventId == null || eventId <= 0L) {
+            log.warn("[Verla/sse] skip live payload without positive id cid={} type={}",
+                    conversationId, payload.getType());
+            return false;
+        }
+        synchronized (reg.deliveryLock) {
+            if (eventId <= reg.lastSentEventId) {
+                return true;
+            }
+            if (reg.replaying) {
+                reg.pendingLiveById.putIfAbsent(eventId, payload);
+                return true;
+            }
+            return sendOrdered(reg, payload, conversationId);
+        }
+    }
+
+    private boolean sendReplay(EmitterRegistration reg, VerlaSseEventPayload payload, Long conversationId) {
+        synchronized (reg.deliveryLock) {
+            return sendOrdered(reg, payload, conversationId);
+        }
+    }
+
+    /** Switches one registration atomically from replay to ordered live delivery. */
+    private boolean finishReplay(EmitterRegistration reg, Long conversationId) {
+        synchronized (reg.deliveryLock) {
+            for (VerlaSseEventPayload pending : reg.pendingLiveById.values()) {
+                if (!sendOrdered(reg, pending, conversationId)) {
+                    reg.pendingLiveById.clear();
+                    return false;
+                }
+            }
+            reg.pendingLiveById.clear();
+            reg.replaying = false;
+            return true;
+        }
+    }
+
+    /** Caller must hold {@link EmitterRegistration#deliveryLock}. */
+    private boolean sendOrdered(EmitterRegistration reg, VerlaSseEventPayload payload, Long conversationId) {
+        Long eventId = payload.getId();
+        if (eventId == null || eventId <= reg.lastSentEventId) {
+            return true;
+        }
         try {
             reg.emitter.send(SseEmitter.event()
-                    .id(String.valueOf(payload.getId()))
+                    .id(String.valueOf(eventId))
                     .name("verla")
                     .data(payload, MediaType.APPLICATION_JSON));
+            reg.lastSentEventId = eventId;
             return true;
         } catch (IOException ioe) {
             log.debug("[Verla/sse] send io fail (likely disconnected) cid={} id={}: {}",
@@ -266,6 +325,12 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     conversationId, payload.getId(), e.getMessage());
             remove(conversationId, reg);
             return false;
+        }
+    }
+
+    private void sendHeartbeat(EmitterRegistration reg) throws IOException {
+        synchronized (reg.deliveryLock) {
+            reg.emitter.send(SseEmitter.event().name("ping").data("h"));
         }
     }
 
@@ -314,11 +379,20 @@ public class VerlaSseGateway implements VerlaSsePublisher {
     private static final class EmitterRegistration {
         private final SseEmitter emitter;
         private final String clerkUserId;
+        private final Object deliveryLock = new Object();
+        private final TreeMap<Long, VerlaSseEventPayload> pendingLiveById = new TreeMap<>();
+        private boolean replaying = true;
+        private long lastSentEventId;
         private volatile long lastBusinessWriteAtMs;
 
-        private EmitterRegistration(SseEmitter emitter, String clerkUserId, long registeredAtMs) {
+        private EmitterRegistration(
+                SseEmitter emitter,
+                String clerkUserId,
+                long registeredAtMs,
+                long replayAfterEventId) {
             this.emitter = emitter;
             this.clerkUserId = clerkUserId;
+            this.lastSentEventId = replayAfterEventId;
             this.lastBusinessWriteAtMs = registeredAtMs;
         }
 

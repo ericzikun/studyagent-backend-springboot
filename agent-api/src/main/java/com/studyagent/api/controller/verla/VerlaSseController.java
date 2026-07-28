@@ -67,19 +67,26 @@ public class VerlaSseController {
         return sseGateway.register(cid, lastId, clerkUserId);
     }
 
-    private static Long parseLastEventId(String header, Long fromParam) {
-        if (fromParam != null && fromParam > 0) {
-            return fromParam;
-        }
-        if (header == null || header.isBlank()) {
-            return null;
-        }
+    static Long parseLastEventId(String header, Long fromParam) {
+        Long fromHeader = null;
         try {
-            long v = Long.parseLong(header.trim());
-            return v > 0 ? v : null;
+            if (header != null && !header.isBlank()) {
+                long parsed = Long.parseLong(header.trim());
+                fromHeader = parsed > 0 ? parsed : null;
+            }
         } catch (NumberFormatException nfe) {
-            return null;
+            // Ignore a malformed browser cursor and fall back to the URL cursor.
         }
+        Long positiveParam = fromParam != null && fromParam > 0 ? fromParam : null;
+        if (fromHeader == null) {
+            return positiveParam;
+        }
+        if (positiveParam == null) {
+            return fromHeader;
+        }
+        // Native EventSource reconnect keeps the original query string but adds
+        // a newer Last-Event-ID header. Replaying from the max avoids duplicates.
+        return Math.max(fromHeader, positiveParam);
     }
 
     private void ensureLogin(String clerkUserId) {

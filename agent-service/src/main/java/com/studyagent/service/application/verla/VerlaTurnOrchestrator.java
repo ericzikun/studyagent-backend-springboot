@@ -1800,8 +1800,7 @@ public class VerlaTurnOrchestrator {
                 requirementForm,
                 reservedFields,
                 appendAskAnswers,
-                null,
-                true);
+                null);
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
@@ -2597,13 +2596,12 @@ public class VerlaTurnOrchestrator {
             return Map.of();
         }
         Map<String, Object> normalized = new HashMap<>(result);
-        // Run path: trust clarify's structured deliverable_count verbatim — no keyword inference.
+        // Run path: trust clarify's structured deliverable_count verbatim.
         normalized.put("requirementForm", normalizeAssignmentRequirementForm(
                 castMap(normalized.get("requirementForm")),
                 castMap(normalized.get("reservedFields")),
                 castListOfMaps(normalized.get("appendAskAnswers")),
-                normalized.get("requirementUnderstanding") instanceof String text ? text : null,
-                false));
+                normalized.get("requirementUnderstanding") instanceof String text ? text : null));
         return normalized;
     }
 
@@ -2624,18 +2622,12 @@ public class VerlaTurnOrchestrator {
                 ? null
                 : rawFinalClarifyResult.get("requirementForm"));
         Map<String, Object> normalizedRequirementForm = castMap(normalizedFinalClarifyResult.get("requirementForm"));
-        Set<String> inferredOutputTypes = inferAssignmentOutputTypes(
-                rawRequirementForm,
-                castMap(rawFinalClarifyResult == null ? null : rawFinalClarifyResult.get("reservedFields")),
-                castListOfMaps(rawFinalClarifyResult == null ? null : rawFinalClarifyResult.get("appendAskAnswers")),
-                rawFinalClarifyResult != null && rawFinalClarifyResult.get("requirementUnderstanding") instanceof String text
-                        ? text : null);
         Map<String, Object> diagnostics = new LinkedHashMap<>();
         diagnostics.put("rawDeliverableCount", summarizeDeliverableCount(
                 castMap(rawRequirementForm.get("deliverable_count"))));
         diagnostics.put("normalizedDeliverableCount", summarizeDeliverableCount(
                 castMap(normalizedRequirementForm.get("deliverable_count"))));
-        diagnostics.put("inferredOutputTypes", inferredOutputTypes.stream().sorted().toList());
+        diagnostics.put("inferredOutputTypes", List.of());
         diagnostics.put("requestedOutputTypes", requestedAssignmentOutputTypes(normalizedRequirementForm).stream().sorted().toList());
         diagnostics.put("allowedOutputTypes", allowedOutputTypes == null
                 ? List.of()
@@ -2694,129 +2686,22 @@ public class VerlaTurnOrchestrator {
     /**
      * Normalize an assignment requirement form's {@code deliverable_count}.
      *
-     * <p>When {@code applyOutputTypeInference} is true, keyword inference over the free-form fields
-     * may floor {@code ppt}/{@code code} up to 1 as a safety net (used by the clarify-dispatch and
-     * deep-understanding paths). When false, the structured {@code deliverable_count} is trusted
-     * verbatim — the <b>run</b> path passes false so generation honors exactly what clarify decided
-     * and never re-infers extra output types from prose (e.g. an embedded serialized form, or the
-     * word "slides" in a sentence), which would otherwise wrongly trip the entitlement gate.
+     * <p>The structured {@code deliverable_count} is the sole source of assignment output type.
+     * Java deliberately avoids keyword inference over free-form prose; Python's clarify form
+     * exposes an explicit output-type selector and the frontend submits it back as this field.
      */
     private static Map<String, Object> normalizeAssignmentRequirementForm(
             Map<String, Object> requirementForm,
             Map<String, Object> reservedFields,
             List<Map<String, Object>> appendAskAnswers,
-            String requirementUnderstanding,
-            boolean applyOutputTypeInference) {
+            String requirementUnderstanding) {
         Map<String, Object> normalized = requirementForm == null ? new HashMap<>() : new HashMap<>(requirementForm);
         Map<String, Object> deliverableCount = castMutableMap(normalized.get("deliverable_count"));
-        Set<String> inferredOutputTypes = applyOutputTypeInference
-                ? inferAssignmentOutputTypes(normalized, reservedFields, appendAskAnswers, requirementUnderstanding)
-                : Set.of();
         putDeliverableCountFloor(deliverableCount, "markdown", 0);
-        putDeliverableCountFloor(deliverableCount, "ppt", inferredOutputTypes.contains("ppt") ? 1 : 0);
-        putDeliverableCountFloor(deliverableCount, "code", inferredOutputTypes.contains("coding") ? 1 : 0);
+        putDeliverableCountFloor(deliverableCount, "ppt", 0);
+        putDeliverableCountFloor(deliverableCount, "code", 0);
         normalized.put("deliverable_count", deliverableCount);
         return normalized;
-    }
-
-    private static Set<String> inferAssignmentOutputTypes(
-            Map<String, Object> requirementForm,
-            Map<String, Object> reservedFields,
-            List<Map<String, Object>> appendAskAnswers,
-            String requirementUnderstanding) {
-        List<String> texts = new ArrayList<>();
-        collectAssignmentOutputHintTexts(requirementForm, null, texts);
-        collectAssignmentOutputHintTexts(reservedFields, null, texts);
-        collectAssignmentOutputHintTexts(appendAskAnswers, null, texts);
-        collectAssignmentOutputHintTexts(requirementUnderstanding, "requirement_understanding", texts);
-
-        Set<String> inferred = new LinkedHashSet<>();
-        for (String text : texts) {
-            String normalized = normalizeOutputHintText(text);
-            if (containsAnyOutputHint(normalized,
-                    " powerpoint ",
-                    " ppt ",
-                    " pptx ",
-                    " presentation ",
-                    " presentation deck ",
-                    " slide deck ",
-                    " slides ",
-                    " pitch deck ",
-                    " deck ")) {
-                inferred.add("ppt");
-            }
-            if (containsAnyOutputHint(normalized,
-                    " coding ",
-                    " code ",
-                    " source code ",
-                    " program ",
-                    " programming ",
-                    " script ",
-                    " notebook ",
-                    " implementation ")) {
-                inferred.add("coding");
-            }
-        }
-        return inferred;
-    }
-
-    private static void collectAssignmentOutputHintTexts(Object value, String key, List<String> texts) {
-        if (value == null) {
-            return;
-        }
-        if (value instanceof String text) {
-            if (shouldInspectOutputHintKey(key)) {
-                texts.add(text);
-            }
-            return;
-        }
-        if (value instanceof Map<?, ?> map) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                collectAssignmentOutputHintTexts(entry.getValue(), entry.getKey() == null
-                        ? null : String.valueOf(entry.getKey()), texts);
-            }
-            return;
-        }
-        if (value instanceof Iterable<?> iterable) {
-            for (Object item : iterable) {
-                collectAssignmentOutputHintTexts(item, key, texts);
-            }
-        }
-    }
-
-    private static boolean shouldInspectOutputHintKey(String key) {
-        if (key == null || key.isBlank()) {
-            return false;
-        }
-        String normalized = key.trim().toLowerCase(Locale.ROOT)
-                .replace('-', '_')
-                .replace(' ', '_');
-        return Set.of(
-                "task_title",
-                "question_content",
-                "sub_questions",
-                "input_relationship_analysis",
-                "deliverable_type",
-                "deliverabletype",
-                "output_format",
-                "outputformat",
-                "submission_type",
-                "submissiontype",
-                "format",
-                "estimated_length",
-                "requirement_understanding",
-                "answer",
-                "question").contains(normalized);
-    }
-
-    private static String normalizeOutputHintText(String text) {
-        return (" " + text.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", " ")
-                .trim() + " ").replaceAll("\\s+", " ");
-    }
-
-    private static boolean containsAnyOutputHint(String text, String... hints) {
-        return Arrays.stream(hints).anyMatch(text::contains);
     }
 
     private static void putDeliverableCountFloor(Map<String, Object> deliverableCount, String key, int floor) {
@@ -2846,8 +2731,7 @@ public class VerlaTurnOrchestrator {
                 castMap(normalized.get("requirementForm")),
                 Map.of(),
                 List.of(),
-                null,
-                true));
+                null));
 
         if (normalized.get("ready") instanceof Boolean) {
             return normalized;

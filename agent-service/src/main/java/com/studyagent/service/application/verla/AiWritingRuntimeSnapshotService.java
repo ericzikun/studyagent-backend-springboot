@@ -2,10 +2,14 @@ package com.studyagent.service.application.verla;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.verla.dispatch.CapabilityRunDispatchActions;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
+import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.verla.dto.AiWritingRuntimeSnapshotPayloadView;
 import com.studyagent.service.application.verla.dto.AiWritingRuntimeSnapshotView;
+import com.studyagent.service.domain.mq.MqOutbox;
+import com.studyagent.service.domain.mq.MqOutboxRepository;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -36,6 +40,7 @@ public class AiWritingRuntimeSnapshotService {
     private final VerlaMessageRepository messageRepository;
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaEventInboxRepository eventInboxRepository;
+    private final MqOutboxRepository mqOutboxRepository;
     private final ObjectMapper objectMapper;
 
     public AiWritingRuntimeSnapshotView getSnapshot(Long conversationId) {
@@ -69,6 +74,12 @@ public class AiWritingRuntimeSnapshotService {
     private Map<String, Object> resolveProgress(
             List<VerlaEventInbox> recentEvents,
             ResolvedStateEvent stateEvent) {
+        if (stateEvent != null && isDispatchDispatched(stateEvent.stateEventType())) {
+            Map<String, Object> progress = new LinkedHashMap<>();
+            progress.put("label", "Starting…");
+            progress.put("reason", "dispatch_gate_released");
+            return progress;
+        }
         if (stateEvent != null && isDispatchQueued(stateEvent.stateEventType())) {
             Map<String, Object> progress = new LinkedHashMap<>();
             Object queuePosition = stateEvent.payload().get("queuePosition");
@@ -124,6 +135,11 @@ public class AiWritingRuntimeSnapshotService {
                 || VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCH_QUEUED.name().equals(stateEventType);
     }
 
+    private static boolean isDispatchDispatched(String stateEventType) {
+        return VerlaAgentEventType.AI_DETECTION_RUN_DISPATCHED.name().equals(stateEventType)
+                || VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCHED.name().equals(stateEventType);
+    }
+
     private List<VerlaMessage> chronologicalMessages(List<VerlaMessage> rows) {
         if (rows == null || rows.isEmpty()) {
             return List.of();
@@ -144,8 +160,56 @@ public class AiWritingRuntimeSnapshotService {
             }
             String resolved = mapStateEventType(type);
             if (resolved != null) {
-                return new ResolvedStateEvent(resolved, sanitizedPayload(event));
+                ResolvedStateEvent resolvedEvent =
+                        new ResolvedStateEvent(resolved, sanitizedPayload(event));
+                if (isDispatchQueued(resolved)) {
+                    return correctStaleDispatchQueued(event, resolvedEvent);
+                }
+                return resolvedEvent;
             }
+        }
+        return null;
+    }
+
+    private ResolvedStateEvent correctStaleDispatchQueued(
+            VerlaEventInbox event,
+            ResolvedStateEvent stateEvent) {
+        Long sessionId = event == null ? null : event.getSessionId();
+        if (sessionId == null) {
+            return stateEvent;
+        }
+        String action = resolveCapabilityAction(stateEvent.stateEventType(), stateEvent.payload());
+        if (action == null || !CapabilityRunDispatchActions.isGated(action)) {
+            return stateEvent;
+        }
+        Integer outboxStatus = mqOutboxRepository.findLatestStatusBySessionIdAndActions(
+                sessionId, List.of(action));
+        if (outboxStatus == null || outboxStatus == MqOutbox.STATUS_UNSENT) {
+            return stateEvent;
+        }
+        VerlaAgentEventType dispatchedType =
+                VerlaAgentEventType.AI_DETECTION_RUN_DISPATCH_QUEUED.name()
+                        .equals(stateEvent.stateEventType())
+                        ? VerlaAgentEventType.AI_DETECTION_RUN_DISPATCHED
+                        : VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCHED;
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("label", "Starting…");
+        payload.put("reason", "dispatch_gate_released");
+        return new ResolvedStateEvent(dispatchedType.name(), payload);
+    }
+
+    private static String resolveCapabilityAction(String stateEventType, Map<String, Object> payload) {
+        if (payload != null) {
+            Object action = payload.get("capabilityAction");
+            if (action != null && !String.valueOf(action).isBlank()) {
+                return String.valueOf(action);
+            }
+        }
+        if (VerlaAgentEventType.AI_DETECTION_RUN_DISPATCH_QUEUED.name().equals(stateEventType)) {
+            return VerlaCommandAction.CMD_DETECTION_RUN.getCode();
+        }
+        if (VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCH_QUEUED.name().equals(stateEventType)) {
+            return VerlaCommandAction.CMD_HUMANIZER_RUN.getCode();
         }
         return null;
     }
@@ -154,7 +218,8 @@ public class AiWritingRuntimeSnapshotService {
         return switch (type) {
             case AI_DETECTION_COMPLETED, AI_DETECTION_FAILED, AI_DETECTION_CANCELLED,
                     AI_HUMANIZER_COMPLETED, AI_HUMANIZER_FAILED, AI_HUMANIZER_CANCELLED -> type.name();
-            case AI_DETECTION_RUN_DISPATCH_QUEUED, AI_HUMANIZER_RUN_DISPATCH_QUEUED -> type.name();
+            case AI_DETECTION_RUN_DISPATCHED, AI_HUMANIZER_RUN_DISPATCHED,
+                    AI_DETECTION_RUN_DISPATCH_QUEUED, AI_HUMANIZER_RUN_DISPATCH_QUEUED -> type.name();
             case AGENT_STARTED -> VerlaAgentEventType.AGENT_STARTED.name();
             case AGENT_PROGRESS -> VerlaAgentEventType.AGENT_PROGRESS.name();
             case AGENT_ARTIFACT_UPDATED -> VerlaAgentEventType.AGENT_ARTIFACT_UPDATED.name();

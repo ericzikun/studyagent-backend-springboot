@@ -62,6 +62,8 @@ public enum VerlaAgentEventType {
     /** Assignment AgentFlow 域（Py assignment_flow_service 新事件体系） */
     /** Java 派发门控：run 命令在 outbox 中等待并发 slot（非 Py 上报） */
     ASSIGNMENT_RUN_DISPATCH_QUEUED(false),
+    /** Java 派发门控：run/retry 已成功发往 MQ，等待 Python 启动（非 Py 上报） */
+    ASSIGNMENT_RUN_DISPATCHED(false),
     ASSIGNMENT_AGENT_FLOW_STARTED(false),
     /** Assignment workflow canvas 节点快照更新，payload.node 直接透传给前端右栏任务卡片。 */
     ASSIGNMENT_AGENT_NODE_UPDATED(false),
@@ -123,8 +125,12 @@ public enum VerlaAgentEventType {
 
     /** Java 派发门控：AI Detection run 在 outbox 中等待并发 slot（非 Py 上报） */
     AI_DETECTION_RUN_DISPATCH_QUEUED(false),
+    /** Java 派发门控：AI Detection run 已成功发往 MQ，等待 Python 启动（非 Py 上报） */
+    AI_DETECTION_RUN_DISPATCHED(false),
     /** Java 派发门控：AI Humanizer run 在 outbox 中等待并发 slot（非 Py 上报） */
     AI_HUMANIZER_RUN_DISPATCH_QUEUED(false),
+    /** Java 派发门控：AI Humanizer run 已成功发往 MQ，等待 Python 启动（非 Py 上报） */
+    AI_HUMANIZER_RUN_DISPATCHED(false),
 
     /** AI Detection / Humanizer 域（Py runtime 级终态；业务流内失败也可能走 AGENT_FAILED） */
     AI_DETECTION_COMPLETED(true),

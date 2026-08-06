@@ -110,4 +110,9 @@ public interface MqOutboxRepository {
      * 统计在 FIFO 队列中排在本条 capability run 之前的 UNSENT 条数（同 action 类型）。
      */
     int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt);
+
+    /**
+     * 查询 session 下最新一条指定 action 的 outbox status；无记录返回 null。
+     */
+    Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions);
 }

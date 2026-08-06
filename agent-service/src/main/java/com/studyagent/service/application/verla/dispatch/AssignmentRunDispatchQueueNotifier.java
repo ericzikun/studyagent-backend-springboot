@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 当 assignment run 因 Java 派发门控暂缓发送时，写入 inbox 并 SSE 通知前端排队信息。
+ * 当 assignment run 因 Java 派发门控暂缓 / 放出时，写入 inbox 并 SSE 通知前端。
  */
 @Slf4j
 @Service
@@ -48,12 +48,7 @@ public class AssignmentRunDispatchQueueNotifier implements AssignmentRunDispatch
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void notifyDeferred(MqOutbox message) {
-        if (message == null || !AssignmentRunDispatchActions.isGated(message.getAction())) {
-            return;
-        }
-        if (message.getConversationId() == null || message.getSessionId() == null) {
-            log.debug("[Verla/assignment-run-dispatch] skip queue notify: missing conv/session outboxId={}",
-                    message.getId());
+        if (!canNotify(message)) {
             return;
         }
 
@@ -70,6 +65,64 @@ public class AssignmentRunDispatchQueueNotifier implements AssignmentRunDispatch
 
         String messageId = "java:assignment-run-dispatch-queued:"
                 + message.getId() + ":pos:" + queuePosition;
+        publishIfAbsent(
+                message,
+                messageId,
+                VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED,
+                payload,
+                "[Verla/assignment-run-dispatch] queued event published inboxId={} sessionId={} queuePosition={} active={} max={}",
+                queuePosition,
+                assignmentRunDispatchGate.activeCount(),
+                assignmentRunDispatchGate.maxConcurrency());
+    }
+
+    /**
+     * 在 outbox Broker ack / markAsSent 后调用；幂等键按 outboxId，避免重复清排队。
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void notifyDispatched(MqOutbox message) {
+        if (!canNotify(message)) {
+            return;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("queuePosition", null);
+        payload.put("maxConcurrency", assignmentRunDispatchGate.maxConcurrency());
+        payload.put("activeCount", assignmentRunDispatchGate.activeCount());
+        payload.put("reason", "dispatch_gate_released");
+        payload.put("label", "Starting assignment workflow");
+
+        String messageId = "java:assignment-run-dispatched:" + message.getId();
+        publishIfAbsent(
+                message,
+                messageId,
+                VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCHED,
+                payload,
+                "[Verla/assignment-run-dispatch] dispatched event published inboxId={} sessionId={} active={} max={}",
+                assignmentRunDispatchGate.activeCount(),
+                assignmentRunDispatchGate.maxConcurrency());
+    }
+
+    private boolean canNotify(MqOutbox message) {
+        if (message == null || !AssignmentRunDispatchActions.isGated(message.getAction())) {
+            return false;
+        }
+        if (message.getConversationId() == null || message.getSessionId() == null) {
+            log.debug("[Verla/assignment-run-dispatch] skip queue notify: missing conv/session outboxId={}",
+                    message.getId());
+            return false;
+        }
+        return true;
+    }
+
+    private void publishIfAbsent(
+            MqOutbox message,
+            String messageId,
+            VerlaAgentEventType eventType,
+            Map<String, Object> payload,
+            String successLog,
+            Object... successLogArgs) {
         if (inboxRepository.findByMessageId(messageId) != null) {
             return;
         }
@@ -78,7 +131,7 @@ public class AssignmentRunDispatchQueueNotifier implements AssignmentRunDispatch
                 .messageId(messageId)
                 .correlationId(message.getCorrelationId())
                 .schemaVersion(message.getSchemaVersion() == null ? 1 : message.getSchemaVersion())
-                .eventType(VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED.name())
+                .eventType(eventType.name())
                 .eventSeq(0L)
                 .conversation(VerlaConversationRef.builder()
                         .conversationId(message.getConversationId())
@@ -100,7 +153,7 @@ public class AssignmentRunDispatchQueueNotifier implements AssignmentRunDispatch
                 .turnId(message.getTurnId())
                 .sessionId(message.getSessionId())
                 .eventSeq(0L)
-                .eventType(VerlaAgentEventType.ASSIGNMENT_RUN_DISPATCH_QUEUED.name())
+                .eventType(eventType.name())
                 .payloadJson(serializeEnvelope(envelope))
                 .status(VerlaEventInbox.STATUS_PROCESSED)
                 .receivedAt(LocalDateTime.now())
@@ -120,13 +173,11 @@ public class AssignmentRunDispatchQueueNotifier implements AssignmentRunDispatch
                 .payload(payload)
                 .build();
 
-        log.info(
-                "[Verla/assignment-run-dispatch] queued event published inboxId={} sessionId={} queuePosition={} active={} max={}",
-                row.getId(),
-                message.getSessionId(),
-                queuePosition,
-                assignmentRunDispatchGate.activeCount(),
-                assignmentRunDispatchGate.maxConcurrency());
+        Object[] logArgs = new Object[successLogArgs.length + 2];
+        logArgs[0] = row.getId();
+        logArgs[1] = message.getSessionId();
+        System.arraycopy(successLogArgs, 0, logArgs, 2, successLogArgs.length);
+        log.info(successLog, logArgs);
 
         scheduleAfterCommitPublish(message.getConversationId(), ssePayload);
     }

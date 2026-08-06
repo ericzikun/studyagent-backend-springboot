@@ -604,6 +604,89 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
+    void finalizeAssignmentClarify_trustsDeliverableCountAndIgnoresPresentationProse() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        Mockito.doAnswer(invocation -> {
+            Map<String, Object> requirementForm = invocation.getArgument(1);
+            Object deliverableCountRaw = requirementForm.get("deliverable_count");
+            Map<String, Object> deliverableCount = deliverableCountRaw instanceof Map<?, ?> rawMap
+                    ? rawMap.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null)
+                    .collect(Collectors.toMap(
+                            entry -> String.valueOf(entry.getKey()),
+                            Map.Entry::getValue))
+                    : Map.of();
+            Number ppt = deliverableCount.get("ppt") instanceof Number number ? number : Integer.valueOf(0);
+            Number code = deliverableCount.get("code") instanceof Number number ? number : Integer.valueOf(0);
+            if (ppt.intValue() > 0 || code.intValue() > 0) {
+                throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+            }
+            return null;
+        }).when(entitlementService).assertAssignmentOutputAllowed(
+                Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        orchestrator.finalizeAssignmentClarify(
+                "free_user",
+                74L,
+                null,
+                "form-writing",
+                "Presentation deck analysis as a written report",
+                Map.of("output_format", "Discuss the presentation deck in prose"),
+                List.of(Map.of(
+                        "question", "Should this be slides?",
+                        "answer", "No, write a report only")),
+                Map.of(
+                        "task_title", "Presentation deck analysis report",
+                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
+                List.of());
+
+        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verify(quotaService).consumeForAssignmentRun(Mockito.any());
+    }
+
+    @Test
     void startAssignmentRunFromFinalClarify_rechecksEntitlementBeforeDispatch() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
@@ -2247,6 +2330,11 @@ class VerlaTurnOrchestratorTest {
         @Override
         public int countDeferredCapabilityRunAhead(Long id, String action, LocalDateTime createdAt) {
             return 0;
+        }
+
+        @Override
+        public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+            return null;
         }
     }
 }

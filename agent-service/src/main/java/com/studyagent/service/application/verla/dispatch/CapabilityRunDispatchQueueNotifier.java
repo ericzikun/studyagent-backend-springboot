@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 当 AI Detection / Humanizer run 因 Java 派发门控暂缓发送时，写入 inbox 并 SSE 通知前端排队信息。
+ * 当 AI Detection / Humanizer run 因 Java 派发门控暂缓 / 放出时，写入 inbox 并 SSE 通知前端。
  */
 @Slf4j
 @Service
@@ -46,12 +46,7 @@ public class CapabilityRunDispatchQueueNotifier implements CapabilityRunDispatch
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void notifyDeferred(MqOutbox message) {
-        if (message == null || !CapabilityRunDispatchActions.isGated(message.getAction())) {
-            return;
-        }
-        if (message.getConversationId() == null || message.getSessionId() == null) {
-            log.debug("[Verla/capability-run-dispatch] skip queue notify: missing conv/session outboxId={}",
-                    message.getId());
+        if (!canNotify(message)) {
             return;
         }
 
@@ -74,6 +69,69 @@ public class CapabilityRunDispatchQueueNotifier implements CapabilityRunDispatch
 
         String messageId = "java:capability-run-dispatch-queued:"
                 + message.getId() + ":pos:" + queuePosition;
+        publishIfAbsent(
+                message,
+                messageId,
+                eventType,
+                payload,
+                "[Verla/capability-run-dispatch] queued event published inboxId={} sessionId={} action={} queuePosition={} active={} max={}",
+                message.getAction(),
+                queuePosition,
+                capabilityRunDispatchGate.activeCount(message.getAction()),
+                capabilityRunDispatchGate.maxConcurrency(message.getAction()));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void notifyDispatched(MqOutbox message) {
+        if (!canNotify(message)) {
+            return;
+        }
+
+        VerlaAgentEventType eventType = resolveDispatchedEventType(message.getAction());
+        if (eventType == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("queuePosition", null);
+        payload.put("maxConcurrency", capabilityRunDispatchGate.maxConcurrency(message.getAction()));
+        payload.put("activeCount", capabilityRunDispatchGate.activeCount(message.getAction()));
+        payload.put("reason", "dispatch_gate_released");
+        payload.put("capabilityAction", message.getAction());
+        payload.put("label", "Starting…");
+
+        String messageId = "java:capability-run-dispatched:" + message.getId();
+        publishIfAbsent(
+                message,
+                messageId,
+                eventType,
+                payload,
+                "[Verla/capability-run-dispatch] dispatched event published inboxId={} sessionId={} action={} active={} max={}",
+                message.getAction(),
+                capabilityRunDispatchGate.activeCount(message.getAction()),
+                capabilityRunDispatchGate.maxConcurrency(message.getAction()));
+    }
+
+    private boolean canNotify(MqOutbox message) {
+        if (message == null || !CapabilityRunDispatchActions.isGated(message.getAction())) {
+            return false;
+        }
+        if (message.getConversationId() == null || message.getSessionId() == null) {
+            log.debug("[Verla/capability-run-dispatch] skip queue notify: missing conv/session outboxId={}",
+                    message.getId());
+            return false;
+        }
+        return true;
+    }
+
+    private void publishIfAbsent(
+            MqOutbox message,
+            String messageId,
+            VerlaAgentEventType eventType,
+            Map<String, Object> payload,
+            String successLog,
+            Object... successLogArgs) {
         if (inboxRepository.findByMessageId(messageId) != null) {
             return;
         }
@@ -124,14 +182,11 @@ public class CapabilityRunDispatchQueueNotifier implements CapabilityRunDispatch
                 .payload(payload)
                 .build();
 
-        log.info(
-                "[Verla/capability-run-dispatch] queued event published inboxId={} sessionId={} action={} queuePosition={} active={} max={}",
-                row.getId(),
-                message.getSessionId(),
-                message.getAction(),
-                queuePosition,
-                capabilityRunDispatchGate.activeCount(message.getAction()),
-                capabilityRunDispatchGate.maxConcurrency(message.getAction()));
+        Object[] logArgs = new Object[successLogArgs.length + 2];
+        logArgs[0] = row.getId();
+        logArgs[1] = message.getSessionId();
+        System.arraycopy(successLogArgs, 0, logArgs, 2, successLogArgs.length);
+        log.info(successLog, logArgs);
 
         scheduleAfterCommitPublish(message.getConversationId(), ssePayload);
     }
@@ -142,6 +197,16 @@ public class CapabilityRunDispatchQueueNotifier implements CapabilityRunDispatch
         }
         if (VerlaCommandAction.CMD_HUMANIZER_RUN.getCode().equals(action)) {
             return VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCH_QUEUED;
+        }
+        return null;
+    }
+
+    private static VerlaAgentEventType resolveDispatchedEventType(String action) {
+        if (VerlaCommandAction.CMD_DETECTION_RUN.getCode().equals(action)) {
+            return VerlaAgentEventType.AI_DETECTION_RUN_DISPATCHED;
+        }
+        if (VerlaCommandAction.CMD_HUMANIZER_RUN.getCode().equals(action)) {
+            return VerlaAgentEventType.AI_HUMANIZER_RUN_DISPATCHED;
         }
         return null;
     }

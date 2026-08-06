@@ -233,6 +233,19 @@ public class MqOutboxRepositoryImpl extends ServiceImpl<MqOutboxMapper, MqOutbox
         return Math.toIntExact(count);
     }
 
+    @Override
+    public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+        if (sessionId == null || actions == null || actions.isEmpty()) {
+            return null;
+        }
+        MqOutboxEntity entity = this.getOne(new LambdaQueryWrapper<MqOutboxEntity>()
+                .eq(MqOutboxEntity::getSessionId, sessionId)
+                .in(MqOutboxEntity::getAction, actions)
+                .orderByDesc(MqOutboxEntity::getId)
+                .last("LIMIT 1"), false);
+        return entity == null ? null : entity.getStatus();
+    }
+
     private String truncateError(String errorMessage) {
         return errorMessage != null && errorMessage.length() > 500 ? errorMessage.substring(0, 500)
                 : errorMessage;

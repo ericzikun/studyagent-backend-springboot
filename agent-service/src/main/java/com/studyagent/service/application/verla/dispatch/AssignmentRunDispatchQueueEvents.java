@@ -3,9 +3,13 @@ package com.studyagent.service.application.verla.dispatch;
 import com.studyagent.service.domain.mq.MqOutbox;
 
 /**
- * 派发门控 defer 时向前端通知排队信息的出口。
+ * 派发门控排队 / 放出时向前端通知的出口。
  */
 public interface AssignmentRunDispatchQueueEvents {
 
+    /** outbox 因门控 defer 时通知排队。 */
     void notifyDeferred(MqOutbox message);
+
+    /** outbox 已成功发往 MQ（进入派发中）时通知清排队。 */
+    void notifyDispatched(MqOutbox message);
 }

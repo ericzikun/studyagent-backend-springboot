@@ -15,11 +15,14 @@ import com.stripe.model.SubscriptionSchedule;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.CustomerUpdateParams;
 import com.stripe.param.SubscriptionScheduleCreateParams;
 import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
 import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.checkout.SessionCreateParams;
+import com.studyagent.service.domain.billing.BasicTrialAccount;
+import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -118,6 +121,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Value("${billing.checkout.mock-enabled:false}")
     private boolean billingCheckoutMockEnabled;
 
+    @Value("${billing.intro-trial.enabled:true}")
+    private boolean introTrialEnabled;
+
+    @Value("${billing.intro-trial.plan-code:" + IntroTrialPlans.TRIAL_PLAN_CODE + "}")
+    private String introTrialPlanCode;
+
+    @Value("${billing.intro-trial.conversion-plan-code:" + IntroTrialPlans.CONVERSION_PLAN_CODE + "}")
+    private String introTrialConversionPlanCode;
+
+    @Value("${billing.intro-trial.allow-direct-purchase-basic:false}")
+    private boolean allowDirectPurchaseBasic;
+
     @PostConstruct
     public void initializeStripe() {
         if (stripeSecretKey != null && !stripeSecretKey.isBlank()) {
@@ -196,6 +211,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         if (BLOCKING_SUBSCRIPTION_STATUSES.contains(userSubscription.getStatus())
                 && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
+            rejectUnsupportedPaidPlanTarget(userSubscription, plan);
             return createManualUpgradeCheckout(
                     clerkUserId,
                     customerEmail,
@@ -206,20 +222,40 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     resumeToken);
         }
 
+        assertLapsedCheckoutAllowed(userSubscription, plan);
+
+        boolean introTrialCheckout = introTrialEnabled && isIntroTrialPlan(plan);
+        String conversionPlanCode = introTrialCheckout ? resolveConversionPlanCode(plan) : null;
+        String orderType = introTrialCheckout
+                ? IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL
+                : "subscription_initial";
+        String purchaseType = introTrialCheckout
+                ? IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL
+                : "subscription";
+
         CheckoutSessionResult reusableCheckout = findReusableInitialCheckout(
-                clerkUserId, planCode, plan, resumeToken);
+                clerkUserId, planCode, plan, resumeToken, orderType);
         if (reusableCheckout != null) {
             return reusableCheckout;
         }
 
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+        if (introTrialCheckout) {
+            assertIntroTrialEligible(userSubscription, customerId);
+        }
         String finalSuccessUrl = resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken);
         String finalCancelUrl = resolveCheckoutCancelUrl(requestedCancelUrl);
-        SessionCreateParams.SubscriptionData subscriptionData = SessionCreateParams.SubscriptionData.builder()
-                .putMetadata("purchase_type", "subscription")
-                .putMetadata("clerk_user_id", clerkUserId)
-                .putMetadata("plan_code", planCode)
-                .build();
+        SessionCreateParams.SubscriptionData.Builder subscriptionDataBuilder =
+                SessionCreateParams.SubscriptionData.builder()
+                        .putMetadata("purchase_type", purchaseType)
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("plan_code", planCode);
+        if (introTrialCheckout) {
+            subscriptionDataBuilder
+                    .putMetadata("conversion_plan_code", conversionPlanCode)
+                    .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION);
+        }
+        SessionCreateParams.SubscriptionData subscriptionData = subscriptionDataBuilder.build();
         SessionCreateParams params = buildSubscriptionCheckoutParams(
                 clerkUserId,
                 customerId,
@@ -227,7 +263,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 plan,
                 finalSuccessUrl,
                 finalCancelUrl,
-                subscriptionData);
+                subscriptionData,
+                purchaseType,
+                conversionPlanCode);
 
         try {
             return createInitialSubscriptionCheckout(
@@ -235,7 +273,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     planCode,
                     plan,
                     resumeToken,
-                    params);
+                    params,
+                    orderType);
         } catch (StripeException e) {
             if (shouldRetrySubscriptionCheckoutWithFreshCustomer(userSubscription, e)) {
                 UserSubscriptionEntity retrySubscription = userSubscription;
@@ -243,6 +282,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     retrySubscription = getOrCreateUserSubscription(clerkUserId);
                 }
                 String retriedCustomerId = ensureStripeCustomer(retrySubscription, clerkUserId, customerEmail);
+                if (introTrialCheckout) {
+                    assertIntroTrialEligible(retrySubscription, retriedCustomerId);
+                }
                 SessionCreateParams retriedParams = buildSubscriptionCheckoutParams(
                         clerkUserId,
                         retriedCustomerId,
@@ -250,14 +292,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         plan,
                         finalSuccessUrl,
                         finalCancelUrl,
-                        subscriptionData);
+                        subscriptionData,
+                        purchaseType,
+                        conversionPlanCode);
                 try {
                     return createInitialSubscriptionCheckout(
                             clerkUserId,
                             planCode,
                             plan,
                             resumeToken,
-                            retriedParams);
+                            retriedParams,
+                            orderType);
                 } catch (StripeException retryException) {
                     throw stripeFailure("Create subscription Checkout failed", retryException);
                 }
@@ -277,8 +322,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SubscriptionPlanEntity plan,
             String finalSuccessUrl,
             String finalCancelUrl,
-            SessionCreateParams.SubscriptionData subscriptionData) {
-        return SessionCreateParams.builder()
+            SessionCreateParams.SubscriptionData subscriptionData,
+            String purchaseType,
+            String conversionPlanCode) {
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
@@ -288,11 +335,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setPrice(plan.getStripePriceId())
                         .setQuantity(1L)
                         .build())
-                .putMetadata("purchase_type", "subscription")
+                .putMetadata("purchase_type", purchaseType)
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
-                .setSubscriptionData(subscriptionData)
-                .build();
+                .setSubscriptionData(subscriptionData);
+        if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
+            builder.putMetadata("conversion_plan_code", conversionPlanCode)
+                    .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION);
+        }
+        return builder.build();
     }
 
     private CheckoutSessionResult createInitialSubscriptionCheckout(
@@ -300,12 +351,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String planCode,
             SubscriptionPlanEntity plan,
             String resumeToken,
-            SessionCreateParams params) throws StripeException {
+            SessionCreateParams params,
+            String orderType) throws StripeException {
         Session session = createStripeCheckoutSession(params);
         try {
             insertPendingOrder(
                     clerkUserId,
-                    "subscription_initial",
+                    orderType,
                     "subscription",
                     planCode,
                     planCode,
@@ -336,11 +388,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String clerkUserId,
             String planCode,
             SubscriptionPlanEntity plan,
-            String resumeToken) {
+            String resumeToken,
+            String orderType) {
         RechargeOrderEntity pending = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
-                        .eq(RechargeOrderEntity::getOrderType, "subscription_initial")
+                        .eq(RechargeOrderEntity::getOrderType, orderType)
                         .in(RechargeOrderEntity::getStatus,
                                 List.of("pending", "pending_checkout", "checkout_created"))
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
@@ -404,12 +457,20 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String subscriptionId = hasText(current.getStripeSubscriptionId())
                 ? current.getStripeSubscriptionId()
                 : "mock_sub_" + UUID.randomUUID().toString().replace("-", "");
-        LocalDateTime currentPeriodEnd = "year".equals(plan.getBillingInterval())
-                ? now.plusYears(1)
-                : now.plusMonths(1);
-        LocalDateTime quotaPeriodEnd = "year".equals(plan.getBillingInterval())
-                ? now.plusMonths(1)
-                : currentPeriodEnd;
+        boolean introTrial = isIntroTrialPlan(plan);
+        String conversionPlanCode = introTrial ? resolveConversionPlanCode(plan) : null;
+        LocalDateTime currentPeriodEnd = introTrial
+                ? now.plusDays(IntroTrialPlans.resolveTrialDays(plan.getTrialDays()))
+                : resolvePeriodEnd(now, plan.getBillingInterval());
+        LocalDateTime quotaPeriodEnd = introTrial
+                ? currentPeriodEnd
+                : ("year".equals(plan.getBillingInterval()) ? now.plusMonths(1) : currentPeriodEnd);
+        LocalDateTime introTrialUsedAt = introTrial
+                ? (current.getIntroTrialUsedAt() == null ? now : current.getIntroTrialUsedAt())
+                : current.getIntroTrialUsedAt();
+        String subscriptionPhase = introTrial
+                ? IntroTrialPlans.PHASE_INTRO
+                : IntroTrialPlans.PHASE_STANDARD;
 
         userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                 .eq(UserSubscriptionEntity::getId, current.getId())
@@ -424,10 +485,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, now)
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
                 .set(UserSubscriptionEntity::getCancelAtPeriodEnd, false)
-                .set(UserSubscriptionEntity::getPendingPlanCode, null)
-                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getPendingPlanCode, conversionPlanCode)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, introTrial ? currentPeriodEnd : null)
                 .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
                 .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
+                .set(UserSubscriptionEntity::getIntroTrialUsedAt, introTrialUsedAt)
+                .set(UserSubscriptionEntity::getSubscriptionPhase, subscriptionPhase)
                 .set(UserSubscriptionEntity::getLastSyncedAt, now)
                 .set(UserSubscriptionEntity::getUpdatedAt, now));
         current.setTier(plan.getTier());
@@ -441,10 +504,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         current.setQuotaPeriodStart(now);
         current.setQuotaPeriodEnd(quotaPeriodEnd);
         current.setCancelAtPeriodEnd(false);
-        current.setPendingPlanCode(null);
-        current.setPendingEffectiveAt(null);
+        current.setPendingPlanCode(conversionPlanCode);
+        current.setPendingEffectiveAt(introTrial ? currentPeriodEnd : null);
         current.setPendingUpgradeOrderNo(null);
         current.setPendingUpgradeExpiresAt(null);
+        current.setIntroTrialUsedAt(introTrialUsedAt);
+        current.setSubscriptionPhase(subscriptionPhase);
         current.setLastSyncedAt(now);
         current.setUpdatedAt(now);
 
@@ -456,7 +521,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 now.toInstant(ZoneOffset.UTC),
                 quotaPeriodEnd.toInstant(ZoneOffset.UTC),
                 sessionId,
-                "subscription_initial");
+                introTrial ? IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL : "subscription_initial");
 
         String checkoutUrl = resolveMockCheckoutSuccessUrl(
                 resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken),
@@ -885,8 +950,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken) {
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         PlanChangeAction action = classifyPlanChange(
+                currentPlan.getPlanCode(),
                 currentPlan.getTier(),
                 currentPlan.getBillingInterval(),
+                targetPlan.getPlanCode(),
                 targetPlan.getTier(),
                 targetPlan.getBillingInterval());
         if (action == PlanChangeAction.UNSUPPORTED) {
@@ -1160,8 +1227,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         return switch (classifyPlanChange(
+                currentPlan.getPlanCode(),
                 currentPlan.getTier(),
                 currentPlan.getBillingInterval(),
+                targetPlan.getPlanCode(),
                 targetPlan.getTier(),
                 targetPlan.getBillingInterval())) {
             case NOOP -> toResult(current);
@@ -1186,8 +1255,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         PlanChangeAction action = classifyPlanChange(
+                currentPlan.getPlanCode(),
                 currentPlan.getTier(),
                 currentPlan.getBillingInterval(),
+                targetPlan.getPlanCode(),
                 targetPlan.getTier(),
                 targetPlan.getBillingInterval());
         if (action == PlanChangeAction.UNSUPPORTED) {
@@ -1234,7 +1305,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 && ("active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus()))) {
             return toPlan(requireRuntimePlan(entity.getPlanCode()));
         }
-        return BillingPlan.freePlan();
+        // Free hard-cut: unpaid users get zero entitlements (not synthetic Free).
+        return introTrialEnabled ? BillingPlan.lapsedPlan() : BillingPlan.freePlan();
     }
 
     @Override
@@ -1244,6 +1316,265 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return false;
         }
         return "active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void fulfillIntroTrialSubscription(
+            String clerkUserId,
+            String stripeCustomerId,
+            String stripeSubscriptionId) {
+        if (!introTrialEnabled || !hasText(clerkUserId) || !hasText(stripeSubscriptionId)) {
+            return;
+        }
+        UserSubscriptionEntity current = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (current == null) {
+            current = getOrCreateUserSubscription(clerkUserId);
+            current = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        }
+        if (current == null) {
+            throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "User subscription not found");
+        }
+        markIntroTrialUsed(current, stripeCustomerId);
+        ensureIntroTrialConversionSchedule(current, stripeSubscriptionId);
+    }
+
+    private void assertLapsedCheckoutAllowed(
+            UserSubscriptionEntity userSubscription,
+            SubscriptionPlanEntity plan) {
+        if (!introTrialEnabled) {
+            return;
+        }
+        if (isIntroTrialPlan(plan)) {
+            return;
+        }
+        // Unpaid users may skip Trial by buying Plus / Pro only.
+        if ("plus".equalsIgnoreCase(plan.getTier()) || "pro".equalsIgnoreCase(plan.getTier())) {
+            return;
+        }
+        if ("basic".equalsIgnoreCase(plan.getTier()) && !allowDirectPurchaseBasic) {
+            throw new BillingDomainException(
+                    "BASIC_REQUIRES_TRIAL",
+                    "Basic requires completing Basic Trial first; buy Plus/Pro to skip");
+        }
+    }
+
+    private void rejectUnsupportedPaidPlanTarget(
+            UserSubscriptionEntity current,
+            SubscriptionPlanEntity targetPlan) {
+        if (!introTrialEnabled) {
+            return;
+        }
+        if (isIntroTrialPlan(targetPlan)) {
+            throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "Cannot switch an active subscription to Basic Trial");
+        }
+        if (current != null
+                && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
+                && IntroTrialPlans.isBasicPaidTier(targetPlan.getTier())
+                && !isIntroTrialPlan(targetPlan)) {
+            throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "Basic renews automatically after the paid trial");
+        }
+    }
+
+    private void assertIntroTrialEligible(UserSubscriptionEntity current, String stripeCustomerId) {
+        if (current != null && current.getIntroTrialUsedAt() != null) {
+            throw new BillingDomainException(
+                    "TRIAL_ALREADY_USED",
+                    "Basic Trial can only be used once per Stripe customer");
+        }
+        if (hasPaidIntroTrialOrder(current == null ? null : current.getClerkUserId())) {
+            throw new BillingDomainException(
+                    "TRIAL_ALREADY_USED",
+                    "Basic Trial can only be used once per Stripe customer");
+        }
+        if (isIntroTrialUsedOnStripeCustomer(stripeCustomerId)) {
+            throw new BillingDomainException(
+                    "TRIAL_ALREADY_USED",
+                    "Basic Trial can only be used once per Stripe customer");
+        }
+    }
+
+    private boolean hasPaidIntroTrialOrder(String clerkUserId) {
+        if (!hasText(clerkUserId)) {
+            return false;
+        }
+        Long count = rechargeOrderMapper.selectCount(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .eq(RechargeOrderEntity::getOrderType, IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)
+                        .in(RechargeOrderEntity::getStatus, List.of("paid", "completed", "switching")));
+        return count != null && count > 0;
+    }
+
+    private boolean isIntroTrialUsedOnStripeCustomer(String stripeCustomerId) {
+        if (!hasText(stripeCustomerId) || !isRealStripeReference(stripeCustomerId)) {
+            return false;
+        }
+        try {
+            Customer customer = Customer.retrieve(stripeCustomerId);
+            if (customer.getMetadata() == null) {
+                return false;
+            }
+            return "true".equalsIgnoreCase(
+                    customer.getMetadata().get(IntroTrialPlans.STRIPE_CUSTOMER_META_INTRO_TRIAL_USED));
+        } catch (StripeException e) {
+            log.warn("Failed to read Stripe customer intro trial metadata: customer={}", stripeCustomerId, e);
+            return false;
+        }
+    }
+
+    private void markIntroTrialUsed(UserSubscriptionEntity current, String stripeCustomerId) {
+        LocalDateTime now = LocalDateTime.now();
+        if (current.getIntroTrialUsedAt() == null) {
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, current.getId())
+                    .isNull(UserSubscriptionEntity::getIntroTrialUsedAt)
+                    .set(UserSubscriptionEntity::getIntroTrialUsedAt, now)
+                    .set(UserSubscriptionEntity::getSubscriptionPhase, IntroTrialPlans.PHASE_INTRO)
+                    .set(UserSubscriptionEntity::getUpdatedAt, now));
+            current.setIntroTrialUsedAt(now);
+            current.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
+        }
+        String customerId = firstNonBlank(stripeCustomerId, current.getStripeCustomerId());
+        if (!hasText(customerId) || !isRealStripeReference(customerId)) {
+            return;
+        }
+        try {
+            Customer.retrieve(customerId).update(CustomerUpdateParams.builder()
+                    .putMetadata(IntroTrialPlans.STRIPE_CUSTOMER_META_INTRO_TRIAL_USED, "true")
+                    .build());
+        } catch (StripeException e) {
+            throw stripeFailure("Mark Stripe customer intro trial used failed", e);
+        }
+    }
+
+    private void ensureIntroTrialConversionSchedule(
+            UserSubscriptionEntity current,
+            String stripeSubscriptionId) {
+        String conversionPlanCode = resolveConversionPlanCodeForUser(current);
+        SubscriptionPlanEntity conversionPlan = requirePlan(conversionPlanCode, true);
+        try {
+            Subscription stripeSubscription = retrieveStripeSubscription(stripeSubscriptionId);
+            if (hasText(stripeSubscription.getSchedule()) || hasText(current.getStripeScheduleId())) {
+                // Already scheduled (idempotent webhook retry).
+                if (hasText(stripeSubscription.getSchedule()) && !hasText(current.getStripeScheduleId())) {
+                    LocalDateTime now = LocalDateTime.now();
+                    userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                            .eq(UserSubscriptionEntity::getId, current.getId())
+                            .set(UserSubscriptionEntity::getStripeScheduleId, stripeSubscription.getSchedule())
+                            .set(UserSubscriptionEntity::getPendingPlanCode, conversionPlanCode)
+                            .set(UserSubscriptionEntity::getPendingEffectiveAt,
+                                    fromEpoch(stripeSubscription.getCurrentPeriodEnd()))
+                            .set(UserSubscriptionEntity::getUpdatedAt, now));
+                    current.setStripeScheduleId(stripeSubscription.getSchedule());
+                    current.setPendingPlanCode(conversionPlanCode);
+                    current.setPendingEffectiveAt(fromEpoch(stripeSubscription.getCurrentPeriodEnd()));
+                }
+                return;
+            }
+            SubscriptionSchedule schedule = createStripeSubscriptionSchedule(
+                    SubscriptionScheduleCreateParams.builder()
+                            .setFromSubscription(stripeSubscriptionId)
+                            .build(),
+                    RequestOptions.builder()
+                            .setIdempotencyKey("intro-trial-schedule:create:" + stripeSubscriptionId)
+                            .build());
+            SubscriptionItem item = requireSingleSubscriptionItem(stripeSubscription);
+            Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
+            Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
+            Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
+            SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
+                    .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
+                    .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
+                    .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                            .setStartDate(currentPhaseStart)
+                            .setEndDate(currentPhaseEnd)
+                            .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                            .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                    .setPrice(item.getPrice().getId())
+                                    .setQuantity(quantity)
+                                    .build())
+                            .build())
+                    .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                            .setStartDate(currentPhaseEnd)
+                            .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                            .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                    .setPrice(conversionPlan.getStripePriceId())
+                                    .setQuantity(1L)
+                                    .build())
+                            .build())
+                    .putMetadata("clerk_user_id", current.getClerkUserId())
+                    .putMetadata("pending_plan_code", conversionPlanCode)
+                    .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION)
+                    .build();
+            schedule = updateStripeSubscriptionSchedule(
+                    schedule,
+                    updateParams,
+                    RequestOptions.builder()
+                            .setIdempotencyKey("intro-trial-schedule:update:" + schedule.getId()
+                                    + ":" + conversionPlanCode + ":" + currentPhaseEnd)
+                            .build());
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime pendingEffectiveAt = fromEpoch(currentPhaseEnd);
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, current.getId())
+                    .set(UserSubscriptionEntity::getStripeScheduleId, schedule.getId())
+                    .set(UserSubscriptionEntity::getPendingPlanCode, conversionPlanCode)
+                    .set(UserSubscriptionEntity::getPendingEffectiveAt, pendingEffectiveAt)
+                    .set(UserSubscriptionEntity::getSubscriptionPhase, IntroTrialPlans.PHASE_INTRO)
+                    .set(UserSubscriptionEntity::getUpdatedAt, now));
+            current.setStripeScheduleId(schedule.getId());
+            current.setPendingPlanCode(conversionPlanCode);
+            current.setPendingEffectiveAt(pendingEffectiveAt);
+            current.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
+        } catch (StripeException e) {
+            throw stripeFailure("Create intro trial conversion schedule failed", e);
+        }
+    }
+
+    private boolean isIntroTrialPlan(SubscriptionPlanEntity plan) {
+        return plan != null
+                && IntroTrialPlans.isIntroTrialPlan(plan.getPlanCode(), plan.getOfferKind());
+    }
+
+    private String resolveConversionPlanCode(SubscriptionPlanEntity trialPlan) {
+        if (trialPlan != null && hasText(trialPlan.getConvertsToPlanCode())) {
+            return trialPlan.getConvertsToPlanCode();
+        }
+        String planCode = trialPlan == null ? null : trialPlan.getPlanCode();
+        String resolved = IntroTrialPlans.defaultConversionPlanCode(planCode);
+        return hasText(resolved) ? resolved : introTrialConversionPlanCode;
+    }
+
+    private String resolveConversionPlanCodeForUser(UserSubscriptionEntity current) {
+        if (current != null && hasText(current.getPendingPlanCode())) {
+            return current.getPendingPlanCode();
+        }
+        if (current != null && hasText(current.getPlanCode())) {
+            SubscriptionPlanEntity trialPlan = subscriptionPlanMapper.selectOne(
+                    new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                            .eq(SubscriptionPlanEntity::getPlanCode, current.getPlanCode())
+                            .last("LIMIT 1"));
+            if (trialPlan != null) {
+                return resolveConversionPlanCode(trialPlan);
+            }
+            return IntroTrialPlans.defaultConversionPlanCode(current.getPlanCode());
+        }
+        return introTrialConversionPlanCode;
+    }
+
+    private LocalDateTime resolvePeriodEnd(LocalDateTime start, String billingInterval) {
+        if ("year".equals(billingInterval)) {
+            return start.plusYears(1);
+        }
+        if ("week".equals(billingInterval)) {
+            return start.plusWeeks(1);
+        }
+        return start.plusMonths(1);
     }
 
     private SubscriptionResult setCancelAtPeriodEnd(String clerkUserId, boolean cancel) {
@@ -1962,10 +2293,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {
+        String offerKind = hasText(entity.getOfferKind())
+                ? entity.getOfferKind()
+                : (IntroTrialPlans.isIntroTrialPlanCode(entity.getPlanCode())
+                ? IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL
+                : IntroTrialPlans.OFFER_KIND_STANDARD);
         return BillingPlan.builder()
                 .planCode(entity.getPlanCode())
                 .tier(entity.getTier())
+                .offerKind(offerKind)
                 .billingInterval(entity.getBillingInterval())
+                .trialDays(entity.getTrialDays())
+                .convertsToPlanCode(entity.getConvertsToPlanCode())
                 .stripeProductId(entity.getStripeProductId())
                 .stripePriceId(entity.getStripePriceId())
                 .priceCents(entity.getPriceCents())
@@ -2005,8 +2344,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private SubscriptionResult toResult(UserSubscriptionEntity entity) {
         String status = entity.getStatus();
-        if ("canceled".equalsIgnoreCase(status)) {
+        String tier = entity.getTier();
+        // Frontend unpaid contract uses free (not lapsed), even after Free hard-cut.
+        if ("canceled".equalsIgnoreCase(status)
+                || "free".equalsIgnoreCase(status)
+                || "lapsed".equalsIgnoreCase(status)) {
             status = "free";
+            tier = "free";
         }
         BillingAccessState accessState = BillingEntitlementPolicy.resolveAccessState(
                 status,
@@ -2017,15 +2361,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 status, entity.getGraceEndAt(), LocalDateTime.now());
         boolean canRefresh = BillingEntitlementPolicy.allowsPlanRefresh(status);
         boolean canPurchaseAddon = BillingEntitlementPolicy.allowsAddonPurchase(status);
+        boolean introTrialUsed = entity.getIntroTrialUsedAt() != null;
+        boolean onIntroTrial = IntroTrialPlans.isIntroTrialPlanCode(entity.getPlanCode())
+                || IntroTrialPlans.PHASE_INTRO.equalsIgnoreCase(entity.getSubscriptionPhase());
+        BasicTrialAccount basicTrial = resolveBasicTrialAccount(entity, canConsume, onIntroTrial, introTrialUsed);
         return SubscriptionResult.builder()
-                .tier(entity.getTier())
+                .tier(tier)
                 .planCode(entity.getPlanCode())
                 .status(status)
                 .accessState(accessState)
                 .canConsumePaidEntitlements(canConsume)
                 .canRefreshPlan(canRefresh)
                 .canPurchaseAddon(canPurchaseAddon)
-                .availableActions(resolveAvailableActions(accessState, canPurchaseAddon))
+                .availableActions(resolveAvailableActions(accessState, canPurchaseAddon, introTrialUsed))
                 .stripeCustomerId(entity.getStripeCustomerId())
                 .stripeSubscriptionId(entity.getStripeSubscriptionId())
                 .stripeScheduleId(entity.getStripeScheduleId())
@@ -2036,10 +2384,59 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .cancelAtPeriodEnd(Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()))
                 .pendingPlanCode(entity.getPendingPlanCode())
                 .pendingEffectiveAt(entity.getPendingEffectiveAt())
+                .basicTrial(basicTrial)
+                .build();
+    }
+
+    private BasicTrialAccount resolveBasicTrialAccount(
+            UserSubscriptionEntity entity,
+            boolean canConsume,
+            boolean onIntroTrial,
+            boolean introTrialUsed) {
+        String convertsToPlanCode = null;
+        String convertsToBillingInterval = null;
+        if (onIntroTrial) {
+            convertsToPlanCode = firstNonBlank(
+                    entity.getPendingPlanCode(),
+                    resolveConversionPlanCodeForUser(entity));
+            convertsToBillingInterval = IntroTrialPlans.conversionBillingInterval(convertsToPlanCode);
+            if (convertsToBillingInterval == null && hasText(convertsToPlanCode)) {
+                SubscriptionPlanEntity conversion = subscriptionPlanMapper.selectOne(
+                        new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                                .eq(SubscriptionPlanEntity::getPlanCode, convertsToPlanCode)
+                                .last("LIMIT 1"));
+                if (conversion != null) {
+                    convertsToBillingInterval = conversion.getBillingInterval();
+                }
+            }
+        }
+
+        String eligibility;
+        if (onIntroTrial && canConsume) {
+            eligibility = IntroTrialPlans.ELIGIBILITY_ACTIVE_TRIAL;
+        } else if (canConsume) {
+            eligibility = IntroTrialPlans.ELIGIBILITY_ACTIVE_SUBSCRIPTION;
+        } else if (introTrialUsed) {
+            eligibility = IntroTrialPlans.ELIGIBILITY_USED;
+        } else if (!introTrialEnabled) {
+            eligibility = IntroTrialPlans.ELIGIBILITY_UNKNOWN;
+        } else {
+            eligibility = IntroTrialPlans.ELIGIBILITY_ELIGIBLE;
+        }
+
+        return BasicTrialAccount.builder()
+                .eligibility(eligibility)
+                .active(onIntroTrial && canConsume)
+                .used(introTrialUsed)
+                .eligible(IntroTrialPlans.ELIGIBILITY_ELIGIBLE.equals(eligibility))
+                .endsAt(onIntroTrial && canConsume ? entity.getCurrentPeriodEnd() : null)
+                .convertsToPlanCode(convertsToPlanCode)
+                .convertsToBillingInterval(convertsToBillingInterval)
                 .build();
     }
 
     private SubscriptionResult freeSubscription() {
+        boolean hardCut = introTrialEnabled;
         return SubscriptionResult.builder()
                 .tier("free")
                 .status("free")
@@ -2047,19 +2444,36 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .canConsumePaidEntitlements(false)
                 .canRefreshPlan(false)
                 .canPurchaseAddon(false)
-                .availableActions(List.of("subscribe"))
+                .availableActions(hardCut
+                        ? List.of("subscribe", "start_intro_trial")
+                        : List.of("subscribe"))
                 .isAdmin(false)
                 .isQuotaVip(false)
-                .effectiveMaxFiles(3)
-                .effectiveMaxFollowupEdits(3)
+                .effectiveMaxFiles(hardCut ? 0 : 3)
+                .effectiveMaxFollowupEdits(hardCut ? 0 : 3)
                 .effectiveAllowedOutputTypes(List.of("writing"))
                 .cancelAtPeriodEnd(false)
+                .basicTrial(BasicTrialAccount.builder()
+                        .eligibility(hardCut
+                                ? IntroTrialPlans.ELIGIBILITY_ELIGIBLE
+                                : IntroTrialPlans.ELIGIBILITY_UNKNOWN)
+                        .active(false)
+                        .used(false)
+                        .eligible(hardCut)
+                        .build())
                 .build();
     }
 
     private List<String> resolveAvailableActions(
             BillingAccessState accessState,
             boolean canPurchaseAddon) {
+        return resolveAvailableActions(accessState, canPurchaseAddon, false);
+    }
+
+    private List<String> resolveAvailableActions(
+            BillingAccessState accessState,
+            boolean canPurchaseAddon,
+            boolean introTrialUsed) {
         java.util.ArrayList<String> actions = new java.util.ArrayList<>();
         if (canPurchaseAddon) {
             actions.add("purchase_addon");
@@ -2068,7 +2482,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             case ACTIVE -> actions.addAll(List.of("change_plan", "cancel_subscription"));
             case ACTIVE_ENDING -> actions.add("resume_subscription");
             case GRACE, PAYMENT_PENDING, SUSPENDED -> actions.add("resolve_payment");
-            case TERMINATED -> actions.add("subscribe");
+            case TERMINATED -> {
+                actions.add("subscribe");
+                if (!introTrialUsed && introTrialEnabled) {
+                    actions.add("start_intro_trial");
+                }
+            }
         }
         return List.copyOf(actions);
     }
@@ -2228,21 +2647,42 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private int tierRank(String tier) {
-        return switch (tier) {
-            case "basic" -> 1;
-            case "plus" -> 2;
-            case "pro" -> 3;
-            default -> 0;
-        };
+        return tierRankStatic(tier);
     }
 
+    /**
+     * Plan-code-aware change classifier. Trial SKUs share {@code tier=basic} with
+     * standard Basic, so callers must pass plan codes to avoid false NOOP.
+     */
     static PlanChangeAction classifyPlanChange(
+            String currentPlanCode,
             String currentTier,
             String currentInterval,
+            String targetPlanCode,
             String targetTier,
             String targetInterval) {
         if (currentTier == null || currentInterval == null || targetTier == null || targetInterval == null) {
             return PlanChangeAction.UNSUPPORTED;
+        }
+        if (currentPlanCode != null
+                && targetPlanCode != null
+                && currentPlanCode.equalsIgnoreCase(targetPlanCode)) {
+            return PlanChangeAction.NOOP;
+        }
+        boolean currentTrial = IntroTrialPlans.isIntroTrialPlanCode(currentPlanCode);
+        boolean targetTrial = IntroTrialPlans.isIntroTrialPlanCode(targetPlanCode);
+        // Cannot change into Basic Trial from any existing subscription.
+        if (targetTrial) {
+            return PlanChangeAction.UNSUPPORTED;
+        }
+        // Trial → Basic is automatic via Schedule; Trial → Plus/Pro is immediate upgrade.
+        if (currentTrial) {
+            if (IntroTrialPlans.isBasicPaidTier(targetTier)) {
+                return PlanChangeAction.UNSUPPORTED;
+            }
+            return tierRankStatic(targetTier) > tierRankStatic("basic")
+                    ? PlanChangeAction.IMMEDIATE_UPGRADE
+                    : PlanChangeAction.UNSUPPORTED;
         }
         if (currentTier.equals(targetTier) && currentInterval.equals(targetInterval)) {
             return PlanChangeAction.NOOP;
@@ -2260,6 +2700,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 : PlanChangeAction.DEFERRED_CHANGE;
     }
 
+    /** @deprecated prefer plan-code-aware overload */
+    static PlanChangeAction classifyPlanChange(
+            String currentTier,
+            String currentInterval,
+            String targetTier,
+            String targetInterval) {
+        return classifyPlanChange(null, currentTier, currentInterval, null, targetTier, targetInterval);
+    }
+
     private static boolean isSameTierIntervalSwitch(String currentTier, String targetTier) {
         return currentTier.equals(targetTier);
     }
@@ -2273,8 +2722,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private static int tierRankStatic(String tier) {
-        return switch (tier) {
-            case "basic" -> 1;
+        if (tier == null) {
+            return 0;
+        }
+        return switch (tier.toLowerCase(Locale.ROOT)) {
+            case "basic", "basic_trial" -> 1;
             case "plus" -> 2;
             case "pro" -> 3;
             default -> 0;

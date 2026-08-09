@@ -26,6 +26,7 @@ import com.studyagent.infra.mapper.StripeWebhookEventMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import com.studyagent.service.domain.billing.BillingReviewNotifyRequest;
 import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
@@ -87,6 +88,8 @@ class StripeBillingWebhookServiceTest {
     private ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
     @Mock
     private ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
+    @Mock
+    private ObjectProvider<BillingDomainService> billingDomainServiceProvider;
     @Mock
     private PlatformTransactionManager transactionManager;
     @Mock
@@ -402,6 +405,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -472,6 +476,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -532,6 +537,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -692,6 +698,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -747,6 +754,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -794,6 +802,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -838,6 +847,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -889,6 +899,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1009,6 +1020,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
                 refunded.set(true);
@@ -1046,6 +1058,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
@@ -1096,6 +1109,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1153,6 +1167,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Long retrieveTestClockFrozenTime(String testClockId) {
@@ -1340,6 +1355,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1421,6 +1437,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1497,6 +1514,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1576,6 +1594,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -1671,6 +1690,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -2005,6 +2025,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             void refundIneligibleAddon(String paymentIntentId, String stripeSessionId) {
@@ -2108,6 +2129,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
@@ -2479,6 +2501,7 @@ class StripeBillingWebhookServiceTest {
                 analyticsService,
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
                 transactionManager);
     }
 

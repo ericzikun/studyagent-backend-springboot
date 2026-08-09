@@ -238,6 +238,11 @@ payment:
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/payment-canceled}
 
 billing:
+  intro-trial:
+    enabled: ${BILLING_INTRO_TRIAL_ENABLED:true}
+    plan-code: ${BILLING_INTRO_TRIAL_PLAN_CODE:basic_trial_to_monthly}
+    conversion-plan-code: ${BILLING_INTRO_TRIAL_CONVERSION_PLAN_CODE:basic_monthly}
+    allow-direct-purchase-basic: ${BILLING_INTRO_TRIAL_ALLOW_DIRECT_BASIC:false}
   upgrade-pending-cleanup:
     enabled: ${BILLING_UPGRADE_PENDING_CLEANUP_ENABLED:true}
     retention-hours: ${BILLING_UPGRADE_PENDING_CLEANUP_RETENTION_HOURS:24}

@@ -125,8 +125,19 @@ public class DefaultEntitlementService implements EntitlementService {
         }
         EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
         Integer limit = entitlements.maxFiles();
-        if (limit == null || limit <= 0) {
+        // null = unlimited (Pro); 0 = lapsed / blocked after Free hard-cut
+        if (limit == null) {
             return;
+        }
+        if (limit <= 0) {
+            throw BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
+                    .currentPlan(currentPlanData(entitlements))
+                    .reasonCode("file_limit_reached")
+                    .purchaseProductId("assignment")
+                    .blockedAction("upload_sign")
+                    .maxFiles(0)
+                    .activeFiles(0L)
+                    .build());
         }
         LocalDateTime pendingCutoff = LocalDateTime.now().minusSeconds(Math.max(60L, signTtlSeconds));
         long activeCount = attachmentRepository.countActiveUserUploadsForConversation(conversationId, pendingCutoff);
@@ -162,7 +173,18 @@ public class DefaultEntitlementService implements EntitlementService {
         sessionRepository.findByIdForUpdate(assignmentSessionId);
         EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
         Integer limit = entitlements.maxFollowupEdits();
-        if (limit != null && limit > 0) {
+        // null = unlimited (Pro); 0 = lapsed / blocked after Free hard-cut
+        if (limit != null && limit <= 0) {
+            throw BusinessException.withData(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED, CommercialBlockData.builder()
+                    .currentPlan(currentPlanData(entitlements))
+                    .reasonCode("followup_edit_limit_reached")
+                    .purchaseProductId("assignment")
+                    .blockedAction("assignment_followup_edit")
+                    .maxFollowupEdits(0)
+                    .usedFollowupEdits(0L)
+                    .build());
+        }
+        if (limit != null) {
             long activeCount = followupEditUsageRepository.countActiveByAssignmentSessionId(assignmentSessionId);
             if (activeCount >= limit) {
                 throw BusinessException.withData(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED, CommercialBlockData.builder()

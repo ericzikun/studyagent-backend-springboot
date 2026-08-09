@@ -3,6 +3,11 @@
 
 USE studyagent;
 
+-- Both trial SKUs share the same $2.99 intro Stripe Price; conversion target differs.
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_BASIC_TRIAL', stripe_price_id = 'price_BASIC_TRIAL_WEEKLY'
+WHERE plan_code IN ('basic_trial_to_monthly', 'basic_trial_to_yearly');
+
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC', stripe_price_id = 'price_BASIC_MONTHLY'
 WHERE plan_code = 'basic_monthly';

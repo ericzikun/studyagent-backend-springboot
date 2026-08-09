@@ -33,4 +33,6 @@ public class SubscriptionResult {
     private Boolean cancelAtPeriodEnd;
     private String pendingPlanCode;
     private LocalDateTime pendingEffectiveAt;
+    /** Nested Basic paid-trial state for frontend {@code basicTrial}. */
+    private BasicTrialAccount basicTrial;
 }

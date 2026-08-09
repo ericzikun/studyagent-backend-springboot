@@ -14,6 +14,12 @@ public class SubscriptionPlanEntity extends BaseEntity {
     private String tier;
     @TableField("billing_interval")
     private String billingInterval;
+    @TableField("offer_kind")
+    private String offerKind;
+    @TableField("trial_days")
+    private Integer trialDays;
+    @TableField("converts_to_plan_code")
+    private String convertsToPlanCode;
     @TableField("stripe_product_id")
     private String stripeProductId;
     @TableField("stripe_price_id")

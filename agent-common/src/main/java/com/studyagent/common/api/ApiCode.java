@@ -49,6 +49,14 @@ public enum ApiCode {
             1028,
             "Resolve the existing subscription payment before changing plans",
             "请先处理现有订阅的付款问题再变更套餐"),
+    INTRO_TRIAL_ALREADY_USED(
+            1029,
+            "Basic Trial can only be used once per Stripe customer",
+            "Basic Trial 每位 Stripe 客户仅可使用一次"),
+    BASIC_REQUIRES_TRIAL(
+            1030,
+            "Basic monthly requires completing Basic Trial first",
+            "Basic 月付需先完成 Basic Trial，或直接购买 Plus/Pro"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

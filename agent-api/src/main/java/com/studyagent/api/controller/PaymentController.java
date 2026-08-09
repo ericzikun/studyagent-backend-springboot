@@ -281,6 +281,8 @@ public class PaymentController {
             case "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET", "INVALID_SUBSCRIPTION_ITEMS",
                     "SUBSCRIPTION_STATE_INVALID" ->
                     Result.error(ApiCode.SUBSCRIPTION_STATE_INVALID);
+            case "TRIAL_ALREADY_USED" -> Result.error(ApiCode.INTRO_TRIAL_ALREADY_USED);
+            case "BASIC_REQUIRES_TRIAL" -> Result.error(ApiCode.BASIC_REQUIRES_TRIAL);
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
         };

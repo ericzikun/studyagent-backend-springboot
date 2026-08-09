@@ -36,11 +36,13 @@ import com.studyagent.infra.mapper.StripeWebhookEventMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingCheckoutNotifyRequest;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPaymentFailedNotifyRequest;
 import com.studyagent.service.domain.billing.BillingReviewNotifyRequest;
 import com.studyagent.service.domain.billing.BillingQuotaGateway;
 import com.studyagent.service.domain.billing.BillingRobotNotifyGateway;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
+import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -132,6 +134,7 @@ public class StripeBillingWebhookService {
     private final AnalyticsService analyticsService;
     private final ObjectProvider<BillingQuotaGateway> quotaGatewayProvider;
     private final ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
+    private final ObjectProvider<BillingDomainService> billingDomainServiceProvider;
     private final PlatformTransactionManager transactionManager;
 
     @Value("${billing.payment-grace-days:3}")
@@ -162,6 +165,7 @@ public class StripeBillingWebhookService {
         }
         String purchaseType = session.getMetadata().get("purchase_type");
         return "subscription".equals(purchaseType)
+                || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)
                 || "addon".equals(purchaseType)
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
@@ -607,7 +611,8 @@ public class StripeBillingWebhookService {
             return;
         }
 
-        if ("subscription".equals(purchaseType)) {
+        if ("subscription".equals(purchaseType)
+                || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             boolean paymentSettled = "paid".equals(session.getPaymentStatus());
             updateCheckoutSubscriptionLink(session, clerkUserId, metadata.get("plan_code"), paymentSettled);
             if (paymentSettled && session.getSubscription() != null) {
@@ -622,7 +627,18 @@ public class StripeBillingWebhookService {
                 );
                 notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
                 try {
-                    syncSubscription(Subscription.retrieve(session.getSubscription()), false, false);
+                    Subscription subscription = Subscription.retrieve(session.getSubscription());
+                    syncSubscription(subscription, false, false);
+                    if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)
+                            || IntroTrialPlans.isIntroTrialPlanCode(metadata.get("plan_code"))) {
+                        BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+                        if (billingDomainService != null) {
+                            billingDomainService.fulfillIntroTrialSubscription(
+                                    clerkUserId,
+                                    session.getCustomer(),
+                                    session.getSubscription());
+                        }
+                    }
                 } catch (StripeException e) {
                     throw new IllegalStateException("Retrieve subscription failed: " + session.getSubscription(), e);
                 }
@@ -1168,7 +1184,8 @@ public class StripeBillingWebhookService {
         RechargeOrderEntity pendingInitial = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
-                        .eq(RechargeOrderEntity::getOrderType, "subscription_initial")
+                        .in(RechargeOrderEntity::getOrderType,
+                                List.of("subscription_initial", IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL))
                         .eq(RechargeOrderEntity::getPlanCode, plan.getPlanCode())
                         .eq(RechargeOrderEntity::getStatus, "pending")
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
@@ -1178,7 +1195,10 @@ public class StripeBillingWebhookService {
                 pendingUpgrade,
                 subscriptionId);
         RechargeOrderEntity selectedInitialOrder = selectSubscriptionInvoiceOrder(
-                isOrderType(existingInvoiceOrder, "subscription_initial", "subscription_renewal")
+                isOrderType(existingInvoiceOrder,
+                        "subscription_initial",
+                        "subscription_renewal",
+                        IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)
                         ? existingInvoiceOrder
                         : null,
                 pendingInitial,
@@ -1670,12 +1690,30 @@ public class StripeBillingWebhookService {
             LocalDateTime quotaPeriodStart = fromEpoch(resolvePeriodEpoch(periodStartOverride, resolveSubscriptionPeriodStart(subscription)));
             LocalDateTime subscriptionPeriodEnd = fromEpoch(resolvePeriodEpoch(periodEndOverride, resolveSubscriptionPeriodEnd(subscription)));
             entity.setQuotaPeriodStart(quotaPeriodStart);
-            entity.setQuotaPeriodEnd("year".equals(plan.getBillingInterval())
+            boolean introTrialPlan = IntroTrialPlans.isIntroTrialPlan(
+                    resolvedPlanCode, plan.getOfferKind());
+            // Catalog interval for trial SKUs is month/year (FE contract), but the
+            // Stripe intro charge is a ~7-day window — always follow subscription period.
+            entity.setQuotaPeriodEnd(introTrialPlan
+                    ? subscriptionPeriodEnd
+                    : ("year".equals(plan.getBillingInterval())
                     ? quotaPeriodStart.plusMonths(1)
-                    : subscriptionPeriodEnd);
+                    : subscriptionPeriodEnd));
+            if (introTrialPlan) {
+                entity.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
+            } else if (resolvedPlanCode != null) {
+                if (IntroTrialPlans.PHASE_INTRO.equals(entity.getSubscriptionPhase())
+                        || (entity.getIntroTrialUsedAt() != null
+                        && IntroTrialPlans.isBasicPaidTier(plan.getTier())
+                        && entity.getIntroTrialConvertedAt() == null)) {
+                    entity.setIntroTrialConvertedAt(now);
+                }
+                entity.setSubscriptionPhase(IntroTrialPlans.PHASE_STANDARD);
+            }
         } else if (deleted) {
             entity.setQuotaPeriodStart(null);
             entity.setQuotaPeriodEnd(null);
+            entity.setSubscriptionPhase(null);
         }
         entity.setLastSyncedAt(now);
         entity.setUpdatedAt(now);
@@ -1760,11 +1798,15 @@ public class StripeBillingWebhookService {
                 .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, entity.getPendingUpgradeOrderNo())
                 .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, entity.getPendingUpgradeExpiresAt())
                 .set(UserSubscriptionEntity::getGraceEndAt, entity.getGraceEndAt())
+                .set(UserSubscriptionEntity::getIntroTrialUsedAt, entity.getIntroTrialUsedAt())
+                .set(UserSubscriptionEntity::getIntroTrialConvertedAt, entity.getIntroTrialConvertedAt())
+                .set(UserSubscriptionEntity::getSubscriptionPhase, entity.getSubscriptionPhase())
                 .set(UserSubscriptionEntity::getLastSyncedAt, entity.getLastSyncedAt())
                 .set(UserSubscriptionEntity::getUpdatedAt, entity.getUpdatedAt());
         if (deleted) {
             update.set(UserSubscriptionEntity::getPlanCode, null)
-                    .set(UserSubscriptionEntity::getPendingPlanCode, null);
+                    .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                    .set(UserSubscriptionEntity::getSubscriptionPhase, null);
         } else {
             update.set(UserSubscriptionEntity::getPlanCode, entity.getPlanCode())
                     .set(UserSubscriptionEntity::getPendingPlanCode, entity.getPendingPlanCode());
@@ -2084,8 +2126,10 @@ public class StripeBillingWebhookService {
 
     static String resolvePaidInvoiceGrantType(Invoice invoice, RechargeOrderEntity selectedOrder) {
         if ((invoice != null && "subscription_create".equals(invoice.getBillingReason()))
-                || isOrderType(selectedOrder, "subscription_initial")) {
-            return "subscription_initial";
+                || isOrderType(selectedOrder, "subscription_initial", IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)) {
+            return isOrderType(selectedOrder, IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)
+                    ? IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL
+                    : "subscription_initial";
         }
         return "subscription_renewal";
     }

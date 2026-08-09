@@ -8,7 +8,13 @@ import lombok.Data;
 public class BillingPlan {
     private String planCode;
     private String tier;
+    /** Frontend: standard_plan | basic_paid_trial */
+    private String offerKind;
     private String billingInterval;
+    /** Paid-trial length in days; null for standard plans. */
+    private Integer trialDays;
+    /** Plan code after paid-trial conversion; null for standard plans. */
+    private String convertsToPlanCode;
     private String stripeProductId;
     private String stripePriceId;
     private Integer priceCents;
@@ -23,10 +29,15 @@ public class BillingPlan {
     private Integer maxFollowupEdits;
     private String allowedOutputTypes;
 
+    /**
+     * Legacy synthetic Free plan (pre Basic Trial hard-cut). Prefer {@link #lapsedPlan()}
+     * for unpaid entitlement blocking after Free pool is zeroed.
+     */
     public static BillingPlan freePlan() {
         return BillingPlan.builder()
                 .planCode("free")
                 .tier("free")
+                .offerKind(IntroTrialPlans.OFFER_KIND_STANDARD)
                 .billingInterval("none")
                 .assignmentQuota(1L)
                 .assignmentQuotaUnit("time")
@@ -38,5 +49,40 @@ public class BillingPlan {
                 .maxFollowupEdits(3)
                 .allowedOutputTypes("[\"writing\"]")
                 .build();
+    }
+
+    /**
+     * Unpaid / canceled user after Free hard-cut: no quotas and no product entitlements.
+     * {@code maxFiles=0} / {@code maxFollowupEdits=0} means blocked (not unlimited).
+     */
+    /**
+     * Unpaid hard-cut entitlements. Frontend account still exposes {@code tier=free};
+     * {@code planCode=lapsed} is an internal marker only.
+     */
+    public static BillingPlan lapsedPlan() {
+        return BillingPlan.builder()
+                .planCode("lapsed")
+                .tier("free")
+                .offerKind(IntroTrialPlans.OFFER_KIND_STANDARD)
+                .billingInterval("none")
+                .assignmentQuota(0L)
+                .assignmentQuotaUnit("time")
+                .detectionQuota(0L)
+                .detectionQuotaUnit("words")
+                .humanizerQuota(0L)
+                .humanizerQuotaUnit("words")
+                .maxFiles(0)
+                .maxFollowupEdits(0)
+                .allowedOutputTypes("[\"writing\"]")
+                .build();
+    }
+
+    public boolean isBasicPaidTrial() {
+        return IntroTrialPlans.isIntroTrialOfferKind(offerKind)
+                || IntroTrialPlans.isIntroTrialPlanCode(planCode);
+    }
+
+    public boolean isLapsedOrFree() {
+        return "lapsed".equalsIgnoreCase(tier) || "free".equalsIgnoreCase(tier);
     }
 }

@@ -44,6 +44,12 @@ public class UserSubscriptionEntity extends BaseEntity {
     private LocalDateTime pendingUpgradeExpiresAt;
     @TableField("grace_end_at")
     private LocalDateTime graceEndAt;
+    @TableField("intro_trial_used_at")
+    private LocalDateTime introTrialUsedAt;
+    @TableField("intro_trial_converted_at")
+    private LocalDateTime introTrialConvertedAt;
+    @TableField("subscription_phase")
+    private String subscriptionPhase;
     @TableField("last_synced_at")
     private LocalDateTime lastSyncedAt;
     @TableField("last_stripe_event_created_at")

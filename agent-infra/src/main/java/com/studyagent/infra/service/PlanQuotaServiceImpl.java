@@ -21,6 +21,7 @@ import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
+import com.studyagent.service.domain.billing.IntroTrialPlans;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -258,7 +259,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         SubscriptionPlanEntity plan = requirePlan(lockedSubscription.getPlanCode());
-        String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
+        String billingInterval = resolveQuotaBillingInterval(plan);
         refreshResolvedPlanQuotaIfNeeded(
                 clerkUserId,
                 featureCode,
@@ -300,7 +301,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         }
 
         SubscriptionPlanEntity plan = requirePlan(lockedSubscription.getPlanCode());
-        String billingInterval = normalizeBillingInterval(plan.getBillingInterval());
+        String billingInterval = resolveQuotaBillingInterval(plan);
 
         Map<String, UserAiQuotaEntity> lockedQuotasByFeatureCode = quotasByFeatureCode(clerkUserId);
         for (String featureCode : PLAN_FEATURE_CODES) {
@@ -343,12 +344,13 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        if ("month".equals(billingInterval) && missingPlanWindow) {
+        // month and week share fixed-window refresh/expire semantics (window from subscription quota periods).
+        if (("month".equals(billingInterval) || "week".equals(billingInterval)) && missingPlanWindow) {
             refreshMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, plan, now);
             return;
         }
 
-        if ("month".equals(billingInterval) && planWindowExpired) {
+        if (("month".equals(billingInterval) || "week".equals(billingInterval)) && planWindowExpired) {
             expireMonthlyPlanQuota(clerkUserId, subscription, quota, featureCode, now);
         }
     }
@@ -907,6 +909,18 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return "month";
         }
         return billingInterval.trim().toLowerCase();
+    }
+
+    /**
+     * Trial SKUs expose month/year for the frontend catalog, but quota windows follow
+     * the fixed Stripe intro period (~7 days). Treat them as month/week fixed windows.
+     */
+    private String resolveQuotaBillingInterval(SubscriptionPlanEntity plan) {
+        if (plan != null
+                && IntroTrialPlans.isIntroTrialPlan(plan.getPlanCode(), plan.getOfferKind())) {
+            return "week";
+        }
+        return normalizeBillingInterval(plan == null ? null : plan.getBillingInterval());
     }
 
     private LocalDateTime computePeriodEnd(LocalDateTime start, String period) {

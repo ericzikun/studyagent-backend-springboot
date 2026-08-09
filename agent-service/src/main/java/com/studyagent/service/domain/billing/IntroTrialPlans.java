@@ -69,6 +69,16 @@ public final class IntroTrialPlans {
         return CONVERSION_PLAN_CODE_MONTHLY;
     }
 
+    /**
+     * Conversion targets must be standard Basic plans, never another intro-trial SKU.
+     */
+    public static String sanitizeConversionPlanCode(String candidate, String trialPlanCode) {
+        if (!isIntroTrialPlanCode(candidate) && candidate != null && !candidate.isBlank()) {
+            return candidate;
+        }
+        return defaultConversionPlanCode(trialPlanCode);
+    }
+
     public static String conversionBillingInterval(String conversionPlanCode) {
         if (conversionPlanCode == null) {
             return null;

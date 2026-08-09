@@ -113,6 +113,25 @@ class IntroTrialBillingTest {
                 IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
     }
 
+    @Test
+    void sanitizeConversionPlanCode_rejectsTrialSkuAsTarget() {
+        assertEquals(
+                IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
+                IntroTrialPlans.sanitizeConversionPlanCode(
+                        IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY,
+                        IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
+        assertEquals(
+                IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY,
+                IntroTrialPlans.sanitizeConversionPlanCode(
+                        IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY,
+                        IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
+        assertEquals(
+                IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
+                IntroTrialPlans.sanitizeConversionPlanCode(
+                        IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
+                        IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
+    }
+
     private static SubscriptionPlanEntity plan(
             String planCode,
             String tier,

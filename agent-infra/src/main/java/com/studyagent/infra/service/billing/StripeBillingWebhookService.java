@@ -1821,6 +1821,8 @@ public class StripeBillingWebhookService {
             boolean paymentSettled) {
         UserSubscriptionEntity existing = findByUser(clerkUserId);
         LocalDateTime now = LocalDateTime.now();
+        // For intro trial, pending must be the conversion target (basic_*), never the trial SKU.
+        String pendingPlanCode = paymentSettled ? resolveCheckoutPendingPlanCode(planCode) : null;
         if (existing == null) {
             existing = new UserSubscriptionEntity();
             existing.setClerkUserId(clerkUserId);
@@ -1829,7 +1831,7 @@ public class StripeBillingWebhookService {
             existing.setStripeCustomerId(session.getCustomer());
             existing.setStripeSubscriptionId(session.getSubscription());
             existing.setCancelAtPeriodEnd(false);
-            existing.setPendingPlanCode(paymentSettled ? planCode : null);
+            existing.setPendingPlanCode(pendingPlanCode);
             existing.setVersion(0);
             existing.setCreatedAt(now);
             existing.setUpdatedAt(now);
@@ -1840,7 +1842,7 @@ public class StripeBillingWebhookService {
                     .set(UserSubscriptionEntity::getStripeCustomerId, session.getCustomer())
                     .set(UserSubscriptionEntity::getStripeSubscriptionId, session.getSubscription())
                     .set(UserSubscriptionEntity::getStatus, paymentSettled ? existing.getStatus() : "incomplete")
-                    .set(UserSubscriptionEntity::getPendingPlanCode, paymentSettled ? planCode : null)
+                    .set(UserSubscriptionEntity::getPendingPlanCode, pendingPlanCode)
                     .set(!paymentSettled, UserSubscriptionEntity::getPendingEffectiveAt, null)
                     .set(UserSubscriptionEntity::getUpdatedAt, now));
         }
@@ -1848,6 +1850,24 @@ public class StripeBillingWebhookService {
                 .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
                 .set(RechargeOrderEntity::getStripeSubscriptionId, session.getSubscription())
                 .set(RechargeOrderEntity::getUpdatedAt, now));
+    }
+
+    private String resolveCheckoutPendingPlanCode(String planCode) {
+        if (!hasText(planCode)) {
+            return null;
+        }
+        if (!IntroTrialPlans.isIntroTrialPlanCode(planCode)) {
+            return planCode;
+        }
+        SubscriptionPlanEntity trialPlan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .last("LIMIT 1"));
+        if (trialPlan != null && hasText(trialPlan.getConvertsToPlanCode())
+                && !IntroTrialPlans.isIntroTrialPlanCode(trialPlan.getConvertsToPlanCode())) {
+            return trialPlan.getConvertsToPlanCode();
+        }
+        return IntroTrialPlans.defaultConversionPlanCode(planCode);
     }
 
     private void completeOrderBySession(Session session, String packageCode, String planCode) {

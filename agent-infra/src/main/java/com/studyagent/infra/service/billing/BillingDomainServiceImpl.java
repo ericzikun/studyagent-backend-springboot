@@ -1486,67 +1486,40 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SubscriptionPlanEntity conversionPlan = requirePlan(conversionPlanCode, true);
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(stripeSubscriptionId);
-            if (hasText(stripeSubscription.getSchedule()) || hasText(current.getStripeScheduleId())) {
-                // Already scheduled (idempotent webhook retry).
-                if (hasText(stripeSubscription.getSchedule()) && !hasText(current.getStripeScheduleId())) {
-                    LocalDateTime now = LocalDateTime.now();
-                    userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                            .eq(UserSubscriptionEntity::getId, current.getId())
-                            .set(UserSubscriptionEntity::getStripeScheduleId, stripeSubscription.getSchedule())
-                            .set(UserSubscriptionEntity::getPendingPlanCode, conversionPlanCode)
-                            .set(UserSubscriptionEntity::getPendingEffectiveAt,
-                                    fromEpoch(stripeSubscription.getCurrentPeriodEnd()))
-                            .set(UserSubscriptionEntity::getUpdatedAt, now));
-                    current.setStripeScheduleId(stripeSubscription.getSchedule());
-                    current.setPendingPlanCode(conversionPlanCode);
-                    current.setPendingEffectiveAt(fromEpoch(stripeSubscription.getCurrentPeriodEnd()));
+            SubscriptionSchedule schedule;
+            String existingScheduleId = firstNonBlank(
+                    stripeSubscription.getSchedule(), current.getStripeScheduleId());
+            if (hasText(existingScheduleId)) {
+                schedule = retrieveReusableSchedule(existingScheduleId);
+                if (schedule == null) {
+                    // Stale/canceled schedule left on the subscription mirror — recreate.
+                    schedule = createStripeSubscriptionSchedule(
+                            SubscriptionScheduleCreateParams.builder()
+                                    .setFromSubscription(stripeSubscriptionId)
+                                    .build(),
+                            RequestOptions.builder()
+                                    .setIdempotencyKey("intro-trial-schedule:create:" + stripeSubscriptionId)
+                                    .build());
                 }
-                return;
+            } else {
+                schedule = createStripeSubscriptionSchedule(
+                        SubscriptionScheduleCreateParams.builder()
+                                .setFromSubscription(stripeSubscriptionId)
+                                .build(),
+                        RequestOptions.builder()
+                                .setIdempotencyKey("intro-trial-schedule:create:" + stripeSubscriptionId)
+                                .build());
             }
-            SubscriptionSchedule schedule = createStripeSubscriptionSchedule(
-                    SubscriptionScheduleCreateParams.builder()
-                            .setFromSubscription(stripeSubscriptionId)
-                            .build(),
-                    RequestOptions.builder()
-                            .setIdempotencyKey("intro-trial-schedule:create:" + stripeSubscriptionId)
-                            .build());
-            SubscriptionItem item = requireSingleSubscriptionItem(stripeSubscription);
-            Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
-            Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
-            Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
-            SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
-                    .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
-                    .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
-                    .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
-                            .setStartDate(currentPhaseStart)
-                            .setEndDate(currentPhaseEnd)
-                            .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
-                            .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
-                                    .setPrice(item.getPrice().getId())
-                                    .setQuantity(quantity)
-                                    .build())
-                            .build())
-                    .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
-                            .setStartDate(currentPhaseEnd)
-                            .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
-                            .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
-                                    .setPrice(conversionPlan.getStripePriceId())
-                                    .setQuantity(1L)
-                                    .build())
-                            .build())
-                    .putMetadata("clerk_user_id", current.getClerkUserId())
-                    .putMetadata("pending_plan_code", conversionPlanCode)
-                    .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION)
-                    .build();
-            schedule = updateStripeSubscriptionSchedule(
+            // Always (re)apply Phase1=trial / Phase2=standard Basic so a wrong earlier
+            // update (e.g. pending_plan_code=trial SKU) cannot stick.
+            schedule = applyIntroTrialConversionPhases(
                     schedule,
-                    updateParams,
-                    RequestOptions.builder()
-                            .setIdempotencyKey("intro-trial-schedule:update:" + schedule.getId()
-                                    + ":" + conversionPlanCode + ":" + currentPhaseEnd)
-                            .build());
+                    stripeSubscription,
+                    conversionPlan,
+                    current.getClerkUserId(),
+                    conversionPlanCode);
             LocalDateTime now = LocalDateTime.now();
-            LocalDateTime pendingEffectiveAt = fromEpoch(currentPhaseEnd);
+            LocalDateTime pendingEffectiveAt = fromEpoch(stripeSubscription.getCurrentPeriodEnd());
             userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                     .eq(UserSubscriptionEntity::getId, current.getId())
                     .set(UserSubscriptionEntity::getStripeScheduleId, schedule.getId())
@@ -1563,35 +1536,87 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
+    private SubscriptionSchedule applyIntroTrialConversionPhases(
+            SubscriptionSchedule schedule,
+            Subscription stripeSubscription,
+            SubscriptionPlanEntity conversionPlan,
+            String clerkUserId,
+            String conversionPlanCode) throws StripeException {
+        SubscriptionItem item = requireSingleSubscriptionItem(stripeSubscription);
+        Long currentPhaseStart = currentPhaseStart(schedule, stripeSubscription);
+        Long currentPhaseEnd = stripeSubscription.getCurrentPeriodEnd();
+        Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
+        String trialPriceId = item.getPrice().getId();
+        String conversionPriceId = conversionPlan.getStripePriceId();
+        SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
+                .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
+                .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
+                .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setStartDate(currentPhaseStart)
+                        .setEndDate(currentPhaseEnd)
+                        .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                        .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                .setPrice(trialPriceId)
+                                .setQuantity(quantity)
+                                .build())
+                        .build())
+                .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setStartDate(currentPhaseEnd)
+                        .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                        .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                .setPrice(conversionPriceId)
+                                .setQuantity(1L)
+                                .build())
+                        .build())
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("pending_plan_code", conversionPlanCode)
+                .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION)
+                .build();
+        return updateStripeSubscriptionSchedule(
+                schedule,
+                updateParams,
+                RequestOptions.builder()
+                        .setIdempotencyKey("intro-trial-schedule:fix:" + schedule.getId()
+                                + ":" + conversionPlanCode + ":" + conversionPriceId + ":" + currentPhaseEnd)
+                        .build());
+    }
+
     private boolean isIntroTrialPlan(SubscriptionPlanEntity plan) {
         return plan != null
                 && IntroTrialPlans.isIntroTrialPlan(plan.getPlanCode(), plan.getOfferKind());
     }
 
     private String resolveConversionPlanCode(SubscriptionPlanEntity trialPlan) {
-        if (trialPlan != null && hasText(trialPlan.getConvertsToPlanCode())) {
-            return trialPlan.getConvertsToPlanCode();
+        String trialPlanCode = trialPlan == null ? null : trialPlan.getPlanCode();
+        String fromCatalog = trialPlan == null ? null : trialPlan.getConvertsToPlanCode();
+        String resolved = IntroTrialPlans.sanitizeConversionPlanCode(fromCatalog, trialPlanCode);
+        if (hasText(resolved) && !IntroTrialPlans.isIntroTrialPlanCode(resolved)) {
+            return resolved;
         }
-        String planCode = trialPlan == null ? null : trialPlan.getPlanCode();
-        String resolved = IntroTrialPlans.defaultConversionPlanCode(planCode);
-        return hasText(resolved) ? resolved : introTrialConversionPlanCode;
+        return IntroTrialPlans.sanitizeConversionPlanCode(introTrialConversionPlanCode, trialPlanCode);
     }
 
+    /**
+     * Resolve standard Basic plan after paid trial. Never trust a pending/trial SKU
+     * as the conversion target (checkout link previously wrote trial plan into pending).
+     */
     private String resolveConversionPlanCodeForUser(UserSubscriptionEntity current) {
-        if (current != null && hasText(current.getPendingPlanCode())) {
+        String trialPlanCode = current == null ? null : current.getPlanCode();
+        if (current != null && hasText(current.getPendingPlanCode())
+                && !IntroTrialPlans.isIntroTrialPlanCode(current.getPendingPlanCode())) {
             return current.getPendingPlanCode();
         }
-        if (current != null && hasText(current.getPlanCode())) {
+        if (hasText(trialPlanCode)) {
             SubscriptionPlanEntity trialPlan = subscriptionPlanMapper.selectOne(
                     new LambdaQueryWrapper<SubscriptionPlanEntity>()
-                            .eq(SubscriptionPlanEntity::getPlanCode, current.getPlanCode())
+                            .eq(SubscriptionPlanEntity::getPlanCode, trialPlanCode)
                             .last("LIMIT 1"));
             if (trialPlan != null) {
                 return resolveConversionPlanCode(trialPlan);
             }
-            return IntroTrialPlans.defaultConversionPlanCode(current.getPlanCode());
+            return IntroTrialPlans.defaultConversionPlanCode(trialPlanCode);
         }
-        return introTrialConversionPlanCode;
+        return IntroTrialPlans.sanitizeConversionPlanCode(introTrialConversionPlanCode, null);
     }
 
     private LocalDateTime resolvePeriodEnd(LocalDateTime start, String billingInterval) {

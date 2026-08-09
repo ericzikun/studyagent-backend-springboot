@@ -920,7 +920,12 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 && IntroTrialPlans.isIntroTrialPlan(plan.getPlanCode(), plan.getOfferKind())) {
             return "week";
         }
-        return normalizeBillingInterval(plan == null ? null : plan.getBillingInterval());
+        String interval = normalizeBillingInterval(plan == null ? null : plan.getBillingInterval());
+        // One-time Pro Trial catalog interval is "once"; treat quota as a fixed window.
+        if ("once".equals(interval)) {
+            return "week";
+        }
+        return interval;
     }
 
     private LocalDateTime computePeriodEnd(LocalDateTime start, String period) {

@@ -48,4 +48,15 @@ public interface BillingDomainService {
      * a Subscription Schedule that converts the 7-day intro into basic_monthly / basic_yearly.
      */
     void fulfillIntroTrialSubscription(String clerkUserId, String stripeCustomerId, String stripeSubscriptionId);
+
+    /**
+     * After Pro Trial one-time Checkout is paid: mark once-per-customer usage and open a
+     * fixed 7-day entitlement window. No Stripe Subscription / Schedule is created.
+     */
+    void fulfillProTrialPayment(
+            String clerkUserId,
+            String stripeCustomerId,
+            String stripeSessionId,
+            String stripePaymentIntentId,
+            String planCode);
 }

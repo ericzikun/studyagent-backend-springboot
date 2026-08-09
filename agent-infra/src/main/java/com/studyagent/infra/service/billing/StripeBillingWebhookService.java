@@ -166,6 +166,7 @@ public class StripeBillingWebhookService {
         String purchaseType = session.getMetadata().get("purchase_type");
         return "subscription".equals(purchaseType)
                 || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)
+                || IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)
                 || "addon".equals(purchaseType)
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
@@ -549,6 +550,44 @@ public class StripeBillingWebhookService {
         Map<String, String> metadata = session.getMetadata();
         String purchaseType = metadata.get("purchase_type");
         String clerkUserId = firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId());
+        if (IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)) {
+            if (!"paid".equals(session.getPaymentStatus())) {
+                log.info("Pro Trial Checkout is not paid yet: session={}, payment_status={}",
+                        session.getId(), session.getPaymentStatus());
+                return;
+            }
+            String planCode = firstNonBlank(
+                    metadata.get("plan_code"), IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+            BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+            if (billingDomainService == null) {
+                throw new IllegalStateException("BillingDomainService unavailable for Pro Trial fulfill");
+            }
+            billingDomainService.fulfillProTrialPayment(
+                    clerkUserId,
+                    session.getCustomer(),
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    planCode);
+            completeOrderBySession(session, planCode, planCode);
+            capturePaymentSucceeded(
+                    clerkUserId,
+                    session,
+                    planCode,
+                    "subscription",
+                    "subscription",
+                    0L,
+                    null);
+            notifyCheckoutSucceeded(
+                    stripeEventId,
+                    stripeEventType,
+                    session,
+                    metadata,
+                    purchaseType,
+                    "subscription",
+                    0L);
+            return;
+        }
+
         if ("addon".equals(purchaseType)) {
             if (!"paid".equals(session.getPaymentStatus())) {
                 log.info("Add-on Checkout is not paid yet: session={}, payment_status={}",

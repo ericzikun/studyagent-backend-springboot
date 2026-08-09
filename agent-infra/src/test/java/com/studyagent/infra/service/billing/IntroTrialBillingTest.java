@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IntroTrialBillingTest {
@@ -104,13 +105,28 @@ class IntroTrialBillingTest {
         assertFalse(IntroTrialPlans.isIntroTrialPlanCode("basic_monthly"));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
-        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
+        assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
+        assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode("basic_trial_weekly"));
+        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL));
+        assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
+        assertTrue(IntroTrialPlans.isOneTimeProTrialPlan(
+                IntroTrialPlans.PRO_TRIAL_PLAN_CODE, IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
+        assertNull(IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
         assertEquals(
                 IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY,
                 IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
+    }
+
+    @Test
+    void classifyPlanChange_proTrialToProMonthlyIsImmediateUpgrade() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.IMMEDIATE_UPGRADE,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE, "pro", "once",
+                        "pro_monthly", "pro", "month"));
     }
 
     @Test

@@ -3,10 +3,17 @@
 
 USE studyagent;
 
--- Both trial SKUs share the same $2.99 intro Stripe Price; conversion target differs.
+-- Both trial SKUs charge $2.99 for one week, but use distinct Stripe Prices so
+-- webhook price lookup can resolve the correct conversion target.
 UPDATE subscription_plans
-SET stripe_product_id = 'prod_BASIC_TRIAL', stripe_price_id = 'price_BASIC_TRIAL_WEEKLY'
-WHERE plan_code IN ('basic_trial_to_monthly', 'basic_trial_to_yearly');
+SET stripe_product_id = 'prod_BASIC_TRIAL',
+    stripe_price_id = 'price_BASIC_TRIAL_TO_MONTHLY'
+WHERE plan_code = 'basic_trial_to_monthly';
+
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_BASIC_TRIAL',
+    stripe_price_id = 'price_BASIC_TRIAL_TO_YEARLY'
+WHERE plan_code = 'basic_trial_to_yearly';
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC', stripe_price_id = 'price_BASIC_MONTHLY'

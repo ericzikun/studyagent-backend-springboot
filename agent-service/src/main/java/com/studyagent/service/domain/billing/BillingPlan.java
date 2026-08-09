@@ -52,12 +52,12 @@ public class BillingPlan {
     }
 
     /**
-     * Unpaid / canceled user after Free hard-cut: no quotas and no product entitlements.
-     * {@code maxFiles=0} / {@code maxFollowupEdits=0} means blocked (not unlimited).
-     */
-    /**
      * Unpaid hard-cut entitlements. Frontend account still exposes {@code tier=free};
      * {@code planCode=lapsed} is an internal marker only.
+     * <p>
+     * Quotas stay 0 (cannot run paid features). File upload keeps the legacy Free
+     * cap of 3 so users can attach context before purchasing; {@code maxFollowupEdits=0}
+     * still blocks follow-up edits (0 means blocked, not unlimited).
      */
     public static BillingPlan lapsedPlan() {
         return BillingPlan.builder()
@@ -71,7 +71,7 @@ public class BillingPlan {
                 .detectionQuotaUnit("words")
                 .humanizerQuota(0L)
                 .humanizerQuotaUnit("words")
-                .maxFiles(0)
+                .maxFiles(3)
                 .maxFollowupEdits(0)
                 .allowedOutputTypes("[\"writing\"]")
                 .build();

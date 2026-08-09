@@ -97,7 +97,7 @@ class IntroTrialBillingTest {
         BillingPlan lapsed = BillingPlan.lapsedPlan();
         assertEquals("lapsed", lapsed.getPlanCode());
         assertEquals("free", lapsed.getTier());
-        assertEquals(0, lapsed.getMaxFiles());
+        assertEquals(3, lapsed.getMaxFiles());
         assertEquals(0, lapsed.getMaxFollowupEdits());
         assertEquals(0L, lapsed.getAssignmentQuota());
         assertTrue(lapsed.isLapsedOrFree());

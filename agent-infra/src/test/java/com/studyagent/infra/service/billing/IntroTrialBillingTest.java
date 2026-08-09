@@ -1,8 +1,11 @@
 package com.studyagent.infra.service.billing;
 
+import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -66,6 +69,30 @@ class IntroTrialBillingTest {
     }
 
     @Test
+    void quoteTrialUpgradeChargesFullTargetPriceWithoutCreditingTrialFee() {
+        SubscriptionPlanEntity trial = plan(
+                IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY,
+                "basic",
+                "month",
+                299);
+        SubscriptionPlanEntity plusMonthly = plan("plus_monthly", "plus", "month", 3999);
+        SubscriptionPlanEntity plusYearly = plan("plus_yearly", "plus", "year", 19188);
+        LocalDateTime start = LocalDateTime.parse("2026-08-01T00:00:00");
+        LocalDateTime end = LocalDateTime.parse("2026-08-08T00:00:00");
+        LocalDateTime now = LocalDateTime.parse("2026-08-03T00:00:00");
+
+        UpgradeChargeQuote monthlyQuote = UpgradeChargeCalculator.quote(
+                trial, plusMonthly, start, end, now, 299, "in_trial");
+        UpgradeChargeQuote yearlyQuote = UpgradeChargeCalculator.quote(
+                trial, plusYearly, start, end, now, 299, "in_trial");
+
+        assertEquals(3999, monthlyQuote.getAmountCents());
+        assertEquals("target_monthly_full", monthlyQuote.getPricingFormula());
+        assertEquals(19188, yearlyQuote.getAmountCents());
+        assertEquals("target_annual_full", yearlyQuote.getPricingFormula());
+    }
+
+    @Test
     void lapsedPlanBlocksEntitlementsButExposesFreeTier() {
         BillingPlan lapsed = BillingPlan.lapsedPlan();
         assertEquals("lapsed", lapsed.getPlanCode());
@@ -77,9 +104,25 @@ class IntroTrialBillingTest {
         assertFalse(IntroTrialPlans.isIntroTrialPlanCode("basic_monthly"));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
+        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
+        assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
+        assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode("basic_trial_weekly"));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL));
         assertEquals(
                 IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY,
                 IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
+    }
+
+    private static SubscriptionPlanEntity plan(
+            String planCode,
+            String tier,
+            String interval,
+            int priceCents) {
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode(planCode);
+        plan.setTier(tier);
+        plan.setBillingInterval(interval);
+        plan.setPriceCents(priceCents);
+        return plan;
     }
 }

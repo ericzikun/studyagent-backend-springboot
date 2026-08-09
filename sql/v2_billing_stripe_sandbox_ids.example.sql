@@ -3,16 +3,19 @@
 
 USE studyagent;
 
--- Both trial SKUs charge $2.99 for one week, but use distinct Stripe Prices so
--- webhook price lookup can resolve the correct conversion target.
+-- Only the monthly-conversion Basic trial is sellable. Keep the historical
+-- yearly Price mapping so old webhook/order/subscription data can still resolve.
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC_TRIAL',
-    stripe_price_id = 'price_BASIC_TRIAL_TO_MONTHLY'
+    stripe_price_id = 'price_BASIC_TRIAL_TO_MONTHLY',
+    converts_to_plan_code = 'basic_monthly',
+    is_active = 1
 WHERE plan_code = 'basic_trial_to_monthly';
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC_TRIAL',
-    stripe_price_id = 'price_BASIC_TRIAL_TO_YEARLY'
+    stripe_price_id = 'price_BASIC_TRIAL_TO_YEARLY',
+    is_active = 0
 WHERE plan_code = 'basic_trial_to_yearly';
 
 UPDATE subscription_plans
@@ -52,7 +55,8 @@ UPDATE addon_package_defs
 SET stripe_product_id = 'prod_ADDON_HUMANIZER', stripe_price_id = 'price_ADDON_HUMANIZER_3'
 WHERE addon_code = 'addon_humanizer_3';
 
-SELECT plan_code, stripe_product_id, stripe_price_id
+SELECT plan_code, converts_to_plan_code, is_active,
+       stripe_product_id, stripe_price_id
 FROM subscription_plans
 ORDER BY display_order;
 

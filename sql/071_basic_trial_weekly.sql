@@ -1,5 +1,7 @@
 -- Basic paid trial SKUs aligned with frontend contract:
 --   offer_kind=basic_paid_trial, tier=basic, trial_days=7, converts_to_plan_code=basic_*
+-- Historical migration note: 074_basic_trial_monthly_only.sql later retires
+-- basic_trial_to_yearly from new sales while preserving its lookup row.
 -- Stripe product/price ids remain NULL in source control; inject per environment.
 -- Both trial SKUs use the same $2.99 weekly charge but distinct Stripe Price IDs;
 -- the billing interval determines the conversion target

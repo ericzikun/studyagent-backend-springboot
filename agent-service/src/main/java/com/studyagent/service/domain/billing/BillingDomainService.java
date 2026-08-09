@@ -44,7 +44,7 @@ public interface BillingDomainService {
     boolean isPaidMember(String clerkUserId);
 
     /**
-     * After Basic Trial checkout is paid: mark once-per-customer usage and attach
+     * After Basic trial checkout is paid: mark once-per-customer usage and attach
      * a Subscription Schedule that converts the 7-day intro into basic_monthly / basic_yearly.
      */
     void fulfillIntroTrialSubscription(String clerkUserId, String stripeCustomerId, String stripeSubscriptionId);

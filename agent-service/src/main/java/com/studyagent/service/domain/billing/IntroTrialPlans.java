@@ -40,6 +40,16 @@ public final class IntroTrialPlans {
                 || "basic_trial_weekly".equalsIgnoreCase(planCode);
     }
 
+    /**
+     * Returns whether an intro-trial code may be used for a new Checkout.
+     *
+     * <p>Historical yearly/weekly codes remain recognizable so existing Stripe
+     * subscriptions, orders, and webhook events can still be reconciled.</p>
+     */
+    public static boolean isSellableIntroTrialPlanCode(String planCode) {
+        return TRIAL_PLAN_CODE_MONTHLY.equalsIgnoreCase(planCode);
+    }
+
     public static boolean isIntroTrialOfferKind(String offerKind) {
         return OFFER_KIND_BASIC_PAID_TRIAL.equalsIgnoreCase(offerKind);
     }

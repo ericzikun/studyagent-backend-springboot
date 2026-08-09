@@ -30,7 +30,7 @@ public class BillingPlan {
     private String allowedOutputTypes;
 
     /**
-     * Legacy synthetic Free plan (pre Basic Trial hard-cut). Prefer {@link #lapsedPlan()}
+     * Legacy synthetic Free plan (pre Basic trial hard-cut). Prefer {@link #lapsedPlan()}
      * for unpaid entitlement blocking after Free pool is zeroed.
      */
     public static BillingPlan freePlan() {

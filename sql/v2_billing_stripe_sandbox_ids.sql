@@ -1,8 +1,8 @@
 -- Stripe Sandbox Product/Price IDs for V2 billing.
 -- This script is environment-specific and must never be used in Production.
--- Run after 056_subscription_catalog.sql and 071_basic_trial_weekly.sql.
--- The two Basic Trial SKUs use distinct Stripe Prices so webhook price lookup
--- can unambiguously resolve the monthly or yearly conversion target.
+-- Run after 056_subscription_catalog.sql, 071_basic_trial_weekly.sql, and
+-- 074_basic_trial_monthly_only.sql. Only the monthly-conversion Basic trial is
+-- sellable; the yearly Price mapping remains solely for historical lookup.
 
 USE studyagent;
 
@@ -10,12 +10,15 @@ START TRANSACTION;
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_V2XQ7NFmV07Gc0',
-    stripe_price_id = 'price_1U2SNV7GRT6LLkI1xPKAx9PO'
+    stripe_price_id = 'price_1U2SNV7GRT6LLkI1xPKAx9PO',
+    converts_to_plan_code = 'basic_monthly',
+    is_active = 1
 WHERE plan_code = 'basic_trial_to_monthly';
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_V2XQ7NFmV07Gc0',
-    stripe_price_id = 'price_1U2VYo7GRT6LLkI1pYEEbcmw'
+    stripe_price_id = 'price_1U2VYo7GRT6LLkI1pYEEbcmw',
+    is_active = 0
 WHERE plan_code = 'basic_trial_to_yearly';
 
 UPDATE subscription_plans
@@ -65,7 +68,8 @@ WHERE addon_code = 'addon_humanizer_3';
 
 COMMIT;
 
-SELECT plan_code, offer_kind, billing_interval, price_cents, currency,
+SELECT plan_code, offer_kind, billing_interval, converts_to_plan_code,
+       price_cents, currency, is_active,
        stripe_product_id, stripe_price_id
 FROM subscription_plans
 ORDER BY display_order;

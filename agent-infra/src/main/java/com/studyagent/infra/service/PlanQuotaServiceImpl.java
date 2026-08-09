@@ -708,13 +708,13 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
+        // Existing subscribers keep their configured grants after new sales stop.
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
                         .eq(SubscriptionPlanEntity::getPlanCode, planCode)
-                        .eq(SubscriptionPlanEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (plan == null) {
-            throw new IllegalArgumentException("Unknown active plan code: " + planCode);
+            throw new IllegalArgumentException("Unknown plan code: " + planCode);
         }
         return plan;
     }

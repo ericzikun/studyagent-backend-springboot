@@ -11,6 +11,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
+import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.UserRepository;
@@ -120,6 +121,36 @@ class BillingDomainServiceImplTest {
         assertEquals("addon_assignment_3", result.getAddons().get(0).getAddonCode());
         assertEquals(2, result.getAddons().get(0).getValidityMonths());
         assertEquals("time", result.getAddons().get(0).getQuotaUnit());
+    }
+
+    @Test
+    void getCatalogHidesHistoricalYearlyTrialEvenIfDatabaseRowIsStillActive() {
+        SubscriptionPlanEntity monthlyTrial = new SubscriptionPlanEntity();
+        monthlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY);
+        monthlyTrial.setTier("basic");
+        monthlyTrial.setBillingInterval("month");
+        monthlyTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL);
+        monthlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY);
+        monthlyTrial.setTrialDays(7);
+
+        SubscriptionPlanEntity yearlyTrial = new SubscriptionPlanEntity();
+        yearlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY);
+        yearlyTrial.setTier("basic");
+        yearlyTrial.setBillingInterval("year");
+        yearlyTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL);
+        yearlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY);
+        yearlyTrial.setTrialDays(7);
+
+        when(subscriptionPlanMapper.selectList(any(Wrapper.class)))
+                .thenReturn(List.of(monthlyTrial, yearlyTrial));
+        when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        var result = service().getCatalog();
+
+        assertEquals(1, result.getPlans().size());
+        assertEquals(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY, result.getPlans().get(0).getPlanCode());
+        assertEquals(IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
+                result.getPlans().get(0).getConvertsToPlanCode());
     }
 
     @Test
@@ -1327,6 +1358,81 @@ class BillingDomainServiceImplTest {
                 any(Instant.class),
                 eq(result.getSessionId()),
                 eq("subscription_initial"));
+    }
+
+    @Test
+    void createSubscriptionCheckoutRejectsHistoricalYearlyTrialEvenIfDatabaseRowIsActive() throws Exception {
+        SubscriptionPlanEntity yearlyTrial = new SubscriptionPlanEntity();
+        yearlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY);
+        yearlyTrial.setTier("basic");
+        yearlyTrial.setBillingInterval("year");
+        yearlyTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL);
+        yearlyTrial.setTrialDays(7);
+        yearlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY);
+        yearlyTrial.setPriceCents(299);
+        yearlyTrial.setCurrency("usd");
+        yearlyTrial.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(yearlyTrial);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_xxx");
+        setBillingCheckoutMockEnabled(service, true);
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createSubscriptionCheckout(
+                        "user_legacy_yearly_trial",
+                        "user@example.com",
+                        IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY,
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        "resume_legacy_yearly_trial"));
+
+        assertEquals("INVALID_PLAN", exception.getCode());
+        verify(userSubscriptionMapper, never()).selectOne(any(Wrapper.class));
+    }
+
+    @Test
+    void createSubscriptionCheckoutRejectsMonthlyTrialForActiveFormalMember() throws Exception {
+        SubscriptionPlanEntity monthlyTrial = new SubscriptionPlanEntity();
+        monthlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY);
+        monthlyTrial.setTier("basic");
+        monthlyTrial.setBillingInterval("month");
+        monthlyTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL);
+        monthlyTrial.setTrialDays(7);
+        monthlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY);
+        monthlyTrial.setPriceCents(299);
+        monthlyTrial.setCurrency("usd");
+        monthlyTrial.setIsActive(true);
+
+        UserSubscriptionEntity activeBasic = new UserSubscriptionEntity();
+        activeBasic.setId(300L);
+        activeBasic.setClerkUserId("user_active_basic");
+        activeBasic.setPlanCode("basic_monthly");
+        activeBasic.setTier("basic");
+        activeBasic.setStatus("active");
+        activeBasic.setStripeSubscriptionId("mock_sub_active_basic");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(monthlyTrial);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(activeBasic);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_xxx");
+        setBillingCheckoutMockEnabled(service, true);
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createSubscriptionCheckout(
+                        "user_active_basic",
+                        "user@example.com",
+                        IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY,
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        "resume_active_basic_trial"));
+
+        assertEquals("SUBSCRIPTION_STATE_INVALID", exception.getCode());
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
     }
 
     @Test

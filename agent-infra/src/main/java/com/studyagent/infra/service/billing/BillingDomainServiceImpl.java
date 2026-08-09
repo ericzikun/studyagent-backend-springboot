@@ -147,6 +147,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .eq(SubscriptionPlanEntity::getIsActive, true)
                                 .orderByAsc(SubscriptionPlanEntity::getDisplayOrder))
                 .stream()
+                .filter(plan -> !isIntroTrialPlan(plan)
+                        || IntroTrialPlans.isSellableIntroTrialPlanCode(plan.getPlanCode()))
                 .map(this::toPlan)
                 .toList();
         List<BillingAddon> addons = addonPackageDefMapper.selectList(
@@ -190,7 +192,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             requireStripeConfigured();
         }
         SubscriptionPlanEntity plan = requirePlan(planCode, !mockCheckout);
+        assertSellableIntroTrialPlan(plan);
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
+        assertCurrentSubscriptionCannotBuyIntroTrial(userSubscription, plan);
         if (mockCheckout) {
             return createMockSubscriptionCheckout(
                     clerkUserId,
@@ -1355,7 +1359,30 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if ("basic".equalsIgnoreCase(plan.getTier()) && !allowDirectPurchaseBasic) {
             throw new BillingDomainException(
                     "BASIC_REQUIRES_TRIAL",
-                    "Basic requires completing Basic Trial first; buy Plus/Pro to skip");
+                    "Basic requires completing Basic trial first; buy Plus/Pro to skip");
+        }
+    }
+
+    private void assertSellableIntroTrialPlan(SubscriptionPlanEntity plan) {
+        if (isIntroTrialPlan(plan)
+                && !IntroTrialPlans.isSellableIntroTrialPlanCode(plan.getPlanCode())) {
+            throw new BillingDomainException(
+                    "INVALID_PLAN",
+                    "Basic trial offer is no longer available: " + plan.getPlanCode());
+        }
+    }
+
+    private void assertCurrentSubscriptionCannotBuyIntroTrial(
+            UserSubscriptionEntity current,
+            SubscriptionPlanEntity targetPlan) {
+        if (!isIntroTrialPlan(targetPlan) || current == null) {
+            return;
+        }
+        if ("active".equalsIgnoreCase(current.getStatus())
+                || "trialing".equalsIgnoreCase(current.getStatus())) {
+            throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "Cannot switch an active subscription to Basic trial");
         }
     }
 
@@ -1368,7 +1395,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (isIntroTrialPlan(targetPlan)) {
             throw new BillingDomainException(
                     "SUBSCRIPTION_STATE_INVALID",
-                    "Cannot switch an active subscription to Basic Trial");
+                    "Cannot switch an active subscription to Basic trial");
         }
         if (current != null
                 && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
@@ -1384,17 +1411,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (current != null && current.getIntroTrialUsedAt() != null) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Basic Trial can only be used once per Stripe customer");
+                    "Basic trial can only be used once per Stripe customer");
         }
         if (hasPaidIntroTrialOrder(current == null ? null : current.getClerkUserId())) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Basic Trial can only be used once per Stripe customer");
+                    "Basic trial can only be used once per Stripe customer");
         }
         if (isIntroTrialUsedOnStripeCustomer(stripeCustomerId)) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Basic Trial can only be used once per Stripe customer");
+                    "Basic trial can only be used once per Stripe customer");
         }
     }
 
@@ -1988,7 +2015,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "Active subscription not found");
         }
         if (hasText(current.getPlanCode())) {
-            return requirePlan(current.getPlanCode());
+            // A retired plan can remain active on Stripe after new sales stop.
+            return requireRuntimePlan(current.getPlanCode());
         }
         if (hasText(current.getPendingPlanCode())
                 && ("active".equals(current.getStatus()) || "trialing".equals(current.getStatus()))) {
@@ -2671,7 +2699,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         boolean currentTrial = IntroTrialPlans.isIntroTrialPlanCode(currentPlanCode);
         boolean targetTrial = IntroTrialPlans.isIntroTrialPlanCode(targetPlanCode);
-        // Cannot change into Basic Trial from any existing subscription.
+        // Cannot change into Basic trial from any existing subscription.
         if (targetTrial) {
             return PlanChangeAction.UNSUPPORTED;
         }

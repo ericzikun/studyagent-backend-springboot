@@ -2247,13 +2247,14 @@ public class StripeBillingWebhookService {
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {
+        // Webhooks reconcile subscriptions/orders created while a plan was sellable.
+        // Retiring a plan must not make those historical Stripe events unresolvable.
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
                         .eq(SubscriptionPlanEntity::getPlanCode, planCode)
-                        .eq(SubscriptionPlanEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (plan == null) {
-            throw new IllegalStateException("Unknown or inactive plan code: " + planCode);
+            throw new IllegalStateException("Unknown plan code: " + planCode);
         }
         return plan;
     }
@@ -2284,10 +2285,10 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Subscription item has no Price: " + subscription.getId());
         }
         String priceId = item.getPrice().getId();
+        // A Stripe subscription can outlive the catalog sale window for its Price.
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
                         .eq(SubscriptionPlanEntity::getStripePriceId, priceId)
-                        .eq(SubscriptionPlanEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (plan == null) {
             throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);

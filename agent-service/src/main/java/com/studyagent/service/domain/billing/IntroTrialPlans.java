@@ -1,16 +1,26 @@
 package com.studyagent.service.domain.billing;
 
 /**
- * Constants for Basic paid-trial offers (frontend: offer_kind=basic_paid_trial).
+ * Paid-trial catalog helpers.
+ *
+ * <ul>
+ *   <li>Historical Basic Trial ({@code basic_paid_trial}): weekly subscription + Schedule conversion.
+ *       Kept for webhook/order reconcile; not sellable while Pro Trial is live.</li>
+ *   <li>Pro Trial ({@code pro_paid_trial}): one-time US$2.99 for a fixed 7-day window, no renew.</li>
+ * </ul>
  */
 public final class IntroTrialPlans {
     public static final String OFFER_KIND_STANDARD = "standard_plan";
     public static final String OFFER_KIND_BASIC_PAID_TRIAL = "basic_paid_trial";
+    public static final String OFFER_KIND_PRO_PAID_TRIAL = "pro_paid_trial";
 
     public static final String TRIAL_PLAN_CODE_MONTHLY = "basic_trial_to_monthly";
     public static final String TRIAL_PLAN_CODE_YEARLY = "basic_trial_to_yearly";
     /** @deprecated use {@link #TRIAL_PLAN_CODE_MONTHLY} */
     public static final String TRIAL_PLAN_CODE = TRIAL_PLAN_CODE_MONTHLY;
+
+    /** Sellable one-time Pro Trial SKU. */
+    public static final String PRO_TRIAL_PLAN_CODE = "pro_trial_once";
 
     public static final String CONVERSION_PLAN_CODE_MONTHLY = "basic_monthly";
     public static final String CONVERSION_PLAN_CODE_YEARLY = "basic_yearly";
@@ -18,8 +28,14 @@ public final class IntroTrialPlans {
 
     public static final int TRIAL_DAYS = 7;
 
+    /** Legacy Basic Trial (subscription checkout). */
     public static final String PURCHASE_TYPE_INTRO_TRIAL = "subscription_intro_trial";
     public static final String ORDER_TYPE_INTRO_TRIAL = "subscription_intro_trial";
+
+    /** Pro Trial one-time checkout (Mode.PAYMENT). */
+    public static final String PURCHASE_TYPE_PRO_TRIAL_ONCE = "pro_trial_once";
+    public static final String ORDER_TYPE_PRO_TRIAL_ONCE = "pro_trial_once";
+
     public static final String STRIPE_CUSTOMER_META_INTRO_TRIAL_USED = "intro_trial_used";
     public static final String PHASE_INTRO = "intro";
     public static final String PHASE_STANDARD = "standard";
@@ -34,28 +50,44 @@ public final class IntroTrialPlans {
     private IntroTrialPlans() {
     }
 
-    public static boolean isIntroTrialPlanCode(String planCode) {
+    public static boolean isBasicIntroTrialPlanCode(String planCode) {
         return TRIAL_PLAN_CODE_MONTHLY.equalsIgnoreCase(planCode)
                 || TRIAL_PLAN_CODE_YEARLY.equalsIgnoreCase(planCode)
                 || "basic_trial_weekly".equalsIgnoreCase(planCode);
     }
 
+    public static boolean isOneTimeProTrialPlanCode(String planCode) {
+        return PRO_TRIAL_PLAN_CODE.equalsIgnoreCase(planCode);
+    }
+
+    /** Any paid-trial plan code (Basic historical or Pro once). */
+    public static boolean isIntroTrialPlanCode(String planCode) {
+        return isBasicIntroTrialPlanCode(planCode) || isOneTimeProTrialPlanCode(planCode);
+    }
+
     /**
-     * Returns whether an intro-trial code may be used for a new Checkout.
-     *
-     * <p>Historical yearly/weekly codes remain recognizable so existing Stripe
-     * subscriptions, orders, and webhook events can still be reconciled.</p>
+     * Returns whether a paid-trial code may start a new Checkout.
+     * Currently only Pro Trial once is sellable.
      */
     public static boolean isSellableIntroTrialPlanCode(String planCode) {
-        return TRIAL_PLAN_CODE_MONTHLY.equalsIgnoreCase(planCode);
+        return isOneTimeProTrialPlanCode(planCode);
     }
 
     public static boolean isIntroTrialOfferKind(String offerKind) {
-        return OFFER_KIND_BASIC_PAID_TRIAL.equalsIgnoreCase(offerKind);
+        return OFFER_KIND_BASIC_PAID_TRIAL.equalsIgnoreCase(offerKind)
+                || OFFER_KIND_PRO_PAID_TRIAL.equalsIgnoreCase(offerKind);
+    }
+
+    public static boolean isProPaidTrialOfferKind(String offerKind) {
+        return OFFER_KIND_PRO_PAID_TRIAL.equalsIgnoreCase(offerKind);
     }
 
     public static boolean isIntroTrialPlan(String planCode, String offerKind) {
         return isIntroTrialPlanCode(planCode) || isIntroTrialOfferKind(offerKind);
+    }
+
+    public static boolean isOneTimeProTrialPlan(String planCode, String offerKind) {
+        return isOneTimeProTrialPlanCode(planCode) || isProPaidTrialOfferKind(offerKind);
     }
 
     public static boolean isBasicPaidTier(String tier) {
@@ -63,6 +95,9 @@ public final class IntroTrialPlans {
     }
 
     public static String defaultConversionPlanCode(String trialPlanCode) {
+        if (isOneTimeProTrialPlanCode(trialPlanCode)) {
+            return null;
+        }
         if (TRIAL_PLAN_CODE_YEARLY.equalsIgnoreCase(trialPlanCode)) {
             return CONVERSION_PLAN_CODE_YEARLY;
         }
@@ -71,8 +106,12 @@ public final class IntroTrialPlans {
 
     /**
      * Conversion targets must be standard Basic plans, never another intro-trial SKU.
+     * One-time Pro Trial has no conversion target.
      */
     public static String sanitizeConversionPlanCode(String candidate, String trialPlanCode) {
+        if (isOneTimeProTrialPlanCode(trialPlanCode)) {
+            return null;
+        }
         if (!isIntroTrialPlanCode(candidate) && candidate != null && !candidate.isBlank()) {
             return candidate;
         }

@@ -52,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
@@ -124,7 +125,15 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void getCatalogHidesHistoricalYearlyTrialEvenIfDatabaseRowIsStillActive() {
+    void getCatalogSellsOnlyProTrialOnceAndHidesHistoricalBasicTrials() {
+        SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
+        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        proTrial.setTier("pro");
+        proTrial.setBillingInterval("once");
+        proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        proTrial.setConvertsToPlanCode(null);
+        proTrial.setTrialDays(7);
+
         SubscriptionPlanEntity monthlyTrial = new SubscriptionPlanEntity();
         monthlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY);
         monthlyTrial.setTier("basic");
@@ -142,15 +151,14 @@ class BillingDomainServiceImplTest {
         yearlyTrial.setTrialDays(7);
 
         when(subscriptionPlanMapper.selectList(any(Wrapper.class)))
-                .thenReturn(List.of(monthlyTrial, yearlyTrial));
+                .thenReturn(List.of(proTrial, monthlyTrial, yearlyTrial));
         when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
 
         var result = service().getCatalog();
 
         assertEquals(1, result.getPlans().size());
-        assertEquals(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY, result.getPlans().get(0).getPlanCode());
-        assertEquals(IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
-                result.getPlans().get(0).getConvertsToPlanCode());
+        assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE, result.getPlans().get(0).getPlanCode());
+        assertNull(result.getPlans().get(0).getConvertsToPlanCode());
     }
 
     @Test
@@ -1394,7 +1402,7 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void createSubscriptionCheckoutRejectsMonthlyTrialForActiveFormalMember() throws Exception {
+    void createSubscriptionCheckoutRejectsRetiredBasicMonthlyTrial() throws Exception {
         SubscriptionPlanEntity monthlyTrial = new SubscriptionPlanEntity();
         monthlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY);
         monthlyTrial.setTier("basic");
@@ -1406,16 +1414,7 @@ class BillingDomainServiceImplTest {
         monthlyTrial.setCurrency("usd");
         monthlyTrial.setIsActive(true);
 
-        UserSubscriptionEntity activeBasic = new UserSubscriptionEntity();
-        activeBasic.setId(300L);
-        activeBasic.setClerkUserId("user_active_basic");
-        activeBasic.setPlanCode("basic_monthly");
-        activeBasic.setTier("basic");
-        activeBasic.setStatus("active");
-        activeBasic.setStripeSubscriptionId("mock_sub_active_basic");
-
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(monthlyTrial);
-        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(activeBasic);
 
         BillingDomainServiceImpl service = service();
         setStripeSecretKey(service, "sk_test_xxx");
@@ -1431,8 +1430,103 @@ class BillingDomainServiceImplTest {
                         "http://localhost:3001/payment-canceled",
                         "resume_active_basic_trial"));
 
+        assertEquals("INVALID_PLAN", exception.getCode());
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void createSubscriptionCheckoutRejectsProTrialForActiveFormalMember() throws Exception {
+        SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
+        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        proTrial.setTier("pro");
+        proTrial.setBillingInterval("once");
+        proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        proTrial.setTrialDays(7);
+        proTrial.setConvertsToPlanCode(null);
+        proTrial.setPriceCents(299);
+        proTrial.setCurrency("usd");
+        proTrial.setIsActive(true);
+
+        UserSubscriptionEntity activeBasic = new UserSubscriptionEntity();
+        activeBasic.setId(300L);
+        activeBasic.setClerkUserId("user_active_basic");
+        activeBasic.setPlanCode("basic_monthly");
+        activeBasic.setTier("basic");
+        activeBasic.setStatus("active");
+        activeBasic.setStripeSubscriptionId("mock_sub_active_basic");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(proTrial);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(activeBasic);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_xxx");
+        setBillingCheckoutMockEnabled(service, true);
+
+        BillingDomainException exception = assertThrows(
+                BillingDomainException.class,
+                () -> service.createSubscriptionCheckout(
+                        "user_active_basic",
+                        "user@example.com",
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE,
+                        "http://localhost:3001/payment-success",
+                        "http://localhost:3001/payment-canceled",
+                        "resume_active_pro_trial"));
+
         assertEquals("SUBSCRIPTION_STATE_INVALID", exception.getCode());
         verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void createSubscriptionCheckoutMockFulfillsOneTimeProTrialWithoutConversion() throws Exception {
+        SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
+        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        proTrial.setTier("pro");
+        proTrial.setBillingInterval("once");
+        proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        proTrial.setTrialDays(7);
+        proTrial.setConvertsToPlanCode(null);
+        proTrial.setPriceCents(299);
+        proTrial.setCurrency("usd");
+        proTrial.setAssignmentQuota(1L);
+        proTrial.setDetectionQuota(3000L);
+        proTrial.setHumanizerQuota(1000L);
+        proTrial.setIsActive(true);
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(401L);
+        current.setClerkUserId("user_pro_trial");
+        current.setStatus("free");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(proTrial);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(userSubscriptionMapper.update(isNull(), any())).thenReturn(1);
+        when(rechargeOrderMapper.insert(any(RechargeOrderEntity.class))).thenReturn(1);
+
+        BillingDomainServiceImpl service = service();
+        setStripeSecretKey(service, "sk_test_xxx");
+        setBillingCheckoutMockEnabled(service, true);
+
+        var result = service.createSubscriptionCheckout(
+                "user_pro_trial",
+                "user@example.com",
+                IntroTrialPlans.PRO_TRIAL_PLAN_CODE,
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_pro_trial");
+
+        assertNotNull(result.getSessionId());
+        assertEquals(299, result.getQuotedAmountCents());
+        verify(planQuotaService).resetFromPaidInvoice(
+                eq("user_pro_trial"),
+                anyString(),
+                eq(IntroTrialPlans.PRO_TRIAL_PLAN_CODE),
+                any(Instant.class),
+                any(Instant.class),
+                anyString(),
+                eq(IntroTrialPlans.ORDER_TYPE_PRO_TRIAL_ONCE));
+        ArgumentCaptor<RechargeOrderEntity> orderCaptor = ArgumentCaptor.forClass(RechargeOrderEntity.class);
+        verify(rechargeOrderMapper).insert(orderCaptor.capture());
+        assertEquals(IntroTrialPlans.ORDER_TYPE_PRO_TRIAL_ONCE, orderCaptor.getValue().getOrderType());
     }
 
     @Test

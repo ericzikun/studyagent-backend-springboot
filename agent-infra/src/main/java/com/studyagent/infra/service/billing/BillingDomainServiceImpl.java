@@ -2502,7 +2502,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         : List.of("subscribe"))
                 .isAdmin(false)
                 .isQuotaVip(false)
-                .effectiveMaxFiles(hardCut ? 0 : 3)
+                .effectiveMaxFiles(3)
                 .effectiveMaxFollowupEdits(hardCut ? 0 : 3)
                 .effectiveAllowedOutputTypes(List.of("writing"))
                 .cancelAtPeriodEnd(false)

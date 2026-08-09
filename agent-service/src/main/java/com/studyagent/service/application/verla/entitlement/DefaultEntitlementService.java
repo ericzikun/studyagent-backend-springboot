@@ -125,7 +125,7 @@ public class DefaultEntitlementService implements EntitlementService {
         }
         EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
         Integer limit = entitlements.maxFiles();
-        // null = unlimited (Pro); 0 = lapsed / blocked after Free hard-cut
+        // null = unlimited (Pro); 0 = blocked (not unlimited)
         if (limit == null) {
             return;
         }

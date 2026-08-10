@@ -62,6 +62,20 @@ ON DUPLICATE KEY UPDATE
 
 COMMIT;
 
+-- 3) Bind Stripe IDs (same Product; two weekly recurring $2.99 Prices)
+--    Confirm Live vs Sandbox matches backend Stripe key.
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1G01bZsnM',
+    updated_at = CURRENT_TIMESTAMP
+WHERE plan_code = 'pro_trial_to_monthly';
+
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1RiBWMZzT',
+    updated_at = CURRENT_TIMESTAMP
+WHERE plan_code = 'pro_trial_to_yearly';
+
 SELECT plan_code, tier, billing_interval, offer_kind, trial_days,
        converts_to_plan_code, price_cents, is_active,
        stripe_product_id, stripe_price_id,

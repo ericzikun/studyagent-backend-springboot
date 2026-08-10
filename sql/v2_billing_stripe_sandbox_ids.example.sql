@@ -31,6 +31,10 @@ SET stripe_product_id = 'prod_PRO_TRIAL',
     converts_to_plan_code = 'pro_yearly',
     is_active = 1
 WHERE plan_code = 'pro_trial_to_yearly';
+-- Example Live/Sandbox IDs used in this project:
+--   prod_V2g1XTzV22Xlej
+--   price_1U2sET7GRT6LLkI1G01bZsnM  (→ pro_trial_to_monthly)
+--   price_1U2sET7GRT6LLkI1RiBWMZzT  (→ pro_trial_to_yearly)
 
 UPDATE subscription_plans
 SET is_active = 0

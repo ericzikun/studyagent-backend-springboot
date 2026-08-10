@@ -21,18 +21,18 @@ SET stripe_product_id = 'prod_V2XQ7NFmV07Gc0',
     is_active = 0
 WHERE plan_code = 'basic_trial_to_yearly';
 
--- Pro Trial weekly recurring $2.99 — REPLACE with real Sandbox Price IDs before QA.
--- UPDATE subscription_plans
--- SET stripe_product_id = 'prod_PRO_TRIAL',
---     stripe_price_id = 'price_PRO_TRIAL_TO_MONTHLY',
---     is_active = 1
--- WHERE plan_code = 'pro_trial_to_monthly';
---
--- UPDATE subscription_plans
--- SET stripe_product_id = 'prod_PRO_TRIAL',
---     stripe_price_id = 'price_PRO_TRIAL_TO_YEARLY',
---     is_active = 1
--- WHERE plan_code = 'pro_trial_to_yearly';
+-- Pro Trial: same Product, two weekly recurring $2.99 Prices.
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1G01bZsnM',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_monthly';
+
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1RiBWMZzT',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_yearly';
 
 UPDATE subscription_plans
 SET is_active = 0

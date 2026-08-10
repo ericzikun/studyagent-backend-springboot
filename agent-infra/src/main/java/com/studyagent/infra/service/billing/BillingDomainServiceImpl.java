@@ -9,6 +9,7 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Charge;
 import com.stripe.model.Invoice;
+import com.stripe.model.Product;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
@@ -357,6 +358,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData);
+        applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode());
         if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             builder.putMetadata("conversion_plan_code", conversionPlanCode)
                     .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION);
@@ -772,7 +774,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .build();
-        return SessionCreateParams.builder()
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
@@ -794,8 +796,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .putMetadata("clerk_user_id", clerkUserId)
                                 .putMetadata("plan_code", planCode)
                                 .build())
-                        .build())
-                .build();
+                        .build());
+        applyCheckoutProductDescription(builder, plan.getStripeProductId(), planCode);
+        return builder.build();
     }
 
     @Override
@@ -2165,6 +2168,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Customer.create(params);
     }
 
+    Product retrieveStripeProduct(String productId) throws StripeException {
+        return Product.retrieve(productId);
+    }
+
     com.stripe.model.billingportal.Session createStripeBillingPortalSession(
             com.stripe.param.billingportal.SessionCreateParams params) throws StripeException {
         return com.stripe.model.billingportal.Session.create(params);
@@ -2565,7 +2572,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedCancelUrl,
             String resumeToken,
             SessionCreateParams.PaymentIntentData paymentIntentData) {
-        return SessionCreateParams.builder()
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
@@ -2600,8 +2607,39 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("current_plan_code", currentPlan.getPlanCode())
                 .putMetadata("target_plan_code", targetPlan.getPlanCode())
                 .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
-                .setPaymentIntentData(paymentIntentData)
-                .build();
+                .setPaymentIntentData(paymentIntentData);
+        applyCheckoutProductDescription(builder, targetPlan.getStripeProductId(), targetPlan.getPlanCode());
+        return builder.build();
+    }
+
+    /**
+     * Mirrors the Stripe Product description into the Hosted Checkout confirmation area.
+     * Product descriptions remain managed in Stripe so every subscription checkout, including
+     * manual upgrades that use an ad-hoc PriceData line item, shows the same plan explanation.
+     * A description lookup must not prevent a customer from paying when Stripe's product API is
+     * temporarily unavailable.
+     */
+    private void applyCheckoutProductDescription(
+            SessionCreateParams.Builder builder,
+            String stripeProductId,
+            String planCode) {
+        if (!hasText(stripeProductId)) {
+            return;
+        }
+        try {
+            Product product = retrieveStripeProduct(stripeProductId);
+            if (!hasText(product.getDescription())) {
+                return;
+            }
+            builder.setCustomText(SessionCreateParams.CustomText.builder()
+                    .setSubmit(SessionCreateParams.CustomText.Submit.builder()
+                            .setMessage(product.getDescription().trim())
+                            .build())
+                    .build());
+        } catch (StripeException e) {
+            log.warn("Unable to load Stripe Product description for Checkout: planCode={}, productId={}",
+                    planCode, stripeProductId, e);
+        }
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

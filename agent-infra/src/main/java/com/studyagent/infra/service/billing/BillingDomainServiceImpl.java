@@ -132,7 +132,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             + IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY + "}")
     private String introTrialConversionPlanCode;
 
-    @Value("${billing.intro-trial.allow-direct-purchase-basic:false}")
+    /** When false, unpaid users cannot buy Basic without Trial. Default true: Basic is directly sellable. */
+    @Value("${billing.intro-trial.allow-direct-purchase-basic:true}")
     private boolean allowDirectPurchaseBasic;
 
     @PostConstruct
@@ -1580,8 +1581,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (isIntroTrialPlan(plan)) {
             return;
         }
-        // Unpaid users may skip Trial by buying Plus / Pro only.
-        if ("plus".equalsIgnoreCase(plan.getTier()) || "pro".equalsIgnoreCase(plan.getTier())) {
+        // Unpaid users may buy Plus / Pro / Basic directly. Basic was previously
+        // gated behind Basic Trial; that gate is off by default (allowDirectPurchaseBasic=true).
+        if ("plus".equalsIgnoreCase(plan.getTier())
+                || "pro".equalsIgnoreCase(plan.getTier())
+                || "basic".equalsIgnoreCase(plan.getTier()) && allowDirectPurchaseBasic) {
             return;
         }
         if ("basic".equalsIgnoreCase(plan.getTier()) && !allowDirectPurchaseBasic) {

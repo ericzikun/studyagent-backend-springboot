@@ -557,7 +557,7 @@ public class StripeBillingWebhookService {
                 return;
             }
             String planCode = firstNonBlank(
-                    metadata.get("plan_code"), IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+                    metadata.get("plan_code"), IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE);
             BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
             if (billingDomainService == null) {
                 throw new IllegalStateException("BillingDomainService unavailable for Pro Trial fulfill");
@@ -1743,7 +1743,8 @@ public class StripeBillingWebhookService {
             } else if (resolvedPlanCode != null) {
                 if (IntroTrialPlans.PHASE_INTRO.equals(entity.getSubscriptionPhase())
                         || (entity.getIntroTrialUsedAt() != null
-                        && IntroTrialPlans.isBasicPaidTier(plan.getTier())
+                        && (IntroTrialPlans.isBasicPaidTier(plan.getTier())
+                                || IntroTrialPlans.isProPaidTier(plan.getTier()))
                         && entity.getIntroTrialConvertedAt() == null)) {
                     entity.setIntroTrialConvertedAt(now);
                 }

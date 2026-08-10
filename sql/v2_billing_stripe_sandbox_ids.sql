@@ -1,8 +1,8 @@
 -- Stripe Sandbox Product/Price IDs for V2 billing.
 -- This script is environment-specific and must never be used in Production.
--- Run after 056_subscription_catalog.sql, 071_basic_trial_weekly.sql, and
--- 074_basic_trial_monthly_only.sql. Only the monthly-conversion Basic trial is
--- sellable; the yearly Price mapping remains solely for historical lookup.
+-- Run after 056 / 071 / 074 / 075 / 076. Sellable paid trial is Pro Trial
+-- (pro_trial_to_monthly / pro_trial_to_yearly) with weekly recurring $2.99 Prices.
+-- Bind PRO_TRIAL_* Price IDs after creating them in Stripe Sandbox.
 
 USE studyagent;
 
@@ -12,7 +12,7 @@ UPDATE subscription_plans
 SET stripe_product_id = 'prod_V2XQ7NFmV07Gc0',
     stripe_price_id = 'price_1U2SNV7GRT6LLkI1xPKAx9PO',
     converts_to_plan_code = 'basic_monthly',
-    is_active = 1
+    is_active = 0
 WHERE plan_code = 'basic_trial_to_monthly';
 
 UPDATE subscription_plans
@@ -20,6 +20,23 @@ SET stripe_product_id = 'prod_V2XQ7NFmV07Gc0',
     stripe_price_id = 'price_1U2VYo7GRT6LLkI1pYEEbcmw',
     is_active = 0
 WHERE plan_code = 'basic_trial_to_yearly';
+
+-- Pro Trial: same Product, two weekly recurring $2.99 Prices.
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1G01bZsnM',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_monthly';
+
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_V2g1XTzV22Xlej',
+    stripe_price_id = 'price_1U2sET7GRT6LLkI1RiBWMZzT',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_yearly';
+
+UPDATE subscription_plans
+SET is_active = 0
+WHERE plan_code = 'pro_trial_once';
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_V2XQKO3FZiPKZI',

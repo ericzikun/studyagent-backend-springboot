@@ -44,14 +44,15 @@ public interface BillingDomainService {
     boolean isPaidMember(String clerkUserId);
 
     /**
-     * After Basic trial checkout is paid: mark once-per-customer usage and attach
-     * a Subscription Schedule that converts the 7-day intro into basic_monthly / basic_yearly.
+     * After paid-trial Checkout is paid (Basic historical or Pro subscription trial):
+     * mark once-per-customer usage and attach a Subscription Schedule that converts the
+     * 7-day intro into the formal plan ({@code basic_*} or {@code pro_*}).
      */
     void fulfillIntroTrialSubscription(String clerkUserId, String stripeCustomerId, String stripeSubscriptionId);
 
     /**
-     * After Pro Trial one-time Checkout is paid: mark once-per-customer usage and open a
-     * fixed 7-day entitlement window. No Stripe Subscription / Schedule is created.
+     * Historical: after one-time Pro Trial Checkout ({@code pro_trial_once}) is paid.
+     * New Pro Trial sales use {@link #fulfillIntroTrialSubscription} instead.
      */
     void fulfillProTrialPayment(
             String clerkUserId,

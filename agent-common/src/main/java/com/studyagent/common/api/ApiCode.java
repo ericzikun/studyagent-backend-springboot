@@ -51,12 +51,12 @@ public enum ApiCode {
             "请先处理现有订阅的付款问题再变更套餐"),
     INTRO_TRIAL_ALREADY_USED(
             1029,
-            "Basic Trial can only be used once per Stripe customer",
-            "Basic Trial 每位 Stripe 客户仅可使用一次"),
+            "Pro Trial can only be used once per Stripe customer",
+            "Pro Trial 每位 Stripe 客户仅可使用一次"),
     BASIC_REQUIRES_TRIAL(
             1030,
-            "Basic monthly requires completing Basic Trial first",
-            "Basic 月付需先完成 Basic Trial，或直接购买 Plus/Pro"),
+            "Get 7 days of Verla Pro for $2.99. After 7 days, your selected monthly or annual plan starts automatically at the regular price unless you cancel before the trial ends. Cancel anytime.",
+            "以 $2.99 获得 7 天 Verla Pro。7 天后将按您选择的月付或年付方案以正价自动开始，除非您在试用结束前取消。可随时取消。"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

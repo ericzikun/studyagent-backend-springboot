@@ -1584,7 +1584,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if ("basic".equalsIgnoreCase(plan.getTier()) && !allowDirectPurchaseBasic) {
             throw new BillingDomainException(
                     "BASIC_REQUIRES_TRIAL",
-                    "Basic requires completing Basic trial first; buy Plus/Pro to skip");
+                    "Get 7 days of Verla Pro for $2.99. After 7 days, your selected monthly or annual plan starts automatically at the regular price unless you cancel before the trial ends. Cancel anytime.");
         }
     }
 
@@ -1620,7 +1620,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (isIntroTrialPlan(targetPlan)) {
             throw new BillingDomainException(
                     "SUBSCRIPTION_STATE_INVALID",
-                    "Cannot switch an active subscription to Basic trial");
+                    "Cannot switch an active subscription to a paid trial");
         }
         if (current != null
                 && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())

@@ -125,14 +125,30 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void getCatalogSellsOnlyProTrialOnceAndHidesHistoricalBasicTrials() {
-        SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
-        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
-        proTrial.setTier("pro");
-        proTrial.setBillingInterval("once");
-        proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
-        proTrial.setConvertsToPlanCode(null);
-        proTrial.setTrialDays(7);
+    void getCatalogSellsSubscriptionProTrialsAndHidesHistoricalTrials() {
+        SubscriptionPlanEntity proTrialMonthly = new SubscriptionPlanEntity();
+        proTrialMonthly.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
+        proTrialMonthly.setTier("pro");
+        proTrialMonthly.setBillingInterval("month");
+        proTrialMonthly.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        proTrialMonthly.setConvertsToPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
+        proTrialMonthly.setTrialDays(7);
+
+        SubscriptionPlanEntity proTrialYearly = new SubscriptionPlanEntity();
+        proTrialYearly.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY);
+        proTrialYearly.setTier("pro");
+        proTrialYearly.setBillingInterval("year");
+        proTrialYearly.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        proTrialYearly.setConvertsToPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY);
+        proTrialYearly.setTrialDays(7);
+
+        SubscriptionPlanEntity onceRetired = new SubscriptionPlanEntity();
+        onceRetired.setPlanCode(IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE);
+        onceRetired.setTier("pro");
+        onceRetired.setBillingInterval("once");
+        onceRetired.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
+        onceRetired.setConvertsToPlanCode(null);
+        onceRetired.setTrialDays(7);
 
         SubscriptionPlanEntity monthlyTrial = new SubscriptionPlanEntity();
         monthlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY);
@@ -142,23 +158,21 @@ class BillingDomainServiceImplTest {
         monthlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY);
         monthlyTrial.setTrialDays(7);
 
-        SubscriptionPlanEntity yearlyTrial = new SubscriptionPlanEntity();
-        yearlyTrial.setPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY);
-        yearlyTrial.setTier("basic");
-        yearlyTrial.setBillingInterval("year");
-        yearlyTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL);
-        yearlyTrial.setConvertsToPlanCode(IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY);
-        yearlyTrial.setTrialDays(7);
-
         when(subscriptionPlanMapper.selectList(any(Wrapper.class)))
-                .thenReturn(List.of(proTrial, monthlyTrial, yearlyTrial));
+                .thenReturn(List.of(proTrialMonthly, proTrialYearly, onceRetired, monthlyTrial));
         when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
 
         var result = service().getCatalog();
 
-        assertEquals(1, result.getPlans().size());
-        assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE, result.getPlans().get(0).getPlanCode());
-        assertNull(result.getPlans().get(0).getConvertsToPlanCode());
+        assertEquals(2, result.getPlans().size());
+        assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, result.getPlans().get(0).getPlanCode());
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
+                result.getPlans().get(0).getConvertsToPlanCode());
+        assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY, result.getPlans().get(1).getPlanCode());
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY,
+                result.getPlans().get(1).getConvertsToPlanCode());
     }
 
     @Test
@@ -1437,12 +1451,12 @@ class BillingDomainServiceImplTest {
     @Test
     void createSubscriptionCheckoutRejectsProTrialForActiveFormalMember() throws Exception {
         SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
-        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
         proTrial.setTier("pro");
-        proTrial.setBillingInterval("once");
+        proTrial.setBillingInterval("month");
         proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
         proTrial.setTrialDays(7);
-        proTrial.setConvertsToPlanCode(null);
+        proTrial.setConvertsToPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
         proTrial.setPriceCents(299);
         proTrial.setCurrency("usd");
         proTrial.setIsActive(true);
@@ -1467,7 +1481,7 @@ class BillingDomainServiceImplTest {
                 () -> service.createSubscriptionCheckout(
                         "user_active_basic",
                         "user@example.com",
-                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE,
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY,
                         "http://localhost:3001/payment-success",
                         "http://localhost:3001/payment-canceled",
                         "resume_active_pro_trial"));
@@ -1477,14 +1491,14 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void createSubscriptionCheckoutMockFulfillsOneTimeProTrialWithoutConversion() throws Exception {
+    void createSubscriptionCheckoutMockFulfillsProTrialWithConversionTarget() throws Exception {
         SubscriptionPlanEntity proTrial = new SubscriptionPlanEntity();
-        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        proTrial.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
         proTrial.setTier("pro");
-        proTrial.setBillingInterval("once");
+        proTrial.setBillingInterval("month");
         proTrial.setOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL);
         proTrial.setTrialDays(7);
-        proTrial.setConvertsToPlanCode(null);
+        proTrial.setConvertsToPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
         proTrial.setPriceCents(299);
         proTrial.setCurrency("usd");
         proTrial.setAssignmentQuota(1L);
@@ -1509,7 +1523,7 @@ class BillingDomainServiceImplTest {
         var result = service.createSubscriptionCheckout(
                 "user_pro_trial",
                 "user@example.com",
-                IntroTrialPlans.PRO_TRIAL_PLAN_CODE,
+                IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY,
                 "http://localhost:3001/payment-success",
                 "http://localhost:3001/payment-canceled",
                 "resume_pro_trial");
@@ -1519,14 +1533,18 @@ class BillingDomainServiceImplTest {
         verify(planQuotaService).resetFromPaidInvoice(
                 eq("user_pro_trial"),
                 anyString(),
-                eq(IntroTrialPlans.PRO_TRIAL_PLAN_CODE),
+                eq(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY),
                 any(Instant.class),
                 any(Instant.class),
                 anyString(),
-                eq(IntroTrialPlans.ORDER_TYPE_PRO_TRIAL_ONCE));
+                eq(IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL));
         ArgumentCaptor<RechargeOrderEntity> orderCaptor = ArgumentCaptor.forClass(RechargeOrderEntity.class);
         verify(rechargeOrderMapper).insert(orderCaptor.capture());
-        assertEquals(IntroTrialPlans.ORDER_TYPE_PRO_TRIAL_ONCE, orderCaptor.getValue().getOrderType());
+        assertEquals(IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL, orderCaptor.getValue().getOrderType());
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
+                current.getPendingPlanCode());
+        assertNotNull(current.getStripeSubscriptionId());
     }
 
     @Test

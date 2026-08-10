@@ -3,13 +3,12 @@
 
 USE studyagent;
 
--- Only the monthly-conversion Basic trial is sellable. Keep the historical
--- yearly Price mapping so old webhook/order/subscription data can still resolve.
+-- Historical Basic Trial Prices (not sellable). Keep for lookup.
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC_TRIAL',
     stripe_price_id = 'price_BASIC_TRIAL_TO_MONTHLY',
     converts_to_plan_code = 'basic_monthly',
-    is_active = 1
+    is_active = 0
 WHERE plan_code = 'basic_trial_to_monthly';
 
 UPDATE subscription_plans
@@ -17,6 +16,25 @@ SET stripe_product_id = 'prod_BASIC_TRIAL',
     stripe_price_id = 'price_BASIC_TRIAL_TO_YEARLY',
     is_active = 0
 WHERE plan_code = 'basic_trial_to_yearly';
+
+-- Sellable Pro Trial: weekly recurring $2.99 Prices (NOT one_time).
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_PRO_TRIAL',
+    stripe_price_id = 'price_PRO_TRIAL_TO_MONTHLY',
+    converts_to_plan_code = 'pro_monthly',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_monthly';
+
+UPDATE subscription_plans
+SET stripe_product_id = 'prod_PRO_TRIAL',
+    stripe_price_id = 'price_PRO_TRIAL_TO_YEARLY',
+    converts_to_plan_code = 'pro_yearly',
+    is_active = 1
+WHERE plan_code = 'pro_trial_to_yearly';
+
+UPDATE subscription_plans
+SET is_active = 0
+WHERE plan_code = 'pro_trial_once';
 
 UPDATE subscription_plans
 SET stripe_product_id = 'prod_BASIC', stripe_price_id = 'price_BASIC_MONTHLY'

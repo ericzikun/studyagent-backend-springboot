@@ -105,27 +105,49 @@ class IntroTrialBillingTest {
         assertFalse(IntroTrialPlans.isIntroTrialPlanCode("basic_monthly"));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
         assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
-        assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
+        assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY));
+        assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
+        assertTrue(IntroTrialPlans.isIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode("basic_trial_weekly"));
-        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
+        assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE));
+        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY));
+        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
         assertTrue(IntroTrialPlans.isOneTimeProTrialPlan(
-                IntroTrialPlans.PRO_TRIAL_PLAN_CODE, IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
-        assertNull(IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE));
+                IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE, IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
+        // Critical: subscription Pro Trial shares offer_kind but must NOT be treated as one-time.
+        assertFalse(IntroTrialPlans.isOneTimeProTrialPlan(
+                IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
+        assertNull(IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE));
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
+                IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY));
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY,
+                IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
         assertEquals(
                 IntroTrialPlans.CONVERSION_PLAN_CODE_YEARLY,
                 IntroTrialPlans.defaultConversionPlanCode(IntroTrialPlans.TRIAL_PLAN_CODE_YEARLY));
     }
 
     @Test
-    void classifyPlanChange_proTrialToProMonthlyIsImmediateUpgrade() {
+    void classifyPlanChange_proSubscriptionTrialToProMonthlyIsUnsupported() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, "pro", "month",
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY, "pro", "month"));
+    }
+
+    @Test
+    void classifyPlanChange_historicalOneTimeProTrialToProMonthlyIsImmediateUpgrade() {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.IMMEDIATE_UPGRADE,
                 BillingDomainServiceImpl.classifyPlanChange(
-                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE, "pro", "once",
+                        IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE, "pro", "once",
                         "pro_monthly", "pro", "month"));
     }
 
@@ -146,6 +168,16 @@ class IntroTrialBillingTest {
                 IntroTrialPlans.sanitizeConversionPlanCode(
                         IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY,
                         IntroTrialPlans.TRIAL_PLAN_CODE_MONTHLY));
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
+                IntroTrialPlans.sanitizeConversionPlanCode(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY,
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY));
+        assertEquals(
+                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY,
+                IntroTrialPlans.sanitizeConversionPlanCode(
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY,
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
     }
 
     private static SubscriptionPlanEntity plan(

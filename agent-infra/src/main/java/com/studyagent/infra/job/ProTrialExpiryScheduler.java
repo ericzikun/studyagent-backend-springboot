@@ -17,8 +17,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Ends one-time Pro Trial windows after {@code current_period_end}.
- * There is no Stripe Subscription to cancel — status is flipped locally and plan quota cleared.
+ * Historical: ends one-time {@code pro_trial_once} windows after {@code current_period_end}.
+ * Subscription Pro Trial ({@code pro_trial_to_*}) is managed by Stripe Schedule — not this job.
  */
 @Slf4j
 @Component
@@ -39,7 +39,7 @@ public class ProTrialExpiryScheduler {
         LocalDateTime now = LocalDateTime.now();
         List<UserSubscriptionEntity> expired = subscriptionMapper.selectList(
                 new LambdaQueryWrapper<UserSubscriptionEntity>()
-                        .eq(UserSubscriptionEntity::getPlanCode, IntroTrialPlans.PRO_TRIAL_PLAN_CODE)
+                        .eq(UserSubscriptionEntity::getPlanCode, IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE)
                         .in(UserSubscriptionEntity::getStatus, List.of("active", "trialing"))
                         .isNotNull(UserSubscriptionEntity::getCurrentPeriodEnd)
                         .le(UserSubscriptionEntity::getCurrentPeriodEnd, now)
@@ -65,7 +65,7 @@ public class ProTrialExpiryScheduler {
                     key + ":plan");
             int updated = subscriptionMapper.update(null, new UpdateWrapper<UserSubscriptionEntity>()
                     .eq("id", subscription.getId())
-                    .eq("plan_code", IntroTrialPlans.PRO_TRIAL_PLAN_CODE)
+                    .eq("plan_code", IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE)
                     .in("status", List.of("active", "trialing"))
                     .le("current_period_end", now)
                     .set("status", "canceled")

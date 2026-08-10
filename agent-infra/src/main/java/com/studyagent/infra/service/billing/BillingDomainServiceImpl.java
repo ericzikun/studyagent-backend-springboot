@@ -124,10 +124,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Value("${billing.intro-trial.enabled:true}")
     private boolean introTrialEnabled;
 
-    @Value("${billing.intro-trial.plan-code:" + IntroTrialPlans.TRIAL_PLAN_CODE + "}")
+    @Value("${billing.intro-trial.plan-code:" + IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY + "}")
     private String introTrialPlanCode;
 
-    @Value("${billing.intro-trial.conversion-plan-code:" + IntroTrialPlans.CONVERSION_PLAN_CODE + "}")
+    @Value("${billing.intro-trial.conversion-plan-code:"
+            + IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY + "}")
     private String introTrialConversionPlanCode;
 
     @Value("${billing.intro-trial.allow-direct-purchase-basic:false}")
@@ -1511,7 +1512,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (!introTrialEnabled || !hasText(clerkUserId)) {
             return;
         }
-        String resolvedPlanCode = firstNonBlank(planCode, IntroTrialPlans.PRO_TRIAL_PLAN_CODE);
+        String resolvedPlanCode = firstNonBlank(planCode, IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE);
         if (!IntroTrialPlans.isOneTimeProTrialPlanCode(resolvedPlanCode)) {
             throw new BillingDomainException("INVALID_PLAN", "Not a one-time Pro Trial plan: " + resolvedPlanCode);
         }
@@ -1623,11 +1624,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         if (current != null
                 && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
-                && IntroTrialPlans.isBasicPaidTier(targetPlan.getTier())
-                && !isIntroTrialPlan(targetPlan)) {
-            throw new BillingDomainException(
-                    "SUBSCRIPTION_STATE_INVALID",
-                    "Basic renews automatically after the paid trial");
+                && !isIntroTrialPlan(targetPlan)
+                && !IntroTrialPlans.isOneTimeProTrialPlanCode(current.getPlanCode())) {
+            String trialPlanCode = current.getPlanCode();
+            boolean autoConvertsToTargetTier =
+                    (IntroTrialPlans.isProSubscriptionTrialPlanCode(trialPlanCode)
+                            && IntroTrialPlans.isProPaidTier(targetPlan.getTier()))
+                    || (IntroTrialPlans.isBasicIntroTrialPlanCode(trialPlanCode)
+                            && IntroTrialPlans.isBasicPaidTier(targetPlan.getTier()));
+            if (autoConvertsToTargetTier) {
+                throw new BillingDomainException(
+                        "SUBSCRIPTION_STATE_INVALID",
+                        "Paid plan renews automatically after the paid trial");
+            }
         }
     }
 
@@ -1836,8 +1845,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     /**
-     * Resolve standard Basic plan after paid trial. Never trust a pending/trial SKU
-     * as the conversion target (checkout link previously wrote trial plan into pending).
+     * Resolve standard paid plan after paid trial (Basic or Pro). Never trust a
+     * pending/trial SKU as the conversion target.
      */
     private String resolveConversionPlanCodeForUser(UserSubscriptionEntity current) {
         String trialPlanCode = current == null ? null : current.getPlanCode();
@@ -2709,6 +2718,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String convertsToBillingInterval = null;
         boolean oneTimeProTrial = IntroTrialPlans.isOneTimeProTrialPlanCode(
                 entity == null ? null : entity.getPlanCode());
+        // Subscription trials (Basic historical + Pro) expose Schedule conversion target.
         if (onIntroTrial && !oneTimeProTrial) {
             convertsToPlanCode = firstNonBlank(
                     entity.getPendingPlanCode(),
@@ -2986,22 +2996,28 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean currentTrial = IntroTrialPlans.isIntroTrialPlanCode(currentPlanCode);
         boolean targetTrial = IntroTrialPlans.isIntroTrialPlanCode(targetPlanCode);
         boolean currentOneTimeProTrial = IntroTrialPlans.isOneTimeProTrialPlanCode(currentPlanCode);
+        boolean currentProSubscriptionTrial =
+                IntroTrialPlans.isProSubscriptionTrialPlanCode(currentPlanCode);
         // Cannot change into a paid trial from any existing subscription.
         if (targetTrial) {
             return PlanChangeAction.UNSUPPORTED;
         }
-        // Basic Trial → Basic is automatic via Schedule; Trial → Plus/Pro is immediate upgrade.
-        // One-time Pro Trial has no Schedule conversion; allow upgrade to a higher formal plan.
+        // Subscription Trial → matching formal tier is automatic via Schedule.
+        // Trial → higher tier is immediate upgrade. One-time Pro Trial has no Schedule.
         if (currentTrial) {
-            if (!currentOneTimeProTrial && IntroTrialPlans.isBasicPaidTier(targetTier)) {
+            String baselineTier = (currentOneTimeProTrial || currentProSubscriptionTrial)
+                    ? "pro"
+                    : "basic";
+            if (!currentOneTimeProTrial
+                    && baselineTier.equalsIgnoreCase(targetTier)) {
                 return PlanChangeAction.UNSUPPORTED;
             }
-            String baselineTier = currentOneTimeProTrial ? "pro" : "basic";
+            if (currentOneTimeProTrial && "pro".equalsIgnoreCase(targetTier)) {
+                return PlanChangeAction.IMMEDIATE_UPGRADE;
+            }
             return tierRankStatic(targetTier) > tierRankStatic(baselineTier)
                     ? PlanChangeAction.IMMEDIATE_UPGRADE
-                    : (currentOneTimeProTrial && "pro".equalsIgnoreCase(targetTier)
-                            ? PlanChangeAction.IMMEDIATE_UPGRADE
-                            : PlanChangeAction.UNSUPPORTED);
+                    : PlanChangeAction.UNSUPPORTED;
         }
         if (currentTier.equals(targetTier) && currentInterval.equals(targetInterval)) {
             return PlanChangeAction.NOOP;

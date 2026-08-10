@@ -1581,14 +1581,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (isIntroTrialPlan(plan)) {
             return;
         }
-        // Unpaid users may buy Plus / Pro / Basic directly. Basic was previously
-        // gated behind Basic Trial; that gate is off by default (allowDirectPurchaseBasic=true).
-        if ("plus".equalsIgnoreCase(plan.getTier())
-                || "pro".equalsIgnoreCase(plan.getTier())
-                || "basic".equalsIgnoreCase(plan.getTier()) && allowDirectPurchaseBasic) {
+        // Unpaid users may buy Plus / Pro directly. Basic is also directly sellable
+        // by default (allowDirectPurchaseBasic=true) now that Basic Trial is retired.
+        if ("plus".equalsIgnoreCase(plan.getTier()) || "pro".equalsIgnoreCase(plan.getTier())) {
             return;
         }
-        if ("basic".equalsIgnoreCase(plan.getTier()) && !allowDirectPurchaseBasic) {
+        if ("basic".equalsIgnoreCase(plan.getTier())) {
+            if (allowDirectPurchaseBasic) {
+                return;
+            }
             throw new BillingDomainException(
                     "BASIC_REQUIRES_TRIAL",
                     "Get 7 days of Verla Pro for $2.99. After 7 days, your selected monthly or annual plan starts automatically at the regular price unless you cancel before the trial ends. Cancel anytime.");

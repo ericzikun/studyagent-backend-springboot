@@ -30,14 +30,14 @@ INSERT INTO subscription_plans (
         'pro_trial_to_monthly', 'pro', 'month', 'pro_paid_trial', 7, 'pro_monthly',
         299, 'usd',
         1, 3000, 1000,
-        3, 3, JSON_ARRAY('writing'),
+        NULL, NULL, JSON_ARRAY('writing', 'ppt', 'coding'),
         1, 1, 4
     ),
     (
         'pro_trial_to_yearly', 'pro', 'year', 'pro_paid_trial', 7, 'pro_yearly',
         299, 'usd',
         1, 3000, 1000,
-        3, 3, JSON_ARRAY('writing'),
+        NULL, NULL, JSON_ARRAY('writing', 'ppt', 'coding'),
         1, 1, 5
     )
 ON DUPLICATE KEY UPDATE

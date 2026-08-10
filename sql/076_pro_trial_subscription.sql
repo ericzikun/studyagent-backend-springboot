@@ -5,9 +5,8 @@
 -- Retires one-time SKU pro_trial_once from new sales.
 --
 -- Prerequisites: 071 / 072 / 073 / 074 / 075 already applied.
--- Stripe: create TWO weekly recurring Prices at $2.99 (NOT one_time).
--- Bind stripe_product_id / stripe_price_id per env after this script
--- (see v2_billing_stripe_sandbox_ids*.sql placeholders).
+-- One-shot: upserts SKUs + binds Stripe weekly Prices below.
+-- Idempotent — safe to re-run.
 
 USE studyagent;
 

@@ -1644,17 +1644,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (current != null && current.getIntroTrialUsedAt() != null) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Paid trial can only be used once per Stripe customer");
+                    "Pro Trial can only be used once per Stripe customer");
         }
         if (hasPaidIntroTrialOrder(current == null ? null : current.getClerkUserId())) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Paid trial can only be used once per Stripe customer");
+                    "Pro Trial can only be used once per Stripe customer");
         }
         if (isIntroTrialUsedOnStripeCustomer(stripeCustomerId)) {
             throw new BillingDomainException(
                     "TRIAL_ALREADY_USED",
-                    "Paid trial can only be used once per Stripe customer");
+                    "Pro Trial can only be used once per Stripe customer");
         }
     }
 

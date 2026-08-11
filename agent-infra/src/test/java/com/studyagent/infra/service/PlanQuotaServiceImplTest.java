@@ -14,6 +14,8 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -32,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -78,6 +81,7 @@ class PlanQuotaServiceImplTest {
                 quotaLedgerMapper,
                 userSubscriptionMapper);
         attachPublisher(service);
+        SimpleMeterRegistry registry = attachMetrics(service);
 
         Instant start = Instant.parse("2026-06-15T00:00:00Z");
         Instant end = Instant.parse("2026-07-15T00:00:00Z");
@@ -96,6 +100,52 @@ class PlanQuotaServiceImplTest {
         verify(quotaGrantAnalyticsPublisher, times(3)).publishAfterCommit(analyticsCaptor.capture());
         assertTrue(analyticsCaptor.getAllValues().stream()
                 .allMatch(event -> "subscription_initial".equals(event.grantType())));
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "initial", "feature", "assignment",
+                        "purchase_type", "subscription_initial", "product_code", "basic_monthly",
+                        "result", "success")
+                .counter().count());
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "initial", "feature", "detection",
+                        "purchase_type", "subscription_initial", "product_code", "basic_monthly",
+                        "result", "success")
+                .counter().count());
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "initial", "feature", "humanizer",
+                        "purchase_type", "subscription_initial", "product_code", "basic_monthly",
+                        "result", "success")
+                .counter().count());
+    }
+
+    @Test
+    void resetFromPaidInvoice_recordsError_forFeatureWhoseLedgerWriteFails() {
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(plan("basic_monthly", 3L, 3L, 2L));
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(quota(11L, "task_create", 0L, 0L, 0L),
+                        quota(12L, "ai_detection", 0L, 0L, 0L));
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class)))
+                .thenReturn(1)
+                .thenThrow(new IllegalStateException("ledger write failed"));
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper, aiFeatureDefsMapper, userAiQuotaMapper,
+                quotaLedgerMapper, userSubscriptionMapper);
+        attachPublisher(service);
+        SimpleMeterRegistry registry = attachMetrics(service);
+
+        assertThrows(IllegalStateException.class, () -> service.resetFromPaidInvoice(
+                "user_1", "sub_1", "basic_monthly",
+                Instant.parse("2026-06-15T00:00:00Z"), Instant.parse("2026-07-15T00:00:00Z"),
+                "in_failure", "subscription_initial"));
+
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "initial", "feature", "detection",
+                        "purchase_type", "subscription_initial", "product_code", "basic_monthly",
+                        "result", "error")
+                .counter().count());
     }
 
     @Test
@@ -146,6 +196,7 @@ class PlanQuotaServiceImplTest {
                 quotaLedgerMapper,
                 userSubscriptionMapper);
         attachPublisher(service);
+        SimpleMeterRegistry registry = attachMetrics(service);
 
         service.addFullPlanForUpgrade(
                 "user_1",
@@ -165,6 +216,11 @@ class PlanQuotaServiceImplTest {
         verify(quotaGrantAnalyticsPublisher, times(3)).publishAfterCommit(analyticsCaptor.capture());
         assertTrue(analyticsCaptor.getAllValues().stream()
                 .allMatch(event -> "subscription_upgrade".equals(event.grantType())));
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "upgrade", "feature", "assignment",
+                        "purchase_type", "subscription_upgrade", "product_code", "basic_monthly",
+                        "result", "success")
+                .counter().count());
     }
 
     @Test
@@ -187,6 +243,8 @@ class PlanQuotaServiceImplTest {
                 userAiQuotaMapper,
                 quotaLedgerMapper,
                 userSubscriptionMapper);
+        attachPublisher(service);
+        SimpleMeterRegistry registry = attachMetrics(service);
 
         service.grantUpgradeFromCheckout(
                 "user_1",
@@ -202,6 +260,11 @@ class PlanQuotaServiceImplTest {
         assertEquals(5L, updated.get(0).getPlanBalance());
         assertEquals(4L, updated.get(1).getPlanBalance());
         assertEquals(2L, updated.get(2).getPlanBalance());
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "manual_upgrade", "feature", "assignment",
+                        "purchase_type", "subscription_upgrade", "product_code", "basic_monthly",
+                        "result", "success")
+                .counter().count());
     }
 
     @Test
@@ -830,6 +893,12 @@ class PlanQuotaServiceImplTest {
 
     private void attachPublisher(PlanQuotaServiceImpl service) {
         ReflectionTestUtils.setField(service, "quotaGrantAnalyticsPublisher", quotaGrantAnalyticsPublisher);
+    }
+
+    private SimpleMeterRegistry attachMetrics(PlanQuotaServiceImpl service) {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ReflectionTestUtils.setField(service, "quotaBusinessMetrics", new QuotaBusinessMetrics(registry));
+        return registry;
     }
 
     private UserAiQuotaEntity quota(Long id, String featureCode, long free, long plan, long paid) {

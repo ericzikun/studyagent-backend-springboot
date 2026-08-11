@@ -70,7 +70,8 @@ class VerlaTurnOrchestratorContextRefTest {
                 Mockito.mock(VerlaQuotaService.class),
                 Mockito.mock(EntitlementService.class),
                 event -> {},
-                Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
+                Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class),
+                Mockito.mock(com.studyagent.service.application.verla.metrics.AssignmentBusinessMetrics.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");
     }
 

@@ -6,6 +6,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
@@ -25,6 +26,8 @@ import com.studyagent.service.application.verla.dto.FileChatAnalysisStatus;
 import com.studyagent.service.application.verla.dto.FileChatMessageMeta;
 import com.studyagent.service.application.verla.dto.FileChatPanelState;
 import com.studyagent.service.application.verla.notification.AssignmentCompletionNotificationEvent;
+import com.studyagent.service.application.verla.metrics.AssignmentBusinessMetrics;
+import com.studyagent.service.application.verla.metrics.AssignmentTerminalTransitionedEvent;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.FollowupEditUsage;
@@ -138,6 +141,7 @@ public class VerlaTurnOrchestrator {
     private final EntitlementService entitlementService;
     private final ApplicationEventPublisher eventPublisher;
     private final AnalyticsService analyticsService;
+    private final AssignmentBusinessMetrics assignmentBusinessMetrics;
 
     // ==========================================================
     // 1) 用户消息入口
@@ -1382,10 +1386,10 @@ public class VerlaTurnOrchestrator {
      * AGENT_FAILED：agent session FAILED + turn FAILED。
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public void onAgentFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+    public boolean onAgentFailed(Long agentSessionId, Map<String, Object> errorBlock) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
-            return;
+            return false;
         }
         VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
 
@@ -1430,11 +1434,16 @@ public class VerlaTurnOrchestrator {
         verlaQuotaService.refundBySessionId(agentSessionId, "agent_failed");
 
         publishAssignmentRunSlotReleased(agentSessionId);
+        return agentTurnJustFailed;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentCompleted(Long agentSessionId, Map<String, Object> result) {
         boolean justCompleted = onAgentCompleted(agentSessionId, result);
+        if (justCompleted) {
+            eventPublisher.publishEvent(new AssignmentTerminalTransitionedEvent(
+                    agentSessionId, AssignmentTerminalTransitionedEvent.Status.COMPLETED));
+        }
         VerlaSession s = sessionRepository.findById(agentSessionId);
         if (s != null) {
             VerlaTurn turn = turnRepository.findById(s.getTurnId());
@@ -1459,7 +1468,11 @@ public class VerlaTurnOrchestrator {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public void onAssignmentFailed(Long agentSessionId, Map<String, Object> errorBlock) {
-        onAgentFailed(agentSessionId, errorBlock);
+        boolean justFailed = onAgentFailed(agentSessionId, errorBlock);
+        if (justFailed) {
+            eventPublisher.publishEvent(new AssignmentTerminalTransitionedEvent(
+                    agentSessionId, AssignmentTerminalTransitionedEvent.Status.FAILED));
+        }
         VerlaSession s = sessionRepository.findById(agentSessionId);
         if (s != null) {
             VerlaTurn turn = turnRepository.findById(s.getTurnId());
@@ -1497,9 +1510,11 @@ public class VerlaTurnOrchestrator {
         log.warn("[Verla] assignment auto-run setup failed conversationId={} turnId={} sessionId={} diagnostics={}",
                 turn.getConversationId(), turn.getId(), runSessionId, diagnostics, ex);
 
+        boolean runSessionJustFailed = false;
         if (runSession != null) {
             SessionStatus curSess = SessionStatus.valueOf(runSession.getStatus());
             if (!curSess.isTerminal()) {
+                runSessionJustFailed = true;
                 SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_FAILED);
                 runSession.setStatus(nextSess.name());
                 runSession.setEndedAt(LocalDateTime.now());
@@ -1539,6 +1554,10 @@ public class VerlaTurnOrchestrator {
         if (runSessionId != null) {
             verlaQuotaService.refundBySessionId(runSessionId, "assignment_auto_run_setup_failed");
             publishAssignmentRunSlotReleased(runSessionId);
+            if (runSessionJustFailed) {
+                eventPublisher.publishEvent(new AssignmentTerminalTransitionedEvent(
+                        runSessionId, AssignmentTerminalTransitionedEvent.Status.FAILED));
+            }
         }
 
         if (conv != null && conv.getUserId() != null) {
@@ -1569,14 +1588,15 @@ public class VerlaTurnOrchestrator {
      * AGENT_CANCELLED：agent session CANCELLED + turn CANCELLED。
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public void onAgentCancelled(Long agentSessionId) {
+    public boolean onAgentCancelled(Long agentSessionId) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
-            return;
+            return false;
         }
         VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
 
         SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        boolean sessionJustCancelled = !curSess.isTerminal();
         if (!curSess.isTerminal()) {
             SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_CANCELLED);
             s.setStatus(nextSess.name());
@@ -1598,6 +1618,15 @@ public class VerlaTurnOrchestrator {
         verlaQuotaService.refundBySessionId(agentSessionId, "agent_cancelled");
 
         publishAssignmentRunSlotReleased(agentSessionId);
+        return sessionJustCancelled;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onAssignmentCancelled(Long agentSessionId) {
+        if (onAgentCancelled(agentSessionId)) {
+            eventPublisher.publishEvent(new AssignmentTerminalTransitionedEvent(
+                    agentSessionId, AssignmentTerminalTransitionedEvent.Status.CANCELLED));
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -1857,6 +1886,22 @@ public class VerlaTurnOrchestrator {
     private VerlaSession spawnAssignmentRunSession(VerlaConversation conv, VerlaTurn turn,
                                                    String intent,
                                                    Map<String, Object> finalClarifyResult) {
+        try {
+            VerlaSession session = createAssignmentRunSession(conv, turn, intent, finalClarifyResult);
+            assignmentBusinessMetrics.recordAcceptedAfterCommit();
+            return session;
+        } catch (InsufficientQuotaException ex) {
+            assignmentBusinessMetrics.recordFailure(AssignmentBusinessMetrics.Result.INSUFFICIENT);
+            throw ex;
+        } catch (RuntimeException ex) {
+            assignmentBusinessMetrics.recordFailure(AssignmentBusinessMetrics.Result.ERROR);
+            throw ex;
+        }
+    }
+
+    private VerlaSession createAssignmentRunSession(VerlaConversation conv, VerlaTurn turn,
+                                                     String intent,
+                                                     Map<String, Object> finalClarifyResult) {
         Map<String, Object> normalizedFinalClarifyResult = normalizeAssignmentFinalClarifyResult(finalClarifyResult);
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()

@@ -60,6 +60,35 @@ server:
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
     min-response-size: 1024  # 大于 1KB 的响应才压缩（JSON 响应通常压缩率 60-80%）
 
+# 内部监控端点由部署层限制访问；应用仅暴露健康检查与 Prometheus 指标。
+management:
+  endpoints:
+    enabled-by-default: false
+    web:
+      discovery:
+        enabled: false
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      enabled: true
+      show-details: never
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    distribution:
+      slo:
+        http.server.requests: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        billing.checkout.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        billing.stripe.webhook.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        verla.cache.lock.wait: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        verla.upload.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s
+        studyagent.external.request.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+
 # MyBatis Plus
 mybatis-plus:
   configuration:

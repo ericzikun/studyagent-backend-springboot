@@ -11,6 +11,8 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.AddonGrantSnapshot;
+import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -62,6 +64,8 @@ class AddonGrantServiceImplTest {
                 quotaLedgerMapper,
                 userSubscriptionMapper);
         ReflectionTestUtils.setField(service, "quotaGrantAnalyticsPublisher", quotaGrantAnalyticsPublisher);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ReflectionTestUtils.setField(service, "quotaBusinessMetrics", new QuotaBusinessMetrics(registry));
 
         Instant paidAt = Instant.parse("2026-06-15T08:30:00Z");
         service.grantFromPaidCheckout("user_1", "addon_assignment_3", "cs_1", "pi_1", paidAt);
@@ -87,6 +91,11 @@ class AddonGrantServiceImplTest {
         assertEquals("addon", analyticsCaptor.getValue().grantType());
         assertEquals("addon_assignment_3", analyticsCaptor.getValue().addonCode());
         assertEquals(3L, analyticsCaptor.getValue().quotaAmount());
+        assertEquals(1.0, registry.get("billing.quota.grant")
+                .tags("grant_type", "addon", "feature", "assignment",
+                        "purchase_type", "addon", "product_code", "addon_assignment_3",
+                        "result", "success")
+                .counter().count());
     }
 
     @Test

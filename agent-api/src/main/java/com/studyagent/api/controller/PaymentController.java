@@ -4,6 +4,7 @@ import com.studyagent.api.common.Result;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.infra.service.billing.BillingBusinessMetrics;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.payment.*;
@@ -29,13 +30,17 @@ public class PaymentController {
     private final PaymentDomainService paymentDomainService;
     private final BillingDomainService billingDomainService;
     private final AnalyticsService analyticsService;
+    private final BillingBusinessMetrics billingBusinessMetrics;
 
     @PostMapping("/subscription-checkout")
     public Result<Map<String, Object>> createSubscriptionCheckout(
             @RequestBody SubscriptionCheckoutRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
             @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        BillingBusinessMetrics.Observation observation = billingBusinessMetrics.start();
         if (clerkUserId == null || clerkUserId.isBlank()) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.SUBSCRIPTION,
+                    BillingBusinessMetrics.ErrorType.VALIDATION);
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         try {
@@ -53,8 +58,17 @@ public class PaymentController {
                     userInfo == null ? null : userInfo.email,
                     checkout
             );
+            billingBusinessMetrics.recordCheckout(
+                    observation,
+                    checkout.getTargetPlanCode() == null
+                            ? BillingBusinessMetrics.CheckoutPurchaseType.SUBSCRIPTION
+                            : BillingBusinessMetrics.CheckoutPurchaseType.SUBSCRIPTION_UPGRADE,
+                    BillingBusinessMetrics.Result.SUCCESS,
+                    BillingBusinessMetrics.ErrorType.NONE);
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.SUBSCRIPTION,
+                    checkoutErrorType(e.getCode()));
             captureCheckoutSessionFailed(
                     clerkUserId,
                     request.getPlanCode(),
@@ -65,6 +79,8 @@ public class PaymentController {
             );
             return mapBillingException(e);
         } catch (Exception e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.SUBSCRIPTION,
+                    BillingBusinessMetrics.ErrorType.UNKNOWN);
             log.error("创建订阅支付会话失败: {}", e.getMessage(), e);
             captureCheckoutSessionFailed(
                     clerkUserId,
@@ -83,7 +99,10 @@ public class PaymentController {
             @RequestBody AddonCheckoutRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
             @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        BillingBusinessMetrics.Observation observation = billingBusinessMetrics.start();
         if (clerkUserId == null || clerkUserId.isBlank()) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.ADDON,
+                    BillingBusinessMetrics.ErrorType.VALIDATION);
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         try {
@@ -101,8 +120,15 @@ public class PaymentController {
                     userInfo == null ? null : userInfo.email,
                     checkout
             );
+            billingBusinessMetrics.recordCheckout(
+                    observation,
+                    BillingBusinessMetrics.CheckoutPurchaseType.ADDON,
+                    BillingBusinessMetrics.Result.SUCCESS,
+                    BillingBusinessMetrics.ErrorType.NONE);
             return Result.success(toCheckoutData(checkout));
         } catch (BillingDomainException e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.ADDON,
+                    checkoutErrorType(e.getCode()));
             captureCheckoutSessionFailed(
                     clerkUserId,
                     request.getAddonCode(),
@@ -113,6 +139,8 @@ public class PaymentController {
             );
             return mapBillingException(e);
         } catch (Exception e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.ADDON,
+                    BillingBusinessMetrics.ErrorType.UNKNOWN);
             log.error("创建加购支付会话失败: {}", e.getMessage(), e);
             captureCheckoutSessionFailed(
                     clerkUserId,
@@ -131,12 +159,17 @@ public class PaymentController {
             @RequestBody CreateCheckoutSessionRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
             @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        BillingBusinessMetrics.Observation observation = billingBusinessMetrics.start();
         if (clerkUserId == null || clerkUserId.isBlank()) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.LEGACY,
+                    BillingBusinessMetrics.ErrorType.VALIDATION);
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         if (request.getClerkUserId() != null
                 && !request.getClerkUserId().isBlank()
                 && !clerkUserId.equals(request.getClerkUserId())) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.LEGACY,
+                    BillingBusinessMetrics.ErrorType.VALIDATION);
             return Result.error(ApiCode.NO_PERMISSION);
         }
         String customerEmail = userInfo == null ? null : userInfo.email;
@@ -162,12 +195,20 @@ public class PaymentController {
             analyticsService.capture(clerkUserId, AnalyticsEvents.PAYMENT_SESSION_CREATED, paymentProps);
             analyticsService.capture(clerkUserId, AnalyticsEvents.BILLING_CHECKOUT_SESSION_CREATED, paymentProps);
 
+            billingBusinessMetrics.recordCheckout(
+                    observation,
+                    BillingBusinessMetrics.CheckoutPurchaseType.LEGACY,
+                    BillingBusinessMetrics.Result.SUCCESS,
+                    BillingBusinessMetrics.ErrorType.NONE);
+
             Map<String, Object> data = new HashMap<>();
             data.put("sessionId", result.getSessionId());
             data.put("checkoutUrl", result.getCheckoutUrl());
             data.put("expiresAt", result.getExpiresAt());
             return Result.success(data);
         } catch (PaymentDomainException e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.LEGACY,
+                    checkoutErrorType(e.getCode()));
             // 埋点：支付会话创建失败
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
                     request.getPackageType(),
@@ -187,6 +228,8 @@ public class PaymentController {
             }
             return mapDomainException(e);
         } catch (Exception e) {
+            recordCheckoutError(observation, BillingBusinessMetrics.CheckoutPurchaseType.LEGACY,
+                    BillingBusinessMetrics.ErrorType.UNKNOWN);
             log.error("创建支付会话失败: {}", e.getMessage(), e);
 
             // 埋点：支付会话创建失败（未知错误）
@@ -301,6 +344,34 @@ public class PaymentController {
             case "INTERNAL_ERROR" -> Result.error(ApiCode.INTERNAL_ERROR, e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             default -> Result.error(e.getMessage());
+        };
+    }
+
+    private void recordCheckoutError(
+            BillingBusinessMetrics.Observation observation,
+            BillingBusinessMetrics.CheckoutPurchaseType purchaseType,
+            BillingBusinessMetrics.ErrorType errorType) {
+        billingBusinessMetrics.recordCheckout(
+                observation,
+                purchaseType,
+                BillingBusinessMetrics.Result.ERROR,
+                errorType);
+    }
+
+    private BillingBusinessMetrics.ErrorType checkoutErrorType(String code) {
+        if (code == null) {
+            return BillingBusinessMetrics.ErrorType.UNKNOWN;
+        }
+        return switch (code) {
+            case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED", "INVALID_ADDON", "ADDON_PRICE_NOT_CONFIGURED",
+                    "INVALID_PACKAGE_TYPE", "PRICE_CONFIG_ERROR", "PRICE_NOT_FOUND" ->
+                    BillingBusinessMetrics.ErrorType.CATALOG;
+            case "INVALID_RETURN_URL", "INVALID_UPGRADE_TARGET", "INVALID_DOWNGRADE_TARGET",
+                    "INVALID_SUBSCRIPTION_ITEMS", "SUBSCRIPTION_STATE_INVALID", "SESSION_OWNER_MISMATCH" ->
+                    BillingBusinessMetrics.ErrorType.VALIDATION;
+            case "STRIPE_ERROR" -> BillingBusinessMetrics.ErrorType.STRIPE_5XX;
+            case "INTERNAL_ERROR" -> BillingBusinessMetrics.ErrorType.INTERNAL;
+            default -> BillingBusinessMetrics.ErrorType.UNKNOWN;
         };
     }
 

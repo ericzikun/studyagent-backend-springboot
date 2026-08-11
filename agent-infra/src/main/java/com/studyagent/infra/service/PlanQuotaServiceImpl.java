@@ -20,6 +20,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.PlanQuotaService;
+import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +64,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     @Autowired
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
+
+    @Autowired
+    private QuotaBusinessMetrics quotaBusinessMetrics;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -465,52 +469,69 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             if (hasLedger(featureGrant.featureCode(), ledgerType, idempotencyKey)) {
                 continue;
             }
+            try {
+                UserAiQuotaEntity quota = findOrCreateQuota(clerkUserId, featureGrant.featureCode(), now);
+                long currentPlanBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
+                long newPlanBalance = additive ? currentPlanBalance + featureGrant.amount() : featureGrant.amount();
 
-            UserAiQuotaEntity quota = findOrCreateQuota(clerkUserId, featureGrant.featureCode(), now);
-            long currentPlanBalance = quota.getPlanBalance() != null ? quota.getPlanBalance() : 0L;
-            long newPlanBalance = additive ? currentPlanBalance + featureGrant.amount() : featureGrant.amount();
+                quota.setPlanBalance(newPlanBalance);
+                quota.setPlanPeriodStart(periodStart);
+                quota.setPlanPeriodEnd(periodEnd);
+                quota.setUpdatedAt(now);
+                persistQuota(quota, now);
 
-            quota.setPlanBalance(newPlanBalance);
-            quota.setPlanPeriodStart(periodStart);
-            quota.setPlanPeriodEnd(periodEnd);
-            quota.setUpdatedAt(now);
-            persistQuota(quota, now);
-
-            QuotaLedgerEntity ledger = new QuotaLedgerEntity();
-            ledger.setLedgerNo(generateLedgerNo());
-            ledger.setClerkUserId(clerkUserId);
-            ledger.setFeatureCode(featureGrant.featureCode());
-            ledger.setLedgerType(ledgerType);
-            ledger.setAmount(additive ? featureGrant.amount() : newPlanBalance);
-            ledger.setSourceType(sourceType);
-            ledger.setSourceId(sourceId);
-            ledger.setIdempotencyKey(idempotencyKey);
-            ledger.setSubscriptionId(subscriptionId);
-            ledger.setInvoiceId("invoice".equals(sourceType) ? sourceId : null);
-            ledger.setFreeBalanceAfter(quota.getFreeBalance());
-            ledger.setPlanBalanceAfter(newPlanBalance);
-            ledger.setPaidBalanceAfter(quota.getPaidBalance());
-            ledger.setBizContext(GSON.toJson(Map.of(
-                    "plan_code", planCode,
-                    "subscription_id", subscriptionId,
-                    "quota_period_start", periodStart.toString(),
-                    "quota_period_end", periodEnd.toString()
-            )));
-            ledger.setCreatedAt(now);
-            quotaLedgerMapper.insert(ledger);
-            publishQuotaGrant(
-                    clerkUserId,
-                    grantType,
-                    featureGrant.featureCode(),
-                    featureGrant.amount(),
-                    planCode,
-                    null,
-                    sourceType,
-                    sourceId,
-                    idempotencyKey,
-                    periodStart,
-                    periodEnd);
+                QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+                ledger.setLedgerNo(generateLedgerNo());
+                ledger.setClerkUserId(clerkUserId);
+                ledger.setFeatureCode(featureGrant.featureCode());
+                ledger.setLedgerType(ledgerType);
+                ledger.setAmount(additive ? featureGrant.amount() : newPlanBalance);
+                ledger.setSourceType(sourceType);
+                ledger.setSourceId(sourceId);
+                ledger.setIdempotencyKey(idempotencyKey);
+                ledger.setSubscriptionId(subscriptionId);
+                ledger.setInvoiceId("invoice".equals(sourceType) ? sourceId : null);
+                ledger.setFreeBalanceAfter(quota.getFreeBalance());
+                ledger.setPlanBalanceAfter(newPlanBalance);
+                ledger.setPaidBalanceAfter(quota.getPaidBalance());
+                ledger.setBizContext(GSON.toJson(Map.of(
+                        "plan_code", planCode,
+                        "subscription_id", subscriptionId,
+                        "quota_period_start", periodStart.toString(),
+                        "quota_period_end", periodEnd.toString()
+                )));
+                ledger.setCreatedAt(now);
+                quotaLedgerMapper.insert(ledger);
+                publishQuotaGrant(
+                        clerkUserId,
+                        grantType,
+                        featureGrant.featureCode(),
+                        featureGrant.amount(),
+                        planCode,
+                        null,
+                        sourceType,
+                        sourceId,
+                        idempotencyKey,
+                        periodStart,
+                        periodEnd);
+                if (quotaBusinessMetrics != null) {
+                    quotaBusinessMetrics.recordGrant(
+                            metricGrantType(sourceType, grantType), featureGrant.featureCode(), grantType, planCode,
+                            QuotaBusinessMetrics.Result.SUCCESS);
+                }
+            } catch (RuntimeException ex) {
+                if (quotaBusinessMetrics != null) {
+                    quotaBusinessMetrics.recordGrant(
+                            metricGrantType(sourceType, grantType), featureGrant.featureCode(), grantType, planCode,
+                            QuotaBusinessMetrics.Result.ERROR);
+                }
+                throw ex;
+            }
         }
+    }
+
+    private String metricGrantType(String sourceType, String grantType) {
+        return "checkout_upgrade".equals(sourceType) ? "manual_upgrade" : grantType;
     }
 
     private void refreshAnnualPlanQuota(

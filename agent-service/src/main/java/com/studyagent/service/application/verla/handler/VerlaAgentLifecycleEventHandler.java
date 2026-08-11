@@ -143,9 +143,13 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAssignmentChatFailed(sessionId, payload);
             }
-            case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
+            case ASSIGNMENT_CANCELLED, ASSIGNMENT_AGENT_FLOW_CANCELLED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onAssignmentCancelled(sessionId);
+            }
+            case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED,
                     ASSIGNMENT_INIT_CANCELLED, ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
-                    ASSIGNMENT_AGENT_FLOW_CANCELLED, AI_DETECTION_CANCELLED,
+                    AI_DETECTION_CANCELLED,
                     AI_HUMANIZER_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCancelled(sessionId);

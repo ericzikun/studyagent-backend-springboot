@@ -64,7 +64,7 @@ public interface QuotaDomainService {
      * @param ledgerId 消费流水ID
      * @param reason   回滚原因 如 task_failed
      */
-    void refund(long ledgerId, String reason);
+    boolean refund(long ledgerId, String reason);
 
     /**
      * 根据任务ID回滚额度（查找该任务的 consume 流水并回滚）

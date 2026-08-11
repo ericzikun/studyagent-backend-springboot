@@ -183,7 +183,6 @@ public class VerlaInboxService {
             try {
                 handlerDispatcher.dispatch(ready, env);
                 inboxRepository.markProcessed(ready.getId());
-                processedCounter.increment();
                 // assignment_code_file 是后端内部索引行（支撑单文件懒加载 / 整包 zip），
                 // 已落库但不应推成前端卡片；正文走 /files、整包走 /archive（见技术方案 §4.2）。
                 if (!isInternalCodeFileArtifactEvent(ready, env)) {
@@ -203,6 +202,7 @@ public class VerlaInboxService {
         }
         if (batched > 0) {
             cursorRepository.advance(sessionId, seq, lastProcessed);
+            incrementAfterCommit(processedCounter, batched);
             log.info("[Verla/inbox] drained sessionId={} count={} nextExpected={}",
                     sessionId, batched, seq);
             scheduleAfterCommitPublish(cursor.getConversationId(), ssePending);
@@ -246,6 +246,22 @@ public class VerlaInboxService {
             });
         } else {
             flush.run();
+        }
+    }
+
+    private static void incrementAfterCommit(Counter counter, int amount) {
+        if (counter == null || amount <= 0) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    counter.increment(amount);
+                }
+            });
+        } else {
+            counter.increment(amount);
         }
     }
 

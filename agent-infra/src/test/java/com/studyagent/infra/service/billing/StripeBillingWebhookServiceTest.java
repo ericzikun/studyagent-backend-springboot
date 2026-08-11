@@ -40,6 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -48,6 +49,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.lang.reflect.InvocationTargetException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -55,6 +57,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -63,6 +66,7 @@ import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class StripeBillingWebhookServiceTest {
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     @BeforeAll
     static void initTableInfo() {
         MybatisPlusTableInfoTestHelper.initTableInfo(RechargeOrderEntity.class);
@@ -94,6 +98,8 @@ class StripeBillingWebhookServiceTest {
     private PlatformTransactionManager transactionManager;
     @Mock
     private TransactionStatus transactionStatus;
+    @Mock
+    private BillingFulfillmentStateService billingFulfillmentStateService;
 
     @Test
     void supportsSubscriptionLifecycleEvents() {
@@ -205,6 +211,55 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void duplicateWebhookRecordsIgnoredWithoutRepeatingSuccess() {
+        Event event = event("invoice.paid", "invoice", null);
+        when(webhookEventMapper.selectById(event.getId()))
+                .thenReturn(webhookEvent(event, "succeeded"));
+
+        assertFalse(service().process(event));
+
+        assertEquals(1.0, meterRegistry.get("billing.stripe.webhook")
+                .tags("event_type", "invoice_paid", "result", "ignored", "error_type", "none")
+                .counter().count());
+        assertTrue(meterRegistry.find("billing.stripe.webhook")
+                .tags("event_type", "invoice_paid", "result", "success")
+                .counter() == null);
+    }
+
+    @Test
+    void processedWebhookRecordsTechnicalSuccess() {
+        Event event = event("unhandled.event", "unknown", null);
+        StripeWebhookEventEntity received = webhookEvent(event, "received");
+        when(webhookEventMapper.selectById(event.getId())).thenReturn(null, received);
+        when(webhookEventMapper.update(isNull(), any())).thenReturn(1);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        assertTrue(service().process(event));
+
+        assertEquals(1.0, meterRegistry.get("billing.stripe.webhook")
+                .tags("event_type", "other", "result", "success", "error_type", "none")
+                .counter().count());
+    }
+
+    @Test
+    void unknownAddonCatalogRecordsUnknownPriceWithoutRawCodeLabel() throws Exception {
+        var method = StripeBillingWebhookService.class.getDeclaredMethod("requireAddon", String.class);
+        method.setAccessible(true);
+
+        try {
+            method.invoke(service(), "stripe_dynamic_addon_code");
+        } catch (InvocationTargetException expected) {
+            assertTrue(expected.getCause() instanceof IllegalStateException);
+        }
+
+        assertEquals(1.0, meterRegistry.get("billing.stripe.unknown.price")
+                .tag("purchase_type", "addon")
+                .counter().count());
+        assertTrue(meterRegistry.get("billing.stripe.unknown.price")
+                .counter().getId().getTag("addon_code") == null);
+    }
+
+    @Test
     void retryWorkerSelectsFailedAndStaleReceivedOrProcessingEvents() {
         when(webhookEventMapper.selectList(any())).thenReturn(List.of());
 
@@ -282,6 +337,7 @@ class StripeBillingWebhookServiceTest {
         verify(billingQuotaGateway).adjustAddonForRefund(
                 "pi_refunded", "charge:ch_refunded:9900", 9900L, 9900L);
         verify(rechargeOrderMapper).update(isNull(), any());
+        verify(billingFulfillmentStateService).markRefunded("checkout:cs_refunded");
     }
 
     @Test
@@ -989,6 +1045,9 @@ class StripeBillingWebhookServiceTest {
                 eq("cs_test_async_paid"),
                 eq("pi_test_async_paid"),
                 any());
+        verify(billingFulfillmentStateService).recordPaymentAccepted(any());
+        verify(billingFulfillmentStateService).markSucceeded(
+                "checkout:cs_test_async_paid", "addon", "addon_assignment_3");
     }
 
     @Test
@@ -1001,6 +1060,10 @@ class StripeBillingWebhookServiceTest {
         invokeHandle(service(), event);
 
         verify(rechargeOrderMapper).update(isNull(), any());
+        verify(billingFulfillmentStateService).recordPaymentFailed(
+                argThat(command -> "checkout:cs_test_async_failed".equals(command.paymentKey())
+                        && "addon".equals(command.purchaseType())
+                        && "addon_assignment_3".equals(command.productCode())));
         verify(billingQuotaGateway, never()).grantAddonFromCheckout(
                 any(), any(AddonGrantSnapshot.class), any(), any(), any());
     }
@@ -1387,6 +1450,49 @@ class StripeBillingWebhookServiceTest {
                 .filter(String.class::isInstance)
                 .map(String.class::cast)
                 .anyMatch(value -> value.contains("trial_end must be in the future")));
+    }
+
+    @Test
+    void manualUpgradeRetryMovesFailedFulfillmentToPendingThenSucceededInTransaction() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(32L);
+        order.setOrderNo("RO_RETRY_SUCCESS");
+        order.setOrderType("subscription_upgrade_manual");
+        order.setClerkUserId("user_1");
+        order.setTargetPlanCode("pro_monthly");
+        order.setStripeSessionId("cs_retry_success");
+        order.setStripePaymentIntentId("pi_retry_success");
+        when(rechargeOrderMapper.selectOne(any())).thenReturn(order);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
+                transactionManager) {
+            @Override
+            boolean attemptManualUpgradeSwitch(
+                    RechargeOrderEntity ignored,
+                    String clerkUserId,
+                    String stripeSessionId,
+                    String stripePaymentIntentId) {
+                return true;
+            }
+        };
+        service.setBillingFulfillmentStateService(billingFulfillmentStateService);
+
+        service.retryManualUpgradeSwitch("RO_RETRY_SUCCESS");
+
+        verify(billingFulfillmentStateService).markRetrying("checkout:cs_retry_success");
+        verify(billingFulfillmentStateService).markSucceeded(
+                "checkout:cs_retry_success", "subscription_upgrade", "pro_monthly");
+        verify(transactionManager).commit(transactionStatus);
     }
 
     @Test
@@ -2492,7 +2598,7 @@ class StripeBillingWebhookServiceTest {
     }
 
     private StripeBillingWebhookService service() {
-        return new StripeBillingWebhookService(
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
                 webhookEventMapper,
                 userSubscriptionMapper,
                 subscriptionPlanMapper,
@@ -2503,6 +2609,9 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager);
+        service.setBillingBusinessMetrics(new BillingBusinessMetrics(meterRegistry));
+        service.setBillingFulfillmentStateService(billingFulfillmentStateService);
+        return service;
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {
@@ -2556,11 +2665,12 @@ class StripeBillingWebhookServiceTest {
             Long eventCreated) throws Exception {
         var method = StripeBillingWebhookService.class.getDeclaredMethod(
                 "handleInvoicePaid",
+                String.class,
                 Invoice.class,
                 String.class,
                 Long.class);
         method.setAccessible(true);
-        method.invoke(service, invoice, eventSubscriptionId, eventCreated);
+        method.invoke(service, "evt_test_invoice_paid", invoice, eventSubscriptionId, eventCreated);
     }
 
     private void invokeSyncSubscription(

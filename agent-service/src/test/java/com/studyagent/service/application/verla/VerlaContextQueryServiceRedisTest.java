@@ -21,6 +21,7 @@ import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaToolCallRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
+import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +37,41 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VerlaContextQueryServiceRedisTest {
+
+    @Test
+    void cache_metrics_use_fixed_low_cardinality_contract() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        VerlaContextQueryService service = new VerlaContextQueryService(
+                mock(VerlaConversationRepository.class),
+                mock(VerlaTurnRepository.class),
+                mock(VerlaSessionRepository.class),
+                mock(VerlaMessageRepository.class),
+                mock(VerlaArtifactRepository.class),
+                mock(VerlaToolCallRepository.class),
+                meterRegistry,
+                properties,
+                Optional.empty());
+
+        service.init();
+
+        assertThat(meterRegistry.find("verla.context.cache.hit.total").counters())
+                .hasSize(3)
+                .allMatch(counter -> counter.getId().getType() == Meter.Type.COUNTER)
+                .extracting(counter -> counter.getId().getTag("layer"))
+                .containsExactlyInAnyOrder("l1", "redis", "db");
+
+        assertCounterHasNoTags(meterRegistry, "verla.context.cache.db.fallback.total");
+        assertCounterHasNoTags(meterRegistry, "verla.cache.redis.read.error.total");
+        assertCounterHasNoTags(meterRegistry, "verla.cache.redis.write.error.total");
+        assertCounterHasNoTags(meterRegistry, "verla.cache.redis.circuit.skip.total");
+    }
+
+    private static void assertCounterHasNoTags(SimpleMeterRegistry meterRegistry, String name) {
+        Meter meter = meterRegistry.get(name).meter();
+        assertThat(meter.getId().getType()).isEqualTo(Meter.Type.COUNTER);
+        assertThat(meter.getId().getTags()).isEmpty();
+    }
 
     @Test
     void loadSessionAndLoadTurn_shouldUseRedisBeforeDb() {

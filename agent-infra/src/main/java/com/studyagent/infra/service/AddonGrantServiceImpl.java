@@ -18,6 +18,7 @@ import com.studyagent.infra.mapper.UserAddonGrantMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.quota.AddonGrantService;
 import com.studyagent.service.domain.quota.AddonGrantSnapshot;
+import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,9 @@ public class AddonGrantServiceImpl implements AddonGrantService {
     @Autowired
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
+    @Autowired
+    private QuotaBusinessMetrics quotaBusinessMetrics;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void grantFromPaidCheckout(
@@ -76,17 +80,13 @@ public class AddonGrantServiceImpl implements AddonGrantService {
             throw new IllegalArgumentException("Unknown active addon code: " + addonCode);
         }
 
-        insertGrantFromSnapshot(
-                clerkUserId,
-                new AddonGrantSnapshot(
-                        null,
-                        addonCode,
-                        addon.getFeatureCode(),
-                        defaultLong(addon.getQuotaAmount()),
-                        Math.max(1, defaultInt(addon.getValidityMonths(), 2))),
-                stripeSessionId,
-                paymentIntentId,
-                paidAt);
+        AddonGrantSnapshot snapshot = new AddonGrantSnapshot(
+                null,
+                addonCode,
+                addon.getFeatureCode(),
+                defaultLong(addon.getQuotaAmount()),
+                Math.max(1, defaultInt(addon.getValidityMonths(), 2)));
+        recordGrantFromSnapshot(clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
     }
 
     @Override
@@ -112,7 +112,30 @@ public class AddonGrantServiceImpl implements AddonGrantService {
             throw new IllegalArgumentException("Invalid add-on order snapshot");
         }
 
-        insertGrantFromSnapshot(clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
+        recordGrantFromSnapshot(clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
+    }
+
+    private void recordGrantFromSnapshot(
+            String clerkUserId,
+            AddonGrantSnapshot snapshot,
+            String stripeSessionId,
+            String paymentIntentId,
+            Instant paidAt) {
+        try {
+            insertGrantFromSnapshot(clerkUserId, snapshot, stripeSessionId, paymentIntentId, paidAt);
+            if (quotaBusinessMetrics != null) {
+                quotaBusinessMetrics.recordGrant(
+                        "addon", snapshot.featureCode(), "addon", snapshot.addonCode(),
+                        QuotaBusinessMetrics.Result.SUCCESS);
+            }
+        } catch (RuntimeException ex) {
+            if (quotaBusinessMetrics != null) {
+                quotaBusinessMetrics.recordGrant(
+                        "addon", snapshot.featureCode(), "addon", snapshot.addonCode(),
+                        QuotaBusinessMetrics.Result.ERROR);
+            }
+            throw ex;
+        }
     }
 
     private void insertGrantFromSnapshot(

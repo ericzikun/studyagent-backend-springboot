@@ -2,10 +2,13 @@ package com.studyagent.api.controller;
 
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.infra.service.billing.BillingBusinessMetrics;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.payment.CheckoutSessionResult;
 import com.studyagent.service.domain.payment.PaymentDomainService;
 import com.studyagent.service.domain.payment.SessionStatusResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,16 +20,19 @@ import static org.mockito.Mockito.when;
 class PaymentControllerTest {
     private PaymentDomainService paymentDomainService;
     private BillingDomainService billingDomainService;
+    private SimpleMeterRegistry meterRegistry;
     private PaymentController controller;
 
     @BeforeEach
     void setUp() {
         paymentDomainService = mock(PaymentDomainService.class);
         billingDomainService = mock(BillingDomainService.class);
+        meterRegistry = new SimpleMeterRegistry();
         controller = new PaymentController(
                 paymentDomainService,
                 billingDomainService,
-                mock(AnalyticsService.class));
+                mock(AnalyticsService.class),
+                new BillingBusinessMetrics(meterRegistry));
     }
 
     @Test
@@ -100,5 +106,47 @@ class PaymentControllerTest {
 
         assertThat(result.getMeta().getStatusCode())
                 .isEqualTo(ApiCode.PAYMENT_RESOLUTION_REQUIRED.getCode());
+    }
+
+    @Test
+    void subscriptionUpgradeCheckoutRecordsSuccessfulUpgradeMetric() {
+        PaymentController.SubscriptionCheckoutRequest request =
+                new PaymentController.SubscriptionCheckoutRequest();
+        request.setPlanCode("plus_monthly");
+        when(billingDomainService.createSubscriptionCheckout(
+                "user_a", null, "plus_monthly", null, null, null))
+                .thenReturn(CheckoutSessionResult.builder()
+                        .checkoutKind("session")
+                        .sessionId("cs_upgrade")
+                        .targetPlanCode("plus_monthly")
+                        .build());
+
+        controller.createSubscriptionCheckout(request, "user_a", null);
+
+        assertThat(meterRegistry.get("billing.checkout")
+                .tags(
+                        "purchase_type", "subscription_upgrade",
+                        "result", "success",
+                        "error_type", "none")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void invalidAddonRecordsCatalogCheckoutError() {
+        PaymentController.AddonCheckoutRequest request =
+                new PaymentController.AddonCheckoutRequest();
+        request.setAddonCode("missing_addon");
+        when(billingDomainService.createAddonCheckout(
+                "user_a", null, "missing_addon", null, null, null))
+                .thenThrow(new BillingDomainException("INVALID_ADDON", "unknown addon"));
+
+        controller.createAddonCheckout(request, "user_a", null);
+
+        assertThat(meterRegistry.get("billing.checkout")
+                .tags(
+                        "purchase_type", "addon",
+                        "result", "error",
+                        "error_type", "catalog")
+                .counter().count()).isEqualTo(1.0);
     }
 }

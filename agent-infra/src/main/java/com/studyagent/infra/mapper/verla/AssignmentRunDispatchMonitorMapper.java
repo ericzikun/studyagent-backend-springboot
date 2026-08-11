@@ -1,6 +1,7 @@
 package com.studyagent.infra.mapper.verla;
 
 import com.studyagent.service.application.verla.admin.dto.AssignmentRunDispatchTaskQueryRow;
+import com.studyagent.infra.metrics.AssignmentDispatchMetricsSnapshot;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -8,6 +9,19 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface AssignmentRunDispatchMonitorMapper {
+
+    @Select("SELECT "
+            + "COALESCE(SUM(CASE WHEN o.status = 0 THEN 1 ELSE 0 END), 0) AS pending, "
+            + "COALESCE(TIMESTAMPDIFF(SECOND, "
+            + "MIN(CASE WHEN o.status = 0 THEN o.created_at END), NOW()), 0) AS oldest_age_seconds, "
+            + "COUNT(DISTINCT CASE WHEN o.status = 0 THEN s.id END) AS queued, "
+            + "COUNT(DISTINCT CASE WHEN o.status = 1 AND s.status = 'DISPATCHING' THEN s.id END) "
+            + "AS dispatching, "
+            + "COUNT(DISTINCT CASE WHEN s.status = 'RUNNING' THEN s.id END) AS running "
+            + "FROM verla_sessions s "
+            + "INNER JOIN mq_outbox o ON o.session_id = s.id "
+            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry')")
+    AssignmentDispatchMetricsSnapshot selectAssignmentDispatchMetrics();
 
     @Select("SELECT "
             + "s.id AS session_id, "

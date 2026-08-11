@@ -50,6 +50,7 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     private final VerlaSessionRepository sessionRepository;
     private final VerlaQuotaWordCounter wordCounter;
     private final QuotaVipAccessService quotaVipAccessService;
+    private final QuotaBusinessMetrics quotaBusinessMetrics;
 
     /** 总开关：false 时全部豁免，方便灰度上线 / 紧急关停。 */
     @Value("${verla.quota.enabled:true}")
@@ -202,55 +203,54 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
             return VerlaQuotaConsumeResult.exempted();
         }
 
-        // 2) 余额校验失败 → 抛 InsufficientQuotaException，由 GlobalExceptionHandler 包装
-        if (!quotaDomainService.canConsume(ctx.clerkUserId(), feature.getCode(), amount)) {
-            QuotaBalance balance = quotaDomainService.getUserQuota(ctx.clerkUserId(), feature.getCode());
-            throw new InsufficientQuotaException(
-                    "Insufficient quota for " + feature.getCode()
-                            + ", required=" + amount
-                            + ", available=" + balance.totalAvailable(),
-                    InsufficientQuotaData.builder()
-                            .clerkUserId(ctx.clerkUserId())
-                            .featureCode(balance.featureCode())
-                            .featureName(balance.featureName())
-                            .purchaseProductId(purchaseProductId(feature))
-                            .blockedAction(blockedAction(feature))
-                            .quotaUnit(balance.quotaUnit())
-                            .freeBalance(balance.freeBalance())
-                            .freePeriodTotal(balance.freePeriodTotal())
-                            .paidBalance(balance.paidBalance())
-                            .totalAvailable(balance.totalAvailable())
-                            .totalWords((int) Math.min(Integer.MAX_VALUE, amount))
-                            .build());
+        try {
+            // 2) 余额校验失败 → 抛 InsufficientQuotaException，由 GlobalExceptionHandler 包装
+            if (!quotaDomainService.canConsume(ctx.clerkUserId(), feature.getCode(), amount)) {
+                QuotaBalance balance = quotaDomainService.getUserQuota(ctx.clerkUserId(), feature.getCode());
+                quotaBusinessMetrics.recordConsume(feature.getCode(), QuotaBusinessMetrics.Result.INSUFFICIENT);
+                throw new InsufficientQuotaException(
+                        "Insufficient quota for " + feature.getCode()
+                                + ", required=" + amount
+                                + ", available=" + balance.totalAvailable(),
+                        InsufficientQuotaData.builder()
+                                .clerkUserId(ctx.clerkUserId())
+                                .featureCode(balance.featureCode())
+                                .featureName(balance.featureName())
+                                .purchaseProductId(purchaseProductId(feature))
+                                .blockedAction(blockedAction(feature))
+                                .quotaUnit(balance.quotaUnit())
+                                .freeBalance(balance.freeBalance())
+                                .freePeriodTotal(balance.freePeriodTotal())
+                                .paidBalance(balance.paidBalance())
+                                .totalAvailable(balance.totalAvailable())
+                                .totalWords((int) Math.min(Integer.MAX_VALUE, amount))
+                                .build());
+            }
+
+            ConsumeResult cr = quotaDomainService.consume(
+                    ctx.clerkUserId(), feature.getCode(), amount, SOURCE_TYPE_VERLA_SESSION,
+                    String.valueOf(ctx.sessionId()), bizContext, buildConsumeIdempotencyKey(ctx, feature));
+            boolean bound = sessionRepository.bindQuotaLedger(ctx.sessionId(), cr.ledgerId(), amount);
+            if (!bound) {
+                VerlaSession s = sessionRepository.findById(ctx.sessionId());
+                Long alreadyBound = s == null ? null : s.getQuotaLedgerId();
+                log.error("[VerlaQuota] duplicate consume detected, rolling back: sessionId={}, newLedgerId={}, existingLedgerId={}",
+                        ctx.sessionId(), cr.ledgerId(), alreadyBound);
+                throw new IllegalStateException(
+                        "Concurrent verla session billing detected: sessionId=" + ctx.sessionId()
+                                + ", existingLedgerId=" + alreadyBound);
+            }
+
+            quotaBusinessMetrics.recordConsume(feature.getCode(), QuotaBusinessMetrics.Result.SUCCESS);
+            log.info("[VerlaQuota] consumed: feature={}, userId={}, sessionId={}, amount={}, ledgerId={}",
+                    feature.getCode(), ctx.clerkUserId(), ctx.sessionId(), amount, cr.ledgerId());
+            return VerlaQuotaConsumeResult.of(cr.ledgerId(), amount);
+        } catch (InsufficientQuotaException insufficient) {
+            throw insufficient;
+        } catch (RuntimeException error) {
+            quotaBusinessMetrics.recordConsume(feature.getCode(), QuotaBusinessMetrics.Result.ERROR);
+            throw error;
         }
-
-        // 3) 真扣费（事务由调用方持有）
-        ConsumeResult cr = quotaDomainService.consume(
-                ctx.clerkUserId(),
-                feature.getCode(),
-                amount,
-                SOURCE_TYPE_VERLA_SESSION,
-                String.valueOf(ctx.sessionId()),
-                bizContext,
-                buildConsumeIdempotencyKey(ctx, feature));
-
-        // 4) 回填 verla_sessions.quota_ledger_id（乐观锁，避免并发派发双扣）
-        boolean bound = sessionRepository.bindQuotaLedger(ctx.sessionId(), cr.ledgerId(), amount);
-        if (!bound) {
-            // 并发：另一方已经扣过且绑定。当前事务必须回滚，否则会产生重复扣费。
-            VerlaSession s = sessionRepository.findById(ctx.sessionId());
-            Long alreadyBound = s == null ? null : s.getQuotaLedgerId();
-            log.error("[VerlaQuota] duplicate consume detected, rolling back: sessionId={}, newLedgerId={}, existingLedgerId={}",
-                    ctx.sessionId(), cr.ledgerId(), alreadyBound);
-            throw new IllegalStateException(
-                    "Concurrent verla session billing detected: sessionId=" + ctx.sessionId()
-                            + ", existingLedgerId=" + alreadyBound);
-        }
-
-        log.info("[VerlaQuota] consumed: feature={}, userId={}, sessionId={}, amount={}, ledgerId={}",
-                feature.getCode(), ctx.clerkUserId(), ctx.sessionId(), amount, cr.ledgerId());
-
-        return VerlaQuotaConsumeResult.of(cr.ledgerId(), amount);
     }
 
     private long resolveChargeableWords(String text) {
@@ -311,16 +311,21 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         }
         if (ledgerId == null) {
             // 未扣过费（admin / Quota VIP / 白名单 / 配额关闭），无需退款
+            quotaBusinessMetrics.recordRefund(s.getFeatureCode(), reason, QuotaBusinessMetrics.Result.SKIPPED);
             return;
         }
         try {
-            quotaDomainService.refund(ledgerId, reason == null ? "verla_session_terminated" : reason);
-            log.info("[VerlaQuota] refunded: sessionId={}, ledgerId={}, reason={}",
-                    sessionId, ledgerId, reason);
+            boolean refunded = quotaDomainService.refund(
+                    ledgerId, reason == null ? "verla_session_terminated" : reason);
+            quotaBusinessMetrics.recordRefund(s.getFeatureCode(), reason, refunded
+                    ? QuotaBusinessMetrics.Result.SUCCESS
+                    : QuotaBusinessMetrics.Result.SKIPPED);
+            log.info("[VerlaQuota] refund result: sessionId={}, ledgerId={}, refunded={}, reason={}",
+                    sessionId, ledgerId, refunded, reason);
         } catch (Exception ex) {
-            // 已经 refund / ledger 已被处理：QuotaDomainServiceImpl.refund 内部幂等校验已兜底，
+            quotaBusinessMetrics.recordRefund(s.getFeatureCode(), reason, QuotaBusinessMetrics.Result.ERROR);
             // 这里只对未预期异常（如 SQL 故障）告警，不抛出，避免影响 turn 状态推进。
-            log.warn("[VerlaQuota] refund skipped (already refunded or unknown error): sessionId={}, ledgerId={}, reason={}, err={}",
+            log.warn("[VerlaQuota] refund failed: sessionId={}, ledgerId={}, reason={}, err={}",
                     sessionId, ledgerId, reason, ex.getMessage());
         }
     }

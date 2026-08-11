@@ -14,6 +14,7 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.studyagent.infra.service.QuotaRechargeService;
 import com.studyagent.infra.service.billing.StripeBillingWebhookService;
+import com.studyagent.infra.service.billing.BillingBusinessMetrics;
 import com.studyagent.api.service.robot.RobotNotifyAsyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,7 @@ public class WebhookController {
     private final AnalyticsService analyticsService;
     private final RobotNotifyAsyncService robotNotifyAsyncService;
     private final StripeBillingWebhookService stripeBillingWebhookService;
+    private final BillingBusinessMetrics billingBusinessMetrics;
 
     @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
@@ -96,7 +98,9 @@ public class WebhookController {
             return ResponseEntity.ok(response);
 
         } catch (SignatureVerificationException e) {
-            log.error("Webhook签名验证失败", e);
+            billingBusinessMetrics.recordSignatureFailure();
+            log.warn("Stripe webhook signature verification failed: received_at={}",
+                    java.time.Instant.now());
             return ResponseEntity.status(401).build();
         } catch (Exception e) {
             log.error("处理Webhook失败", e);

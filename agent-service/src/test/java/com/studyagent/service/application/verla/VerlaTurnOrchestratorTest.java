@@ -12,6 +12,8 @@ import com.studyagent.service.application.verla.entitlement.EffectiveEntitlement
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.notification.AssignmentCompletionNotificationEvent;
+import com.studyagent.service.application.verla.metrics.AssignmentBusinessMetrics;
+import com.studyagent.service.application.verla.metrics.AssignmentTerminalTransitionedEvent;
 import com.studyagent.service.application.verla.quota.VerlaQuotaConsumeResult;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
@@ -34,9 +36,13 @@ import com.studyagent.service.domain.verla.state.SessionStateMachine;
 import com.studyagent.service.domain.verla.state.SessionStatus;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
+import com.studyagent.service.domain.verla.dispatch.AssignmentRunDispatchGate;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -79,7 +85,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -137,7 +144,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -184,7 +192,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -231,7 +240,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -278,7 +288,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -324,7 +335,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                analyticsService);
+                analyticsService,
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(357L)
@@ -382,7 +394,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -461,7 +474,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(99L)
@@ -518,7 +532,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 mockEntitlementService(),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -574,7 +589,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -652,7 +668,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -720,7 +737,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -797,7 +815,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -861,7 +880,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -895,6 +915,81 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
+    void startAssignmentRunFromFinalClarify_recordsOneAcceptedResultAfterCommit() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        AssignmentRunDispatchGate dispatchGate = Mockito.mock(AssignmentRunDispatchGate.class);
+        Mockito.when(dispatchGate.canDispatchNow()).thenReturn(true);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        AssignmentBusinessMetrics assignmentMetrics = new AssignmentBusinessMetrics(meterRegistry, dispatchGate);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                event -> {},
+                mockAnalyticsService(),
+                assignmentMetrics);
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.COMPLETED.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(
+                VerlaSession.builder()
+                        .id(800L)
+                        .turnId(700L)
+                        .kind(VerlaSessionKind.ASSIGNMENT.name())
+                        .resultJson(objectMapper.writeValueAsString(Map.of(
+                                "isReadyForGeneration", true,
+                                "requirementForm", Map.of(
+                                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)))))
+                        .build());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
+            assertEquals(0.0, meterRegistry.counter(
+                    "verla.assignment.submit", "result", "success").count());
+            TransactionSynchronizationUtils.triggerAfterCommit();
+            assertEquals(1.0, meterRegistry.counter(
+                    "verla.assignment.submit", "result", "success").count());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            meterRegistry.close();
+        }
+    }
+
+    @Test
     void finalizeAssignmentClarify_passesAllowedOutputTypesToPythonPayload() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
@@ -925,7 +1020,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1009,7 +1105,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1106,7 +1203,8 @@ class VerlaTurnOrchestratorTest {
                 quotaService,
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1179,7 +1277,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1221,7 +1320,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1270,7 +1370,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(700L)
@@ -1313,7 +1414,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(700L)
@@ -1356,7 +1458,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         turnRepository.turn = VerlaTurn.builder()
                 .id(801L)
@@ -1417,7 +1520,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(700L)
@@ -1516,7 +1620,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 entitlementService,
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         sessionRepository.session = VerlaSession.builder()
                 .id(700L)
@@ -1760,7 +1865,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 mockEntitlementService(),
                 publishedEvents::add,
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
 
         conversationRepository.conversation = VerlaConversation.builder()
                 .id(74L)
@@ -1794,6 +1900,13 @@ class VerlaTurnOrchestratorTest {
         assertEquals(700L, event.sessionId());
         assertEquals("user_1", event.clerkUserId());
         assertEquals("Biology report", event.title());
+        List<AssignmentTerminalTransitionedEvent> terminalEvents = publishedEvents.stream()
+                .filter(AssignmentTerminalTransitionedEvent.class::isInstance)
+                .map(AssignmentTerminalTransitionedEvent.class::cast)
+                .toList();
+        assertEquals(1, terminalEvents.size());
+        assertEquals(AssignmentTerminalTransitionedEvent.Status.COMPLETED,
+                terminalEvents.get(0).status());
     }
 
     private VerlaTurnOrchestrator assignmentChatOrchestrator(
@@ -1818,7 +1931,8 @@ class VerlaTurnOrchestratorTest {
                 new NoopQuotaService(),
                 Mockito.mock(EntitlementService.class),
                 event -> {},
-                mockAnalyticsService());
+                mockAnalyticsService(),
+                assignmentBusinessMetrics());
     }
 
     /** Seeds a RUNNING assignment-chat session(700)/turn(801) on conversation 74. */
@@ -1918,6 +2032,12 @@ class VerlaTurnOrchestratorTest {
 
     private static AnalyticsService mockAnalyticsService() {
         return Mockito.mock(AnalyticsService.class);
+    }
+
+    private static AssignmentBusinessMetrics assignmentBusinessMetrics() {
+        AssignmentRunDispatchGate gate = Mockito.mock(AssignmentRunDispatchGate.class);
+        Mockito.when(gate.canDispatchNow()).thenReturn(true);
+        return new AssignmentBusinessMetrics(new SimpleMeterRegistry(), gate);
     }
 
     private static EntitlementService mockEntitlementService() {

@@ -10,6 +10,7 @@ import com.studyagent.service.application.verla.VerlaConversationDashboardStatus
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
+import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.state.ConversationStatus;
 import com.studyagent.service.domain.verla.state.IntentLifecycle;
@@ -32,6 +33,7 @@ class VerlaConversationControllerTest {
     private VerlaConversationService conversationService;
     private VerlaConversationDashboardStatusService dashboardStatusService;
     private VerlaArtifactMapper artifactMapper;
+    private VerlaTurnOrchestrator turnOrchestrator;
     private VerlaConversationController controller;
 
     @BeforeEach
@@ -39,6 +41,7 @@ class VerlaConversationControllerTest {
         conversationService = mock(VerlaConversationService.class);
         dashboardStatusService = mock(VerlaConversationDashboardStatusService.class);
         artifactMapper = mock(VerlaArtifactMapper.class);
+        turnOrchestrator = mock(VerlaTurnOrchestrator.class);
         controller = new VerlaConversationController(
                 conversationService,
                 dashboardStatusService,
@@ -46,7 +49,7 @@ class VerlaConversationControllerTest {
                 artifactMapper,
                 mock(AssignmentRuntimeSnapshotService.class),
                 mock(com.studyagent.service.application.verla.AiWritingRuntimeSnapshotService.class),
-                mock(VerlaTurnOrchestrator.class),
+                turnOrchestrator,
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 mock(com.studyagent.api.service.legacy.LegacyTaskAdapter.class));
     }
@@ -84,6 +87,22 @@ class VerlaConversationControllerTest {
         assertThat(VerlaArtifactMapper.SELECT_BY_CONVERSATION_IDS_COLUMNS)
                 .isEqualTo(VerlaArtifactMapper.ARTIFACT_FULL_COLUMNS)
                 .contains("body_or_ref");
+    }
+
+    @Test
+    void runAssignmentReturnsAcceptedResponseFromBusinessOrchestrator() {
+        when(turnOrchestrator.startAssignmentRunFromFinalClarify("user_1", 101L))
+                .thenReturn(SendMessageResult.builder()
+                        .turnId(201L)
+                        .userMessageId(301L)
+                        .agentSessionId(401L)
+                        .build());
+
+        Result<com.studyagent.api.dto.verla.response.SendMessageResponseVO> result =
+                controller.runAssignment("user_1", 101L);
+
+        assertThat(result.getData().getAgentSessionId()).isNotBlank();
+        verify(turnOrchestrator).startAssignmentRunFromFinalClarify("user_1", 101L);
     }
 
     private static VerlaConversation assignmentConversation() {

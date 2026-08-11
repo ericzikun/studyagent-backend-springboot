@@ -9,12 +9,14 @@ import com.studyagent.service.application.verla.sse.VerlaSseEventPayload;
 import com.studyagent.service.application.verla.sse.VerlaSsePublisher;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.repo.VerlaEventInboxRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -27,7 +29,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Verla SSE 网关（PR-16）
@@ -36,7 +37,6 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class VerlaSseGateway implements VerlaSsePublisher {
 
     private static final int REPLAY_BATCH = 200;
@@ -45,24 +45,36 @@ public class VerlaSseGateway implements VerlaSsePublisher {
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final VerlaSseProperties sseProperties;
+    private final int connectionCapacity;
+
+    public VerlaSseGateway(
+            VerlaEventInboxRepository inboxRepository,
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry,
+            VerlaSseProperties sseProperties,
+            @Value("${server.tomcat.max-connections:8192}") int connectionCapacity) {
+        this.inboxRepository = inboxRepository;
+        this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+        this.sseProperties = sseProperties;
+        this.connectionCapacity = Math.max(1, connectionCapacity);
+    }
 
     private final Map<Long, CopyOnWriteArrayList<EmitterRegistration>> emitters = new ConcurrentHashMap<>();
-    private final AtomicLong registrationsTotal = new AtomicLong();
-    private final AtomicLong idleClosedTotal = new AtomicLong();
-    private final AtomicLong userLimitRejectedTotal = new AtomicLong();
-
     @PostConstruct
     void registerGauge() {
         meterRegistry.gauge("verla.sse.connections.total", Tags.empty(), this,
                 g -> g.emitters.values().stream().mapToInt(List::size).sum());
         meterRegistry.gauge("verla.sse.conversations.total", Tags.empty(), this,
                 g -> g.emitters.size());
-        meterRegistry.gauge("verla.sse.registrations.total", Tags.empty(), registrationsTotal,
-                AtomicLong::get);
-        meterRegistry.gauge("verla.sse.idle_closed.total", Tags.empty(), idleClosedTotal,
-                AtomicLong::get);
-        meterRegistry.gauge("verla.sse.user_limit_rejected.total", Tags.empty(), userLimitRejectedTotal,
-                AtomicLong::get);
+        cumulativeCounter("verla.sse.registrations.total");
+        cumulativeCounter("verla.sse.idle_closed.total");
+        cumulativeCounter("verla.sse.user_limit_rejected.total");
+        Gauge.builder("verla.sse.connections.capacity", () -> connectionCapacity)
+                .register(meterRegistry);
+        publishCounter("success");
+        publishCounter("error");
+        publishCounter("no_subscriber");
     }
 
     @PreDestroy
@@ -89,7 +101,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 conversationId, k -> new CopyOnWriteArrayList<>());
         evictOldestIfNeeded(conversationId, list);
         list.add(reg);
-        registrationsTotal.incrementAndGet();
+        cumulativeCounter("verla.sse.registrations.total").increment();
 
         em.onCompletion(() -> remove(conversationId, reg));
         em.onTimeout(() -> {
@@ -127,6 +139,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         }
         CopyOnWriteArrayList<EmitterRegistration> list = emitters.get(conversationId);
         if (list == null || list.isEmpty()) {
+            publishCounter("no_subscriber").increment();
             log.warn(
                     "[Verla/sse] publish skipped — no SSE subscribers (event already in inbox): cid={} type={} inboxRowId={}",
                     conversationId,
@@ -172,7 +185,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                 if (now - reg.lastBusinessWriteAtMs >= idleTimeoutMs) {
                     log.info("[Verla/sse] idle close cid={} user={} idleMs={}",
                             cid, reg.clerkUserId, now - reg.lastBusinessWriteAtMs);
-                    idleClosedTotal.incrementAndGet();
+                    cumulativeCounter("verla.sse.idle_closed.total").increment();
                     completeQuietly(reg.emitter);
                     remove(cid, reg);
                 }
@@ -187,7 +200,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         }
         int active = countUserConnections(clerkUserId);
         if (active >= maxPerUser) {
-            userLimitRejectedTotal.incrementAndGet();
+            cumulativeCounter("verla.sse.user_limit_rejected.total").increment();
             log.warn("[Verla/sse] user connection limit reached user={} active={} max={}",
                     clerkUserId, active, maxPerUser);
             throw new RateLimitExceededException("verla-sse-subscribe");
@@ -204,6 +217,10 @@ public class VerlaSseGateway implements VerlaSsePublisher {
             }
         }
         return count;
+    }
+
+    private Counter cumulativeCounter(String name) {
+        return meterRegistry.counter(name);
     }
 
     private void evictOldestIfNeeded(Long conversationId, CopyOnWriteArrayList<EmitterRegistration> list) {
@@ -314,13 +331,16 @@ public class VerlaSseGateway implements VerlaSsePublisher {
                     .name("verla")
                     .data(payload, MediaType.APPLICATION_JSON));
             reg.lastSentEventId = eventId;
+            publishCounter("success").increment();
             return true;
         } catch (IOException ioe) {
+            publishCounter("error").increment();
             log.debug("[Verla/sse] send io fail (likely disconnected) cid={} id={}: {}",
                     conversationId, payload.getId(), ioe.getMessage());
             remove(conversationId, reg);
             return false;
         } catch (Exception e) {
+            publishCounter("error").increment();
             log.warn("[Verla/sse] send unexpected fail cid={} id={}: {}",
                     conversationId, payload.getId(), e.getMessage());
             remove(conversationId, reg);
@@ -332,6 +352,10 @@ public class VerlaSseGateway implements VerlaSsePublisher {
         synchronized (reg.deliveryLock) {
             reg.emitter.send(SseEmitter.event().name("ping").data("h"));
         }
+    }
+
+    private Counter publishCounter(String result) {
+        return meterRegistry.counter("verla.sse.publish.total", "result", result);
     }
 
     private VerlaSseEventPayload toReplayPayload(VerlaEventInbox row) {

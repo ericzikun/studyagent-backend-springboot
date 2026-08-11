@@ -47,6 +47,7 @@ import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -136,6 +137,19 @@ public class StripeBillingWebhookService {
     private final ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
     private final ObjectProvider<BillingDomainService> billingDomainServiceProvider;
     private final PlatformTransactionManager transactionManager;
+    private BillingBusinessMetrics billingBusinessMetrics;
+    private BillingFulfillmentStateService billingFulfillmentStateService;
+
+    @Autowired
+    public void setBillingBusinessMetrics(BillingBusinessMetrics billingBusinessMetrics) {
+        this.billingBusinessMetrics = billingBusinessMetrics;
+    }
+
+    @Autowired
+    public void setBillingFulfillmentStateService(
+            BillingFulfillmentStateService billingFulfillmentStateService) {
+        this.billingFulfillmentStateService = billingFulfillmentStateService;
+    }
 
     @Value("${billing.payment-grace-days:3}")
     private int paymentGraceDays = 3;
@@ -172,22 +186,69 @@ public class StripeBillingWebhookService {
     }
 
     public boolean process(Event event) {
+        BillingBusinessMetrics.Observation observation = billingBusinessMetrics == null
+                ? null
+                : billingBusinessMetrics.start();
         receive(event);
         if (!claim(event.getId())) {
+            recordWebhook(
+                    observation,
+                    event,
+                    BillingBusinessMetrics.Result.IGNORED,
+                    BillingBusinessMetrics.ErrorType.NONE);
             return false;
+        }
+        if (billingFulfillmentStateService != null) {
+            billingFulfillmentStateService.markRetryingBySourceEvent(event.getId());
         }
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         try {
             transaction.executeWithoutResult(status -> handle(event));
             markSucceeded(event.getId());
+            recordWebhook(
+                    observation,
+                    event,
+                    BillingBusinessMetrics.Result.SUCCESS,
+                    BillingBusinessMetrics.ErrorType.NONE);
             return true;
         } catch (ReviewRequiredException e) {
             markReviewRequired(event.getId(), e.getMessage());
+            recordWebhook(
+                    observation,
+                    event,
+                    BillingBusinessMetrics.Result.REVIEW_REQUIRED,
+                    BillingBusinessMetrics.ErrorType.NONE);
             return false;
         } catch (RuntimeException e) {
+            if (billingFulfillmentStateService != null) {
+                billingFulfillmentStateService.markFailedBySourceEvent(
+                        event.getId(),
+                        "webhook_processing",
+                        e.getMessage());
+            }
             markFailed(event.getId(), e);
+            recordWebhook(
+                    observation,
+                    event,
+                    BillingBusinessMetrics.Result.ERROR,
+                    BillingBusinessMetrics.ErrorType.UNKNOWN);
             throw e;
         }
+    }
+
+    private void recordWebhook(
+            BillingBusinessMetrics.Observation observation,
+            Event event,
+            BillingBusinessMetrics.Result result,
+            BillingBusinessMetrics.ErrorType errorType) {
+        if (billingBusinessMetrics == null || observation == null) {
+            return;
+        }
+        billingBusinessMetrics.recordWebhook(
+                observation,
+                BillingBusinessMetrics.WebhookEventType.from(event.getType()),
+                result,
+                errorType);
     }
 
     private void handle(Event event) {
@@ -197,7 +258,7 @@ public class StripeBillingWebhookService {
             case "checkout.session.async_payment_succeeded" -> handleCheckoutCompleted(
                     event.getId(), event.getType(), resolveRequired(event, Session.class));
             case "checkout.session.async_payment_failed" -> handleCheckoutAsyncPaymentFailed(
-                    event.getType(), resolveRequired(event, Session.class));
+                    event.getId(), event.getType(), resolveRequired(event, Session.class));
             case "checkout.session.expired" -> handleCheckoutExpired(
                     event.getId(), event.getType(), resolveRequired(event, Session.class));
             case "customer.subscription.created", "customer.subscription.updated" ->
@@ -209,6 +270,7 @@ public class StripeBillingWebhookService {
                     handleSubscriptionScheduleEvent(resolveRequired(event, SubscriptionSchedule.class));
             case "invoice.paid", "invoice.payment_succeeded" ->
                     handleInvoicePaid(
+                            event.getId(),
                             resolveRequired(event, Invoice.class),
                             resolveInvoiceSubscriptionId(event),
                             event.getCreated());
@@ -257,6 +319,7 @@ public class StripeBillingWebhookService {
         boolean fullRefund = cumulativeRefund >= charge.getAmount();
         if ("addon".equals(order.getOrderType())) {
             if (isAutoRefundedAddonOrder(order)) {
+                markPaymentRefunded(order, fullRefund);
                 return;
             }
             quotaGateway().adjustAddonForRefund(
@@ -265,10 +328,12 @@ public class StripeBillingWebhookService {
                     cumulativeRefund,
                     charge.getAmount());
             updateOrderRefundState(order, fullRefund ? "refunded" : "partially_refunded", charge.getId());
+            markPaymentRefunded(order, fullRefund);
             return;
         }
         if (fullRefund && cancelCurrentSubscriptionForRefund(order, charge)) {
             updateOrderRefundState(order, "refunded", "subscription_full_refund:" + charge.getId());
+            markPaymentRefunded(order, true);
             return;
         }
         markOrderReviewRequired(
@@ -277,6 +342,25 @@ public class StripeBillingWebhookService {
                 "charge.refunded",
                 charge.getId(),
                 "subscription_refund:" + charge.getId());
+        markPaymentRefunded(order, fullRefund);
+    }
+
+    private void markPaymentRefunded(RechargeOrderEntity order, boolean fullRefund) {
+        if (!fullRefund || billingFulfillmentStateService == null) {
+            return;
+        }
+        String paymentKey = null;
+        if ("addon".equals(order.getOrderType())
+                || "subscription_upgrade_manual".equals(order.getOrderType())) {
+            if (hasText(order.getStripeSessionId())) {
+                paymentKey = "checkout:" + order.getStripeSessionId();
+            }
+        } else if (hasText(order.getStripeInvoiceId())) {
+            paymentKey = "invoice:" + order.getStripeInvoiceId();
+        }
+        if (paymentKey != null) {
+            billingFulfillmentStateService.markRefunded(paymentKey);
+        }
     }
 
     private boolean isAutoRefundedAddonOrder(RechargeOrderEntity order) {
@@ -505,6 +589,7 @@ public class StripeBillingWebhookService {
             return false;
         }
         handleInvoicePaid(
+                null,
                 latestInvoice,
                 authoritative.getId(),
                 null);
@@ -540,7 +625,7 @@ public class StripeBillingWebhookService {
             return;
         }
         try {
-            handleInvoicePaid(Invoice.retrieve(invoiceId), null, event.getCreated());
+            handleInvoicePaid(event.getId(), Invoice.retrieve(invoiceId), null, event.getCreated());
         } catch (StripeException e) {
             throw new IllegalStateException("Retrieve invoice failed from invoice_payment.paid: " + invoiceId, e);
         }
@@ -623,6 +708,15 @@ public class StripeBillingWebhookService {
                     order.getFeatureCode(),
                     order.getQuotaAmount(),
                     order.getValidityMonthsSnapshot());
+            String paymentKey = "checkout:" + session.getId();
+            recordPaymentAccepted(
+                    paymentKey,
+                    "checkout",
+                    session.getId(),
+                    stripeEventId,
+                    order.getId(),
+                    "addon",
+                    addonCode);
             quotaGateway().grantAddonFromCheckout(
                     clerkUserId,
                     snapshot,
@@ -630,6 +724,7 @@ public class StripeBillingWebhookService {
                     session.getPaymentIntent(),
                     resolveAddonPaidAt(clerkUserId, session));
             completeOrderBySession(session, addonCode, null);
+            markFulfillmentSucceeded(paymentKey, "addon", addonCode);
             capturePaymentSucceeded(
                     clerkUserId,
                     session,
@@ -686,7 +781,7 @@ public class StripeBillingWebhookService {
         }
 
         if ("subscription_upgrade_manual".equals(purchaseType)) {
-            if (!handleManualUpgradeCheckoutCompleted(session, clerkUserId)) {
+            if (!handleManualUpgradeCheckoutCompleted(stripeEventId, session, clerkUserId)) {
                 return;
             }
             capturePaymentSucceeded(
@@ -762,6 +857,7 @@ public class StripeBillingWebhookService {
 
     private void handleCheckoutExpired(String stripeEventId, String stripeEventType, Session session) {
         Map<String, String> metadata = session.getMetadata();
+        recordCheckoutPaymentFailed(stripeEventId, session, metadata, "checkout_expired");
         capturePaymentFailed(
                 firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId()),
                 session,
@@ -780,8 +876,12 @@ public class StripeBillingWebhookService {
         notifyCheckoutExpired(stripeEventId, stripeEventType, session, metadata);
     }
 
-    private void handleCheckoutAsyncPaymentFailed(String stripeEventType, Session session) {
+    private void handleCheckoutAsyncPaymentFailed(
+            String stripeEventId,
+            String stripeEventType,
+            Session session) {
         Map<String, String> metadata = session.getMetadata();
+        recordCheckoutPaymentFailed(stripeEventId, session, metadata, "async_payment_failed");
         capturePaymentFailed(
                 firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId()),
                 session,
@@ -798,7 +898,10 @@ public class StripeBillingWebhookService {
                 .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
     }
 
-    private boolean handleManualUpgradeCheckoutCompleted(Session session, String clerkUserId) {
+    private boolean handleManualUpgradeCheckoutCompleted(
+            String stripeEventId,
+            Session session,
+            String clerkUserId) {
         if (!"paid".equals(session.getPaymentStatus())) {
             log.info("Manual subscription upgrade checkout is not paid yet: session={}, payment_status={}",
                     session.getId(), session.getPaymentStatus());
@@ -813,7 +916,24 @@ public class StripeBillingWebhookService {
         if (order == null || "completed".equals(order.getStatus())) {
             return false;
         }
-        return attemptManualUpgradeSwitch(order, clerkUserId, session.getId(), session.getPaymentIntent());
+        String paymentKey = "checkout:" + session.getId();
+        recordPaymentAccepted(
+                paymentKey,
+                "checkout",
+                session.getId(),
+                stripeEventId,
+                order.getId(),
+                "subscription_upgrade",
+                firstNonBlank(order.getTargetPlanCode(), "unknown"));
+        boolean succeeded = attemptManualUpgradeSwitch(
+                order, clerkUserId, session.getId(), session.getPaymentIntent());
+        if (succeeded) {
+            markFulfillmentSucceeded(
+                    paymentKey,
+                    "subscription_upgrade",
+                    firstNonBlank(order.getTargetPlanCode(), "unknown"));
+        }
+        return succeeded;
     }
 
     public void retryManualUpgradeSwitch(String orderNo) {
@@ -828,11 +948,24 @@ public class StripeBillingWebhookService {
         if (order == null || "completed".equals(order.getStatus())) {
             return;
         }
-        attemptManualUpgradeSwitch(
-                order,
-                order.getClerkUserId(),
-                order.getStripeSessionId(),
-                order.getStripePaymentIntentId());
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.executeWithoutResult(status -> {
+            String paymentKey = "checkout:" + order.getStripeSessionId();
+            boolean succeeded = attemptManualUpgradeSwitch(
+                    order,
+                    order.getClerkUserId(),
+                    order.getStripeSessionId(),
+                    order.getStripePaymentIntentId());
+            if (succeeded) {
+                if (billingFulfillmentStateService != null) {
+                    billingFulfillmentStateService.markRetrying(paymentKey);
+                }
+                markFulfillmentSucceeded(
+                        paymentKey,
+                        "subscription_upgrade",
+                        firstNonBlank(order.getTargetPlanCode(), "unknown"));
+            }
+        });
     }
 
     boolean attemptManualUpgradeSwitch(
@@ -1165,7 +1298,11 @@ public class StripeBillingWebhookService {
         return builder.build();
     }
 
-    private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId, Long eventCreatedEpoch) {
+    private void handleInvoicePaid(
+            String stripeEventId,
+            Invoice invoice,
+            String eventSubscriptionId,
+            Long eventCreatedEpoch) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
             log.info("Paid invoice has no subscription, ignored: invoice={}", invoice.getId());
@@ -1255,6 +1392,22 @@ public class StripeBillingWebhookService {
                 invoice.getPaymentIntent(),
                 plan.getPlanCode());
 
+        RechargeOrderEntity fulfillmentOrder = firstNonNull(selectedUpgradeOrder, selectedInitialOrder);
+        String fulfillmentPurchaseType = upgrade
+                ? "subscription_upgrade"
+                : isOrderType(selectedInitialOrder, "subscription_initial", IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)
+                        ? "subscription_initial"
+                        : "subscription_renewal";
+        String paymentKey = "invoice:" + invoice.getId();
+        recordPaymentAccepted(
+                paymentKey,
+                "invoice",
+                invoice.getId(),
+                stripeEventId,
+                fulfillmentOrder == null ? null : fulfillmentOrder.getId(),
+                fulfillmentPurchaseType,
+                plan.getPlanCode());
+
         Long periodStartEpoch = resolvePeriodEpoch(resolveInvoicePeriodStart(invoice), subscription.getCurrentPeriodStart());
         Long periodEndEpoch = resolvePeriodEpoch(resolveInvoicePeriodEnd(invoice), subscription.getCurrentPeriodEnd());
         Instant periodStart = instant(periodStartEpoch);
@@ -1297,6 +1450,64 @@ public class StripeBillingWebhookService {
                 clerkUserId,
                 subscription.getId(),
                 "subscription:" + subscription.getId() + ":resume-addons:" + invoice.getId());
+        markFulfillmentSucceeded(paymentKey, fulfillmentPurchaseType, plan.getPlanCode());
+    }
+
+    private void recordPaymentAccepted(
+            String paymentKey,
+            String sourceType,
+            String sourceId,
+            String sourceEventId,
+            Long rechargeOrderId,
+            String purchaseType,
+            String productCode) {
+        if (billingFulfillmentStateService == null) {
+            return;
+        }
+        billingFulfillmentStateService.recordPaymentAccepted(
+                new BillingFulfillmentStateService.PaymentAcceptedCommand(
+                        paymentKey,
+                        sourceType,
+                        sourceId,
+                        sourceEventId,
+                        rechargeOrderId,
+                        purchaseType,
+                        productCode));
+    }
+
+    private void recordCheckoutPaymentFailed(
+            String stripeEventId,
+            Session session,
+            Map<String, String> metadata,
+            String errorCode) {
+        if (billingFulfillmentStateService == null || metadata == null) {
+            return;
+        }
+        String rawPurchaseType = metadata.get("purchase_type");
+        String purchaseType;
+        String productCode;
+        if ("addon".equals(rawPurchaseType)) {
+            purchaseType = "addon";
+            productCode = firstNonBlank(metadata.get("addon_code"), "unknown");
+        } else if ("subscription_upgrade_manual".equals(rawPurchaseType)) {
+            purchaseType = "subscription_upgrade";
+            productCode = firstNonBlank(metadata.get("target_plan_code"), "unknown");
+        } else {
+            return;
+        }
+        billingFulfillmentStateService.recordPaymentFailed(
+                new BillingFulfillmentStateService.PaymentFailedCommand(
+                        "checkout:" + session.getId(), "checkout", session.getId(), stripeEventId,
+                        null, purchaseType, productCode, errorCode, errorCode));
+    }
+
+    private void markFulfillmentSucceeded(
+            String paymentKey,
+            String purchaseType,
+            String productCode) {
+        if (billingFulfillmentStateService != null) {
+            billingFulfillmentStateService.markSucceeded(paymentKey, purchaseType, productCode);
+        }
     }
 
     private void handleInvoiceFailed(
@@ -1396,6 +1607,26 @@ public class StripeBillingWebhookService {
                             "invoice.payment_action_required".equals(eventType) ? "pending" : "failed")
                     .set(RechargeOrderEntity::getFailureReason, eventType)
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+        }
+        if ("invoice.payment_failed".equals(eventType)) {
+            String purchaseType = order != null && "subscription_upgrade".equals(order.getOrderType())
+                    ? "subscription_upgrade"
+                    : order != null && ("subscription_initial".equals(order.getOrderType())
+                            || IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL.equals(order.getOrderType()))
+                            ? "subscription_initial"
+                            : "subscription_renewal";
+            String productCode = firstNonBlank(
+                    firstNonBlank(
+                            order == null ? null : order.getTargetPlanCode(),
+                            order == null ? null : order.getPlanCode()),
+                    firstNonBlank(entity == null ? null : entity.getPlanCode(), "unknown"));
+            if (billingFulfillmentStateService != null) {
+                billingFulfillmentStateService.recordPaymentFailed(
+                        new BillingFulfillmentStateService.PaymentFailedCommand(
+                                "invoice:" + invoice.getId(), "invoice", invoice.getId(), stripeEventId,
+                                order == null ? null : order.getId(), purchaseType, productCode,
+                                "payment_failed", eventType));
+            }
         }
         captureInvoicePaymentFailed(entity, order, invoice, eventType);
         notifyInvoicePaymentFailed(stripeEventId, eventType, entity, order, invoice);
@@ -2351,6 +2582,10 @@ public class StripeBillingWebhookService {
                         .eq(SubscriptionPlanEntity::getStripePriceId, priceId)
                         .last("LIMIT 1"));
         if (plan == null) {
+            if (billingBusinessMetrics != null) {
+                billingBusinessMetrics.recordUnknownPrice(
+                        BillingBusinessMetrics.UnknownPricePurchaseType.SUBSCRIPTION);
+            }
             throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);
         }
         return plan;
@@ -2363,6 +2598,10 @@ public class StripeBillingWebhookService {
                         .eq(AddonPackageDefEntity::getIsActive, true)
                         .last("LIMIT 1"));
         if (addon == null) {
+            if (billingBusinessMetrics != null) {
+                billingBusinessMetrics.recordUnknownPrice(
+                        BillingBusinessMetrics.UnknownPricePurchaseType.ADDON);
+            }
             throw new IllegalStateException("Unknown add-on code: " + addonCode);
         }
         return addon;

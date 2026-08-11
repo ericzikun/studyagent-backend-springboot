@@ -52,6 +52,7 @@ public class AgentEventController {
             
             // 2. 检查是否重复事件
             if (agentEventService.isDuplicateEvent(request.getEventId())) {
+                agentEventService.recordDuplicateAccepted(request);
                 log.warn("重复事件，已忽略: eventId={}", request.getEventId());
                 return ResponseEntity.ok(AgentEventResponse.duplicate(request.getEventId()));
             }
@@ -102,6 +103,7 @@ public class AgentEventController {
                         }
                         
                         if (agentEventService.isDuplicateEvent(event.getEventId())) {
+                            agentEventService.recordDuplicateAccepted(event);
                             return AgentEventResponse.duplicate(event.getEventId());
                         }
                         agentEventService.processEventAsync(event);

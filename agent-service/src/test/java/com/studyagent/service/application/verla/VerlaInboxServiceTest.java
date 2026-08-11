@@ -23,6 +23,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -31,6 +33,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 /**
@@ -85,6 +89,11 @@ class VerlaInboxServiceTest {
         verify(inboxRepo).tryInsert(any());
         verifyNoInteractions(dispatcher);
         verify(cursorRepo, never()).lockOrInit(any(), any(), any());
+        assertEquals(1.0, counter("verla.event.inbox.duplicate.total"));
+        assertEquals(0.0, counter("verla.event.inbox.processed.total"));
+        assertEquals(0.0, counter("verla.event.inbox.failed.total"));
+        assertEquals(0.0, counter("verla.event.inbox.ready_hold.total"));
+        assertEquals(0.0, counter("verla.event.inbox.skipped.total"));
     }
 
     @Test
@@ -102,6 +111,8 @@ class VerlaInboxServiceTest {
         verify(inboxRepo).markSkipped(eq(1L), anyString());
         verifyNoInteractions(dispatcher);
         verify(cursorRepo, never()).advance(any(), any(), any());
+        assertEquals(1.0, counter("verla.event.inbox.skipped.total"));
+        assertEquals(0.0, counter("verla.event.inbox.processed.total"));
     }
 
     @Test
@@ -120,6 +131,8 @@ class VerlaInboxServiceTest {
         verify(inboxRepo, never()).markProcessed(anyLong());
         verifyNoInteractions(dispatcher);
         verify(cursorRepo, never()).advance(any(), any(), any());
+        assertEquals(1.0, counter("verla.event.inbox.ready_hold.total"));
+        assertEquals(0.0, counter("verla.event.inbox.processed.total"));
     }
 
     @Test
@@ -141,6 +154,56 @@ class VerlaInboxServiceTest {
         verify(dispatcher, times(1)).dispatch(eq(readyRow), any());
         verify(inboxRepo).markProcessed(3L);
         verify(cursorRepo).advance(eq(9001L), eq(8L), eq(7L));
+        assertEquals(1.0, counter("verla.event.inbox.processed.total"));
+        assertEquals(0.0, counter("verla.event.inbox.failed.total"));
+    }
+
+    @Test
+    void processed_counter_increments_only_after_transaction_commit() {
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox row = inv.getArgument(0);
+            row.setId(8L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9010L), any(), any()))
+                .thenReturn(cursor(9010L, 1L, 0L));
+        VerlaEventInbox readyRow = sampleInboxRow(8L, 9010L, 1L, "AGENT_STARTED");
+        when(inboxRepo.findReady(9010L, 1L)).thenReturn(readyRow);
+        when(inboxRepo.findReady(9010L, 2L)).thenReturn(null);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.ingest(envelope(9010L, 1L, "AGENT_STARTED"));
+
+            assertEquals(0.0, counter("verla.event.inbox.processed.total"));
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+            assertEquals(1.0, counter("verla.event.inbox.processed.total"));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void handler_failure_increments_only_failed_counter() {
+        when(inboxRepo.tryInsert(any())).thenAnswer(inv -> {
+            VerlaEventInbox row = inv.getArgument(0);
+            row.setId(9L);
+            return true;
+        });
+        when(cursorRepo.lockOrInit(eq(9011L), any(), any()))
+                .thenReturn(cursor(9011L, 1L, 0L));
+        VerlaEventInbox readyRow = sampleInboxRow(9L, 9011L, 1L, "AGENT_STARTED");
+        when(inboxRepo.findReady(9011L, 1L)).thenReturn(readyRow);
+        doThrow(new IllegalStateException("handler failed"))
+                .when(dispatcher).dispatch(eq(readyRow), any());
+
+        assertThrows(IllegalStateException.class,
+                () -> service.ingest(envelope(9011L, 1L, "AGENT_STARTED")));
+
+        assertEquals(1.0, counter("verla.event.inbox.failed.total"));
+        assertEquals(0.0, counter("verla.event.inbox.processed.total"));
+        assertEquals(0.0, counter("verla.event.inbox.duplicate.total"));
     }
 
     @Test
@@ -372,5 +435,9 @@ class VerlaInboxServiceTest {
                 .status(VerlaEventInbox.STATUS_READY)
                 .receivedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private double counter(String name) {
+        return meterRegistry.get(name).counter().count();
     }
 }

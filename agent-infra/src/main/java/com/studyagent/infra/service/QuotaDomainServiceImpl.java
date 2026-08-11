@@ -427,7 +427,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void refund(long ledgerId, String reason) {
+    public boolean refund(long ledgerId, String reason) {
         QuotaLedgerEntity consumeLedger = quotaLedgerMapper.selectById(ledgerId);
         if (consumeLedger == null) {
             throw new IllegalArgumentException("Ledger not found: " + ledgerId);
@@ -445,13 +445,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         if (refundExist != null) {
             log.info("额度已退过，幂等跳过: original_ledger_id={}, refund_ledger_id={}",
                     ledgerId, refundExist.getId());
-            return;
+            return false;
         }
 
         // amount 为负数，回滚时加回
         long refundAmount = Math.abs(consumeLedger.getAmount());
         if (refundAmount <= 0) {
-            return;
+            return false;
         }
 
         UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
@@ -582,6 +582,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
         log.info("额度回滚: ledger_id={}, clerk_user_id={}, feature={}, amount={}, reason={}",
                 ledgerId, consumeLedger.getClerkUserId(), consumeLedger.getFeatureCode(), refundAmount, reason);
+        return true;
     }
 
     @Override

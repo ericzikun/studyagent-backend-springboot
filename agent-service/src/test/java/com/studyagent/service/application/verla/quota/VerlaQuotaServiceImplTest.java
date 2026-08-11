@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ class VerlaQuotaServiceImplTest {
     private VerlaQuotaWordCounter wordCounter;
     private QuotaVipAccessService quotaVipAccessService;
     private VerlaQuotaServiceImpl service;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
@@ -61,8 +63,10 @@ class VerlaQuotaServiceImplTest {
         sessionRepository = mock(VerlaSessionRepository.class);
         wordCounter = new VerlaQuotaWordCounter();
         quotaVipAccessService = mock(QuotaVipAccessService.class);
+        meterRegistry = new SimpleMeterRegistry();
         service = new VerlaQuotaServiceImpl(
-                quotaDomainService, userRepository, sessionRepository, wordCounter, quotaVipAccessService);
+                quotaDomainService, userRepository, sessionRepository, wordCounter, quotaVipAccessService,
+                new QuotaBusinessMetrics(meterRegistry));
         ReflectionTestUtils.setField(service, "quotaEnabled", true);
         ReflectionTestUtils.setField(service, "whitelistUserIds", List.of());
         when(quotaVipAccessService.isQuotaVip(anyString())).thenReturn(false);
@@ -337,6 +341,7 @@ class VerlaQuotaServiceImplTest {
                 .build();
         when(sessionRepository.findById(33L)).thenReturn(runSession);
         when(sessionRepository.findByTurn(22L)).thenReturn(List.of(clarifySession));
+        when(quotaDomainService.refund(666L, "agent_failed")).thenReturn(true);
 
         service.refundBySessionId(33L, "agent_failed");
 
@@ -345,8 +350,9 @@ class VerlaQuotaServiceImplTest {
 
     @Test
     void refundBySessionId_callsDomainRefund_withReason() {
-        VerlaSession s = VerlaSession.builder().id(33L).quotaLedgerId(555L).build();
+        VerlaSession s = VerlaSession.builder().id(33L).featureCode("task_create").quotaLedgerId(555L).build();
         when(sessionRepository.findById(33L)).thenReturn(s);
+        when(quotaDomainService.refund(555L, "agent_failed")).thenReturn(true);
 
         service.refundBySessionId(33L, "agent_failed");
 
@@ -357,8 +363,8 @@ class VerlaQuotaServiceImplTest {
     void refundBySessionId_swallowsException_forIdempotency() {
         VerlaSession s = VerlaSession.builder().id(33L).quotaLedgerId(555L).build();
         when(sessionRepository.findById(33L)).thenReturn(s);
-        doThrow(new IllegalArgumentException("Ledger not found"))
-                .when(quotaDomainService).refund(eq(555L), anyString());
+        when(quotaDomainService.refund(eq(555L), anyString()))
+                .thenThrow(new IllegalArgumentException("Ledger not found"));
 
         assertDoesNotThrow(() -> service.refundBySessionId(33L, "agent_cancelled"));
     }
@@ -369,6 +375,19 @@ class VerlaQuotaServiceImplTest {
 
         assertDoesNotThrow(() -> service.refundBySessionId(33L, "x"));
         verifyNoInteractions(quotaDomainService);
+    }
+
+    @Test
+    void refundBySessionId_recordsSkipped_whenRefundWasAlreadyApplied() {
+        VerlaSession s = VerlaSession.builder().id(33L).quotaLedgerId(555L).build();
+        when(sessionRepository.findById(33L)).thenReturn(s);
+        when(quotaDomainService.refund(555L, "agent_failed")).thenReturn(false);
+
+        service.refundBySessionId(33L, "agent_failed");
+
+        assertEquals(1.0, meterRegistry.get("quota.refund")
+                .tags("feature", "assignment", "trigger", "agent_failed", "result", "skipped")
+                .counter().count());
     }
 
     // ---------------------- assertSufficientForAssignmentRun ----------------------

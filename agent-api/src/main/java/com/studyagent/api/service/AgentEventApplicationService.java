@@ -15,6 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
 
@@ -43,6 +46,8 @@ public class AgentEventApplicationService {
     private final TaskOutputEntityRepository taskOutputRepository;
     private final QuotaDomainService quotaDomainService;
     private final EmailNotificationService emailNotificationService;
+    private final PlatformTransactionManager transactionManager;
+    private final LegacyAgentEventMetrics legacyAgentEventMetrics;
     
     // 🆕 Markdown 转 TipTap JSON 服务 URL
     @Value("${frontend.markdown-service-url:http://localhost:3000/api/markdown-to-tiptap}")
@@ -82,91 +87,96 @@ public class AgentEventApplicationService {
     }
     
     /**
-     * 标记事件已处理
-     */
-    private void markEventProcessed(String eventId) {
-        if (eventId != null) {
-            processedEvents.put(eventId, System.currentTimeMillis() + EVENT_EXPIRE_MS);
-        }
-    }
-
-    /**
      * 异步处理事件
      */
     @Async("agentEventExecutor")
     public void processEventAsync(AgentEventRequest request) {
+        String eventTypeLabel = request == null ? null : request.getEventType();
+        if (request == null) {
+            legacyAgentEventMetrics.record(LegacyAgentEventMetrics.Result.IGNORED, null);
+            return;
+        }
+        if (!claimEvent(request.getEventId())) {
+            legacyAgentEventMetrics.record(
+                    LegacyAgentEventMetrics.Result.DUPLICATE, eventTypeLabel);
+            log.debug("跳过重复事件: eventId={}", request.getEventId());
+            return;
+        }
+
+        AgentEventType eventType = parseEventType(request.getEventType());
+        if (eventType == null) {
+            legacyAgentEventMetrics.record(
+                    LegacyAgentEventMetrics.Result.IGNORED, eventTypeLabel);
+            log.warn("未知事件类型: {}", request.getEventType());
+            return;
+        }
+
         try {
-            // 再次检查幂等性（防止并发）
-            if (isDuplicateEvent(request.getEventId())) {
-                log.debug("跳过重复事件: eventId={}", request.getEventId());
-                return;
+            TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+            transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            Boolean handled = transaction.execute(status -> dispatchEvent(eventType, request));
+            if (Boolean.TRUE.equals(handled)) {
+                legacyAgentEventMetrics.record(
+                        LegacyAgentEventMetrics.Result.SUCCESS, eventTypeLabel);
             }
-            
-            // 解析事件类型
-            AgentEventType eventType = AgentEventType.fromString(request.getEventType());
-            if (eventType == null) {
-                log.warn("未知事件类型: {}", request.getEventType());
-                return;
-            }
-            
-            // 根据事件类型分发处理
-            switch (eventType) {
-                case TASK_STARTED:
-                    handleTaskStarted(request);
-                    break;
-                case TASK_COMPLETED:
-                    handleTaskCompleted(request);
-                    break;
-                case TASK_FAILED:
-                    handleTaskFailed(request);
-                    break;
-                case TASK_CANCELLED:
-                    handleTaskCancelled(request);
-                    break;
-                case TASK_PROGRESS:
-                    handleTaskProgress(request);
-                    break;
-                case SUBTASK_CREATED:
-                    handleSubtaskCreated(request);
-                    break;
-                case SUBTASK_UPDATED:
-                    handleSubtaskUpdated(request);
-                    break;
-                case AGENT_CREATED:
-                    handleAgentCreated(request);
-                    break;
-                case AGENT_OUTPUT:
-                    handleAgentOutput(request);
-                    break;
-                case AGENT_COMPLETED:
-                    handleAgentCompleted(request);
-                    break;
-                case ACTIVITY_LOG:
-                    handleActivityLog(request);
-                    break;
-                case OUTPUT_CREATED:
-                    handleOutputCreated(request);
-                    break;
-                case COMPOSE_ROUND:
-                    handleComposeRound(request);
-                    break;
-                case BATCH_EVENTS:
-                    handleBatchEvents(request);
-                    break;
-                default:
-                    log.warn("未处理的事件类型: {}", eventType);
-            }
-            
-            // 标记事件已处理
-            markEventProcessed(request.getEventId());
-            
             log.info("事件处理完成: eventId={}, eventType={}", 
                     request.getEventId(), request.getEventType());
                     
         } catch (Exception e) {
+            if (request.getEventId() != null) {
+                processedEvents.remove(request.getEventId());
+            }
+            legacyAgentEventMetrics.record(
+                    LegacyAgentEventMetrics.Result.ERROR, eventTypeLabel);
             log.error("事件处理异常: eventId={}, error={}", 
                     request.getEventId(), e.getMessage(), e);
         }
+    }
+
+    public void recordDuplicateAccepted(AgentEventRequest request) {
+        legacyAgentEventMetrics.record(
+                LegacyAgentEventMetrics.Result.DUPLICATE,
+                request == null ? null : request.getEventType());
+    }
+
+    private boolean claimEvent(String eventId) {
+        if (eventId == null) {
+            return true;
+        }
+        long now = System.currentTimeMillis();
+        processedEvents.entrySet().removeIf(entry -> entry.getValue() < now);
+        return processedEvents.putIfAbsent(eventId, now + EVENT_EXPIRE_MS) == null;
+    }
+
+    private static AgentEventType parseEventType(String rawEventType) {
+        try {
+            return AgentEventType.fromString(rawEventType);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private boolean dispatchEvent(AgentEventType eventType, AgentEventRequest request) {
+        switch (eventType) {
+            case TASK_STARTED -> handleTaskStarted(request);
+            case TASK_COMPLETED -> handleTaskCompleted(request);
+            case TASK_FAILED -> handleTaskFailed(request);
+            case TASK_CANCELLED -> handleTaskCancelled(request);
+            case TASK_PROGRESS -> handleTaskProgress(request);
+            case SUBTASK_CREATED -> handleSubtaskCreated(request);
+            case SUBTASK_UPDATED -> handleSubtaskUpdated(request);
+            case AGENT_CREATED -> handleAgentCreated(request);
+            case AGENT_OUTPUT -> handleAgentOutput(request);
+            case AGENT_COMPLETED -> handleAgentCompleted(request);
+            case ACTIVITY_LOG -> handleActivityLog(request);
+            case OUTPUT_CREATED -> handleOutputCreated(request);
+            case COMPOSE_ROUND -> handleComposeRound(request);
+            case BATCH_EVENTS -> {
+                handleBatchEvents(request);
+                return false;
+            }
+        }
+        return true;
     }
     
     // ========== 事件处理方法 ==========

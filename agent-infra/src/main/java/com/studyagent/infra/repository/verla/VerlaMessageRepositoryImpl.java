@@ -7,7 +7,10 @@ import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Repository
@@ -55,6 +58,45 @@ public class VerlaMessageRepositoryImpl
             return null;
         }
         return toDomain(this.baseMapper.selectByTurnRoleScene(turnId, role, scene));
+    }
+
+    @Override
+    public Map<Long, String> findFirstUserQueryByConversationIds(List<Long> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = conversationIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> result = new HashMap<>();
+        for (VerlaMessageEntity entity : this.baseMapper.selectFirstUserQueryByConversationIds(ids)) {
+            if (entity.getConversationId() == null) {
+                continue;
+            }
+            result.putIfAbsent(entity.getConversationId(), concatUserQuery(entity));
+        }
+        return result;
+    }
+
+    private static String concatUserQuery(VerlaMessageEntity e) {
+        String text = e.getTextContent();
+        String blocks = e.getBlocksJson();
+        boolean textBlank = text == null || text.isBlank();
+        boolean blocksBlank = blocks == null || blocks.isBlank();
+        if (textBlank && blocksBlank) {
+            return null;
+        }
+        if (blocksBlank) {
+            return text;
+        }
+        if (textBlank) {
+            return blocks;
+        }
+        return text + "\n" + blocks;
     }
 
     private VerlaMessage toDomain(VerlaMessageEntity e) {

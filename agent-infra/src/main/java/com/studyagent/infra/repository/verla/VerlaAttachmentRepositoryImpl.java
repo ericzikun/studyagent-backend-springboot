@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Repository
@@ -72,6 +74,24 @@ public class VerlaAttachmentRepositoryImpl
     public List<VerlaAttachment> listByTurn(Long turnId) {
         return this.baseMapper.selectByTurn(turnId)
                 .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<Long, List<VerlaAttachment>> listUserUploadsByConversationIds(List<Long> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> ids = conversationIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return this.baseMapper.selectUserUploadsByConversationIds(ids).stream()
+                .map(this::toDomain)
+                .filter(a -> a.getConversationId() != null)
+                .collect(Collectors.groupingBy(VerlaAttachment::getConversationId));
     }
 
     @Override

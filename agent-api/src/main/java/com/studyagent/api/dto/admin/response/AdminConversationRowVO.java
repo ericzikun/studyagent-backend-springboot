@@ -11,6 +11,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * Flattened admin conversation row for list/detail APIs.
  */
@@ -37,6 +39,10 @@ public class AdminConversationRowVO {
     private String quotaFeatureCode;
     private String workspaceTaskType;
     private boolean readOnly;
+    /** 用户原始 query：第一条 user 主对话消息的 text_content + blocks_json 拼接，admin 列表用，可为 null */
+    private String userQuery;
+    /** 用户上传附件的 OSS 直链列表，admin 列表用，可为 null */
+    private List<String> uploadedFileUrls;
 
     public static AdminConversationRowVO from(VerlaConversation conversation,
                                               String dashboardStatus,

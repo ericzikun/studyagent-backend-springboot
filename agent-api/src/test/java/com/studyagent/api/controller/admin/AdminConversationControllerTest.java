@@ -79,19 +79,27 @@ class AdminConversationControllerTest {
         when(ownerProfileEnricher.resolveFeatureCode(any())).thenReturn(FeatureCode.AI_DETECTION);
         when(ownerProfileEnricher.resolveRemainingQuota(eq("user_2"), eq(FeatureCode.AI_DETECTION), eq(false)))
                 .thenReturn(12L);
+        when(browseService.resolveUserQueries(anyList()))
+                .thenReturn(Map.of(conversation.getId(), "Detect AI in this essay\n{\"phase\":\"x\"}"));
+        when(browseService.resolveUploadUrls(anyList()))
+                .thenReturn(Map.of(conversation.getId(),
+                        List.of("https://studyagent.oss-us-west-1.aliyuncs.com/verla/v2/attachments/101/a.pdf")));
 
         Result<AdminConversationPageVO> result = controller.list(
                 "admin_user", 1, 20, null, null, null, false);
 
         verify(adminAccessService).assertAdmin("admin_user");
         assertThat(result.getData().getRecords()).hasSize(1);
-        assertThat(result.getData().getRecords().get(0).getWorkspaceTaskType())
-                .isEqualTo("ai-detection");
-        assertThat(result.getData().getRecords().get(0).getOwnerDisplayName()).isEqualTo("Alice");
-        assertThat(result.getData().getRecords().get(0).getOwnerEmail()).isEqualTo("alice@example.com");
-        assertThat(result.getData().getRecords().get(0).getOwnerCountry()).isEqualTo("US");
-        assertThat(result.getData().getRecords().get(0).getMembershipType()).isEqualTo("plus");
-        assertThat(result.getData().getRecords().get(0).getRemainingQuota()).isEqualTo(12L);
+        AdminConversationRowVO row = result.getData().getRecords().get(0);
+        assertThat(row.getWorkspaceTaskType()).isEqualTo("ai-detection");
+        assertThat(row.getOwnerDisplayName()).isEqualTo("Alice");
+        assertThat(row.getOwnerEmail()).isEqualTo("alice@example.com");
+        assertThat(row.getOwnerCountry()).isEqualTo("US");
+        assertThat(row.getMembershipType()).isEqualTo("plus");
+        assertThat(row.getRemainingQuota()).isEqualTo(12L);
+        assertThat(row.getUserQuery()).isEqualTo("Detect AI in this essay\n{\"phase\":\"x\"}");
+        assertThat(row.getUploadedFileUrls())
+                .containsExactly("https://studyagent.oss-us-west-1.aliyuncs.com/verla/v2/attachments/101/a.pdf");
     }
 
     @Test

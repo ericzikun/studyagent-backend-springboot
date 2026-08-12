@@ -5,10 +5,14 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
+import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
+import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaConversation;
+import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
+import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.state.ConversationStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +33,9 @@ public class AdminConversationBrowseService {
     private final VerlaConversationRepository conversationRepository;
     private final VerlaConversationService conversationService;
     private final UserRepository userRepository;
+    private final VerlaMessageRepository messageRepository;
+    private final VerlaAttachmentRepository attachmentRepository;
+    private final OssStorageService ossStorageService;
 
     public VerlaConversationListSlice listConversations(String ownerUserId,
                                                         int pageNo,
@@ -112,6 +119,51 @@ public class AdminConversationBrowseService {
                 .filter(name -> name != null && !name.isBlank())
                 .map(String::trim)
                 .orElse(null);
+    }
+
+    /**
+     * 批量解析每个 conversation 的用户原始 query（第一条 user 主对话消息的 text_content + blocks_json 拼接）。
+     */
+    public Map<Long, String> resolveUserQueries(List<VerlaConversation> conversations) {
+        List<Long> ids = conversationIds(conversations);
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return messageRepository.findFirstUserQueryByConversationIds(ids);
+    }
+
+    /**
+     * 批量解析每个 conversation 的用户上传附件 OSS 直链列表（实时由 oss_key 拼接）。
+     */
+    public Map<Long, List<String>> resolveUploadUrls(List<VerlaConversation> conversations) {
+        List<Long> ids = conversationIds(conversations);
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<VerlaAttachment>> byConversation =
+                attachmentRepository.listUserUploadsByConversationIds(ids);
+        Map<Long, List<String>> result = new HashMap<>();
+        byConversation.forEach((conversationId, attachments) -> {
+            List<String> urls = attachments.stream()
+                    .map(att -> ossStorageService.getOssUrl(att.getOssKey()))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            if (!urls.isEmpty()) {
+                result.put(conversationId, urls);
+            }
+        });
+        return result;
+    }
+
+    private static List<Long> conversationIds(List<VerlaConversation> conversations) {
+        if (conversations == null || conversations.isEmpty()) {
+            return List.of();
+        }
+        return conversations.stream()
+                .map(VerlaConversation::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private static String normalizeOwnerUserId(String ownerUserId) {

@@ -61,4 +61,22 @@ public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
     VerlaMessageEntity selectByTurnRoleScene(@Param("turnId") Long turnId,
                                              @Param("role") String role,
                                              @Param("scene") String scene);
+
+    /**
+     * 批量取每个 conversation 第一条 user 主对话消息（scene 过滤与 selectByCursor 一致）。
+     * admin 列表用；返回 {@code m.*}，供仓储层拼接 text_content + blocks_json。
+     */
+    @Select("<script>"
+            + "SELECT m.* FROM verla_messages m "
+            + "JOIN (SELECT conversation_id, MIN(id) AS firstId FROM verla_messages "
+            + "      WHERE conversation_id IN "
+            + "      <foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "      AND role = 'user' "
+            + "      AND COALESCE(scene, JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')), '') "
+            + "          NOT IN ('FILE_CHAT', 'ASSIGNMENT_CHAT') "
+            + "      GROUP BY conversation_id) f "
+            + "  ON f.conversation_id = m.conversation_id AND f.firstId = m.id"
+            + "</script>")
+    List<VerlaMessageEntity> selectFirstUserQueryByConversationIds(
+            @Param("conversationIds") List<Long> conversationIds);
 }

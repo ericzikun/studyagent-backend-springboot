@@ -3,6 +3,7 @@ package com.studyagent.service.domain.verla.repo;
 import com.studyagent.service.domain.verla.VerlaMessage;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla Message 仓储接口
@@ -38,5 +39,13 @@ public interface VerlaMessageRepository {
      */
     default VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {
         return null;
+    }
+
+    /**
+     * 批量取每个 conversation 第一条 user 主对话消息的 query 拼接串（text_content + blocks_json）。
+     * admin 列表用；default 空实现供测试桩，生产实现覆盖。
+     */
+    default Map<Long, String> findFirstUserQueryByConversationIds(List<Long> conversationIds) {
+        return Map.of();
     }
 }

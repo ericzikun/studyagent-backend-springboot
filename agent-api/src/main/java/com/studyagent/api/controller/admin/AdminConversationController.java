@@ -274,7 +274,7 @@ public class AdminConversationController {
         Map<Long, String> dashboardStatuses = dashboardStatusService.resolveAll(slice.records());
         Map<String, AdminOwnerProfile> ownerProfiles =
                 ownerProfileEnricher.resolveProfiles(slice.records());
-        return AdminConversationPageVO.fromSlice(
+        AdminConversationPageVO page = AdminConversationPageVO.fromSlice(
                 slice,
                 dashboardStatuses,
                 ownerProfiles,
@@ -290,6 +290,21 @@ public class AdminConversationController {
                     return profile != null && (profile.isQuotaVip() || profile.isAdmin());
                 },
                 ownerProfileEnricher::resolveFeatureCode);
+        // 用户 query + 上传文件直链：bypass VO 的 public id，直接按 slice.records() 下标 1:1 对齐回填。
+        Map<Long, String> userQueries = browseService.resolveUserQueries(slice.records());
+        Map<Long, List<String>> uploadUrls = browseService.resolveUploadUrls(slice.records());
+        List<VerlaConversation> conversations = slice.records();
+        List<AdminConversationRowVO> rows = page.getRecords();
+        for (int i = 0; i < rows.size() && i < conversations.size(); i++) {
+            Long conversationId = conversations.get(i).getId();
+            if (conversationId == null) {
+                continue;
+            }
+            AdminConversationRowVO row = rows.get(i);
+            row.setUserQuery(userQueries.get(conversationId));
+            row.setUploadedFileUrls(uploadUrls.get(conversationId));
+        }
+        return page;
     }
 
     private void writeArchive(VerlaCodeProjectService.CodeProject project, OutputStream outputStream)

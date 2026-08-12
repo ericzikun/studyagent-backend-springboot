@@ -91,6 +91,7 @@ class VerlaFileChatSendFlowTest {
                 new ObjectMapper(),
                 Mockito.mock(VerlaQuotaService.class),
                 entitlementService,
+                null,
                 event -> {},
                 Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");

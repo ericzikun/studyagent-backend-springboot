@@ -5,6 +5,7 @@ import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaArtifactStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.envelope.payload.VerlaArtifactUpdatedPayload;
+import com.studyagent.service.application.verla.HumanizerDetectionMatchService;
 import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
@@ -43,6 +44,7 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
     private final VerlaAttachmentRepository attachmentRepository;
     private final VerlaAttachmentService attachmentService;
     private final VerlaConversationRepository conversationRepository;
+    private final HumanizerDetectionMatchService humanizerDetectionMatchService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -89,6 +91,12 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         log.info("[Verla/artifact] upsert ok cid={} uid={} kind={} version={} status={}",
                 saved.getConversationId(), saved.getArtifactUid(), saved.getKind(),
                 saved.getVersion(), saved.getStatus());
+
+        // V2：Humanizer 汇总结果写入 Detection 粘贴匹配索引
+        if (HumanizerDetectionMatchService.ARTIFACT_KIND_HUMANIZER_RESULT
+                .equalsIgnoreCase(saved.getKind() == null ? "" : saved.getKind().trim())) {
+            humanizerDetectionMatchService.recordFromHumanizerArtifact(saved, p.getMeta());
+        }
 
         // 上下文 cache 失效：artifact 变更必 bump conv version
         conversationRepository.incrementVersion(row.getConversationId());

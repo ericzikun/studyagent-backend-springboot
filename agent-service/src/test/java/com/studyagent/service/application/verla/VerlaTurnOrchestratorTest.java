@@ -78,6 +78,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -136,6 +137,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -183,6 +185,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -230,6 +233,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -277,6 +281,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -323,6 +328,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 analyticsService);
 
@@ -381,6 +387,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -460,6 +467,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -517,6 +525,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 mockEntitlementService(),
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -573,6 +582,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -651,6 +661,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -719,6 +730,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -796,6 +808,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -860,6 +873,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -924,6 +938,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1008,6 +1023,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1105,6 +1121,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 quotaService,
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1178,6 +1195,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1220,6 +1238,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1269,6 +1288,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1312,6 +1332,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1355,6 +1376,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1416,6 +1438,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1515,6 +1538,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 entitlementService,
+                null,
                 event -> {},
                 mockAnalyticsService());
 
@@ -1759,6 +1783,7 @@ class VerlaTurnOrchestratorTest {
                 new ObjectMapper(),
                 new NoopQuotaService(),
                 mockEntitlementService(),
+                null,
                 publishedEvents::add,
                 mockAnalyticsService());
 
@@ -1817,6 +1842,7 @@ class VerlaTurnOrchestratorTest {
                 objectMapper,
                 new NoopQuotaService(),
                 Mockito.mock(EntitlementService.class),
+                null,
                 event -> {},
                 mockAnalyticsService());
     }

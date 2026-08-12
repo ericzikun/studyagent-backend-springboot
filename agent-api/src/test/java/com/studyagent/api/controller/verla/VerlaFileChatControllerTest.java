@@ -138,7 +138,7 @@ class VerlaFileChatControllerTest {
 
         StubVerlaTurnOrchestrator() {
             super(null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    mock(EntitlementService.class), event -> {}, null);
+                    mock(EntitlementService.class), null, event -> {}, null);
         }
 
         @Override

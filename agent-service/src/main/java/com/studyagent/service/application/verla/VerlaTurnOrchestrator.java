@@ -136,6 +136,7 @@ public class VerlaTurnOrchestrator {
     /** V2 商业化额度门面（feature: task_create / ai_detection / humanizer）。 */
     private final VerlaQuotaService verlaQuotaService;
     private final EntitlementService entitlementService;
+    private final HumanizerDetectionMatchService humanizerDetectionMatchService;
     private final ApplicationEventPublisher eventPublisher;
     private final AnalyticsService analyticsService;
 
@@ -1980,11 +1981,25 @@ public class VerlaTurnOrchestrator {
             verlaQuotaService.consumeForHumanizer(qctx, userText);
         }
 
+        boolean matchedHumanizer = false;
+        if (commandAction == VerlaCommandAction.CMD_DETECTION_RUN
+                && conv != null && conv.getUserId() != null && !conv.getUserId().isBlank()
+                && userText != null && !userText.isBlank()) {
+            try {
+                matchedHumanizer = humanizerDetectionMatchService
+                        .matchesHumanizerHistory(conv.getUserId(), userText);
+            } catch (Exception e) {
+                log.warn("[Verla] humanizer match check failed turnId={}: {}",
+                        turn.getId(), e.getMessage());
+            }
+        }
+
         VerlaCommandEnvelope env = buildCapabilityEnvelope(
                 conv, turn, s, intent, resolvedSlots, commandAction,
-                userText);
+                userText, matchedHumanizer);
         mqOutboxService.createVerlaCommand(env, commandExchange, commandAction.getCode());
-        log.info("[Verla] dispatched {} turnId={} sessionId={}", commandAction.getCode(), turn.getId(), s.getId());
+        log.info("[Verla] dispatched {} turnId={} sessionId={} matchedHumanizer={}",
+                commandAction.getCode(), turn.getId(), s.getId(), matchedHumanizer);
         return s;
     }
 
@@ -2287,12 +2302,16 @@ public class VerlaTurnOrchestrator {
                                                         VerlaSession session, String intent,
                                                         Map<String, Object> slots,
                                                         VerlaCommandAction action,
-                                                        String userMessageText) {
+                                                        String userMessageText,
+                                                        boolean matchedHumanizer) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("slots", slots == null ? Map.of() : slots);
         if (userMessageText != null && !userMessageText.isBlank()) {
             payload.put("userText", userMessageText.trim());
+        }
+        if (action == VerlaCommandAction.CMD_DETECTION_RUN && matchedHumanizer) {
+            payload.put("matchedHumanizer", true);
         }
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",

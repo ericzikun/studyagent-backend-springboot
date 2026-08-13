@@ -69,6 +69,7 @@ class VerlaTurnOrchestratorContextRefTest {
                 new ObjectMapper(),
                 Mockito.mock(VerlaQuotaService.class),
                 Mockito.mock(EntitlementService.class),
+                null,
                 event -> {},
                 Mockito.mock(com.studyagent.common.analytics.AnalyticsService.class));
         ReflectionTestUtils.setField(orchestrator, "commandExchange", "studyagent.command");

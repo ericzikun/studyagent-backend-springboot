@@ -38,6 +38,7 @@ class VerlaArtifactEventHandlerTest {
                 attachmentRepository,
                 attachmentService,
                 conversationRepository,
+                mock(com.studyagent.service.application.verla.HumanizerDetectionMatchService.class),
                 new ObjectMapper());
 
         Map<String, Object> payload = new LinkedHashMap<>();

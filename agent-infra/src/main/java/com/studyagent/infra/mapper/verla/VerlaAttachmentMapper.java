@@ -20,6 +20,20 @@ public interface VerlaAttachmentMapper extends BaseMapper<VerlaAttachmentEntity>
     List<VerlaAttachmentEntity> selectByConversation(@Param("cid") Long conversationId,
                                                      @Param("limit") int limit);
 
+    /**
+     * 批量取多个 conversation 的用户上传附件（USER_UPLOAD 或历史 NULL origin、未删除），
+     * 按 created_at 升序。admin 列表用。
+     */
+    @Select("<script>"
+            + "SELECT * FROM verla_attachments WHERE conversation_id IN "
+            + "<foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "AND deleted_at IS NULL "
+            + "AND (attachment_origin IS NULL OR attachment_origin = 'USER_UPLOAD') "
+            + "ORDER BY created_at ASC, id ASC"
+            + "</script>")
+    List<VerlaAttachmentEntity> selectUserUploadsByConversationIds(
+            @Param("conversationIds") List<Long> conversationIds);
+
     @Select("SELECT * FROM verla_attachments WHERE turn_id = #{tid} "
             + "AND deleted_at IS NULL "
             + "ORDER BY created_at ASC, id ASC")

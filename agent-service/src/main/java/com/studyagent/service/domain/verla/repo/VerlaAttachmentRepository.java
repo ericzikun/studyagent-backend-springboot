@@ -4,6 +4,7 @@ import com.studyagent.service.domain.verla.VerlaAttachment;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla 附件仓储接口（V2）。
@@ -55,4 +56,12 @@ public interface VerlaAttachmentRepository {
      * @return 本批实际更新的行数
      */
     int markStaleUploadedAgentOutputsFailed(LocalDateTime cutoff, int batchSize, String reason);
+
+    /**
+     * 批量取多个 conversation 的用户上传附件（USER_UPLOAD 且未删除），按 conversationId 分组。
+     * admin 列表用；default 空实现供测试桩，生产实现覆盖。
+     */
+    default Map<Long, List<VerlaAttachment>> listUserUploadsByConversationIds(List<Long> conversationIds) {
+        return Map.of();
+    }
 }

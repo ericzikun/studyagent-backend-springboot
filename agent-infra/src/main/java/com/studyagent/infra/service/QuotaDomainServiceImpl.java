@@ -8,6 +8,7 @@ import com.stripe.model.testhelpers.TestClock;
 import com.google.gson.Gson;
 import com.studyagent.infra.entity.*;
 import com.studyagent.infra.mapper.*;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.quota.AddonGrantService;
 import com.studyagent.service.domain.quota.ConsumeResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
@@ -21,6 +22,7 @@ import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -68,6 +70,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private final PlanQuotaService planQuotaService;
     private final AddonGrantService addonGrantService;
     private final UserSubscriptionMapper userSubscriptionMapper;
+
+    @Autowired
+    private ExternalDependencyMetrics externalDependencyMetrics;
 
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
@@ -1085,7 +1090,21 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
-        return Subscription.retrieve(subscriptionId);
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics == null ? null : externalDependencyMetrics.start();
+        try {
+            Subscription subscription = Subscription.retrieve(subscriptionId);
+            if (observation != null) {
+                externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                        ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE);
+            }
+            return subscription;
+        } catch (StripeException e) {
+            if (observation != null) {
+                externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                        ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE, e);
+            }
+            throw e;
+        }
     }
 
     Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {

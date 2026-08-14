@@ -19,6 +19,7 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
@@ -67,6 +68,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     @Autowired
     private QuotaBusinessMetrics quotaBusinessMetrics;
+
+    @Autowired
+    private ExternalDependencyMetrics externalDependencyMetrics;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -910,7 +914,21 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
-        return Subscription.retrieve(subscriptionId);
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics == null ? null : externalDependencyMetrics.start();
+        try {
+            Subscription subscription = Subscription.retrieve(subscriptionId);
+            if (observation != null) {
+                externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                        ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE);
+            }
+            return subscription;
+        } catch (StripeException e) {
+            if (observation != null) {
+                externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                        ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE, e);
+            }
+            throw e;
+        }
     }
 
     Long retrieveTestClockFrozenTime(String testClockId) throws StripeException {

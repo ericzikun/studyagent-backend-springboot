@@ -1,7 +1,9 @@
 package com.studyagent.infra.client.clerk;
 
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.user.UserRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +30,8 @@ class ClerkClientImplTest {
     @BeforeEach
     void setUp() throws Exception {
         trustedKeyPair = generateKeyPair();
-        clerkClient = new ClerkClientImpl(WebClient.builder().build(), mock(UserRepository.class));
+        clerkClient = new ClerkClientImpl(WebClient.builder().build(), mock(UserRepository.class),
+                new ExternalDependencyMetrics(new SimpleMeterRegistry()));
         ReflectionTestUtils.setField(clerkClient, "clerkSecretKey", "");
         // 覆盖部署平台常见的字面量 \n PEM 配置形式。
         ReflectionTestUtils.setField(clerkClient, "clerkJwtKey", toPem(trustedKeyPair).replace("\n", "\\n"));

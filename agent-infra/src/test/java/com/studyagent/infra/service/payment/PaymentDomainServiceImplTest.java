@@ -5,8 +5,10 @@ import com.studyagent.infra.entity.AiFeaturePackageEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.payment.PaymentDomainException;
 import com.stripe.model.checkout.Session;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -51,7 +53,8 @@ class PaymentDomainServiceImplTest {
         when(aiFeaturePackageMapper.selectList(any(Wrapper.class))).thenReturn(List.of(detection, assignment));
 
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                        new ExternalDependencyMetrics(new SimpleMeterRegistry()));
         ReflectionTestUtils.setField(service, "stripePublishableKey", "pk_test_123");
 
         var result = service.getPaymentConfig();
@@ -66,7 +69,8 @@ class PaymentDomainServiceImplTest {
     @Test
     void getSessionStatusReturnsPaidForMockCheckoutSession() {
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                        new ExternalDependencyMetrics(new SimpleMeterRegistry()));
         ReflectionTestUtils.setField(service, "paymentCheckoutMockEnabled", true);
 
         var result = service.getSessionStatus("mock_cs_123");
@@ -85,7 +89,8 @@ class PaymentDomainServiceImplTest {
         when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
 
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper) {
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                        new ExternalDependencyMetrics(new SimpleMeterRegistry())) {
                     @Override
                     Session retrieveStripeCheckoutSession(String sessionId) {
                         Session session = new Session();

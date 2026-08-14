@@ -10,6 +10,7 @@ import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.repo.VerlaConversationRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,6 +40,8 @@ class VerlaAttachmentServiceTest {
     FakeAttachmentRepository attachmentRepository;
     OssStorageService ossStorageService;
     EntitlementService entitlementService;
+    MqOutboxService mqOutboxService;
+    SimpleMeterRegistry meterRegistry;
 
     VerlaAttachmentService service;
 
@@ -48,9 +51,11 @@ class VerlaAttachmentServiceTest {
         conversationService = new VerlaConversationService(new FakeConversationRepository(), null, null);
         ossStorageService = new DisabledOssStorageService();
         entitlementService = org.mockito.Mockito.mock(EntitlementService.class);
+        mqOutboxService = org.mockito.Mockito.mock(MqOutboxService.class);
+        meterRegistry = new SimpleMeterRegistry();
         service = new VerlaAttachmentService(
-                conversationService, attachmentRepository, new MqOutboxService(null, null, null), ossStorageService,
-                entitlementService);
+                conversationService, attachmentRepository, mqOutboxService, ossStorageService,
+                entitlementService, meterRegistry);
         ReflectionTestUtils.setField(service, "maxBytes", 1024L);
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
         ReflectionTestUtils.setField(service, "ossKeyPrefix", "verla/v2/attachments");
@@ -252,6 +257,95 @@ class VerlaAttachmentServiceTest {
         assertTrue(Files.exists(tempDir.resolve(pending.getOssKey())));
     }
 
+    @Test
+    void finalize_direct_upload_rejects_when_oss_object_is_not_confirmed() {
+        DisabledOssStorageService oss = (DisabledOssStorageService) ossStorageService;
+        oss.enabled = true;
+        VerlaUploadSignResult result = service.requestSign(
+                USER_ID, 74L, "direct.txt", "text/plain", 5L, null, null, null, null);
+
+        assertThrows(BusinessException.class,
+                () -> service.finalizeUpload(USER_ID, result.getObjectId(), result.getUploadToken(),
+                        null, "checksum", true));
+    }
+
+    @Test
+    void finalize_direct_upload_proceeds_when_oss_object_is_confirmed() {
+        DisabledOssStorageService oss = (DisabledOssStorageService) ossStorageService;
+        oss.enabled = true;
+        oss.objectExists = true;
+        VerlaUploadSignResult result = service.requestSign(
+                USER_ID, 74L, "direct.txt", "text/plain", 5L, null, null, null, null);
+
+        VerlaAttachment finalized = service.finalizeUpload(USER_ID, result.getObjectId(), result.getUploadToken(),
+                null, "checksum", true);
+
+        assertEquals("oss://test/" + finalized.getOssKey(), finalized.getStorageUri());
+        assertEquals("checksum", finalized.getChecksumSha256());
+    }
+
+    @Test
+    void upload_metrics_record_sign_and_finalize_by_channel_and_outcome() {
+        service.requestSign(USER_ID, 74L, "external.txt", "text/plain", 5L, null, null, null, null);
+        service.requestSignForInternal(USER_ID, 74L, "internal.txt", "text/plain", 5L,
+                null, null, "AGENT_OUTPUT", null);
+        assertThrows(BusinessException.class,
+                () -> service.requestSign(USER_ID, 74L, null, "text/plain", 5L, null, null, null, null));
+        assertThrows(BusinessException.class,
+                () -> service.requestSignForInternal(USER_ID, 74L, null, "text/plain", 5L,
+                        null, null, "AGENT_OUTPUT", null));
+
+        VerlaUploadSignResult externalFailure = service.requestSign(
+                USER_ID, 74L, "external-failure.txt", "text/plain", 5L, null, null, null, null);
+        VerlaUploadSignResult internalFailure = service.requestSignForInternal(
+                USER_ID, 74L, "internal-failure.txt", "text/plain", 5L,
+                null, null, "AGENT_OUTPUT", null);
+        assertThrows(BusinessException.class,
+                () -> service.finalizeUpload(USER_ID, externalFailure.getObjectId(), externalFailure.getUploadToken(),
+                        null, null, true));
+        assertThrows(BusinessException.class,
+                () -> service.finalizeUploadForInternal(internalFailure.getObjectId(), internalFailure.getUploadToken(),
+                        null, null, true));
+
+        VerlaUploadSignResult externalSuccess = service.requestSign(
+                USER_ID, 74L, "external-success.txt", "text/plain", 5L, null, null, null, null);
+        VerlaUploadSignResult internalSuccess = service.requestSignForInternal(
+                USER_ID, 74L, "internal-success.txt", "text/plain", 5L,
+                null, null, "AGENT_OUTPUT", null);
+        markUploaded(externalSuccess.getObjectId());
+        service.finalizeUpload(USER_ID, externalSuccess.getObjectId(), externalSuccess.getUploadToken(), null, null, false);
+        markUploaded(internalSuccess.getObjectId());
+        service.finalizeUploadForInternal(internalSuccess.getObjectId(), internalSuccess.getUploadToken(), null, null, false);
+
+        assertEquals("PARSING", attachmentRepository.findByObjectId(externalSuccess.getObjectId()).getStatus());
+        assertEquals("PARSING", attachmentRepository.findByObjectId(internalSuccess.getObjectId()).getStatus());
+        org.mockito.Mockito.verify(mqOutboxService, org.mockito.Mockito.times(2))
+                .createVerlaCommand(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.anyString());
+
+        assertUploadCount("sign", "external", "success", "none", 3.0);
+        assertUploadCount("sign", "internal", "success", "none", 3.0);
+        assertUploadCount("sign", "external", "error", "validation", 1.0);
+        assertUploadCount("sign", "internal", "error", "validation", 1.0);
+        assertUploadCount("finalize", "external", "success", "none", 1.0);
+        assertUploadCount("finalize", "internal", "success", "none", 1.0);
+        assertUploadCount("finalize", "external", "error", "validation", 1.0);
+        assertUploadCount("finalize", "internal", "error", "validation", 1.0);
+        assertEquals(8, meterRegistry.find("verla.upload.duration").timers().size());
+    }
+
+    private void markUploaded(String objectId) {
+        VerlaAttachment attachment = attachmentRepository.findByObjectId(objectId);
+        attachment.setStorageUri("file:///tmp/" + objectId);
+        attachment.setChecksumSha256("checksum");
+    }
+
+    private void assertUploadCount(String operation, String channel, String result, String errorType, double expected) {
+        assertEquals(expected, meterRegistry.get("verla.upload")
+                .tags("operation", operation, "channel", channel, "result", result, "error_type", errorType)
+                .counter().count());
+    }
+
     private static class FakeConversationRepository implements VerlaConversationRepository {
         @Override
         public VerlaConversation save(VerlaConversation conversation) {
@@ -356,12 +450,28 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public VerlaAttachment updateParseProgress(VerlaAttachment patch) {
+            VerlaAttachment target = findByObjectId(patch.getObjectId());
+            if (target != null) {
+                target.setStatus(patch.getStatus());
+            }
             return patch;
         }
 
         @Override
         public VerlaAttachment updateByObjectIdSelective(VerlaAttachment patch) {
             lastPatch = patch;
+            VerlaAttachment target = findByObjectId(patch.getObjectId());
+            if (target != null) {
+                if (patch.getStorageUri() != null) {
+                    target.setStorageUri(patch.getStorageUri());
+                }
+                if (patch.getChecksumSha256() != null) {
+                    target.setChecksumSha256(patch.getChecksumSha256());
+                }
+                if (patch.getTurnId() != null) {
+                    target.setTurnId(patch.getTurnId());
+                }
+            }
             return patch;
         }
 
@@ -372,6 +482,9 @@ class VerlaAttachmentServiceTest {
     }
 
     private static class DisabledOssStorageService implements OssStorageService {
+        private boolean enabled;
+        private boolean objectExists;
+
         @Override
         public void uploadFileAsync(byte[] fileContent, String objectId, String filename) {}
 
@@ -390,12 +503,17 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public boolean isEnabled() {
-            return false;
+            return enabled;
         }
 
         @Override
         public byte[] getObjectBytes(String ossKey) {
             return null;
+        }
+
+        @Override
+        public boolean objectExists(String ossKey) {
+            return objectExists;
         }
 
         @Override
@@ -405,7 +523,7 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public String formatVerlaStorageUri(String ossKey) {
-            return null;
+            return enabled ? "oss://test/" + ossKey : null;
         }
     }
 }

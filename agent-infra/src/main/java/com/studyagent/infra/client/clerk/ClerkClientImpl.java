@@ -6,6 +6,7 @@ import com.clerk.backend_api.helpers.security.models.TokenVerificationException;
 import com.clerk.backend_api.helpers.security.models.TokenVerificationResponse;
 import com.clerk.backend_api.helpers.security.models.VerifyTokenOptions;
 import com.studyagent.common.log.annotation.ExternalLog;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.user.User;
 import com.studyagent.service.domain.user.UserRepository;
@@ -37,6 +38,7 @@ public class ClerkClientImpl implements ClerkClient {
 
     private final WebClient webClient;
     private final UserRepository userRepository;
+    private final ExternalDependencyMetrics externalDependencyMetrics;
 
     @Value("${clerk.secret-key:}")
     private String clerkSecretKey;
@@ -193,7 +195,8 @@ public class ClerkClientImpl implements ClerkClient {
             log.error("clerk_user_id 看起来像是数据库 ID 而不是 Clerk ID: {}", clerkUserId);
             return null;
         }
-        
+
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
         try {
             String userUrl = clerkApiUrl + "/users/" + clerkUserId;
             log.debug("正在从 Clerk 获取用户信息: {}", userUrl);
@@ -207,28 +210,40 @@ public class ClerkClientImpl implements ClerkClient {
                 .bodyToMono(Map.class)
                 .timeout(java.time.Duration.ofSeconds(5)) // 5秒超时
                 .onErrorResume(java.util.concurrent.TimeoutException.class, e -> {
+                    externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                            ExternalDependencyMetrics.Operation.REMOTE_API, e);
                     log.warn("Clerk API 请求超时 (5秒): {}", userUrl);
                     return reactor.core.publisher.Mono.empty();
                 })
                 .onErrorResume(io.netty.handler.timeout.ReadTimeoutException.class, e -> {
+                    externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                            ExternalDependencyMetrics.Operation.REMOTE_API, e);
                     log.warn("Clerk API 读取超时: {}", userUrl);
                     return reactor.core.publisher.Mono.empty();
                 })
                 .onErrorResume(java.net.ConnectException.class, e -> {
+                    externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                            ExternalDependencyMetrics.Operation.REMOTE_API, e);
                     log.warn("Clerk API 连接失败: {} - {}", userUrl, e.getMessage());
                     return reactor.core.publisher.Mono.empty();
                 })
                 .block();
             
             if (response != null) {
+                externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                        ExternalDependencyMetrics.Operation.REMOTE_API);
                 return response;
             } else {
                 log.debug("Clerk API 返回空响应或请求被跳过");
             }
         } catch (WebClientResponseException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                    ExternalDependencyMetrics.Operation.REMOTE_API, e);
             log.warn("获取 Clerk 用户信息失败: Status={}, Response={}", 
                 e.getStatusCode(), e.getResponseBodyAsString());
         } catch (Exception e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.CLERK,
+                    ExternalDependencyMetrics.Operation.REMOTE_API, e);
             // 网络异常不应该阻塞认证流程，记录警告并返回 null
             log.warn("从 Clerk 获取用户信息异常，本次资料查询返回空: {}", e.getMessage());
         }

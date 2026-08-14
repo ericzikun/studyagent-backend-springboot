@@ -9,6 +9,7 @@ import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
@@ -38,7 +39,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -60,6 +64,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 
 @ExtendWith(MockitoExtension.class)
 class BillingDomainServiceImplTest {
@@ -85,6 +91,35 @@ class BillingDomainServiceImplTest {
     private QuotaVipAccessService quotaVipAccessService;
     @Mock
     private UserSubscriptionBootstrapService userSubscriptionBootstrapService;
+
+    @Test
+    void stripe_attempt_helpers_record_each_sdk_attempt_with_fixed_labels() throws Exception {
+        BillingDomainServiceImpl service = service();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        ReflectionTestUtils.setField(service, "externalDependencyMetrics", new ExternalDependencyMetrics(meterRegistry));
+        SessionCreateParams checkoutParams = SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setSuccessUrl("https://example.test/success")
+                .setCancelUrl("https://example.test/cancel")
+                .build();
+        SubscriptionUpdateParams subscriptionParams = SubscriptionUpdateParams.builder().build();
+        Subscription subscription = mock(Subscription.class);
+
+        try (MockedStatic<Session> checkout = mockStatic(Session.class)) {
+            checkout.when(() -> Session.create(checkoutParams)).thenReturn(new Session());
+            service.createStripeCheckoutSession(checkoutParams);
+            checkout.when(() -> Session.create(checkoutParams))
+                    .thenThrow(new com.stripe.exception.ApiException("hidden", "req_hidden", null, 429, null));
+            assertThrows(StripeException.class, () -> service.createStripeCheckoutSession(checkoutParams));
+        }
+        when(subscription.update(subscriptionParams)).thenReturn(subscription);
+        assertEquals(subscription, service.updateStripeSubscription(subscription, subscriptionParams));
+
+        assertExternalCount(meterRegistry, "checkout_create", "success", "none", 1.0);
+        assertExternalCount(meterRegistry, "checkout_create", "error", "stripe_429", 1.0);
+        assertExternalCount(meterRegistry, "subscription_update", "success", "none", 1.0);
+        assertEquals(3, meterRegistry.find("studyagent.external.request.duration").timers().size());
+    }
 
     @Test
     void getCatalogMapsActivePlansAndAddons() {
@@ -2003,6 +2038,14 @@ class BillingDomainServiceImplTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService);
+    }
+
+    private void assertExternalCount(
+            SimpleMeterRegistry meterRegistry, String operation, String result, String errorType, double expected) {
+        assertEquals(expected, meterRegistry.get("studyagent.external.requests")
+                .tags("dependency", "stripe", "operation", operation,
+                        "result", result, "error_type", errorType)
+                .counter().count());
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {

@@ -32,6 +32,7 @@ import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.infra.mapper.StripeWebhookEventMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
@@ -139,10 +140,16 @@ public class StripeBillingWebhookService {
     private final PlatformTransactionManager transactionManager;
     private BillingBusinessMetrics billingBusinessMetrics;
     private BillingFulfillmentStateService billingFulfillmentStateService;
+    private ExternalDependencyMetrics externalDependencyMetrics;
 
     @Autowired
     public void setBillingBusinessMetrics(BillingBusinessMetrics billingBusinessMetrics) {
         this.billingBusinessMetrics = billingBusinessMetrics;
+    }
+
+    @Autowired
+    public void setExternalDependencyMetrics(ExternalDependencyMetrics externalDependencyMetrics) {
+        this.externalDependencyMetrics = externalDependencyMetrics;
     }
 
     @Autowired
@@ -834,7 +841,8 @@ public class StripeBillingWebhookService {
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
-        return Subscription.retrieve(subscriptionId);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE,
+                () -> Subscription.retrieve(subscriptionId));
     }
 
     Subscription cancelStripeSubscription(Subscription subscription) throws StripeException {
@@ -1210,7 +1218,8 @@ public class StripeBillingWebhookService {
             Subscription subscription,
             SubscriptionUpdateParams params,
             RequestOptions options) throws StripeException {
-        return subscription.update(params, options);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.SUBSCRIPTION_UPDATE,
+                () -> subscription.update(params, options));
     }
 
     static ManualUpgradeSwitchStrategy resolveManualUpgradeSwitchStrategy(
@@ -2692,7 +2701,7 @@ public class StripeBillingWebhookService {
                 .setIdempotencyKey(idempotencyPrefix + ":" + stripeReferenceId)
                 .build();
         try {
-            Refund.create(params, options);
+            recordStripeAttempt(ExternalDependencyMetrics.Operation.REFUND, () -> Refund.create(params, options));
         } catch (StripeException e) {
             throw new IllegalStateException(
                     "Refund Checkout failed: " + stripeReferenceId, e);
@@ -2705,6 +2714,27 @@ public class StripeBillingWebhookService {
 
     Charge retrieveStripeCharge(String chargeId) throws StripeException {
         return Charge.retrieve(chargeId);
+    }
+
+    private <T> T recordStripeAttempt(ExternalDependencyMetrics.Operation operation, StripeAttempt<T> attempt)
+            throws StripeException {
+        if (externalDependencyMetrics == null) {
+            return attempt.call();
+        }
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
+        try {
+            T result = attempt.call();
+            externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE, operation);
+            return result;
+        } catch (StripeException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE, operation, e);
+            throw e;
+        }
+    }
+
+    @FunctionalInterface
+    private interface StripeAttempt<T> {
+        T call() throws StripeException;
     }
 
     private void markAddonOrderRefunded(

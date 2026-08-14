@@ -16,6 +16,7 @@ import com.studyagent.service.application.verla.dto.FileChatPanelMessageView;
 import com.studyagent.service.application.verla.dto.FileChatPanelView;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.verla.VerlaAttachment;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -175,7 +176,7 @@ class VerlaFileChatHttpBindingTest {
         private List<VerlaAttachment> attachments = List.of();
 
         StubAttachmentService() {
-            super(null, null, null, null, mock(EntitlementService.class));
+            super(null, null, null, null, mock(EntitlementService.class), new SimpleMeterRegistry());
         }
 
         @Override

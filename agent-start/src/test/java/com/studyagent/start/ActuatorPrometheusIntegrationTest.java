@@ -1,6 +1,8 @@
 package com.studyagent.start;
 
 import com.studyagent.api.config.VerlaMetricsConfig;
+import com.studyagent.api.controller.verla.VerlaConversationController;
+import com.studyagent.api.controller.verla.VerlaInternalController;
 import com.studyagent.infra.service.billing.BillingBusinessMetrics;
 import com.studyagent.service.application.verla.quota.QuotaBusinessMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -17,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -59,6 +62,16 @@ class ActuatorPrometheusIntegrationTest {
             .isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(restTemplate.getForEntity("/v1/quota/balance?fail=true", String.class).getStatusCode())
             .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(restTemplate.getForEntity("/v1/internal/verla/sessions/301/context", String.class).getStatusCode())
+            .isEqualTo(HttpStatus.OK);
+        assertThat(restTemplate.getForEntity("/v1/internal/verla/conversations/101/context", String.class).getStatusCode())
+            .isEqualTo(HttpStatus.OK);
+        assertThat(restTemplate.getForEntity("/v1/verla/conversations/vc_101/assignment/runtime-snapshot", String.class)
+            .getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(restTemplate.getForEntity("/v1/verla/conversations/vc_101/ai-writing/runtime-snapshot?fail=invalid", String.class)
+            .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(restTemplate.getForEntity("/v1/verla/conversations/vc_101/ai-writing/runtime-snapshot?fail=true", String.class)
+            .getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
 
         Timer.builder("billing.checkout.duration")
             .register(meterRegistry)
@@ -116,6 +129,11 @@ class ActuatorPrometheusIntegrationTest {
             .anyMatch(line -> line.contains("status=\"200\""))
             .anyMatch(line -> line.contains("status=\"400\""))
             .anyMatch(line -> line.contains("status=\"500\""));
+        assertHttpUriTemplate(prometheus.getBody(), "/v1/internal/verla/sessions/{sessionId}/context", "200");
+        assertHttpUriTemplate(prometheus.getBody(), "/v1/internal/verla/conversations/{conversationId}/context", "200");
+        assertHttpUriTemplate(prometheus.getBody(), "/v1/verla/conversations/{cid}/assignment/runtime-snapshot", "200");
+        assertHttpUriTemplate(prometheus.getBody(), "/v1/verla/conversations/{cid}/ai-writing/runtime-snapshot", "400");
+        assertHttpUriTemplate(prometheus.getBody(), "/v1/verla/conversations/{cid}/ai-writing/runtime-snapshot", "500");
         assertThat(bucketBounds(prometheus.getBody(), "http_server_requests_seconds_bucket"))
             .containsExactlyInAnyOrder(
                 "0.01", "0.025", "0.05", "0.1", "0.25", "0.5",
@@ -151,6 +169,18 @@ class ActuatorPrometheusIntegrationTest {
             .doesNotContain("rabbit");
     }
 
+    @Test
+    void monitoredBusinessEndpointsKeepTemplateMappings() {
+        assertGetMapping(VerlaInternalController.class, "getSessionContext",
+            "/v1/internal/verla/sessions/{sessionId}/context");
+        assertGetMapping(VerlaInternalController.class, "getConversationContext",
+            "/v1/internal/verla/conversations/{conversationId}/context");
+        assertGetMapping(VerlaConversationController.class, "getAssignmentRuntimeSnapshot",
+            "/v1/verla/conversations/{cid}/assignment/runtime-snapshot");
+        assertGetMapping(VerlaConversationController.class, "getAiWritingRuntimeSnapshot",
+            "/v1/verla/conversations/{cid}/ai-writing/runtime-snapshot");
+    }
+
     private boolean containsPrometheusRegistry(MeterRegistry registry) {
         if (registry.getClass().getName().contains("PrometheusMeterRegistry")) {
             return true;
@@ -179,6 +209,26 @@ class ActuatorPrometheusIntegrationTest {
             .collect(Collectors.toSet());
     }
 
+    private void assertHttpUriTemplate(String scrape, String uri, String status) {
+        assertThat(scrape.lines()
+                .filter(line -> line.startsWith("http_server_requests_seconds_count{"))
+                .filter(line -> line.contains("uri=\"" + uri + "\""))
+                .toList())
+                .anyMatch(line -> line.contains("status=\"" + status + "\""));
+    }
+
+    private void assertGetMapping(Class<?> controllerType, String methodName, String expectedPath) {
+        RequestMapping base = controllerType.getAnnotation(RequestMapping.class);
+        String basePath = base.value()[0];
+        GetMapping mapping = Arrays.stream(controllerType.getDeclaredMethods())
+            .filter(method -> method.getName().equals(methodName))
+            .findFirst()
+            .orElseThrow()
+            .getAnnotation(GetMapping.class);
+        assertThat(mapping).isNotNull();
+        assertThat(basePath + mapping.value()[0]).isEqualTo(expectedPath);
+    }
+
     @SpringBootConfiguration
     @EnableAutoConfiguration
     @Import(VerlaMetricsConfig.class)
@@ -198,6 +248,29 @@ class ActuatorPrometheusIntegrationTest {
                     @RequestParam(defaultValue = "0") int probe) {
                 if (fail) {
                     throw new IllegalStateException("synthetic quota balance failure");
+                }
+                return "ok";
+            }
+
+            @GetMapping("/v1/internal/verla/sessions/{sessionId}/context")
+            String sessionContext() {
+                return "ok";
+            }
+
+            @GetMapping("/v1/internal/verla/conversations/{conversationId}/context")
+            String conversationContext() {
+                return "ok";
+            }
+
+            @GetMapping("/v1/verla/conversations/{cid}/assignment/runtime-snapshot")
+            String assignmentRuntimeSnapshot() {
+                return "ok";
+            }
+
+            @GetMapping("/v1/verla/conversations/{cid}/ai-writing/runtime-snapshot")
+            String aiWritingRuntimeSnapshot(@RequestParam(defaultValue = "false") boolean fail) {
+                if (fail) {
+                    throw new IllegalStateException("synthetic ai-writing snapshot failure");
                 }
                 return "ok";
             }

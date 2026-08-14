@@ -7,6 +7,7 @@ import com.aliyun.oss.ClientException;
 import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.aliyun.oss.model.PutObjectResult;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.file.FileRepository;
 import com.studyagent.service.domain.file.OssStorageService;
 import jakarta.annotation.PostConstruct;
@@ -35,6 +36,7 @@ public class OssService implements OssStorageService {
     
     private final OssConfig ossConfig;
     private final FileRepository fileRepository;
+    private final ExternalDependencyMetrics externalDependencyMetrics;
     
     private OSS ossClient;
     
@@ -321,6 +323,24 @@ public class OssService implements OssStorageService {
     }
 
     @Override
+    public boolean objectExists(String ossKey) {
+        if (!isEnabled() || ossKey == null || ossKey.isBlank()) {
+            return false;
+        }
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
+        try {
+            boolean exists = ossClient.doesObjectExist(ossConfig.getBucketName(), ossKey.trim());
+            externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.OSS,
+                    ExternalDependencyMetrics.Operation.HEAD);
+            return exists;
+        } catch (OSSException | ClientException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.OSS,
+                    ExternalDependencyMetrics.Operation.HEAD, e);
+            return false;
+        }
+    }
+
+    @Override
     public boolean putBytesAtKey(String ossKey, byte[] content) {
         if (!ossConfig.isEnabled() || ossClient == null) {
             return false;
@@ -328,6 +348,7 @@ public class OssService implements OssStorageService {
         if (ossKey == null || ossKey.isBlank() || content == null) {
             return false;
         }
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
         try {
             try (InputStream inputStream = new ByteArrayInputStream(content)) {
                 PutObjectRequest putObjectRequest = new PutObjectRequest(
@@ -337,16 +358,24 @@ public class OssService implements OssStorageService {
                 );
                 PutObjectResult result = ossClient.putObject(putObjectRequest);
                 log.info("[OSS] Verla putBytesAtKey ok key={}, etag={}", ossKey, result.getETag());
+                externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.OSS,
+                        ExternalDependencyMetrics.Operation.PUT);
                 return true;
             }
         } catch (OSSException oe) {
             log.error("[OSS] Verla putBytesAtKey OSS error key={}, code={}", ossKey, oe.getErrorCode());
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.OSS,
+                    ExternalDependencyMetrics.Operation.PUT, oe);
             return false;
         } catch (ClientException ce) {
             log.error("[OSS] Verla putBytesAtKey client error key={}, {}", ossKey, ce.getMessage());
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.OSS,
+                    ExternalDependencyMetrics.Operation.PUT, ce);
             return false;
         } catch (Exception e) {
             log.error("[OSS] Verla putBytesAtKey failed key={}", ossKey, e);
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.OSS,
+                    ExternalDependencyMetrics.Operation.PUT, e);
             return false;
         }
     }

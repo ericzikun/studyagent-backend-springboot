@@ -30,6 +30,7 @@ import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingAddon;
@@ -53,6 +54,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
@@ -106,6 +108,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final UserRepository userRepository;
     private final QuotaVipAccessService quotaVipAccessService;
     private final UserSubscriptionBootstrapService userSubscriptionBootstrapService;
+
+    @Autowired
+    private ExternalDependencyMetrics externalDependencyMetrics;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -2162,11 +2167,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     Session createStripeCheckoutSession(SessionCreateParams params) throws StripeException {
-        return Session.create(params);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.CHECKOUT_CREATE, () -> Session.create(params));
     }
 
     Session createStripeCheckoutSession(SessionCreateParams params, RequestOptions options) throws StripeException {
-        return Session.create(params, options);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.CHECKOUT_CREATE, () -> Session.create(params, options));
     }
 
     Customer createStripeCustomer(CustomerCreateParams params) throws StripeException {
@@ -2191,21 +2196,44 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
-        return Session.retrieve(sessionId);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.CHECKOUT_RETRIEVE, () -> Session.retrieve(sessionId));
     }
 
     Session expireStripeCheckoutSession(Session session) throws StripeException {
-        return session.expire();
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.CHECKOUT_EXPIRE, session::expire);
     }
 
     Subscription retrieveStripeSubscription(String subscriptionId) throws StripeException {
-        return Subscription.retrieve(subscriptionId);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.SUBSCRIPTION_RETRIEVE,
+                () -> Subscription.retrieve(subscriptionId));
     }
 
     Subscription updateStripeSubscription(
             Subscription subscription,
             SubscriptionUpdateParams params) throws StripeException {
-        return subscription.update(params);
+        return recordStripeAttempt(ExternalDependencyMetrics.Operation.SUBSCRIPTION_UPDATE,
+                () -> subscription.update(params));
+    }
+
+    private <T> T recordStripeAttempt(ExternalDependencyMetrics.Operation operation, StripeAttempt<T> attempt)
+            throws StripeException {
+        if (externalDependencyMetrics == null) {
+            return attempt.call();
+        }
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
+        try {
+            T result = attempt.call();
+            externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE, operation);
+            return result;
+        } catch (StripeException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE, operation, e);
+            throw e;
+        }
+    }
+
+    @FunctionalInterface
+    private interface StripeAttempt<T> {
+        T call() throws StripeException;
     }
 
     SubscriptionSchedule retrieveStripeSubscriptionSchedule(String scheduleId) throws StripeException {

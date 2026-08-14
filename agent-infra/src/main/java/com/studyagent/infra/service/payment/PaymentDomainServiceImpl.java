@@ -11,6 +11,7 @@ import com.studyagent.infra.entity.AiFeaturePackageEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.metrics.ExternalDependencyMetrics;
 import com.studyagent.service.domain.payment.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     private final AiFeaturePackageMapper aiFeaturePackageMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
+    private final ExternalDependencyMetrics externalDependencyMetrics;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -137,7 +139,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
         Session session;
         try {
-            session = Session.create(params);
+            session = createStripeCheckoutSession(params);
         } catch (StripeException e) {
             throw new PaymentDomainException("STRIPE_ERROR", "Create session failed: " + e.getMessage(), e);
         }
@@ -203,7 +205,31 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
     }
 
     Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
-        return Session.retrieve(sessionId);
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
+        try {
+            Session session = Session.retrieve(sessionId);
+            externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                    ExternalDependencyMetrics.Operation.CHECKOUT_RETRIEVE);
+            return session;
+        } catch (StripeException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                    ExternalDependencyMetrics.Operation.CHECKOUT_RETRIEVE, e);
+            throw e;
+        }
+    }
+
+    Session createStripeCheckoutSession(SessionCreateParams params) throws StripeException {
+        ExternalDependencyMetrics.Observation observation = externalDependencyMetrics.start();
+        try {
+            Session session = Session.create(params);
+            externalDependencyMetrics.success(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                    ExternalDependencyMetrics.Operation.CHECKOUT_CREATE);
+            return session;
+        } catch (StripeException e) {
+            externalDependencyMetrics.error(observation, ExternalDependencyMetrics.Dependency.STRIPE,
+                    ExternalDependencyMetrics.Operation.CHECKOUT_CREATE, e);
+            throw e;
+        }
     }
 
     private static boolean hasText(String value) {

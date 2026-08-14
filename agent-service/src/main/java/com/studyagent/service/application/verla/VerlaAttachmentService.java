@@ -22,6 +22,9 @@ import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -72,6 +75,7 @@ public class VerlaAttachmentService {
     private final MqOutboxService mqOutboxService;
     private final OssStorageService ossStorageService;
     private final EntitlementService entitlementService;
+    private final MeterRegistry meterRegistry;
 
     @Value("${verla.mq.command-exchange:" + DEFAULT_COMMAND_EXCHANGE + "}")
     private String commandExchange;
@@ -117,12 +121,14 @@ public class VerlaAttachmentService {
                                   VerlaAttachmentRepository attachmentRepository,
                                   MqOutboxService mqOutboxService,
                                   OssStorageService ossStorageService,
-                                  EntitlementService entitlementService) {
+                                  EntitlementService entitlementService,
+                                  MeterRegistry meterRegistry) {
         this.conversationService = conversationService;
         this.attachmentRepository = attachmentRepository;
         this.mqOutboxService = mqOutboxService;
         this.ossStorageService = ossStorageService;
         this.entitlementService = entitlementService;
+        this.meterRegistry = meterRegistry;
     }
 
     @PostConstruct
@@ -159,18 +165,26 @@ public class VerlaAttachmentService {
     public VerlaUploadSignResult requestSign(String clerkUserId, long conversationId, String filename,
                                              String mime, long sizeBytes, Long turnId, Long sessionId,
                                              String attachmentOrigin, String metaJson) {
-        requireOssConfigured();
-        ensureUser(clerkUserId);
-        return requestSignForUser(
-                clerkUserId,
-                conversationId,
-                filename,
-                mime,
-                sizeBytes,
-                turnId,
-                sessionId,
-                StringUtils.hasText(attachmentOrigin) ? attachmentOrigin : VerlaAttachment.ORIGIN_USER_UPLOAD,
-                metaJson);
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            requireOssConfigured();
+            ensureUser(clerkUserId);
+            VerlaUploadSignResult result = requestSignForUser(
+                    clerkUserId,
+                    conversationId,
+                    filename,
+                    mime,
+                    sizeBytes,
+                    turnId,
+                    sessionId,
+                    StringUtils.hasText(attachmentOrigin) ? attachmentOrigin : VerlaAttachment.ORIGIN_USER_UPLOAD,
+                    metaJson);
+            recordUpload(sample, "sign", "external", "success", "none");
+            return result;
+        } catch (RuntimeException ex) {
+            recordUpload(sample, "sign", "external", "error", uploadErrorType(ex));
+            throw ex;
+        }
     }
 
     @Transactional
@@ -178,20 +192,28 @@ public class VerlaAttachmentService {
                                                         String mime, long sizeBytes,
                                                         Long turnId, Long sessionId,
                                                         String attachmentOrigin, String metaJson) {
-        requireOssConfigured();
-        if (!StringUtils.hasText(clerkUserId)) {
-            throw new BusinessException(ApiCode.PARAM_ERROR, "clerkUserId required");
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            requireOssConfigured();
+            if (!StringUtils.hasText(clerkUserId)) {
+                throw new BusinessException(ApiCode.PARAM_ERROR, "clerkUserId required");
+            }
+            VerlaUploadSignResult result = requestSignForUser(
+                    clerkUserId,
+                    conversationId,
+                    filename,
+                    mime,
+                    sizeBytes,
+                    turnId,
+                    sessionId,
+                    normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_AGENT_OUTPUT),
+                    metaJson);
+            recordUpload(sample, "sign", "internal", "success", "none");
+            return result;
+        } catch (RuntimeException ex) {
+            recordUpload(sample, "sign", "internal", "error", uploadErrorType(ex));
+            throw ex;
         }
-        return requestSignForUser(
-                clerkUserId,
-                conversationId,
-                filename,
-                mime,
-                sizeBytes,
-                turnId,
-                sessionId,
-                normalizeAttachmentOrigin(attachmentOrigin, VerlaAttachment.ORIGIN_AGENT_OUTPUT),
-                metaJson);
     }
 
     private VerlaUploadSignResult requestSignForUser(String clerkUserId, long conversationId, String filename,
@@ -339,20 +361,52 @@ public class VerlaAttachmentService {
     public VerlaAttachment finalizeUpload(String clerkUserId, String objectId, String uploadToken,
                                           Long turnId, String clientChecksumSha256,
                                           boolean skipAttachmentParse) {
-        ensureUser(clerkUserId);
-        requireTicket(objectId, clerkUserId, uploadToken);
-        return finalizeUploadForUser(clerkUserId, objectId, turnId, clientChecksumSha256,
-                skipAttachmentParse);
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            ensureUser(clerkUserId);
+            requireTicket(objectId, clerkUserId, uploadToken);
+            VerlaAttachment result = finalizeUploadForUser(clerkUserId, objectId, turnId, clientChecksumSha256,
+                    skipAttachmentParse);
+            recordUpload(sample, "finalize", "external", "success", "none");
+            return result;
+        } catch (RuntimeException ex) {
+            recordUpload(sample, "finalize", "external", "error", uploadErrorType(ex));
+            throw ex;
+        }
     }
 
     @Transactional
     public VerlaAttachment finalizeUploadForInternal(String objectId, String uploadToken,
                                                      Long turnId, String clientChecksumSha256,
                                                      boolean skipAttachmentParse) {
-        VerlaAttachment att = getForInternal(objectId);
-        requireTicket(objectId, att.getUserId(), uploadToken);
-        return finalizeUploadForUser(att.getUserId(), objectId, turnId, clientChecksumSha256,
-                skipAttachmentParse);
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            VerlaAttachment att = getForInternal(objectId);
+            requireTicket(objectId, att.getUserId(), uploadToken);
+            VerlaAttachment result = finalizeUploadForUser(att.getUserId(), objectId, turnId, clientChecksumSha256,
+                    skipAttachmentParse);
+            recordUpload(sample, "finalize", "internal", "success", "none");
+            return result;
+        } catch (RuntimeException ex) {
+            recordUpload(sample, "finalize", "internal", "error", uploadErrorType(ex));
+            throw ex;
+        }
+    }
+
+    private void recordUpload(Timer.Sample sample, String operation, String channel, String result, String errorType) {
+        String[] tags = {"operation", operation, "channel", channel, "result", result, "error_type", errorType};
+        Counter.builder("verla.upload").tags(tags).register(meterRegistry).increment();
+        sample.stop(Timer.builder("verla.upload.duration").tags(tags).register(meterRegistry));
+    }
+
+    private static String uploadErrorType(RuntimeException ex) {
+        if (ex instanceof BusinessException businessException) {
+            if (businessException.getCode() == ApiCode.INTERNAL_ERROR.getCode()) {
+                return businessException.getMessage().toLowerCase(Locale.ROOT).contains("oss") ? "oss" : "internal";
+            }
+            return "validation";
+        }
+        return "internal";
     }
 
     private VerlaAttachment finalizeUploadForUser(String clerkUserId, String objectId,
@@ -376,6 +430,9 @@ public class VerlaAttachmentService {
                 String directUri = ossStorageService.formatVerlaStorageUri(att.getOssKey());
                 if (!StringUtils.hasText(directUri)) {
                     throw new BusinessException(ApiCode.INTERNAL_ERROR, "could not build storage URI for direct upload");
+                }
+                if (ossStorageService.isEnabled() && !ossStorageService.objectExists(att.getOssKey())) {
+                    throw new BusinessException(ApiCode.INTERNAL_ERROR, "OSS object confirmation failed");
                 }
                 attachmentRepository.updateByObjectIdSelective(VerlaAttachment.builder()
                         .objectId(objectId)

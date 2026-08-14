@@ -60,6 +60,13 @@ public interface OssStorageService {
     byte[] getObjectBytes(String ossKey);
 
     /**
+     * 确认 OSS 中是否存在指定对象。未启用或确认失败时返回 {@code false}。
+     */
+    default boolean objectExists(String ossKey) {
+        return false;
+    }
+
+    /**
      * 将字节上传到指定 OSS Key（不修改 legacy {@code files} 表；供 Verla V2 等使用）。
      */
     boolean putBytesAtKey(String ossKey, byte[] content);

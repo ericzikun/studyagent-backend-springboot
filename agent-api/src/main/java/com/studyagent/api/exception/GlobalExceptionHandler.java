@@ -9,6 +9,7 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.CurrentPlanData;
 import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.exception.QuotaExceededException;
+import com.studyagent.common.exception.PublicWriteProtectionUnavailableException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import lombok.RequiredArgsConstructor;
@@ -164,6 +165,17 @@ public class GlobalExceptionHandler {
     public Result<Void> handleRateLimitExceededException(com.studyagent.common.exception.RateLimitExceededException ex) {
         log.warn("限流触发: endpoint={}, message={}", ex.getEndpoint(), ex.getMessage());
         return Result.error(429, ex.getMessage());
+    }
+
+    /**
+     * 匿名写接口保护不可用时失败关闭，避免绕过 Redis 直接写数据库。
+     */
+    @ExceptionHandler(PublicWriteProtectionUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handlePublicWriteProtectionUnavailableException(
+            PublicWriteProtectionUnavailableException ex) {
+        log.error("公开写接口保护不可用", ex);
+        return Result.error(HttpStatus.SERVICE_UNAVAILABLE.value(), ex.getMessage());
     }
 
 

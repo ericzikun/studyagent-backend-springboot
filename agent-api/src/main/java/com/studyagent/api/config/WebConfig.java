@@ -31,6 +31,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/api/v1/agent-events/**",  // Python Agent 事件接口，使用 Token 验证
                 "/api/v1/notify/**",        // Notify API，使用 X-Notify-Token 鉴权
                 "/v1/webhook/**",           // Stripe Webhook，使用签名验证
+                "/v1/public/email-leads",  // 公开邮箱留资，使用蜜罐 + Redis 限流保护
                 "/v1/payment/config",        // Pricing 页面支付配置，允许未登录访问
                 "/v1/billing/config",        // V2 商业化套餐配置，允许未登录访问
                 "/v1/internal/reports/**",   // 数据报表手动触发，使用 X-Report-Token

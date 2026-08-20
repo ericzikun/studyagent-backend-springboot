@@ -85,7 +85,9 @@ management:
         http.server.requests: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
         billing.checkout.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
         billing.stripe.webhook.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        hikaricp.connections.acquire: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
         verla.cache.lock.wait: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
+        verla.cache.redis.command.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
         verla.upload.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s
         studyagent.external.request.duration: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s
 

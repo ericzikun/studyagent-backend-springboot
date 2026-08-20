@@ -8,6 +8,7 @@ import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -110,6 +111,32 @@ class VerlaRedisContextCacheTest {
         assertThat(valueCaptor.getValue()).contains("\"version\":7");
         assertThat(valueCaptor.getValue()).contains("\"name\":\"conv\"");
         assertThat(locked).isTrue();
+    }
+
+    @Test
+    void shouldRecordRedisCommandLatencyByOperation() {
+        VerlaContextCacheProperties properties = new VerlaContextCacheProperties();
+        properties.setJitterRatio(0.0d);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("cache:key")).thenReturn("value");
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+        VerlaRedisContextCache cache = new VerlaRedisContextCache(
+                redisTemplate,
+                new VerlaCacheJsonCodec(new ObjectMapper()),
+                properties,
+                meterRegistry);
+
+        cache.getRaw("cache:key");
+        cache.putRaw("cache:key", "value", Duration.ofSeconds(30));
+
+        assertThat(meterRegistry.get("verla.cache.redis.command.duration")
+                .tag("operation", "get").timer().count()).isEqualTo(1L);
+        assertThat(meterRegistry.get("verla.cache.redis.command.duration")
+                .tag("operation", "set").timer().count()).isEqualTo(1L);
     }
 
     @Test

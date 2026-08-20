@@ -6,11 +6,14 @@ import com.studyagent.service.application.verla.VerlaRedisCacheInvalidationSubsc
 import com.studyagent.service.application.verla.cache.VerlaCacheJsonCodec;
 import com.studyagent.service.application.verla.cache.VerlaCacheKeyFactory;
 import com.studyagent.service.application.verla.cache.VerlaRedisContextCache;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -43,8 +46,10 @@ public class VerlaRedisCacheConfig {
     @ConditionalOnMissingBean
     VerlaRedisContextCache verlaRedisContextCache(StringRedisTemplate redisTemplate,
                                                   VerlaCacheJsonCodec codec,
-                                                  VerlaContextCacheProperties properties) {
-        return new VerlaRedisContextCache(redisTemplate, codec, properties);
+                                                  VerlaContextCacheProperties properties,
+                                                  ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        return new VerlaRedisContextCache(redisTemplate, codec, properties,
+                meterRegistryProvider.getIfAvailable(() -> Metrics.globalRegistry));
     }
 
     @Bean

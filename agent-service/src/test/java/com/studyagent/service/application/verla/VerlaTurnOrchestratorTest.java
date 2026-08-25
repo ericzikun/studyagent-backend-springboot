@@ -371,7 +371,7 @@ class VerlaTurnOrchestratorTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                new ConversationStateMachine());
+                new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
                 conversationRepository,
@@ -450,7 +450,7 @@ class VerlaTurnOrchestratorTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                new ConversationStateMachine());
+                new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
@@ -508,7 +508,7 @@ class VerlaTurnOrchestratorTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                new ConversationStateMachine());
+                new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
@@ -559,7 +559,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -609,7 +609,8 @@ class VerlaTurnOrchestratorTest {
                         Map.of(),
                         List.of(),
                         Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
-                        List.of()));
+                        List.of(),
+                        null));
         Mockito.verifyNoInteractions(quotaService);
     }
 
@@ -623,7 +624,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -691,7 +692,8 @@ class VerlaTurnOrchestratorTest {
                 Map.of(
                         "task_title", "Presentation deck analysis report",
                         "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
-                List.of());
+                List.of(),
+                null);
 
         assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
         Mockito.verify(quotaService).consumeForAssignmentRun(Mockito.any());
@@ -707,7 +709,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -772,7 +774,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -853,7 +855,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -918,7 +920,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -969,7 +971,8 @@ class VerlaTurnOrchestratorTest {
                                 "objectId", "obj-rubric",
                                 "name", "rubric.pdf")))),
                 Map.of("deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
-                List.of("obj-rubric"));
+                List.of("obj-rubric"),
+                null);
 
         MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.clarify");
         Map<String, Object> envelope = objectMapper.readValue(clarifyCommand.getPayload(), Map.class);
@@ -1000,7 +1003,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -1082,7 +1085,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
@@ -1175,7 +1178,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.doThrow(new BusinessException(ApiCode.FOLLOWUP_EDIT_LIMIT_REACHED))
                 .when(entitlementService)
@@ -1219,7 +1222,7 @@ class VerlaTurnOrchestratorTest {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, new ConversationStateMachine());
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.reserveFollowupEdit("user_1", 74L, 901L, List.of("art_1")))
                 .thenReturn(FollowupEditUsage.builder().userMessageId(901L).build());

@@ -36,7 +36,7 @@ class VerlaEditorAssetServiceTest {
         assetRepository = new FakeEditorAssetRepository();
         artifactRepository = new FakeArtifactRepository();
         VerlaConversationService conversationService =
-                new VerlaConversationService(new FakeConversationRepository(), null, null);
+                new VerlaConversationService(new FakeConversationRepository(), null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         OssStorageService ossStorageService = new DisabledOssStorageService();
         service = new VerlaEditorAssetService(
                 conversationService,

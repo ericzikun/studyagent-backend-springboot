@@ -44,4 +44,7 @@ public class SendMessageCommand {
      * 直接进入对应 capability（派发 {@code cmd.detection.run} / {@code cmd.humanizer.run}）。
      */
     private String forceIntent;
+
+    /** Agent 输出语言偏好（可选；非空时持久化到 conversation.workspace_json）。 */
+    private String outputLanguage;
 }

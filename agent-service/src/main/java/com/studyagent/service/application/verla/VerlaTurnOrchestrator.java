@@ -6,6 +6,7 @@ import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.OutputLanguage;
 import com.studyagent.common.verla.enums.VerlaCommandAction;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
@@ -172,6 +173,11 @@ public class VerlaTurnOrchestrator {
 
         refreshConversationVersion(conv,
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
+        // 前端显式指定 Agent 输出语言时持久化到 conversation 偏好，后续所有命令自动生效。
+        if (cmd.getOutputLanguage() != null && !cmd.getOutputLanguage().isBlank()) {
+            conversationService.setOutputLanguage(conv, cmd.getOutputLanguage());
+        }
 
         VerlaSession planSession = spawnPlanSession(
                 conv, turn, cmd.getText(), cmd.getAttachmentsJson(), cmd.isPlanConfirmRejected());
@@ -763,8 +769,12 @@ public class VerlaTurnOrchestrator {
                                                        String userChoice,
                                                        boolean userUnderstood,
                                                        String text,
-                                                       List<String> objectIds) {
+                                                       List<String> objectIds,
+                                                       String outputLanguage) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        if (outputLanguage != null && !outputLanguage.isBlank()) {
+            conversationService.setOutputLanguage(conv, outputLanguage);
+        }
         VerlaSession previous = previousSessionId == null ? null : sessionRepository.findById(previousSessionId);
         VerlaTurn baseTurn = previous == null
                 ? turnRepository.findRecentByConversation(conversationId, 1).stream().findFirst().orElse(null)
@@ -819,8 +829,12 @@ public class VerlaTurnOrchestrator {
                                                        Map<String, Object> reservedFields,
                                                        List<Map<String, Object>> appendAskAnswers,
                                                        Map<String, Object> requirementForm,
-                                                       List<String> objectIds) {
+                                                       List<String> objectIds,
+                                                       String outputLanguage) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        if (outputLanguage != null && !outputLanguage.isBlank()) {
+            conversationService.setOutputLanguage(conv, outputLanguage);
+        }
         VerlaSession previous = previousSessionId == null ? null : sessionRepository.findById(previousSessionId);
         VerlaTurn baseTurn = previous == null
                 ? turnRepository.findRecentByConversation(conversationId, 1).stream().findFirst().orElse(null)
@@ -2201,6 +2215,7 @@ public class VerlaTurnOrchestrator {
         if (planConfirmRejected) {
             payload.put("planConfirmRejected", true);
         }
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/conversations/" + conv.getId() + "/context",
                 conv.getVersion()));
@@ -2215,6 +2230,7 @@ public class VerlaTurnOrchestrator {
                                                            String attachmentsJson) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userText", userText != null ? userText : "");
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         List<Map<String, Object>> attachments = parseUploadedAttachments(attachmentsJson);
         if (!attachments.isEmpty()) {
             payload.put("attachments", attachments);
@@ -2238,6 +2254,7 @@ public class VerlaTurnOrchestrator {
         payload.put("objectIds", List.of());
         payload.put("slots", slots == null ? Map.of() : slots);
         payload.put("userText", resolveTurnUserText(turn));
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2256,6 +2273,7 @@ public class VerlaTurnOrchestrator {
         payload.put("slots", slots == null ? Map.of() : slots);
         payload.put("userText", resolveTurnUserText(turn));
         payload.put("userUnderstood", userUnderstood);
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2289,6 +2307,7 @@ public class VerlaTurnOrchestrator {
             payload.put("requirementForm", requirementForm);
         }
         payload.put("allowedOutputTypes", allowedOutputTypes == null ? List.of() : List.copyOf(allowedOutputTypes));
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2313,6 +2332,7 @@ public class VerlaTurnOrchestrator {
         if (action == VerlaCommandAction.CMD_DETECTION_RUN && matchedHumanizer) {
             payload.put("matchedHumanizer", true);
         }
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2331,6 +2351,7 @@ public class VerlaTurnOrchestrator {
         if (turn.getUserMessageId() != null) {
             payload.put("userMessageId", turn.getUserMessageId());
         }
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2351,6 +2372,7 @@ public class VerlaTurnOrchestrator {
         if (turn.getUserMessageId() != null) {
             payload.put("userMessageId", turn.getUserMessageId());
         }
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2394,6 +2416,7 @@ public class VerlaTurnOrchestrator {
         payload.put("requirementUnderstanding",
                 finalClarifyResult.getOrDefault("requirementUnderstanding", ""));
         payload.put("allowedOutputTypes", allowedOutputTypes == null ? List.of() : List.copyOf(allowedOutputTypes));
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
         payload.put("contextRef", buildContextRef(
                 "/v1/internal/verla/sessions/" + session.getId() + "/context",
                 conv == null ? null : conv.getVersion()));
@@ -2413,6 +2436,16 @@ public class VerlaTurnOrchestrator {
             return "";
         }
         return m.getTextContent().trim();
+    }
+
+    /**
+     * 解析 conversation 的 Agent 输出语言偏好；conv 为 null 时回退 english（保持现状）。
+     */
+    private String resolveOutputLanguage(VerlaConversation conv) {
+        if (conv == null) {
+            return OutputLanguage.ENGLISH.getValue();
+        }
+        return conversationService.resolveOutputLanguage(conv);
     }
 
     private VerlaCommandEnvelope.VerlaCommandEnvelopeBuilder baseEnvelope(

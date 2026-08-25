@@ -1,7 +1,11 @@
 package com.studyagent.service.application.verla;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.OutputLanguage;
 import com.studyagent.common.verla.enums.VerlaConversationListSegment;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -18,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.studyagent.common.datetime.DateTimeFormats;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Verla Conversation 应用服务（PR-6 / PR-7）
@@ -30,9 +36,13 @@ import java.util.List;
 @RequiredArgsConstructor
 public class VerlaConversationService {
 
+    /** workspace_json 中 Agent 输出语言偏好的 key（与 MQ payload 字段同名）。 */
+    public static final String WORKSPACE_KEY_OUTPUT_LANGUAGE = "outputLanguage";
+
     private final VerlaConversationRepository conversationRepository;
     private final VerlaMessageRepository messageRepository;
     private final ConversationStateMachine conversationStateMachine;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public VerlaConversation create(String userId, String title, String workspaceJson, String primaryIntent) {
@@ -204,5 +214,57 @@ public class VerlaConversationService {
             throw new BusinessException(ApiCode.ILLEGAL_STATE);
         }
         return c;
+    }
+
+    /**
+     * 解析 conversation 的 Agent 输出语言偏好（workspace_json.outputLanguage）。
+     * 缺省 / 非法值回退 {@code OutputLanguage.ENGLISH}（保持现状行为）。
+     */
+    public String resolveOutputLanguage(VerlaConversation conv) {
+        Object raw = readWorkspace(conv).get(WORKSPACE_KEY_OUTPUT_LANGUAGE);
+        return OutputLanguage.fromRaw(raw == null ? null : String.valueOf(raw)).getValue();
+    }
+
+    /**
+     * 持久化 Agent 输出语言偏好到 workspace_json（merge 写回并保存）。
+     * 入参允许别名 / 任意大小写，落库前归一化为规范值。
+     */
+    @Transactional
+    public VerlaConversation setOutputLanguage(VerlaConversation conv, String raw) {
+        String normalized = OutputLanguage.fromRaw(raw).getValue();
+        Map<String, Object> workspace = readWorkspace(conv);
+        workspace.put(WORKSPACE_KEY_OUTPUT_LANGUAGE, normalized);
+        conv.setWorkspaceJson(writeWorkspace(workspace));
+        conv.setUpdatedAt(DateTimeFormats.now());
+        return conversationRepository.save(conv);
+    }
+
+    private Map<String, Object> readWorkspace(VerlaConversation conv) {
+        String raw = conv.getWorkspaceJson();
+        if (raw == null || raw.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw);
+            if (node != null && node.isObject()) {
+                Map<String, Object> map = objectMapper.convertValue(
+                        node, new TypeReference<LinkedHashMap<String, Object>>() {
+                        });
+                return map == null ? new LinkedHashMap<>() : map;
+            }
+        } catch (Exception e) {
+            log.warn("[Verla] workspace_json parse failed, treating as empty: convId={} error={}",
+                    conv.getId(), e.getMessage());
+        }
+        return new LinkedHashMap<>();
+    }
+
+    private String writeWorkspace(Map<String, Object> workspace) {
+        try {
+            return objectMapper.writeValueAsString(workspace);
+        } catch (Exception e) {
+            log.warn("[Verla] workspace_json serialize failed: error={}", e.getMessage());
+            return "{}";
+        }
     }
 }

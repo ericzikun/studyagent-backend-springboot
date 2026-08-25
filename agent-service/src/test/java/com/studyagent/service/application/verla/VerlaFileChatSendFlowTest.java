@@ -74,7 +74,7 @@ class VerlaFileChatSendFlowTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
 
         orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
@@ -159,7 +159,7 @@ class VerlaFileChatSendFlowTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaFileChatService fileChatService = new VerlaFileChatService(
                 conversationService,
                 attachmentRepository,
@@ -236,7 +236,7 @@ class VerlaFileChatSendFlowTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaFileChatService fileChatService = new VerlaFileChatService(
                 conversationService,
                 attachmentRepository,
@@ -303,7 +303,7 @@ class VerlaFileChatSendFlowTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaFileChatService fileChatService = new VerlaFileChatService(
                 conversationService,
                 attachmentRepository,
@@ -364,7 +364,7 @@ class VerlaFileChatSendFlowTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
         VerlaFileChatService fileChatService = new VerlaFileChatService(
                 conversationService,
                 attachmentRepository,

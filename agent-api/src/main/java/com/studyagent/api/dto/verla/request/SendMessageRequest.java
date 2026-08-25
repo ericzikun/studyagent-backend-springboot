@@ -23,4 +23,7 @@ public class SendMessageRequest {
 
     /** 非空时跳过 Plan，直接走 AI 检测 / Humanizer（值为 AI_DETECTION 或 AI_HUMANIZER） */
     private String forceIntent;
+
+    /** Agent 输出语言偏好（可选，如 "english" / "chinese" / "zh-CN"，见 OutputLanguage 枚举） */
+    private String outputLanguage;
 }

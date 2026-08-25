@@ -41,7 +41,15 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 3000ms
-      
+
+# 公开邮箱留资：Redis 同时承担单 IP 短窗口限制和每日新增邮箱硬上限。
+# Redis 不可用时接口返回 503 且不写 MySQL，防止匿名入口失去写入上限。
+public-email-lead:
+  redis-key-prefix: ${PUBLIC_EMAIL_LEAD_REDIS_KEY_PREFIX:public-email-lead:v1}
+  ip-window: ${PUBLIC_EMAIL_LEAD_IP_WINDOW:10m}
+  ip-max-requests: ${PUBLIC_EMAIL_LEAD_IP_MAX_REQUESTS:5}
+  daily-new-max: ${PUBLIC_EMAIL_LEAD_DAILY_NEW_MAX:1000}
+
 server:
   port: 8080
   # 🆕 增加连接超时配置，避免上传过程中连接中断

@@ -442,6 +442,11 @@ public class VerlaTurnOrchestrator {
      */
     private SendMessageResult onUserMessageForcedCapability(SendMessageCommand cmd, String intent) {
         VerlaConversation conv = conversationService.loadWritable(cmd.getUserId(), cmd.getConversationId());
+        // 前端显式指定 Agent 输出语言时持久化到 conversation 偏好，后续所有命令自动生效
+        // （forced capability 与 onUserMessage 同入口，不能漏掉持久化，否则下游读 workspace_json 为空回退 english）。
+        if (cmd.getOutputLanguage() != null && !cmd.getOutputLanguage().isBlank()) {
+            conversationService.setOutputLanguage(conv, cmd.getOutputLanguage());
+        }
         // 在创建新 turn 之前判断是否首轮：lastTurnId == null 说明此前无 turn
         boolean isFirstTurn = conv.getLastTurnId() == null;
 

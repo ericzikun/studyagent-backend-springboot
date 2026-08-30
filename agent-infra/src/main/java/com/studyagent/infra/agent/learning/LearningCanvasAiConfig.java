@@ -35,14 +35,14 @@ public class LearningCanvasAiConfig {
 
     public LearningCanvasAiConfig(
             @Value("${spring.ai.openai.api-key:${OPENAI_API_KEY:}}") String apiKey,
-            @Value("${spring.ai.openai.base-url:${OPENAI_BASE_URL:https://api.deepseek.com}}") String baseUrl,
-            @Value("${spring.ai.openai.chat.options.model:${OPENAI_MODEL:deepseek-v4-flash}}") String model,
+            @Value("${spring.ai.openai.base-url:${OPENAI_BASE_URL:https://aiberm.com/v1}}") String baseUrl,
+            @Value("${spring.ai.openai.chat.options.model:${OPENAI_MODEL:google/gemini-2.5-pro}}") String model,
             @Value("${spring.ai.openai.chat.options.temperature:${OPENAI_TEMPERATURE:0.4}}") Double temperature,
             @Value("${spring.ai.openai.chat.options.max-tokens:${OPENAI_MAX_TOKENS:16000}}") Integer maxTokens,
             @Value("${spring.ai.openai.chat.completions-path:${OPENAI_COMPLETIONS_PATH:/v1/chat/completions}}") String completionsPath) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
-        this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://api.deepseek.com" : baseUrl.trim();
-        this.model = model == null || model.isBlank() ? "deepseek-v4-flash" : model.trim();
+        this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://aiberm.com/v1" : baseUrl.trim();
+        this.model = model == null || model.isBlank() ? "google/gemini-2.5-pro" : model.trim();
         this.temperature = temperature == null ? 0.4 : temperature;
         this.maxTokens = maxTokens == null ? 16000 : maxTokens;
         this.completionsPath = completionsPath == null || completionsPath.isBlank()

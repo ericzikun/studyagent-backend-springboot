@@ -10,6 +10,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.client.ReactorClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+import reactor.netty.http.client.HttpClient;
+import reactor.netty.transport.ProxyProvider;
+
+import java.time.Duration;
 
 /**
  * Learning Canvas ChatModel 手动创建（懒加载）。
@@ -32,6 +38,9 @@ public class LearningCanvasAiConfig {
     private final Double temperature;
     private final Integer maxTokens;
     private final String completionsPath;
+    private final String proxyHost;
+    private final Integer proxyPort;
+    private final Integer timeoutMs;
 
     public LearningCanvasAiConfig(
             @Value("${spring.ai.openai.api-key:${OPENAI_API_KEY:}}") String apiKey,
@@ -39,7 +48,10 @@ public class LearningCanvasAiConfig {
             @Value("${spring.ai.openai.chat.options.model:${OPENAI_MODEL:google/gemini-2.5-pro}}") String model,
             @Value("${spring.ai.openai.chat.options.temperature:${OPENAI_TEMPERATURE:0.4}}") Double temperature,
             @Value("${spring.ai.openai.chat.options.max-tokens:${OPENAI_MAX_TOKENS:16000}}") Integer maxTokens,
-            @Value("${spring.ai.openai.chat.completions-path:${OPENAI_COMPLETIONS_PATH:/v1/chat/completions}}") String completionsPath) {
+            @Value("${spring.ai.openai.chat.completions-path:${OPENAI_COMPLETIONS_PATH:/v1/chat/completions}}") String completionsPath,
+            @Value("${OPENAI_PROXY_HOST:}") String proxyHost,
+            @Value("${OPENAI_PROXY_PORT:}") Integer proxyPort,
+            @Value("${OPENAI_TIMEOUT_MS:120000}") Integer timeoutMs) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://aiberm.com/v1" : baseUrl.trim();
         this.model = model == null || model.isBlank() ? "google/gemini-2.5-pro" : model.trim();
@@ -55,6 +67,9 @@ public class LearningCanvasAiConfig {
             log.info("[LearningCanvas] normalized completionsPath to {} (baseUrl ends with /v1)", normalizedCompletionsPath);
         }
         this.completionsPath = normalizedCompletionsPath;
+        this.proxyHost = proxyHost == null ? "" : proxyHost.trim();
+        this.proxyPort = proxyPort == null || proxyPort <= 0 ? null : proxyPort;
+        this.timeoutMs = timeoutMs == null || timeoutMs <= 0 ? 120000 : timeoutMs;
     }
 
     /**
@@ -68,13 +83,27 @@ public class LearningCanvasAiConfig {
                     + "Learning Canvas 调用将报错（其它功能不受影响）。");
             return null;
         }
-        log.info("[LearningCanvas] creating ChatModel: baseUrl={}, model={}, temperature={}, maxTokens={}",
-                baseUrl, model, temperature, maxTokens);
-        OpenAiApi api = OpenAiApi.builder()
+        log.info("[LearningCanvas] creating ChatModel: baseUrl={}, model={}, temperature={}, maxTokens={}, timeoutMs={}{}",
+                baseUrl, model, temperature, maxTokens, timeoutMs,
+                proxyHost.isBlank() ? "" : ", proxy=" + proxyHost + ":" + proxyPort);
+        OpenAiApi.Builder apiBuilder = OpenAiApi.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
-                .completionsPath(completionsPath)
-                .build();
+                .completionsPath(completionsPath);
+        if (!proxyHost.isBlank() && proxyPort != null) {
+            // OpenAiApi 的 chat 调用走 RestClient；代理要配在 RestClient 的
+            // ClientHttpRequestFactory 上（Reactor Netty，与 WebClient 同底层）。
+            HttpClient httpClient = HttpClient.create()
+                    .proxy(proxy -> proxy.type(ProxyProvider.Proxy.HTTP)
+                            .host(proxyHost)
+                            .port(proxyPort))
+                    .responseTimeout(Duration.ofMillis(timeoutMs));
+            RestClient.Builder restClientBuilder = RestClient.builder()
+                    .requestFactory(new ReactorClientHttpRequestFactory(httpClient));
+            apiBuilder.restClientBuilder(restClientBuilder);
+            log.info("[LearningCanvas] ChatModel 走代理: {}:{}", proxyHost, proxyPort);
+        }
+        OpenAiApi api = apiBuilder.build();
         OpenAiChatOptions options = OpenAiChatOptions.builder()
                 .model(model)
                 .temperature(temperature)

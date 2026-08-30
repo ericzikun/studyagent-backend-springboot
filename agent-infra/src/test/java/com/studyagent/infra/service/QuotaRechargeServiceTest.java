@@ -2,6 +2,8 @@ package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
+import com.studyagent.infra.entity.RechargeOrderEntity;
+import com.studyagent.infra.entity.UserAiQuotaEntity;
 import com.studyagent.infra.mapper.AiFeatureDefsMapper;
 import com.studyagent.infra.mapper.AiFeaturePackageMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
@@ -38,9 +40,9 @@ class QuotaRechargeServiceTest {
     @Test
     void processRecharge_publishesAddonGrantOnlyAfterNewLedgerIsWritten() {
         when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        when(rechargeOrderMapper.insert(any())).thenReturn(1);
+        when(rechargeOrderMapper.insert(any(RechargeOrderEntity.class))).thenReturn(1);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        when(userAiQuotaMapper.insert(any())).thenReturn(1);
+        when(userAiQuotaMapper.insert(any(UserAiQuotaEntity.class))).thenReturn(1);
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 

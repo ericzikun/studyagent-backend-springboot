@@ -10,7 +10,10 @@ public enum FeatureCode {
 
     TASK_CREATE("task_create"),
     AI_DETECTION("ai_detection"),
-    HUMANIZER("humanizer");
+    HUMANIZER("humanizer"),
+
+    /** Learning Canvas 新产品 Demo（纯免费 + 每次调用记 quota_ledger，见 sql/081_demo_learning_canvas.sql） */
+    DEMO_LEARNING_CANVAS("demo_learning_canvas");
 
     private final String code;
 

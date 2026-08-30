@@ -55,10 +55,10 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
         
-        <!-- MyBatis Plus Boot Starter -->
+        <!-- MyBatis Plus Boot 3.x Starter（Spring Boot 3.4） -->
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
         
         <!-- MySQL Driver -->

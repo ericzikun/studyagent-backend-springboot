@@ -27,11 +27,11 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <!-- Spring Boot (使用稳定版本 3.1.5) -->
-        <spring-boot.version>3.1.5</spring-boot.version>
+        <!-- Spring Boot（3.4.x：兼容 Spring AI 1.0.x 稳定版；原 3.1.5 与 Spring AI 全部版本不兼容） -->
+        <spring-boot.version>3.4.13</spring-boot.version>
         
-        <!-- MyBatis Plus (使用 3.5.5 版本，与 Spring Boot 3.1.x 兼容性很好) -->
-        <mybatis-plus.version>3.5.5</mybatis-plus.version>
+        <!-- MyBatis Plus (3.5.12：适配 Spring Boot 3.4；原 3.5.5 的 MapperFactoryBean 与 Boot 3.4 不兼容) -->
+        <mybatis-plus.version>3.5.12</mybatis-plus.version>
         
         <!-- MySQL -->
         <mysql.version>8.0.33</mysql.version>
@@ -60,6 +60,10 @@
 
         <!-- Sqids：对外 ID 混淆编码（V1 taskId + V2 public id） -->
         <sqids.version>0.1.0</sqids.version>
+
+        <!-- Spring AI Alibaba（Learning Canvas demo 的 LLM / Agent 底座；1.1.2.0 配 spring-ai 1.1.2，兼容 Boot 3.4） -->
+        <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
+        <spring-ai.version>1.1.2</spring-ai.version>
     </properties>
 
     <dependencyManagement>
@@ -77,6 +81,20 @@
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-boot-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- MyBatis Plus Boot 3.x Starter（Spring Boot 3.4 用；Learning Canvas demo 的 agent-infra 依赖） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- MyBatis Plus JSqlParser（3.5.9+ 分页插件所在模块） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
             
@@ -154,6 +172,20 @@
                 <groupId>org.sqids</groupId>
                 <artifactId>sqids</artifactId>
                 <version>${sqids.version}</version>
+            </dependency>
+
+            <!-- Spring AI Alibaba Agent Framework（Learning Canvas demo 编排底座） -->
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
+            </dependency>
+
+            <!-- Spring AI OpenAI Starter: OpenAI-compatible ChatModel provider -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-starter-model-openai</artifactId>
+                <version>${spring-ai.version}</version>
             </dependency>
 
             <!-- Agent Common (内部模块) -->

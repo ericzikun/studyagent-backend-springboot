@@ -49,6 +49,14 @@ spring:
   ai:
     model:
       chat: openai
+      # 只启用 ChatModel；显式关闭不需要的 OpenAI 模型自动配置
+      # （语音/转写/嵌入/图像/审核在 key 缺失时会导致启动失败，且本 Demo 用不到）。
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
     openai:
       api-key: ${OPENAI_API_KEY:}
       base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}

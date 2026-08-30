@@ -45,8 +45,16 @@ public class LearningCanvasAiConfig {
         this.model = model == null || model.isBlank() ? "google/gemini-2.5-pro" : model.trim();
         this.temperature = temperature == null ? 0.4 : temperature;
         this.maxTokens = maxTokens == null ? 16000 : maxTokens;
-        this.completionsPath = completionsPath == null || completionsPath.isBlank()
+        String normalizedCompletionsPath = completionsPath == null || completionsPath.isBlank()
                 ? "/v1/chat/completions" : completionsPath.trim();
+        // URL 规范化：OpenAiApi 拼接规则是 baseUrl + completionsPath。
+        // 若 baseUrl 已带 /v1（如 https://aiberm.com/v1）而 completionsPath 以 /v1 开头，
+        // 会拼出 /v1/v1/chat/completions 双段错误。此处去重。
+        if (this.baseUrl.endsWith("/v1") && normalizedCompletionsPath.startsWith("/v1/")) {
+            normalizedCompletionsPath = normalizedCompletionsPath.substring("/v1".length());
+            log.info("[LearningCanvas] normalized completionsPath to {} (baseUrl ends with /v1)", normalizedCompletionsPath);
+        }
+        this.completionsPath = normalizedCompletionsPath;
     }
 
     /**

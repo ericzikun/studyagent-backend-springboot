@@ -42,6 +42,22 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: 3000ms
 
+  # Spring AI（Learning Canvas Demo 的 LLM / Agent 底座）
+  # 必填：OPENAI_API_KEY；本地开发放 studyagent-backend/.env，生产由部署环境注入。
+  # 注意：Aiberm（aiberm.com）本机需走 ClashX 代理（-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7890）；
+  #       生产建议用可直连网关（如 api.deepseek.com）或网关层代理。
+  ai:
+    model:
+      chat: openai
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+      chat:
+        completions-path: ${OPENAI_COMPLETIONS_PATH:/v1/chat/completions}
+        options:
+          model: ${OPENAI_MODEL:deepseek-v4-flash}
+          temperature: ${OPENAI_TEMPERATURE:0.4}
+
 # 公开邮箱留资：Redis 同时承担单 IP 短窗口限制和每日新增邮箱硬上限。
 # Redis 不可用时接口返回 503 且不写 MySQL，防止匿名入口失去写入上限。
 public-email-lead:

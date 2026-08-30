@@ -48,7 +48,9 @@ spring:
   #       生产建议用可直连网关（如 api.deepseek.com）或网关层代理。
   ai:
     model:
-      chat: openai
+      # ChatModel 由 agent-infra 的 LearningCanvasAiConfig 懒加载手动创建
+      # （key 缺失时应用仍可启动，仅调用 Learning Canvas 时才报错，与 demo 的延迟初始化一致）。
+      chat: none
       # 只启用 ChatModel；显式关闭不需要的 OpenAI 模型自动配置
       # （语音/转写/嵌入/图像/审核在 key 缺失时会导致启动失败，且本 Demo 用不到）。
       embedding: none

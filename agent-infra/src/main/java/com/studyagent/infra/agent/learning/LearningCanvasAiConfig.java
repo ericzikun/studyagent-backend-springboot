@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import io.netty.channel.ChannelOption;
 import org.springframework.http.client.ReactorClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import reactor.netty.http.client.HttpClient;
@@ -90,19 +91,22 @@ public class LearningCanvasAiConfig {
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .completionsPath(completionsPath);
+        // OpenAiApi 的 chat 调用走 RestClient；连接器配在 RestClient 的
+        // ClientHttpRequestFactory 上（Reactor Netty，与 WebClient 同底层）。
+        // 直连时也显式构建：禁用 IPv6（aiberm 等网关 IPv6 优先易超时）+ 明确连接/读取超时。
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Math.min(timeoutMs, 30000))
+                .responseTimeout(Duration.ofMillis(timeoutMs));
         if (!proxyHost.isBlank() && proxyPort != null) {
-            // OpenAiApi 的 chat 调用走 RestClient；代理要配在 RestClient 的
-            // ClientHttpRequestFactory 上（Reactor Netty，与 WebClient 同底层）。
-            HttpClient httpClient = HttpClient.create()
+            httpClient = httpClient
                     .proxy(proxy -> proxy.type(ProxyProvider.Proxy.HTTP)
                             .host(proxyHost)
-                            .port(proxyPort))
-                    .responseTimeout(Duration.ofMillis(timeoutMs));
-            RestClient.Builder restClientBuilder = RestClient.builder()
-                    .requestFactory(new ReactorClientHttpRequestFactory(httpClient));
-            apiBuilder.restClientBuilder(restClientBuilder);
+                            .port(proxyPort));
             log.info("[LearningCanvas] ChatModel 走代理: {}:{}", proxyHost, proxyPort);
         }
+        RestClient.Builder restClientBuilder = RestClient.builder()
+                .requestFactory(new ReactorClientHttpRequestFactory(httpClient));
+        apiBuilder.restClientBuilder(restClientBuilder);
         OpenAiApi api = apiBuilder.build();
         OpenAiChatOptions options = OpenAiChatOptions.builder()
                 .model(model)

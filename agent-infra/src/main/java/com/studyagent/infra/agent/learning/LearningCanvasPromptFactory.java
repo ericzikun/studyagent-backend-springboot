@@ -108,6 +108,40 @@ public class LearningCanvasPromptFactory {
                 - survey 是纯前端组件，直接输出 ```survey``` 代码块，不要调任何 survey 工具。
                 - 诊断阶段每轮最多 1 个 survey。schema 固定为单题单选：{"question":"...","options":[...]}。
 
+                【knowledge_map 细节（极其重要）】
+                - 直接输出 ```knowledge_map``` 代码块，内部必须是**单个完整 JSON 对象**，禁止用 Markdown 表格/列表/散装字段包裹，禁止省略 title / scopeAssumption / modules。
+                - 标准 schema 如下，字段名必须照抄：
+                {
+                  "mapLevel": "course | topic_in_course | task_oriented",
+                  "title": "完整课程/主题名称",
+                  "scopeAssumption": "范围假设：说明按什么标准组织（标准本科课程/考试大纲等），材料缺失也要给出假设",
+                  "targetSummary": "基于诊断的用户目标摘要",
+                  "modules": [
+                    {
+                      "title": "模块名",
+                      "whyItMatters": "为什么重要",
+                      "topics": ["知识点1", "知识点2"],
+                      "importance": ["核心", "高频考点"],
+                      "tags": ["标签"],
+                      "prerequisites": ["前置依赖"],
+                      "commonConfusions": ["常见混淆"],
+                      "problemTypes": ["典型题型"],
+                      "children": [{"title": "子知识点", "description": "说明", "tags": []}]
+                    }
+                  ],
+                  "relationships": [
+                    {"from": "A", "to": "B", "type": "prerequisite|part_of|leads_to|contrasts_with|confuses_with|tested_by|applies_to", "description": "关系说明"}
+                  ],
+                  "recommendedRoute": "推荐学习路线简述",
+                  "entryOptions": [
+                    {"label": "按 Verla 推荐路线开始", "intent": "recommended", "description": "说明"},
+                    {"label": "零基础从头学", "intent": "zero_based", "description": "说明"},
+                    {"label": "先快速摸底查漏", "intent": "gap_first", "description": "说明"},
+                    {"label": "按课程材料调整", "intent": "material_based", "description": "说明"}
+                  ]
+                }
+                - modules 必须 8-12 个一级模块且**非空**；title、scopeAssumption、modules 三者缺一不可，否则前端无法渲染。
+
                 【掌握度与 summary】
                 post_test/Apply 只能证明"理解"或暴露盲区；自动"熟练"必须经过 crystallization（用户费曼复述通过）。不要把 AI 自己讲过的话伪装成用户的理解切片。
 

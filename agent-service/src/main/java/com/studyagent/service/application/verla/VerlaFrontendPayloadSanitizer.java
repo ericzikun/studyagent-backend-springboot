@@ -11,6 +11,9 @@ import java.util.Map;
  */
 public final class VerlaFrontendPayloadSanitizer {
 
+    /** requirementForm 中的 schema 定义数组 key：前端据此渲染字段 label（按 Output Language 生成）。 */
+    private static final String FIELDS_KEY = "fields";
+
     private static final List<VisibleRequirementField> VISIBLE_REQUIREMENT_FIELDS = List.of(
             new VisibleRequirementField("subject", List.of("subject")),
             new VisibleRequirementField("academic_level", List.of("academic_level", "academicLevel")),
@@ -57,6 +60,12 @@ public final class VerlaFrontendPayloadSanitizer {
             if (value != null) {
                 visible.put(field.outputKey(), value);
             }
+        }
+        // 保留 schema 定义数组（含按 Output Language 生成的字段 label / helpText），
+        // 前端 buildFieldFromDefinition 优先使用后端 label 渲染表单字段名。
+        Object fields = source.get(FIELDS_KEY);
+        if (fields instanceof List<?> list && !list.isEmpty()) {
+            visible.put(FIELDS_KEY, list);
         }
         return visible;
     }

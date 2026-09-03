@@ -308,6 +308,7 @@ public class VerlaConversationController {
                 .attachmentsJson(writeAttachmentsJson(req.getAttachments()))
                 .skipPlanIfPossible(req.getSkipPlanIfPossible() == null || req.getSkipPlanIfPossible())
                 .forceIntent(req.getForceIntent())
+                .outputLanguage(req.getOutputLanguage())
                 .build();
         SendMessageResult result = turnOrchestrator.onUserMessage(cmd);
         return Result.success(SendMessageResponseVO.from(result));
@@ -358,7 +359,8 @@ public class VerlaConversationController {
                 body.getUserChoice(),
                 userUnderstood,
                 body.getText(),
-                body.getObjectIds());
+                body.getObjectIds(),
+                body.getOutputLanguage());
         return Result.success(SendMessageResponseVO.from(result));
     }
 
@@ -379,7 +381,8 @@ public class VerlaConversationController {
                 body.getReservedFields(),
                 body.getAppendAskAnswers(),
                 body.getRequirementForm(),
-                body.getObjectIds());
+                body.getObjectIds(),
+                body.getOutputLanguage());
         return Result.success(SendMessageResponseVO.from(result));
     }
 

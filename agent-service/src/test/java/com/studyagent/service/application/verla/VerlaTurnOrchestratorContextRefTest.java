@@ -52,7 +52,7 @@ class VerlaTurnOrchestratorContextRefTest {
         mqOutboxService = new CapturingMqOutboxService();
 
         VerlaConversationService conversationService = new VerlaConversationService(
-                conversationRepository, messageRepository, null);
+                conversationRepository, messageRepository, null, new com.fasterxml.jackson.databind.ObjectMapper());
 
         orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
@@ -172,7 +172,8 @@ class VerlaTurnOrchestratorContextRefTest {
                 "need_more_help",
                 false,
                 "我还是没明白",
-                List.of("obj_1"));
+                List.of("obj_1"),
+                null);
 
         assertThat(contextRefConvVersion()).isEqualTo(6L);
     }

@@ -45,7 +45,7 @@ class VerlaAttachmentServiceTest {
     @BeforeEach
     void setup() {
         attachmentRepository = new FakeAttachmentRepository();
-        conversationService = new VerlaConversationService(new FakeConversationRepository(), null, null);
+        conversationService = new VerlaConversationService(new FakeConversationRepository(), null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         ossStorageService = new DisabledOssStorageService();
         entitlementService = org.mockito.Mockito.mock(EntitlementService.class);
         service = new VerlaAttachmentService(

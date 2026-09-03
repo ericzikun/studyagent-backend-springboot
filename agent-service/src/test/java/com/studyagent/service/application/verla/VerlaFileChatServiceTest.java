@@ -44,7 +44,7 @@ class VerlaFileChatServiceTest {
         VerlaConversationService conversationService = new VerlaConversationService(
                 conversationRepository,
                 messageRepository,
-                null);
+                null, new com.fasterxml.jackson.databind.ObjectMapper());
         service = new VerlaFileChatService(conversationService, attachmentRepository, messageRepository);
     }
 

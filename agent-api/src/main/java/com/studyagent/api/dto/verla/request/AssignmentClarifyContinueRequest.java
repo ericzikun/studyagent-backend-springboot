@@ -21,4 +21,7 @@ public class AssignmentClarifyContinueRequest {
     private Map<String, Object> reservedFields;
     private List<Map<String, Object>> appendAskAnswers;
     private Map<String, Object> requirementForm;
+
+    /** Agent 输出语言偏好（可选，用户可能在澄清表单中修改，见 OutputLanguage 枚举） */
+    private String outputLanguage;
 }

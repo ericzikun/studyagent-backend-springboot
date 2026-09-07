@@ -10,7 +10,9 @@ public enum FeatureCode {
 
     TASK_CREATE("task_create"),
     AI_DETECTION("ai_detection"),
-    HUMANIZER("humanizer");
+    HUMANIZER("humanizer"),
+    /** AI Tutor demo：学术论文写作 Copilot（pure-free 记账） */
+    DEMO_AI_TUTOR("demo_ai_tutor");
 
     private final String code;
 

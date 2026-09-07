@@ -192,6 +192,10 @@ public class DemoAiTutorService {
         return repo.listEvidences(conversationId);
     }
 
+    public com.studyagent.service.domain.demo.aitutor.AiTutorDocument getDocumentForConversation(Long conversationId) {
+        return repo.getDocument(conversationId).orElse(null);
+    }
+
     // ============ 快照 ============
 
     public Map<String, Object> snapshot(String clerkUserId, Long conversationId) {

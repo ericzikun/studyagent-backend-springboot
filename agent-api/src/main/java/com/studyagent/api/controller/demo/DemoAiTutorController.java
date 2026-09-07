@@ -12,6 +12,8 @@ import com.studyagent.service.application.demo.DemoAiTutorService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
 import com.studyagent.service.domain.demo.aitutor.AiTutorEvidence;
+import com.studyagent.infra.mq.aitutor.DemoAiTutorCommandDispatcher;
+import com.studyagent.service.domain.demo.aitutor.port.DemoAiTutorStreamPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,6 +54,8 @@ public class DemoAiTutorController {
 
     private final DemoAiTutorService service;
     private final ObjectMapper objectMapper;
+    private final DemoAiTutorCommandDispatcher commandDispatcher;
+    private final DemoAiTutorStreamPublisher streamPublisher;
 
     @Value("${demo.aitutor.chat.mode:mock}")
     private String chatMode;
@@ -180,11 +184,10 @@ public class DemoAiTutorController {
                 () -> sendComment(emitter, closed), HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
         if ("python".equalsIgnoreCase(chatMode)) {
-            // M1：切到 verla_agent(MQ) 后由事件投影驱动；此处先回错误事件
-            executor.submit(() -> {
-                sendEvent(emitter, closed, "error", Map.of("content", "python mode 尚未接入（M1）"));
-                complete(emitter, closed);
-            });
+            // M1：派发 cmd.aitutor.chat 给 verla_agent；AITUTOR_* 事件经 DemoAiTutorEventConsumer
+            // 桥接回本 emitter（回合结束 TURN_COMPLETED 落库并 [DONE]；超时由 emitter 兜底）。
+            streamPublisher.register(id, emitter);
+            commandDispatcher.dispatch(clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
             return emitter;
         }
 

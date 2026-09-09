@@ -13,4 +13,10 @@ public interface DemoAiTutorStreamPublisher {
     void onArtifactCommit(Long conversationId, String contentMd);
 
     void complete(Long conversationId);
+
+    /** 会话是否已收到任何 python 事件（用于兜底判定） */
+    boolean hasActivity(Long conversationId);
+
+    /** 标记该会话回退 mock：忽略后续 python 事件并移除在途 emitter */
+    void markFallback(Long conversationId);
 }

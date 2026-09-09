@@ -190,9 +190,19 @@ public class DemoAiTutorController {
             boolean dispatched = commandDispatcher.dispatch(
                     clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
             if (!dispatched) {
-                // python 链路不可达（RabbitMQ/verla-agent 未就绪）：回退 mock，避免请求挂起。
+                // 派发即失败（RabbitMQ 不可用）：直接回退 mock。
                 log.warn("[AI-Tutor] python dispatch failed, fallback to mock: convId={}", id);
+                streamPublisher.markFallback(id);
                 executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
+            } else {
+                // 派发成功但 12s 内无任何 python 事件（如 cmd.aitutor.chat 无队列消费 NO_ROUTE）→ 回退 mock。
+                heartbeatScheduler.schedule(() -> {
+                    if (!closed.get() && !streamPublisher.hasActivity(id)) {
+                        log.warn("[AI-Tutor] no python activity within 12s, fallback to mock: convId={}", id);
+                        streamPublisher.markFallback(id);
+                        executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
+                    }
+                }, 12, TimeUnit.SECONDS);
             }
             return emitter;
         }

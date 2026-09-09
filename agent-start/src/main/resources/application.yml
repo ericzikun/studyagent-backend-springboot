@@ -417,10 +417,3 @@ humanizer:
   whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
   detect-concurrency: ${HUMANIZER_DETECT_CONCURRENCY:2}
   humanize-concurrency: ${HUMANIZER_HUMANIZE_CONCURRENCY:3}
-
-# AI Tutor（学术论文写作 Copilot）demo 配置：chat 默认走 verla_agent(MQ) python 主循环；
-# 不可达时后端自动回退 mock 流。
-demo:
-  aitutor:
-    chat:
-      mode: python

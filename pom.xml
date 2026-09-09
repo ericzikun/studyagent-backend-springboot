@@ -61,9 +61,6 @@
         <!-- Sqids：对外 ID 混淆编码（V1 taskId + V2 public id） -->
         <sqids.version>0.1.0</sqids.version>
 
-        <!-- Spring AI Alibaba（Learning Canvas demo 的 LLM / Agent 底座；1.1.2.0 配 spring-ai 1.1.2，兼容 Boot 3.4） -->
-        <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
-        <spring-ai.version>1.1.2</spring-ai.version>
     </properties>
 
     <dependencyManagement>
@@ -172,20 +169,6 @@
                 <groupId>org.sqids</groupId>
                 <artifactId>sqids</artifactId>
                 <version>${sqids.version}</version>
-            </dependency>
-
-            <!-- Spring AI Alibaba Agent Framework（Learning Canvas demo 编排底座） -->
-            <dependency>
-                <groupId>com.alibaba.cloud.ai</groupId>
-                <artifactId>spring-ai-alibaba-agent-framework</artifactId>
-                <version>${spring-ai-alibaba.version}</version>
-            </dependency>
-
-            <!-- Spring AI OpenAI Starter: OpenAI-compatible ChatModel provider -->
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-starter-model-openai</artifactId>
-                <version>${spring-ai.version}</version>
             </dependency>
 
             <!-- Agent Common (内部模块) -->

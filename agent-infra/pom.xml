@@ -114,18 +114,6 @@
             <version>3.17.4</version>
         </dependency>
 
-        <!-- Spring AI Alibaba Agent Framework（Learning Canvas demo 编排底座） -->
-        <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
-        </dependency>
-
-        <!-- Spring AI OpenAI Starter: provides the real OpenAI-compatible ChatModel bean. -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
-        </dependency>
-
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

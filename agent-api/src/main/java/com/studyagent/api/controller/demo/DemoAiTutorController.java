@@ -32,7 +32,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -40,8 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * AI Tutor（学术论文写作 Copilot）demo 控制器 —— /v1/demo/ai-tutor/*
- * <p>鉴权复用 AuthInterceptor（clerkUserId）。M0 阶段 chat 为后端 mock 流（demo.aitutor.chat.mode=mock），
- * 后续接入 verla_agent(MQ) 时切换 mode=python 并由事件投影驱动。</p>
+ * <p>鉴权复用 AuthInterceptor（clerkUserId）。chat 仅走 verla_agent(MQ) python 主循环：Java 派发
+ * cmd.aitutor.chat，AITUTOR_* 事件由 DemoAiTutorEventConsumer 桥接回 SSE（不提供 mock 内容）。</p>
  */
 @Slf4j
 @RestController
@@ -57,14 +56,8 @@ public class DemoAiTutorController {
     private final DemoAiTutorCommandDispatcher commandDispatcher;
     private final DemoAiTutorStreamPublisher streamPublisher;
 
-    @Value("${demo.aitutor.chat.mode:python}")
-    private String chatMode;
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(8, r -> {
-        Thread t = new Thread(r, "demo-ai-tutor-run");
-        t.setDaemon(true);
-        return t;
-    });
+
     private final ScheduledExecutorService heartbeatScheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "demo-ai-tutor-heartbeat");
@@ -159,7 +152,7 @@ public class DemoAiTutorController {
         return Result.success(service.confirmEvidences(id, req.getEvidenceIds()));
     }
 
-    // ============ chat（SSE） ============
+    // ============ chat（SSE · 仅 python 主循环，不提供 mock） ============
 
     @PostMapping(path = "/conversations/{id}/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(
@@ -183,70 +176,28 @@ public class DemoAiTutorController {
         heartbeatScheduler.scheduleAtFixedRate(
                 () -> sendComment(emitter, closed), HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-        if ("python".equalsIgnoreCase(chatMode)) {
-            // 默认模式：派发 cmd.aitutor.chat 给 verla_agent；AITUTOR_* 事件经 DemoAiTutorEventConsumer
-            // 桥接回本 emitter（TURN_COMPLETED 落库并 [DONE]）。
-            streamPublisher.register(id, emitter);
-            boolean dispatched = commandDispatcher.dispatch(
-                    clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
-            if (!dispatched) {
-                // 派发即失败（RabbitMQ 不可用）：直接回退 mock。
-                log.warn("[AI-Tutor] python dispatch failed, fallback to mock: convId={}", id);
-                streamPublisher.markFallback(id);
-                executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
-            } else {
-                // 派发成功但 12s 内无任何 python 事件（如 cmd.aitutor.chat 无队列消费 NO_ROUTE）→ 回退 mock。
-                heartbeatScheduler.schedule(() -> {
-                    if (!closed.get() && !streamPublisher.hasActivity(id)) {
-                        log.warn("[AI-Tutor] no python activity within 12s, fallback to mock: convId={}", id);
-                        streamPublisher.markFallback(id);
-                        executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
-                    }
-                }, 12, TimeUnit.SECONDS);
-            }
+        // 唯一模式：派发 cmd.aitutor.chat 给 verla_agent；AITUTOR_* 事件经 DemoAiTutorEventConsumer
+        // 桥接回本 emitter（TURN_COMPLETED 落库并 [DONE]）。python 不可达/无响应时明确报错结束，不吐 mock 内容。
+        streamPublisher.register(id, emitter);
+        boolean dispatched = commandDispatcher.dispatch(
+                clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
+        if (!dispatched) {
+            log.warn("[AI-Tutor] python dispatch failed: convId={}", id);
+            streamPublisher.markFallback(id);
+            sendEvent(emitter, closed, "error", Map.of("content", "AI 服务暂不可用（python 派发失败），请稍后重试"));
+            complete(emitter, closed);
             return emitter;
         }
-
-        executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
+        heartbeatScheduler.schedule(() -> {
+            if (!closed.get() && !streamPublisher.hasActivity(id)) {
+                log.warn("[AI-Tutor] no python activity within 15s: convId={}", id);
+                streamPublisher.markFallback(id);
+                sendEvent(emitter, closed, "error", Map.of("content", "AI 主循环未响应（请确认 verla-agent 已就绪并消费 cmd.aitutor.chat）"));
+                complete(emitter, closed);
+            }
+        }, 15, TimeUnit.SECONDS);
         return emitter;
     }
-
-    /** M0 mock 回合：派活 writer → 生成论文骨架 → 落文档(ai 版本) → 自然语言承接。 */
-    private void runMockTurn(SseEmitter emitter, AtomicBoolean closed, AiTutorConversation conv, String message) {
-        try {
-            String title = conv.getTitle() == null ? "未命名论文" : conv.getTitle();
-            sendEvent(emitter, closed, "message", Map.of("type", "agent_start", "agent", "planner", "goal", "为「" + title + "」生成论文结构"));
-            Thread.sleep(120);
-            String skeleton = buildSkeleton(title);
-            sendEvent(emitter, closed, "artifact", Map.of("type", "begin", "versionNo", 1));
-            sendEvent(emitter, closed, "artifact", Map.of("type", "delta", "op", "replace_all", "content", skeleton));
-            service.saveAiUpdate(conv.getId(), skeleton);
-            sendEvent(emitter, closed, "artifact", Map.of("type", "commit", "versionNo", 1));
-            sendEvent(emitter, closed, "message", Map.of("type", "agent_end", "agent", "planner", "summary", "已生成大纲骨架"));
-
-            sendEvent(emitter, closed, "message", Map.of("type", "agent_start", "agent", "mentor"));
-            String narration = "好的，我已经为「" + title + "」生成论文大纲骨架，并同步到右侧文档 v1。"
-                    + "接下来你可以：让我展开某一节（例如「把引言写出来」）；"
-                    + "粘贴文献材料，我会先给出引用来源确认卡；"
-                    + "或直接修改右侧文档，让我基于你的改动继续。";
-            for (String sentence : narration.split("(?<=。)")) {
-                if (sentence.isBlank()) {
-                    continue;
-                }
-                sendEvent(emitter, closed, "message", Map.of("type", "chunk", "content", sentence));
-                Thread.sleep(80);
-            }
-            sendEvent(emitter, closed, "message", Map.of("type", "agent_end", "agent", "mentor"));
-            service.appendMessage(conv.getId(), "assistant", "text", narration.replace("\\n", "\n"));
-            sendEvent(emitter, closed, "auto_saved", Map.of("savedAt", java.time.LocalDateTime.now().toString()));
-        } catch (Exception ex) {
-            log.error("[AI-Tutor] mock turn failed: {}", ex.getMessage());
-            sendEvent(emitter, closed, "error", Map.of("content", ex.getMessage()));
-        } finally {
-            complete(emitter, closed);
-        }
-    }
-
 
     /** paperMeta 入参归一化：对象 -> JSON 字符串；已是字符串则原样；null 透传。 */
     private String normalizePaperMeta(com.fasterxml.jackson.databind.JsonNode node) {
@@ -262,17 +213,6 @@ public class DemoAiTutorController {
             throw new com.studyagent.common.exception.BusinessException(
                     com.studyagent.common.api.ApiCode.PARAM_ERROR, "paperMeta 参数非法: " + ex.getMessage());
         }
-    }
-
-    private String buildSkeleton(String title) {
-        return "# " + title + "\n\n"
-                + "> 摘要（待补充）\n\n"
-                + "## 1 引言\n\n本节交代研究背景、问题与目标。（待展开）\n\n"
-                + "## 2 相关工作\n\n梳理已有工作与本课题的关系。（待文献引用）\n\n"
-                + "## 3 方法\n\n描述核心方法/框架与设计思路。（待展开）\n\n"
-                + "## 4 讨论\n\n对结果与局限展开讨论。（待展开）\n\n"
-                + "## 5 结论与展望\n\n总结贡献并展望后续工作。（待展开）\n\n"
-                + "## 参考文献\n\n引用经确认后自动生成。";
     }
 
     private void sendEvent(SseEmitter emitter, AtomicBoolean closed, String name, Object data) {

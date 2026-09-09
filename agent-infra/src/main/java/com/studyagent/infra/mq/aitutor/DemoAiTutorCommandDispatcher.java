@@ -27,8 +27,8 @@ public class DemoAiTutorCommandDispatcher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
 
-    public void dispatch(String clerkUserId, AiTutorConversation conv, String message,
-                         AiTutorDocument document) {
+    public boolean dispatch(String clerkUserId, AiTutorConversation conv, String message,
+                           AiTutorDocument document) {
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("commandId", UUID.randomUUID().toString());
         envelope.put("type", "cmd.aitutor.chat");
@@ -43,8 +43,10 @@ public class DemoAiTutorCommandDispatcher {
             String body = objectMapper.writeValueAsString(envelope);
             rabbitTemplate.convertAndSend(RabbitMQConfig.COMMAND_EXCHANGE, AITUTOR_CHAT_ROUTING_KEY, body);
             log.info("[AI-Tutor] dispatched cmd.aitutor.chat convId={}", conv.getId());
+            return true;
         } catch (Exception ex) {
             log.error("[AI-Tutor] dispatch failed: {}", ex.getMessage());
+            return false;
         }
     }
 }

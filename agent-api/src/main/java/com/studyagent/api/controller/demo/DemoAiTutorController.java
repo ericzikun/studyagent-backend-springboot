@@ -57,7 +57,7 @@ public class DemoAiTutorController {
     private final DemoAiTutorCommandDispatcher commandDispatcher;
     private final DemoAiTutorStreamPublisher streamPublisher;
 
-    @Value("${demo.aitutor.chat.mode:mock}")
+    @Value("${demo.aitutor.chat.mode:python}")
     private String chatMode;
 
     private final ExecutorService executor = Executors.newFixedThreadPool(8, r -> {
@@ -184,10 +184,16 @@ public class DemoAiTutorController {
                 () -> sendComment(emitter, closed), HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
         if ("python".equalsIgnoreCase(chatMode)) {
-            // M1：派发 cmd.aitutor.chat 给 verla_agent；AITUTOR_* 事件经 DemoAiTutorEventConsumer
-            // 桥接回本 emitter（回合结束 TURN_COMPLETED 落库并 [DONE]；超时由 emitter 兜底）。
+            // 默认模式：派发 cmd.aitutor.chat 给 verla_agent；AITUTOR_* 事件经 DemoAiTutorEventConsumer
+            // 桥接回本 emitter（TURN_COMPLETED 落库并 [DONE]）。
             streamPublisher.register(id, emitter);
-            commandDispatcher.dispatch(clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
+            boolean dispatched = commandDispatcher.dispatch(
+                    clerkUserId, conv, message.trim(), service.getDocumentForConversation(id));
+            if (!dispatched) {
+                // python 链路不可达（RabbitMQ/verla-agent 未就绪）：回退 mock，避免请求挂起。
+                log.warn("[AI-Tutor] python dispatch failed, fallback to mock: convId={}", id);
+                executor.submit(() -> runMockTurn(emitter, closed, conv, message.trim()));
+            }
             return emitter;
         }
 

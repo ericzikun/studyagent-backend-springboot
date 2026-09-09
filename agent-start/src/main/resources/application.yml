@@ -42,32 +42,6 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: 3000ms
 
-  # Spring AI（Learning Canvas Demo 的 LLM / Agent 底座）
-  # 必填：OPENAI_API_KEY；本地开发放 studyagent-backend/.env，生产由部署环境注入。
-  # 默认网关：Aiberm（aiberm.com）。注意：本机直连 aiberm.com 会超时，需走 ClashX 代理
-  #   -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7890；服务器/容器若无法直连需配网关代理。
-  ai:
-    model:
-      # ChatModel 由 agent-infra 的 LearningCanvasAiConfig 懒加载手动创建
-      # （key 缺失时应用仍可启动，仅调用 Learning Canvas 时才报错，与 demo 的延迟初始化一致）。
-      chat: none
-      # 只启用 ChatModel；显式关闭不需要的 OpenAI 模型自动配置
-      # （语音/转写/嵌入/图像/审核在 key 缺失时会导致启动失败，且本 Demo 用不到）。
-      embedding: none
-      image: none
-      moderation: none
-      audio:
-        speech: none
-        transcription: none
-    openai:
-      api-key: ${OPENAI_API_KEY:}
-      base-url: ${OPENAI_BASE_URL:https://aiberm.com/v1}
-      chat:
-        completions-path: ${OPENAI_COMPLETIONS_PATH:/v1/chat/completions}
-        options:
-          model: ${OPENAI_MODEL:google/gemini-2.5-pro}
-          temperature: ${OPENAI_TEMPERATURE:0.4}
-
 # 公开邮箱留资：Redis 同时承担单 IP 短窗口限制和每日新增邮箱硬上限。
 # Redis 不可用时接口返回 503 且不写 MySQL，防止匿名入口失去写入上限。
 public-email-lead:
@@ -443,3 +417,10 @@ humanizer:
   whitelist-user-ids: ${HUMANIZER_WHITELIST_USER_IDS:}
   detect-concurrency: ${HUMANIZER_DETECT_CONCURRENCY:2}
   humanize-concurrency: ${HUMANIZER_HUMANIZE_CONCURRENCY:3}
+
+# AI Tutor（学术论文写作 Copilot）demo 配置：chat 默认走 verla_agent(MQ) python 主循环；
+# 不可达时后端自动回退 mock 流。
+demo:
+  aitutor:
+    chat:
+      mode: python

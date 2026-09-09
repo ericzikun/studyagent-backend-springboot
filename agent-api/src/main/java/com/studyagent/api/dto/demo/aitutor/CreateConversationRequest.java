@@ -1,9 +1,11 @@
 package com.studyagent.api.dto.demo.aitutor;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 
 @Data
 public class CreateConversationRequest {
     private String initialQuery;
-    private String paperMeta; // JSON 字符串（可选）
+    /** paperMeta：兼容对象或 JSON 字符串两种入参 */
+    private JsonNode paperMeta;
 }

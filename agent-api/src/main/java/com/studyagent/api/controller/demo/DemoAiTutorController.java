@@ -83,7 +83,7 @@ public class DemoAiTutorController {
             throw new com.studyagent.common.exception.BusinessException(
                     com.studyagent.common.api.ApiCode.PARAM_ERROR, "initialQuery is required");
         }
-        return Result.success(service.createConversation(clerkUserId, query.trim(), req.getPaperMeta()));
+        return Result.success(service.createConversation(clerkUserId, query.trim(), normalizePaperMeta(req == null ? null : req.getPaperMeta())));
     }
 
     @GetMapping("/conversations")
@@ -105,7 +105,7 @@ public class DemoAiTutorController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable Long id,
             @RequestBody PaperMetaRequest req) {
-        return Result.success(service.updatePaperMeta(clerkUserId, id, req.getPaperMeta()));
+        return Result.success(service.updatePaperMeta(clerkUserId, id, normalizePaperMeta(req == null ? null : req.getPaperMeta())));
     }
 
     // ============ 文档 ============
@@ -228,6 +228,23 @@ public class DemoAiTutorController {
             sendEvent(emitter, closed, "error", Map.of("content", ex.getMessage()));
         } finally {
             complete(emitter, closed);
+        }
+    }
+
+
+    /** paperMeta 入参归一化：对象 -> JSON 字符串；已是字符串则原样；null 透传。 */
+    private String normalizePaperMeta(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isTextual()) {
+            return node.asText();
+        }
+        try {
+            return objectMapper.writeValueAsString(node);
+        } catch (Exception ex) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR, "paperMeta 参数非法: " + ex.getMessage());
         }
     }
 

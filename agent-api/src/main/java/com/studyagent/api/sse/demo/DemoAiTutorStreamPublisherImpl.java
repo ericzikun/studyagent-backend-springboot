@@ -24,15 +24,17 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
     private final DemoAiTutorService service;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private record Slot(SseEmitter emitter, StringBuilder buffer) {
+    private record Slot(SseEmitter emitter, StringBuilder buffer, java.util.concurrent.atomic.AtomicInteger activity) {
     }
 
     private final Map<Long, Slot> slots = new ConcurrentHashMap<>();
+    private final java.util.Set<Long> fallback = ConcurrentHashMap.newKeySet();
 
     @Override
     public void register(Long conversationId, Object emitter) {
         SseEmitter em = (SseEmitter) emitter;
-        slots.put(conversationId, new Slot(em, new StringBuilder()));
+        fallback.remove(conversationId);
+        slots.put(conversationId, new Slot(em, new StringBuilder(), new java.util.concurrent.atomic.AtomicInteger()));
         em.onCompletion(() -> slots.remove(conversationId));
         em.onTimeout(() -> slots.remove(conversationId));
         em.onError(e -> slots.remove(conversationId));
@@ -41,9 +43,10 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
     @Override
     public void publish(Long conversationId, String eventName, String dataJson) {
         Slot slot = slots.get(conversationId);
-        if (slot == null) {
+        if (slot == null || fallback.contains(conversationId)) {
             return;
         }
+        slot.activity().incrementAndGet();
         try {
             slot.emitter().send(SseEmitter.event().name(eventName).data(dataJson));
         } catch (IOException | IllegalStateException ex) {
@@ -54,9 +57,10 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
     @Override
     public void onChunk(Long conversationId, String content) {
         Slot slot = slots.get(conversationId);
-        if (slot == null) {
+        if (slot == null || fallback.contains(conversationId)) {
             return;
         }
+        slot.activity().incrementAndGet();
         slot.buffer().append(content);
         try {
             String json = objectMapper.writeValueAsString(Map.of("type", "chunk", "content", content));
@@ -69,9 +73,10 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
     @Override
     public void onArtifactCommit(Long conversationId, String contentMd) {
         Slot slot = slots.get(conversationId);
-        if (slot == null) {
+        if (slot == null || fallback.contains(conversationId)) {
             return;
         }
+        slot.activity().incrementAndGet();
         try {
             // Java 侧持久化 ai 版本并取真实版本号
             var doc = service.saveAiUpdate(conversationId, contentMd);
@@ -90,6 +95,7 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
         if (slot == null) {
             return;
         }
+        fallback.remove(conversationId);
         try {
             String buf = slot.buffer().toString();
             if (!buf.isBlank()) {
@@ -105,5 +111,17 @@ public class DemoAiTutorStreamPublisherImpl implements DemoAiTutorStreamPublishe
             } catch (Exception ignored) {
             }
         }
+    }
+
+    @Override
+    public boolean hasActivity(Long conversationId) {
+        Slot slot = slots.get(conversationId);
+        return slot != null && slot.activity().get() > 0;
+    }
+
+    @Override
+    public void markFallback(Long conversationId) {
+        fallback.add(conversationId);
+        slots.remove(conversationId);
     }
 }

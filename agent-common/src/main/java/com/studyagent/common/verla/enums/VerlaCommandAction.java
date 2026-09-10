@@ -62,7 +62,13 @@ public enum VerlaCommandAction {
     CMD_HUMANIZER_RUN("cmd.humanizer.run"),
 
     /** V2: slides source artifact -> editor json seed */
-    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json");
+    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json"),
+
+    /** Demo: AI Tutor copilot 一轮对话（主 Agent 动态派子 Agent + Markdown 产物） */
+    CMD_AITUTOR_CHAT("cmd.aitutor.chat"),
+
+    /** Demo: 取消进行中的 AI Tutor 对话轮次 */
+    CMD_AITUTOR_CHAT_CONTROL_CANCEL("cmd.aitutor.chat.control.cancel");
 
     private final String code;
 

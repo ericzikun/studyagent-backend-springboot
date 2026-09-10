@@ -993,6 +993,17 @@ ensure_mock_db_schema() {
     apply_sql_file "${SCRIPT_DIR}/sql/048_verla_tool_calls_add_node_id.sql"
   fi
 
+  if ! table_exists "demo_ai_tutor_conversation"; then
+    echo "Applying AI Tutor demo tables (sql/082)"
+    apply_sql_file "${SCRIPT_DIR}/sql/082_demo_ai_tutor.sql"
+  fi
+
+  if table_exists "demo_ai_tutor_conversation" \
+    && ! column_exists "demo_ai_tutor_conversation" "verla_conversation_id"; then
+    echo "Applying AI Tutor demo verla_conversation_id patch (sql/083)"
+    apply_sql_file "${SCRIPT_DIR}/sql/083_demo_ai_tutor_verla_link.sql"
+  fi
+
   if ! table_exists "mq_outbox"; then
     echo "WARN: mq_outbox table does not exist; skip Spring Boot mock schema patch." >&2
     return

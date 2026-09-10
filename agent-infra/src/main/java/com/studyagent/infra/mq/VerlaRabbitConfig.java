@@ -33,6 +33,7 @@ import java.util.List;
  *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
  *   verla.cmd.materials   ← cmd.materials.generate   (V2)
  *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
+ *   verla.cmd.aitutor     ← cmd.aitutor.chat / cmd.aitutor.chat.control.cancel  (Demo)
  *
  * 事件侧（新增 studyagent.events Topic）：
  *   verla.event.s00 ~ s03 ← verla.event.s{shard}.#
@@ -65,6 +66,8 @@ public class VerlaRabbitConfig {
     public static final String CMD_MATERIALS_QUEUE   = "verla.cmd.materials";
     /** V2: finalize 上传后触发附件解析 */
     public static final String CMD_ATTACHMENT_QUEUE = "verla.cmd.attachment";
+    /** Demo: AI Tutor copilot 对话（cmd.aitutor.chat / cmd.aitutor.chat.control.cancel） */
+    public static final String CMD_AITUTOR_QUEUE    = "verla.cmd.aitutor";
 
     // -------------------- DLX / 兜底 --------------------
 
@@ -259,6 +262,25 @@ public class VerlaRabbitConfig {
     public Binding verlaCmdAgentHumanizerBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_HUMANIZER_RUN.getCode());
+    }
+
+    // -------------------- Demo: AI Tutor Command Queue --------------------
+
+    @Bean
+    public Queue verlaCmdAiTutorQueue() {
+        return buildVerlaConsumerQueue(CMD_AITUTOR_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdAiTutorBinding(Queue verlaCmdAiTutorQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAiTutorQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_AITUTOR_CHAT.getCode());
+    }
+
+    @Bean
+    public Binding verlaCmdAiTutorCancelBinding(Queue verlaCmdAiTutorQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAiTutorQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_AITUTOR_CHAT_CONTROL_CANCEL.getCode());
     }
 
     // ===================== Event Shard Queues =====================

@@ -16,6 +16,8 @@ public class DemoAiTutorConversationEntity {
     private Long id;
     @TableField("clerk_user_id")
     private String clerkUserId;
+    @TableField("verla_conversation_id")
+    private Long verlaConversationId;
     private String title;
     @TableField("initial_query")
     private String initialQuery;

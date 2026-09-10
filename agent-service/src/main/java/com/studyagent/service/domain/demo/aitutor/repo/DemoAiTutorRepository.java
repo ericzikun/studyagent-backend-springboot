@@ -18,6 +18,9 @@ public interface DemoAiTutorRepository {
 
     Optional<AiTutorConversation> getOwnedConversation(String clerkUserId, Long conversationId);
 
+    /** 由主线 {@code verla_conversations.id} 反查 demo 会话（uk_aitutor_verla_conv 唯一键） */
+    Optional<AiTutorConversation> findByVerlaConversationId(Long verlaConversationId);
+
     void touchConversationUpdatedAt(Long conversationId);
 
     AiTutorMessage appendMessage(AiTutorMessage m);

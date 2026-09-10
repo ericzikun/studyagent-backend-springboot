@@ -86,6 +86,8 @@ export STRIPE_WEBHOOK_SECRET=whsec_xxx
 
 启动脚本会补齐旧 mock 数据库缺失的 Verla workforce 进度列与 `verla_editor_previews`，避免 conversation 列表和 compose-progress 链路因旧 schema 报错。
 
+启动脚本还会应用 AI Tutor demo 的 `demo_ai_tutor_*` 五张表（`sql/082_demo_ai_tutor.sql`），并在表已存在但缺列时补 `demo_ai_tutor_conversation.verla_conversation_id`（`sql/083_demo_ai_tutor_verla_link.sql`，AI Tutor 并入 Verla 主线事件通道后的 SSE 会话键）。082 此前不在自动补齐清单里，需要手动导入，漏跑会让 AI Tutor 接口一调就报表不存在。
+
 订阅套餐需要在 Stripe Product 中维护 description。后端创建 Hosted Checkout 时会读取 `subscription_plans.stripe_product_id` 指向的 Product description，并展示在支付确认区域；因此普通订阅、Pro Trial 和手动升级都使用同一份套餐说明。description 为空或 Stripe Product 查询暂时失败时，购买流程不会被阻断，只是不显示补充说明。
 
 本地 MockPy 的 Assignment init 默认流会先发送一段基于真实 requirement-analysis case 分割的 `channel=thinking` stream chunk，再发送 `channel=content` 正文 chunk，用于验证 V2 前端左栏 thinking 折叠消息和正文流式消息的切换。

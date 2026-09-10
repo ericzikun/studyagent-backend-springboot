@@ -1,7 +1,11 @@
 package com.studyagent.service.application.demo;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.verla.enums.OutputLanguage;
+import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocVersion;
@@ -20,14 +24,25 @@ import java.util.Map;
 
 /**
  * AI Tutor（学术论文写作 Copilot）demo 业务服务。
- * 用户态编排：会话/消息/文档/版本/引用证据；LLM 与主循环在 verla_agent（MQ），M0 由 Controller 提供 mock 流。
+ * <p>用户态编排：会话 / 消息 / 文档 / 版本 / 引用证据。LLM 与主循环在 verla_agent（MQ），
+ * 事件回流走主线 Verla 通道（verla_event_inbox → SSE），demo 不再自建 SSE 桥接。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DemoAiTutorService {
 
+    /**
+     * 主线 verla_conversations.primary_intent 取值。
+     * <p>必须是非空且不属于任何已知分栏的值：VerlaConversationMapper 把
+     * {@code primary_intent IS NULL OR = ''} 归入 {@code segment="assignment"}，
+     * 传 null 会让 demo 会话出现在 Dashboard 的作业分栏里。
+     */
+    private static final String PRIMARY_INTENT_AI_TUTOR = "AI_TUTOR";
+
     private final DemoAiTutorRepository repo;
+    private final VerlaConversationService verlaConversationService;
+    private final ObjectMapper objectMapper;
 
     // ============ 会话 ============
 
@@ -36,14 +51,51 @@ public class DemoAiTutorService {
         AiTutorConversation c = new AiTutorConversation();
         c.setClerkUserId(clerkUserId);
         c.setInitialQuery(initialQuery);
-        c.setTitle(initialQuery.length() > 40 ? initialQuery.substring(0, 40) : initialQuery);
+        String title = initialQuery.length() > 40 ? initialQuery.substring(0, 40) : initialQuery;
+        c.setTitle(title);
         c.setPaperMeta(paperMetaJson);
         c.setStatus("active");
         c.setBaseVersion(0L);
+        c.setVerlaConversationId(linkVerlaConversation(clerkUserId, title));
         LocalDateTime now = LocalDateTime.now();
         c.setCreatedAt(now);
         c.setUpdatedAt(now);
         return repo.saveConversation(c);
+    }
+
+    /**
+     * 兼容 sql/083 之前创建的 demo 会话：缺主线会话时补建并回填。
+     */
+    @Transactional
+    public AiTutorConversation ensureVerlaLink(String clerkUserId, Long conversationId) {
+        AiTutorConversation c = getOwned(clerkUserId, conversationId);
+        if (c.getVerlaConversationId() != null) {
+            return c;
+        }
+        c.setVerlaConversationId(linkVerlaConversation(clerkUserId, c.getTitle()));
+        return repo.saveConversation(c);
+    }
+
+    /**
+     * 建主线 verla_conversations 行并返回其 id。
+     * <p>输出语言偏好写进 workspace_json（key 与 MQ payload 字段同名），
+     * 派发命令时 {@code resolveOutputLanguage} 直接可用；demo 面向中文学术写作，缺省 chinese。
+     */
+    private Long linkVerlaConversation(String clerkUserId, String title) {
+        Map<String, Object> workspace = Map.of(
+                VerlaConversationService.WORKSPACE_KEY_OUTPUT_LANGUAGE,
+                OutputLanguage.CHINESE.getValue());
+        String workspaceJson;
+        try {
+            workspaceJson = objectMapper.writeValueAsString(workspace);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize AI Tutor workspace json", e);
+        }
+        Long verlaConversationId = verlaConversationService
+                .create(clerkUserId, title, workspaceJson, PRIMARY_INTENT_AI_TUTOR)
+                .getId();
+        log.info("[AI-Tutor] 绑定主线会话: clerkUserId={}, verlaConversationId={}", clerkUserId, verlaConversationId);
+        return verlaConversationId;
     }
 
     public List<AiTutorConversation> listConversations(String clerkUserId, int limit) {

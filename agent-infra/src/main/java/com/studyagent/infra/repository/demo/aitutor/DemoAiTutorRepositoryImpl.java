@@ -67,6 +67,16 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     }
 
     @Override
+    public Optional<AiTutorConversation> findByVerlaConversationId(Long verlaConversationId) {
+        if (verlaConversationId == null) {
+            return Optional.empty();
+        }
+        DemoAiTutorConversationEntity e = convMapper.selectOne(new LambdaQueryWrapper<DemoAiTutorConversationEntity>()
+                .eq(DemoAiTutorConversationEntity::getVerlaConversationId, verlaConversationId));
+        return Optional.ofNullable(e).map(this::toDomain);
+    }
+
+    @Override
     public void touchConversationUpdatedAt(Long conversationId) {
         DemoAiTutorConversationEntity e = convMapper.selectById(conversationId);
         if (e != null) {
@@ -198,6 +208,7 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     private DemoAiTutorConversationEntity toEntity(AiTutorConversation c) {
         DemoAiTutorConversationEntity e = new DemoAiTutorConversationEntity();
         e.setId(c.getId()); e.setClerkUserId(c.getClerkUserId()); e.setTitle(c.getTitle());
+        e.setVerlaConversationId(c.getVerlaConversationId());
         e.setInitialQuery(c.getInitialQuery()); e.setPaperMeta(c.getPaperMeta()); e.setStatus(c.getStatus());
         e.setBaseVersion(c.getBaseVersion()); e.setCreatedAt(c.getCreatedAt()); e.setUpdatedAt(c.getUpdatedAt());
         return e;
@@ -205,6 +216,7 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     private AiTutorConversation toDomain(DemoAiTutorConversationEntity e) {
         AiTutorConversation c = new AiTutorConversation();
         c.setId(e.getId()); c.setClerkUserId(e.getClerkUserId()); c.setTitle(e.getTitle());
+        c.setVerlaConversationId(e.getVerlaConversationId());
         c.setInitialQuery(e.getInitialQuery()); c.setPaperMeta(e.getPaperMeta()); c.setStatus(e.getStatus());
         c.setBaseVersion(e.getBaseVersion()); c.setCreatedAt(e.getCreatedAt()); c.setUpdatedAt(e.getUpdatedAt());
         return c;

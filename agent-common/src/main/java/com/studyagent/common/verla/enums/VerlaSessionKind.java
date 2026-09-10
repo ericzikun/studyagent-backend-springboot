@@ -23,5 +23,8 @@ public enum VerlaSessionKind {
     MATERIALS,
 
     /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
-    TASK_NAME
+    TASK_NAME,
+
+    /** Demo: AI Tutor copilot 对话（必须与 Python VerlaSessionKind.AITUTOR 同名） */
+    AITUTOR
 }

@@ -138,7 +138,34 @@ public enum VerlaAgentEventType {
     AI_DETECTION_CANCELLED(true),
     AI_HUMANIZER_COMPLETED(true),
     AI_HUMANIZER_FAILED(true),
-    AI_HUMANIZER_CANCELLED(true);
+    AI_HUMANIZER_CANCELLED(true),
+
+    /**
+     * Demo: AI Tutor copilot 域（Py app/services/ai_tutor）。
+     * 一轮对话 = 一个 AITUTOR session；主 Agent 通过 function-call 动态派子 Agent。
+     */
+    /** runner 入口：本轮开始，前端据此锁定右侧编辑器 */
+    AITUTOR_STARTED(false),
+    /** 主 Agent 决定派某个子 Agent（activity 条） */
+    AITUTOR_AGENT_SELECTED(false),
+    /** 子 Agent 开始执行 */
+    AITUTOR_AGENT_START(false),
+    /** 对话侧流式增量（左侧气泡） */
+    AITUTOR_CHAT_STREAM_CHUNK(false),
+    /** 产物改写开始，payload 带 baseVersion / versionNo / op / heading */
+    AITUTOR_ARTIFACT_BEGIN(false),
+    /** 产物流式增量，payload.mode="snapshot" 时 contentMd 为权威全文 */
+    AITUTOR_ARTIFACT_DELTA(false),
+    /** 产物改写完成，Java handler 据此调 DemoAiTutorService.saveAiUpdate 落库 */
+    AITUTOR_ARTIFACT_COMMIT(false),
+    /** 子 Agent 执行结束 */
+    AITUTOR_AGENT_END(false),
+    /** 本轮完成（终态），Java handler 据此 appendMessage 落助手消息 */
+    AITUTOR_TURN_COMPLETED(true),
+    /** 本轮失败（终态），由 Py runtime 单点收口，runner/service 不发射 */
+    AITUTOR_FAILED(true),
+    /** 本轮取消（终态），由 Py runtime 单点收口，runner/service 不发射 */
+    AITUTOR_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -182,7 +209,10 @@ public enum VerlaAgentEventType {
             AI_DETECTION_CANCELLED,
             AI_HUMANIZER_COMPLETED,
             AI_HUMANIZER_FAILED,
-            AI_HUMANIZER_CANCELLED);
+            AI_HUMANIZER_CANCELLED,
+            AITUTOR_TURN_COMPLETED,
+            AITUTOR_FAILED,
+            AITUTOR_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

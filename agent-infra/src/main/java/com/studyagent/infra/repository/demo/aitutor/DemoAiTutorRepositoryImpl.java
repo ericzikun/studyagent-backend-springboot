@@ -141,7 +141,7 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     @Override
     @Transactional
     public AiTutorDocument saveDocumentWithVersion(AiTutorDocument doc, AiTutorDocVersion version) {
-        DemoAiTutorDocumentEntity de = doc.getId() == null ? toEntity(doc) : docMapper.selectById(doc.getId());
+        DemoAiTutorDocumentEntity de = doc.getId() == null ? null : docMapper.selectById(doc.getId());
         if (de == null) {
             de = toEntity(doc);
             de.setCreatedAt(java.time.LocalDateTime.now());

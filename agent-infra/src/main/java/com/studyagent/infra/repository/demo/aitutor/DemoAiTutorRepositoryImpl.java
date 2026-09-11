@@ -77,6 +77,18 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     }
 
     @Override
+    public Optional<AiTutorConversation> findLatestUnusedConversation(String clerkUserId) {
+        DemoAiTutorConversationEntity e = convMapper.selectOne(new LambdaQueryWrapper<DemoAiTutorConversationEntity>()
+                .eq(DemoAiTutorConversationEntity::getClerkUserId, clerkUserId)
+                .eq(DemoAiTutorConversationEntity::getStatus, "active")
+                .notExists("SELECT 1 FROM demo_ai_tutor_message m WHERE m.conversation_id = demo_ai_tutor_conversation.id")
+                .notExists("SELECT 1 FROM demo_ai_tutor_document d WHERE d.conversation_id = demo_ai_tutor_conversation.id")
+                .orderByDesc(DemoAiTutorConversationEntity::getId)
+                .last("LIMIT 1"));
+        return Optional.ofNullable(e).map(this::toDomain);
+    }
+
+    @Override
     public void touchConversationUpdatedAt(Long conversationId) {
         DemoAiTutorConversationEntity e = convMapper.selectById(conversationId);
         if (e != null) {

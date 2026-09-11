@@ -21,6 +21,9 @@ public interface DemoAiTutorRepository {
     /** 由主线 {@code verla_conversations.id} 反查 demo 会话（uk_aitutor_verla_conv 唯一键） */
     Optional<AiTutorConversation> findByVerlaConversationId(Long verlaConversationId);
 
+    /** 取用户最近一个既无消息也无文档的会话，用于「进入页面即分配会话」的草稿复用 */
+    Optional<AiTutorConversation> findLatestUnusedConversation(String clerkUserId);
+
     void touchConversationUpdatedAt(Long conversationId);
 
     AiTutorMessage appendMessage(AiTutorMessage m);

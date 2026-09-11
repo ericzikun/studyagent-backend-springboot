@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.OutputLanguage;
+import com.studyagent.common.verla.id.VerlaPublicId;
+import com.studyagent.common.verla.id.VerlaPublicIdCodec;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
@@ -40,6 +43,11 @@ public class DemoAiTutorService {
      */
     private static final String PRIMARY_INTENT_AI_TUTOR = "AI_TUTOR";
 
+    /** 进入页面即分配会话时的占位标题；首条消息到达后会被真实主题替换。 */
+    private static final String DRAFT_TITLE = "新对话";
+    private static final int TITLE_MAX_LENGTH = 40;
+    private static final int INITIAL_QUERY_MAX_LENGTH = 1024;
+
     private final DemoAiTutorRepository repo;
     private final VerlaConversationService verlaConversationService;
     private final ObjectMapper objectMapper;
@@ -48,10 +56,83 @@ public class DemoAiTutorService {
 
     @Transactional
     public AiTutorConversation createConversation(String clerkUserId, String initialQuery, String paperMetaJson) {
+        return createConversation(clerkUserId, initialQuery, truncate(initialQuery, TITLE_MAX_LENGTH), paperMetaJson);
+    }
+
+    /**
+     * 进入 AI Tutor 页面时的会话分配：复用最近的未使用草稿，没有才新建。
+     * <p>「未使用」= 既无消息也无文档：用户只要发过一轮或产生过产物，就不再是草稿。
+     */
+    @Transactional
+    public AiTutorConversation getOrCreateDraftConversation(String clerkUserId) {
+        AiTutorConversation draft = repo.findLatestUnusedConversation(clerkUserId).orElse(null);
+        if (draft == null) {
+            return createConversation(clerkUserId, "", DRAFT_TITLE, null);
+        }
+        if (draft.getVerlaConversationId() == null) {
+            String title = draft.getTitle() == null || draft.getTitle().isBlank() ? DRAFT_TITLE : draft.getTitle();
+            draft.setVerlaConversationId(linkVerlaConversation(clerkUserId, title));
+            draft = repo.saveConversation(draft);
+        }
+        return draft;
+    }
+
+    /**
+     * 解析会话标识：纯数字按 demo 主键（迁移期旧链接），{@code vc_*} 按主线 public id 反查 demo 会话。
+     * <p>解析结果仍走 {@link #getOwned}，public id 不能绕过归属校验。
+     */
+    public Long resolveConversationId(String clerkUserId, String identifier) {
+        String raw = identifier == null ? "" : identifier.trim();
+        if (raw.isEmpty()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "会话标识不能为空");
+        }
+        if (raw.chars().allMatch(Character::isDigit)) {
+            return getOwned(clerkUserId, Long.valueOf(raw)).getId();
+        }
+        Long verlaConversationId = VerlaPublicIdCodec.tryDecode(raw)
+                .filter(publicId -> publicId.type() == VerlaPublicIdType.CONVERSATION)
+                .map(VerlaPublicId::internalId)
+                .orElseThrow(() -> new BusinessException(ApiCode.PARAM_ERROR, "会话标识非法: " + raw));
+        AiTutorConversation linked = repo.findByVerlaConversationId(verlaConversationId)
+                .orElseThrow(() -> new BusinessException(ApiCode.NO_PERMISSION, "会话不存在或无权访问"));
+        return getOwned(clerkUserId, linked.getId()).getId();
+    }
+
+    /**
+     * 首条用户消息：确定标题与初始目标，并把本轮论文设定写入会话。
+     * <p>草稿标题是占位值，派发 payload 的 paperTitle 与主线历史都读标题，必须在派发前落库并同步主线。
+     */
+    @Transactional
+    public AiTutorConversation applyFirstMessage(String clerkUserId, AiTutorConversation c,
+                                                 String message, String paperMetaJson) {
+        if (c.getTitle() == null || c.getTitle().isBlank() || DRAFT_TITLE.equals(c.getTitle())) {
+            String title = truncate(message, TITLE_MAX_LENGTH);
+            c.setTitle(title);
+            if (c.getVerlaConversationId() != null) {
+                try {
+                    verlaConversationService.rename(clerkUserId, c.getVerlaConversationId(), title);
+                } catch (BusinessException ex) {
+                    // 主线标题只影响历史与排障，不同步失败不应拦住本轮消息
+                    log.warn("[AI-Tutor] 同步主线会话标题失败: verlaConversationId={}, cause={}",
+                            c.getVerlaConversationId(), ex.getMessage());
+                }
+            }
+        }
+        if (c.getInitialQuery() == null || c.getInitialQuery().isBlank()) {
+            c.setInitialQuery(truncate(message, INITIAL_QUERY_MAX_LENGTH));
+        }
+        if (paperMetaJson != null) {
+            c.setPaperMeta(paperMetaJson);
+        }
+        c.setUpdatedAt(LocalDateTime.now());
+        return repo.saveConversation(c);
+    }
+
+    private AiTutorConversation createConversation(String clerkUserId, String initialQuery,
+                                                   String title, String paperMetaJson) {
         AiTutorConversation c = new AiTutorConversation();
         c.setClerkUserId(clerkUserId);
         c.setInitialQuery(initialQuery);
-        String title = initialQuery.length() > 40 ? initialQuery.substring(0, 40) : initialQuery;
         c.setTitle(title);
         c.setPaperMeta(paperMetaJson);
         c.setStatus("active");
@@ -61,6 +142,13 @@ public class DemoAiTutorService {
         c.setCreatedAt(now);
         c.setUpdatedAt(now);
         return repo.saveConversation(c);
+    }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 
     /**

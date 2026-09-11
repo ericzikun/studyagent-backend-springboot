@@ -64,6 +64,15 @@ public class DemoAiTutorController {
         return Result.success(AiTutorConversationVO.from(created));
     }
 
+    /**
+     * 进入 AI Tutor 页面时的会话分配：复用最近的未使用草稿，没有才新建。
+     * <p>前端拿到 {@code verlaConversationId(vc_xxx)} 后替换 URL，刷新/分享都以该 public id 为准。
+     */
+    @PostMapping("/conversations/draft")
+    public Result<AiTutorConversationVO> draft(@RequestAttribute("clerkUserId") String clerkUserId) {
+        return Result.success(AiTutorConversationVO.from(service.getOrCreateDraftConversation(clerkUserId)));
+    }
+
     @GetMapping("/conversations")
     public Result<List<AiTutorConversationVO>> list(
             @RequestAttribute("clerkUserId") String clerkUserId,
@@ -73,11 +82,15 @@ public class DemoAiTutorController {
                 .toList());
     }
 
+    /**
+     * 会话快照：{@code id} 同时接受 URL 里的主线 public id（{@code vc_xxx}）与迁移期 demo 主键数字。
+     * <p>这是唯一按 public id 解析的入口，响应里带 demo 主键，其余端点继续按 demo 主键工作。
+     */
     @GetMapping("/conversations/{id}")
     public Result<Map<String, Object>> snapshot(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @PathVariable Long id) {
-        Map<String, Object> snapshot = service.snapshot(clerkUserId, id);
+            @PathVariable String id) {
+        Map<String, Object> snapshot = service.snapshot(clerkUserId, service.resolveConversationId(clerkUserId, id));
         // 会话项换成 VO：刷新页面后前端要靠 verlaConversationId(vc_xxx) 重开 SSE 通道。
         if (snapshot.get("conversation") instanceof AiTutorConversation conv) {
             snapshot.put("conversation", AiTutorConversationVO.from(conv));
@@ -159,6 +172,11 @@ public class DemoAiTutorController {
                     com.studyagent.common.api.ApiCode.PARAM_ERROR, "message is required");
         }
         AiTutorConversation conv = service.ensureVerlaLink(clerkUserId, id);
+        if (service.listMessages(id).isEmpty()) {
+            // 草稿会话的标题/初始目标/论文设定都随首条消息确定，且必须在派发前落库
+            conv = service.applyFirstMessage(
+                    clerkUserId, conv, message.trim(), normalizePaperMeta(req.getPaperMeta()));
+        }
         service.appendMessage(id, "user", "text", message.trim());
         return Result.success(AiTutorChatResponseVO.from(
                 commandDispatcher.dispatch(conv, service.getDocumentForConversation(id), message.trim())));

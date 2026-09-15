@@ -1205,6 +1205,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return;
         }
         Subscription subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+        // A paid trial still needs its Schedule: it converts the 7-day intro into the formal
+        // plan when the upgrade checkout is abandoned. Releasing it here would leave the
+        // subscription renewing at the weekly trial price instead of ever converting.
+        if (hasConversionSchedule(current)) {
+            resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
+            return;
+        }
         String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
         boolean hasPendingState = scheduleId != null
                 || hasText(current.getPendingPlanCode())
@@ -1225,6 +1232,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SubscriptionPlanEntity currentPlan,
             SubscriptionPlanEntity targetPlan,
             UserSubscriptionEntity current) {
+        // The paid-trial fee is never credited, and a 7-day intro invoice must not become
+        // the quote's credit source: year-interval trials would otherwise have their trial
+        // invoice pulled into the stale-revalidation snapshot.
+        if (current != null && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())) {
+            return new UpgradeCreditBasis(0, null);
+        }
         if (!"year".equals(currentPlan.getBillingInterval())
                 || !"year".equals(targetPlan.getBillingInterval())) {
             return new UpgradeCreditBasis(0, null);
@@ -1287,18 +1300,26 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(RechargeOrderEntity::getStatus, "checkout_expired")
                 .set(RechargeOrderEntity::getFailureReason, "superseded_by_new_upgrade")
                 .set(RechargeOrderEntity::getUpdatedAt, now));
-        if (!hasText(current.getPendingPlanCode()) && !hasText(current.getPendingUpgradeOrderNo())) {
+        // A paid trial's pending plan is its Schedule conversion target, not an upgrade
+        // target, so it must survive a superseded upgrade checkout. Only the checkout
+        // bookkeeping is reset.
+        boolean keepConversionTarget = hasConversionSchedule(current);
+        if (!keepConversionTarget
+                && !hasText(current.getPendingPlanCode())
+                && !hasText(current.getPendingUpgradeOrderNo())) {
             return;
         }
         userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
                 .eq(UserSubscriptionEntity::getId, current.getId())
-                .set(UserSubscriptionEntity::getPendingPlanCode, null)
-                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(!keepConversionTarget, UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(!keepConversionTarget, UserSubscriptionEntity::getPendingEffectiveAt, null)
                 .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
                 .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
                 .set(UserSubscriptionEntity::getUpdatedAt, now));
-        current.setPendingPlanCode(null);
-        current.setPendingEffectiveAt(null);
+        if (!keepConversionTarget) {
+            current.setPendingPlanCode(null);
+            current.setPendingEffectiveAt(null);
+        }
         current.setPendingUpgradeOrderNo(null);
         current.setPendingUpgradeExpiresAt(null);
         current.setUpdatedAt(now);
@@ -1630,21 +1651,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     "SUBSCRIPTION_STATE_INVALID",
                     "Cannot switch an active subscription to a paid trial");
         }
+        // Only a Basic trial targeting Basic is auto-renewal-only. A Pro trial targeting
+        // Pro has the manual upgrade path, and higher tiers are upgrades for both.
         if (current != null
-                && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
+                && IntroTrialPlans.isBasicIntroTrialPlanCode(current.getPlanCode())
                 && !isIntroTrialPlan(targetPlan)
-                && !IntroTrialPlans.isOneTimeProTrialPlanCode(current.getPlanCode())) {
-            String trialPlanCode = current.getPlanCode();
-            boolean autoConvertsToTargetTier =
-                    (IntroTrialPlans.isProSubscriptionTrialPlanCode(trialPlanCode)
-                            && IntroTrialPlans.isProPaidTier(targetPlan.getTier()))
-                    || (IntroTrialPlans.isBasicIntroTrialPlanCode(trialPlanCode)
-                            && IntroTrialPlans.isBasicPaidTier(targetPlan.getTier()));
-            if (autoConvertsToTargetTier) {
-                throw new BillingDomainException(
-                        "SUBSCRIPTION_STATE_INVALID",
-                        "Paid plan renews automatically after the paid trial");
-            }
+                && IntroTrialPlans.isBasicPaidTier(targetPlan.getTier())) {
+            throw new BillingDomainException(
+                    "SUBSCRIPTION_STATE_INVALID",
+                    "Paid plan renews automatically after the paid trial");
         }
     }
 
@@ -1832,6 +1847,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private boolean isOneTimeProTrialPlan(SubscriptionPlanEntity plan) {
         return plan != null
                 && IntroTrialPlans.isOneTimeProTrialPlan(plan.getPlanCode(), plan.getOfferKind());
+    }
+
+    /**
+     * Subscription-style paid trial: its Stripe Schedule converts the 7-day intro into the
+     * formal plan. The historical one-time Pro Trial has no Schedule.
+     */
+    private boolean hasConversionSchedule(UserSubscriptionEntity current) {
+        return current != null
+                && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
+                && !IntroTrialPlans.isOneTimeProTrialPlanCode(current.getPlanCode());
     }
 
     private boolean isExpiredOneTimeProTrial(UserSubscriptionEntity entity) {
@@ -3045,20 +3070,28 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (targetTrial) {
             return PlanChangeAction.UNSUPPORTED;
         }
-        // Subscription Trial → matching formal tier is automatic via Schedule.
-        // Trial → higher tier is immediate upgrade. One-time Pro Trial has no Schedule.
+        // Basic trial converts to Basic through its Schedule, so only a higher tier is
+        // bought outright. Pro subscription trial also auto-converts, but its target tier
+        // equals its own tier, so an in-trial switch to formal Pro must be an immediate
+        // upgrade. One-time Pro Trial has no Schedule at all.
         if (currentTrial) {
-            String baselineTier = (currentOneTimeProTrial || currentProSubscriptionTrial)
-                    ? "pro"
-                    : "basic";
-            if (!currentOneTimeProTrial
-                    && baselineTier.equalsIgnoreCase(targetTier)) {
-                return PlanChangeAction.UNSUPPORTED;
+            if (currentOneTimeProTrial) {
+                return "pro".equalsIgnoreCase(targetTier)
+                        ? PlanChangeAction.IMMEDIATE_UPGRADE
+                        : PlanChangeAction.UNSUPPORTED;
             }
-            if (currentOneTimeProTrial && "pro".equalsIgnoreCase(targetTier)) {
-                return PlanChangeAction.IMMEDIATE_UPGRADE;
+            if (currentProSubscriptionTrial) {
+                if (!IntroTrialPlans.isProPaidTier(targetTier)) {
+                    return PlanChangeAction.UNSUPPORTED;
+                }
+                // A year→month switch is quoted from the annual-diff branch at the monthly
+                // price while the strategy switches it as annual_full, which would grant a
+                // full year of Pro for one month's payment.
+                return isAnnualToMonthlySwitch(currentInterval, targetInterval)
+                        ? PlanChangeAction.UNSUPPORTED
+                        : PlanChangeAction.IMMEDIATE_UPGRADE;
             }
-            return tierRankStatic(targetTier) > tierRankStatic(baselineTier)
+            return tierRankStatic(targetTier) > tierRankStatic("basic")
                     ? PlanChangeAction.IMMEDIATE_UPGRADE
                     : PlanChangeAction.UNSUPPORTED;
         }

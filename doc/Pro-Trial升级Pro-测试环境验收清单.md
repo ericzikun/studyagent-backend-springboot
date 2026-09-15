@@ -50,6 +50,16 @@ ORDER BY updated_at DESC;
 
 若发现 `stripe_schedule_id` / `pending_plan_code` 为空：该订阅不会在试用结束时自动转正，且会按**周付 $2.99** 持续续费，需要在 Stripe 侧人工补 Schedule（当前没有对应的 ops 接口，参考 `BillingDomainServiceImpl.ensureIntroTrialConversionSchedule` 的两阶段配置：Phase 1 = 周付试用价到 `current_period_end`，Phase 2 = 对应正式 Pro 价）。
 
+**查询返回空结果**：表示测试环境还没有任何 Pro Trial 订阅，既没有脏数据要修，也说明**Pro Trial 在该环境还没被购买过**——需要按 4.1 / 4.2 全新购买一次（这次购买本身就是"试用下单 + Schedule 建立"的首次验证）。先用下面两条确认是"确实没买过"而不是"查错了库"：
+
+```sql
+SELECT COUNT(*) AS total FROM user_subscriptions;
+SELECT plan_code, COUNT(*) AS c FROM user_subscriptions GROUP BY plan_code ORDER BY c DESC;
+SELECT order_type, COUNT(*) AS c FROM recharge_orders GROUP BY order_type ORDER BY c DESC;
+```
+
+判据：`user_subscriptions` 有数据但没有 `pro_trial%`，且 `recharge_orders` 里没有 `subscription_intro_trial` 类型的订单，才可判定"测试环境从未售出 Pro Trial"。
+
 ## 三、部署顺序（有依赖）
 
 1. **先部署后端** `release/2.1.0`（含本次改动的合并提交）。
@@ -68,9 +78,19 @@ ORDER BY updated_at DESC;
 ### 4.2 A —— 主路径（试用期内手动升级到 Pro 月付）
 
 1. 用测试账号购买 Pro Trial（$2.99 / 7 天），确认定价页 Pro 卡片按钮为 **Upgrade**（改造前是 Not Available）。
-2. 点击 Upgrade → 进入 Stripe Checkout，金额应为 **Pro 月付全价**（不折抵已付的 $2.99）。
-3. 用测试卡 `4242 4242 4242 4242` 支付 → 返回站点后账号计划变为 Pro。
-4. 用 5.1 的 SQL 核对落库结果。
+2. **购买完成后立即核对转换 Schedule 已建立**（若 2.2 查询为空，这是测试环境首次验证这一步）：
+
+   ```sql
+   SELECT plan_code, status, subscription_phase, pending_plan_code, pending_effective_at,
+          stripe_schedule_id, stripe_subscription_id, current_period_start, current_period_end
+   FROM user_subscriptions WHERE clerk_user_id = '<uid>';
+   ```
+
+   期望：`plan_code = 'pro_trial_to_monthly'`、`subscription_phase = 'intro'`、`pending_plan_code = 'pro_monthly'`、`stripe_schedule_id` 非空，且 `current_period_end` ≈ 购买时间 + 7 天。任一为空都要先排查（否则试用结束时不会自动转正），在 Stripe 侧确认 Schedule 的 Phase 1 = 周付 $2.99、Phase 2 = `pro_monthly` 后再继续后续用例。
+
+3. 点击 Upgrade → 进入 Stripe Checkout，金额应为 **Pro 月付全价**（不折抵已付的 $2.99）。
+4. 用测试卡 `4242 4242 4242 4242` 支付 → 返回站点后账号计划变为 Pro。
+5. 用 5.1 的 SQL 核对落库结果。
 
 ### 4.3 B —— 关键回归（放弃支付后仍会自动转正）
 

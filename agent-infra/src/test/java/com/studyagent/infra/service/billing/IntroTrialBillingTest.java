@@ -134,12 +134,46 @@ class IntroTrialBillingTest {
     }
 
     @Test
-    void classifyPlanChange_proSubscriptionTrialToProMonthlyIsUnsupported() {
+    void classifyPlanChange_proSubscriptionTrialToProIsImmediateUpgrade() {
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.IMMEDIATE_UPGRADE,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, "pro", "month",
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY, "pro", "month"));
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.IMMEDIATE_UPGRADE,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, "pro", "month",
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY, "pro", "year"));
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.IMMEDIATE_UPGRADE,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY, "pro", "year",
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY, "pro", "year"));
+    }
+
+    @Test
+    void classifyPlanChange_annualProTrialToMonthlyProIsUnsupported() {
+        // Quoted at the monthly price but switched as annual_full: would grant a year.
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY, "pro", "year",
+                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY, "pro", "month"));
+    }
+
+    @Test
+    void classifyPlanChange_proSubscriptionTrialToLowerTierIsUnsupported() {
         assertEquals(
                 BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
                 BillingDomainServiceImpl.classifyPlanChange(
                         IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, "pro", "month",
-                        IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY, "pro", "month"));
+                        "plus_monthly", "plus", "month"));
+        assertEquals(
+                BillingDomainServiceImpl.PlanChangeAction.UNSUPPORTED,
+                BillingDomainServiceImpl.classifyPlanChange(
+                        IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, "pro", "month",
+                        IntroTrialPlans.CONVERSION_PLAN_CODE_MONTHLY, "basic", "month"));
     }
 
     @Test

@@ -253,6 +253,12 @@ billing:
     retention-hours: ${BILLING_UPGRADE_PENDING_CLEANUP_RETENTION_HOURS:24}
     batch-size: ${BILLING_UPGRADE_PENDING_CLEANUP_BATCH_SIZE:100}
     cron: ${BILLING_UPGRADE_PENDING_CLEANUP_CRON:0 25 * * * ?}
+  # 一次性历史数据修正：把已停售的年付试用（pro_trial_to_yearly）的到期转换重指为 pro_monthly。
+  # 默认关闭，部署后由运维开启跑一轮，确认无候选后再关闭。
+  pro-trial-yearly-repair:
+    enabled: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_ENABLED:false}
+    batch-size: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_BATCH_SIZE:100}
+    cron: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_CRON:0 45 * * * ?}
 
 # PostHog 分析配置
 posthog:

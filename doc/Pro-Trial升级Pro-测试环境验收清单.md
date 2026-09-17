@@ -1,17 +1,19 @@
 # Pro Trial 试用期内购买正式套餐 —— 测试环境验收清单
 
 适用改动：
-- 后端 `release/2.1.0`（`feat/pro-trial-manual-upgrade` + `feat/pro-trial-any-plan-purchase`）
+- 后端 `release/2.1.0`（`feat/pro-trial-manual-upgrade` + `feat/pro-trial-any-plan-purchase` + `feat/pro-trial-yearly-retire`）
 - 前端 `Verla-AI/studyagent-fronted-v2` `release`
 
-**行为总览**：Pro Trial 用户可以在试用期内**立即购买 Basic / Plus / Pro 任一套餐**（月付或年付）——当场支付目标套餐全价，计费周期从支付日重算，剩余试用天数不折抵；放弃支付则保留到期自动转 Pro 的兜底。
+**行为总览**：Pro Trial 用户可以在试用期内**立即购买 Basic / Plus / Pro 任一套餐**（月付或年付）——当场支付目标套餐全价，计费周期从支付日重算，剩余试用天数不折抵；放弃支付则保留到期自动转 Pro 的兜底。**此外 Pro Trial 年付 SKU 已停售**，存量年付试用由一次性任务重指为月付（第十节）。
 
-## 一、结论：本次不需要执行任何新 SQL
+## 一、结论：本次不需要执行任何新 SQL（年付停售除外）
 
 - 无 schema 变更，无新增计划行。所需的正式套餐与 Pro Trial SKU 都是既有行（`sql/076`、`sql/077`、`sql/078`）。
 - 购买 Checkout 使用 inline `price_data` 建单（见 `BillingDomainServiceImpl.buildManualUpgradeCheckoutParams`），**不需要在 Stripe 后台新建 Product / Price**。
-- 无新增环境变量，无新增 webhook 事件类型：完全复用既有 `subscription_upgrade_manual` 链路。
+- 无新增 webhook 事件类型：完全复用既有 `subscription_upgrade_manual` 链路。
 - 历史版本中没有脏数据：旧代码在**释放 Stripe Schedule 之前**就拦掉了不合法的目标套餐，因此不存在"Schedule 被提前释放"的存量订阅。第二节的 SQL 仍建议跑一次做兜底。
+
+> **例外**：停售 Pro Trial 年付 SKU 是唯一需要执行 SQL 的改动（`sql/085_retire_pro_trial_yearly.sql`），并需要按第十节开启一次重指任务。
 
 部署前唯一要做的是**确认 sandbox price 绑定**（见第二节），部署后按第四节在网页上验收。
 
@@ -175,10 +177,11 @@ FROM user_ai_quotas q WHERE q.clerk_user_id = '<uid>';
 
 ## 七、本次不涉及
 
-- 无需执行任何新 SQL 迁移；无需修改 `subscription_plans` 的 price 绑定（除非 2.1 核查不通过）。
+- 购买链路的改动不需要任何新 SQL 迁移；无需修改 `subscription_plans` 的 price 绑定（除非 2.1 核查不通过）。**年付试用停售需要 `sql/085`（见第十节）**。
 - 无需 Stripe 后台新建 Product / Price（购买单用 inline `price_data`）。
-- 无需新增环境变量或 webhook 事件。
+- 无需新增 webhook 事件；仅新增一个一次性任务的开关 `BILLING_PRO_TRIAL_YEARLY_REPAIR_ENABLED`（默认 `false`）。
 - **SKU 购买弹窗（`sku-purchase-provider`）未同步**：该表面在试用期购买 Basic/Plus 时不再弹确认（直接进 Stripe Checkout），且它的弹窗文案是"到期后切换"语义，补正确文案需要新增 17 个语言包的 key，本轮未做；定价页（`/pricing`）已完整覆盖。
+- **正式年付（`basic_yearly` / `plus_yearly` / `pro_yearly`）本轮完全不动**：继续售卖、存量继续按年续费。
 
 ## 八、未覆盖与风险
 
@@ -197,3 +200,79 @@ FROM user_ai_quotas q WHERE q.clerk_user_id = '<uid>';
 | 付费后切换订阅、激活计划、降级时替换额度 | `agent-infra/.../billing/StripeBillingWebhookService.java` `attemptManualUpgradeSwitch`、`clearPaidTrialPendingConversionTarget` |
 | 前端按钮/动作分类与标签（镜像后端规则） | 前端 `src/lib/billing.ts` `resolveSubscriptionPlanChangeAction`、`resolveSubscriptionPlanButtonIntent` |
 | 前端确认弹窗（立即付费 vs 到期切换） | 前端 `src/features/pricing/pricing-plans.tsx` `PendingPlanConfirmation.mode`、`getPackageChangeDescription`、`getPackageSummary` |
+| 年付试用停售 | `sql/085_retire_pro_trial_yearly.sql` |
+| 存量年付试用重指为月付 | `agent-infra/.../infra/job/ProTrialYearlyConversionRepairScheduler.java`（复用 `BillingDomainService.fulfillIntroTrialSubscription` 重建 Schedule） |
+
+## 十、停售 Pro Trial 年付 SKU + 存量重指为月付
+
+### 10.1 背景与范围
+
+- Pro Trial 年付变体（`pro_trial_to_yearly`）不再作为商品：目录不返回、下单直接失败。
+- 存量已经买了年付试用、且在 Stripe 侧挂好"到期 → `pro_yearly`"转换 Schedule 的用户，到期逻辑改为与月付试用一致：**到期转 `pro_monthly`**。
+- 正式年付（`basic_yearly` / `plus_yearly` / `pro_yearly`）的销售与存量**都不在本轮**。
+
+### 10.2 执行 SQL
+
+```bash
+mysql ... < sql/085_retire_pro_trial_yearly.sql
+```
+
+脚本做两件事：`is_active = 0`（停售，`requirePlan` 会让下单/切换目标直接返回 `INVALID_PLAN`）、`converts_to_plan_code = 'pro_monthly'`（让任何"转换目标再推导"都得到月付）。幂等，可重复执行；**不改写 Stripe 侧已有的 Schedule**（那一步由 10.4 的任务做）。
+
+验证：`pro_trial_to_yearly` 应为 `is_active = 0` 且 `converts_to_plan_code = 'pro_monthly'`；`pro_trial_to_monthly` 保持 `is_active = 1`（唯一可售的 Pro Trial）。
+
+**下架不影响存量**：存量订阅的权益与续费走 `requireRuntimePlan`、webhook 按 `stripe_price_id` 反查套餐，都不看 `is_active`（仓库既有的"下架但继续履约"模式）。
+
+### 10.3 先只读清点存量（决定要不要开任务）
+
+```sql
+SELECT plan_code, status, COUNT(*) AS c,
+       SUM(pending_plan_code = 'pro_monthly') AS already_monthly,
+       SUM(pending_plan_code = 'pro_yearly')  AS still_yearly,
+       SUM(pending_plan_code IS NULL)         AS missing_pending
+FROM user_subscriptions
+WHERE plan_code = 'pro_trial_to_yearly'
+GROUP BY plan_code, status;
+```
+
+若 `still_yearly + missing_pending = 0`（含查询无结果），**任务无需开启**。
+
+### 10.4 存量重指任务
+
+一次性历史修正任务 `ProTrialYearlyConversionRepairScheduler`，默认关闭：
+
+```bash
+# 在测试环境 Server_Config/.env 或部署环境变量中设置后重建后端容器
+BILLING_PRO_TRIAL_YEARLY_REPAIR_ENABLED=true
+# 可选：BILLING_PRO_TRIAL_YEARLY_REPAIR_BATCH_SIZE=100 / _CRON='0 45 * * * ?'
+```
+
+任务逻辑：命中 `plan_code='pro_trial_to_yearly'` 且 `status IN ('active','trialing')` 且 `stripe_subscription_id` 非空、`pending_plan_code IS NULL OR = 'pro_yearly'` 的行 → 把本地 `pending_plan_code` 置为 `pro_monthly`（条件更新，幂等）→ 调用 `fulfillIntroTrialSubscription` 重建 Schedule（Phase1 保持当前周付试用价、Phase2 换成 `pro_monthly` 价）→ 回写 `pending_effective_at` / `subscription_phase='intro'`。
+
+判据：跑完一轮后，若日志显示 `repointed N yearly Pro Trial subscriptions to pro_monthly` 且再次运行无新增（候选为空），即可把开关关回 `false`。单行失败只记 WARN、不中断批次（任务方法刻意不加 `@Transactional`，保证逐行独立提交）。
+
+### 10.5 每个用户的核对点
+
+```sql
+SELECT plan_code, status, subscription_phase, pending_plan_code, pending_effective_at,
+       current_period_end, stripe_schedule_id
+FROM user_subscriptions WHERE clerk_user_id = '<uid>';
+```
+
+- 本地：`plan_code` 仍为 `pro_trial_to_yearly`（试用未结束）、`pending_plan_code = 'pro_monthly'`、`current_period_end` **未变**。
+- Stripe：Schedule 仍为 active，**Phase 1 = 周付 $2.99 且结束时间未变**，**Phase 2 的 price 已从 `pro_yearly` 换成 `pro_monthly`**（`price_1U2SNp7GRT6LLkI17wGltgTq`）。
+- 幂等：重跑任务不应对该用户产生任何写入。
+- 到期转换：到期日（或 Test Clock 推进后）`plan_code` 落到 `pro_monthly`、`subscription_phase = 'standard'`。
+
+### 10.6 前端交接（由前端同学在 `feat/pricing-pro-trial-monthly-only` 实现）
+
+- `/v1/billing/config` **不再返回** `pro_trial_to_yearly`。
+- 存量年付试用用户的当前套餐因此**不在目录里**，`findBillingPlanByCode(account.planCode)` 会失败；此时不要退化成"按 tier 比较"（当前 tier=pro、目标 `pro_monthly` → `compare = 0` → `unsupported` → 按钮显示 `Not Available`，用户无法自助买月付）。
+  请改用账号侧的试用信号：`GET /v1/subscription/current` 返回的 `convertsToPlanCode`（重指后为 `pro_monthly`）/ `convertsToBillingInterval`，或 `pendingPlanCode`。
+- 需要隐藏年付入口，并注意历史遗留的"年付购买意图"（`pricing-purchase-intent`）会把周期强制切到年付、渲染出空卡片。
+
+### 10.7 本轮不做
+
+- 正式年付套餐的停售与存量迁月付（下一轮）。
+- 前端年付入口与会话判定改造（前端同学的分支）。
+- 不放开"付费年付 → 月付到期切换"（`isAnnualToMonthlySwitch` 守卫保持）。

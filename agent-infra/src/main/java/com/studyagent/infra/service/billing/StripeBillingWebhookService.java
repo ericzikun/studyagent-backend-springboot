@@ -898,6 +898,16 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getStatus, "switched")
                     .set(RechargeOrderEntity::getUpgradeEffectiveAt, fromEpoch(periodStartEpoch))
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+            // The checkout upgrade grant is additive. That preserves leftover quota when moving
+            // up a tier, but a lower-tier purchase has to replace it, otherwise the new plan's
+            // allowance would stack on top of the previous (higher) one.
+            if (tierRank(targetPlan.getTier()) < tierRank(currentPlan.getTier())) {
+                quotaGateway().clearPlanQuota(
+                        clerkUserId,
+                        updated.getId(),
+                        targetPlan.getPlanCode(),
+                        "manual-upgrade-lower-tier:" + order.getOrderNo());
+            }
             quotaGateway().grantUpgradeFromCheckout(
                     clerkUserId,
                     updated.getId(),

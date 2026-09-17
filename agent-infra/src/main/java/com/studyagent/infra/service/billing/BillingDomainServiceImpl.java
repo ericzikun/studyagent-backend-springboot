@@ -3070,10 +3070,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (targetTrial) {
             return PlanChangeAction.UNSUPPORTED;
         }
-        // Basic trial converts to Basic through its Schedule, so only a higher tier is
-        // bought outright. Pro subscription trial also auto-converts, but its target tier
-        // equals its own tier, so an in-trial switch to formal Pro must be an immediate
-        // upgrade. One-time Pro Trial has no Schedule at all.
+        // A Pro subscription trial can buy any formal plan outright: Basic, Plus and Pro are
+        // all immediate paid purchases that restart the billing cycle. One-time Pro Trial has
+        // no Schedule; Basic trial converts to Basic through its Schedule.
         if (currentTrial) {
             if (currentOneTimeProTrial) {
                 return "pro".equalsIgnoreCase(targetTier)
@@ -3081,15 +3080,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         : PlanChangeAction.UNSUPPORTED;
             }
             if (currentProSubscriptionTrial) {
-                if (!IntroTrialPlans.isProPaidTier(targetTier)) {
-                    return PlanChangeAction.UNSUPPORTED;
-                }
-                // A year→month switch is quoted from the annual-diff branch at the monthly
-                // price while the strategy switches it as annual_full, which would grant a
-                // full year of Pro for one month's payment.
-                return isAnnualToMonthlySwitch(currentInterval, targetInterval)
-                        ? PlanChangeAction.UNSUPPORTED
-                        : PlanChangeAction.IMMEDIATE_UPGRADE;
+                return PlanChangeAction.IMMEDIATE_UPGRADE;
             }
             return tierRankStatic(targetTier) > tierRankStatic("basic")
                     ? PlanChangeAction.IMMEDIATE_UPGRADE

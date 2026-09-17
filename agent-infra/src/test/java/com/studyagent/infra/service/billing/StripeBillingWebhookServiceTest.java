@@ -1504,6 +1504,127 @@ class StripeBillingWebhookServiceTest {
                 any(),
                 any(),
                 eq("RO_TRIAL_UPGRADE"));
+        verify(billingQuotaGateway, never()).clearPlanQuota(any(), any(), any(), any());
+    }
+
+    @Test
+    void paidTrialBuyOfLowerTierReplacesQuotaInsteadOfStacking() {
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setId(34L);
+        order.setOrderNo("RO_TRIAL_LOWER_TIER");
+        order.setClerkUserId("user_1");
+        order.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
+        order.setTargetPlanCode("plus_monthly");
+        order.setStripeSubscriptionId("sub_trial");
+        order.setUpgradeChargeType("monthly_full");
+        order.setQuotedAmountCents(3999);
+
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(42L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
+        current.setPendingPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
+        current.setPendingEffectiveAt(LocalDateTime.parse("2026-07-01T10:00:00"));
+        current.setStripeSubscriptionId("sub_trial");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-01T10:00:00"));
+        current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+
+        SubscriptionPlanEntity trialPlan = new SubscriptionPlanEntity();
+        trialPlan.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
+        trialPlan.setTier("pro");
+        trialPlan.setBillingInterval("month");
+        trialPlan.setStripePriceId("price_pro_trial_monthly");
+
+        SubscriptionPlanEntity plusPlan = new SubscriptionPlanEntity();
+        plusPlan.setPlanCode("plus_monthly");
+        plusPlan.setTier("plus");
+        plusPlan.setBillingInterval("month");
+        plusPlan.setStripePriceId("price_plus_monthly");
+
+        when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any())).thenReturn(trialPlan, plusPlan, plusPlan);
+        when(rechargeOrderMapper.update(isNull(), any())).thenReturn(1);
+        when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
+
+        Subscription trialSubscription = new Subscription();
+        trialSubscription.setId("sub_trial");
+        trialSubscription.setStatus("active");
+        trialSubscription.setMetadata(Map.of("clerk_user_id", "user_1"));
+        SubscriptionItem trialItem = new SubscriptionItem();
+        trialItem.setId("si_trial");
+        trialItem.setQuantity(1L);
+        Price trialPrice = new Price();
+        trialPrice.setId("price_pro_trial_monthly");
+        trialItem.setPrice(trialPrice);
+        trialSubscription.setItems(new com.stripe.model.SubscriptionItemCollection());
+        trialSubscription.getItems().setData(List.of(trialItem));
+
+        Subscription switched = new Subscription();
+        switched.setId("sub_trial");
+        switched.setStatus("trialing");
+        switched.setMetadata(Map.of("clerk_user_id", "user_1"));
+        switched.setCurrentPeriodStart(1782907167L);
+        switched.setCurrentPeriodEnd(1785499167L);
+        SubscriptionItem switchedItem = new SubscriptionItem();
+        switchedItem.setId("si_trial");
+        switchedItem.setQuantity(1L);
+        Price switchedPrice = new Price();
+        switchedPrice.setId("price_plus_monthly");
+        switchedItem.setPrice(switchedPrice);
+        switched.setItems(new com.stripe.model.SubscriptionItemCollection());
+        switched.getItems().setData(List.of(switchedItem));
+
+        StripeBillingWebhookService service = new StripeBillingWebhookService(
+                webhookEventMapper,
+                userSubscriptionMapper,
+                subscriptionPlanMapper,
+                addonPackageDefMapper,
+                rechargeOrderMapper,
+                analyticsService,
+                quotaGatewayProvider,
+                billingRobotNotifyGatewayProvider,
+                billingDomainServiceProvider,
+                transactionManager) {
+            @Override
+            Subscription retrieveStripeSubscription(String subscriptionId) {
+                return trialSubscription;
+            }
+
+            @Override
+            Subscription updateStripeSubscription(
+                    Subscription source,
+                    SubscriptionUpdateParams params,
+                    com.stripe.net.RequestOptions options) {
+                return switched;
+            }
+        };
+
+        assertTrue(service.attemptManualUpgradeSwitch(
+                order,
+                "user_1",
+                "cs_trial_lower_tier",
+                "pi_trial_lower_tier"));
+
+        assertEquals("plus_monthly", current.getPlanCode());
+        assertEquals("plus", current.getTier());
+        assertEquals(IntroTrialPlans.PHASE_STANDARD, current.getSubscriptionPhase());
+        assertNull(current.getPendingPlanCode());
+        verify(billingQuotaGateway).clearPlanQuota(
+                eq("user_1"),
+                eq("sub_trial"),
+                eq("plus_monthly"),
+                eq("manual-upgrade-lower-tier:RO_TRIAL_LOWER_TIER"));
+        verify(billingQuotaGateway).grantUpgradeFromCheckout(
+                eq("user_1"),
+                eq("sub_trial"),
+                eq("plus_monthly"),
+                any(),
+                any(),
+                eq("RO_TRIAL_LOWER_TIER"));
     }
 
     @Test

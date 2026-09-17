@@ -344,6 +344,23 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void manualUpgradeQuote_yearlySourceWithMonthlyTargetChargesFullMonthlyPrice() {
+        UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
+                plan("pro_trial_to_yearly", "pro", "year", 299),
+                plan("plus_monthly", "plus", "month", 1999),
+                LocalDateTime.parse("2026-06-24T10:00:00"),
+                LocalDateTime.parse("2026-07-01T10:00:00"),
+                LocalDateTime.parse("2026-06-26T10:00:00"),
+                299,
+                "in_trial");
+
+        assertEquals(1999, quote.getAmountCents());
+        assertEquals("monthly_full", quote.getChargeType());
+        assertEquals("target_monthly_full", quote.getPricingFormula());
+        assertEquals(0, quote.getRemainingAnnualMonthsExcludingCurrent());
+    }
+
+    @Test
     void manualUpgradeQuote_annualToAnnualLastMonthChargesFullTargetAnnualPrice() {
         UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
                 plan("basic_yearly", "basic", "year", 11988),
@@ -663,6 +680,74 @@ class BillingDomainServiceImplTest {
         assertEquals(0, service.invoiceRetrieveAttempts);
         assertNull(service.releasedScheduleId);
         assertEquals("pro_yearly", current.getPendingPlanCode());
+    }
+
+    @Test
+    void proTrialCanBuyLowerTierPlanImmediately() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(34L);
+        current.setClerkUserId("user_1");
+        current.setPlanCode("pro_trial_to_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setStripeCustomerId("cus_123");
+        current.setStripeSubscriptionId("sub_123");
+        current.setStripeScheduleId("sub_sched_intro");
+        current.setSubscriptionPhase("intro");
+        current.setPendingPlanCode("pro_monthly");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-07-01T10:00:00"));
+        current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
+
+        SubscriptionPlanEntity currentPlan = plan("pro_trial_to_monthly", "pro", "month", 299);
+        currentPlan.setCurrency("usd");
+        currentPlan.setStripePriceId("price_pro_trial_monthly");
+        currentPlan.setConvertsToPlanCode("pro_monthly");
+        currentPlan.setIsActive(true);
+
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 3999);
+        targetPlan.setCurrency("usd");
+        targetPlan.setStripePriceId("price_plus_monthly");
+        targetPlan.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123",
+                "sub_sched_intro",
+                "price_pro_trial_monthly",
+                1782302367L,
+                1782907167L);
+        service.existingScheduleToRetrieve = schedule("sub_sched_intro");
+
+        var result = service.createSubscriptionCheckout(
+                "user_1",
+                "user@example.com",
+                "plus_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_9");
+
+        assertEquals("cs_test_manual_upgrade", result.getSessionId());
+        assertEquals(3999, result.getQuotedAmountCents());
+        assertEquals("monthly_full", result.getUpgradeChargeType());
+        assertEquals("plus_monthly", result.getTargetPlanCode());
+        // Abandoning this checkout must still convert to Pro at trial end.
+        assertNull(service.releasedScheduleId);
+        assertEquals("pro_monthly", current.getPendingPlanCode());
+
+        ArgumentCaptor<RechargeOrderEntity> orderCaptor = ArgumentCaptor.forClass(RechargeOrderEntity.class);
+        verify(rechargeOrderMapper).insert(orderCaptor.capture());
+        RechargeOrderEntity order = orderCaptor.getValue();
+        assertEquals("subscription_upgrade_manual", order.getOrderType());
+        assertEquals("pro_trial_to_monthly", order.getPlanCode());
+        assertEquals("plus_monthly", order.getTargetPlanCode());
+        assertEquals("monthly_full", order.getUpgradeChargeType());
+        assertEquals(3999, order.getPriceCents());
     }
 
     @Test

@@ -35,7 +35,11 @@ public final class UpgradeChargeCalculator {
             String sourceInvoiceId) {
         String currentInterval = currentPlan.getBillingInterval();
         String targetInterval = targetPlan.getBillingInterval();
-        if ("month".equals(currentInterval) && "month".equals(targetInterval)) {
+        // Charge by the target interval: a monthly target is always a full monthly charge.
+        // Keying this off the source interval instead sent yearly→monthly targets through the
+        // annual credit branch, where they were priced as one month but labelled annual_full,
+        // and the switch then reset the cycle for a full year.
+        if ("month".equals(targetInterval)) {
             return UpgradeChargeQuote.builder()
                     .amountCents(targetPlan.getPriceCents())
                     .chargeType("monthly_full")

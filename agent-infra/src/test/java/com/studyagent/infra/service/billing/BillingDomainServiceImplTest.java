@@ -7,6 +7,8 @@ import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.mapper.StudyPassMapper;
+import com.studyagent.infra.mapper.StudyPassProductMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
@@ -73,6 +75,10 @@ class BillingDomainServiceImplTest {
     private SubscriptionPlanMapper subscriptionPlanMapper;
     @Mock
     private AddonPackageDefMapper addonPackageDefMapper;
+    @Mock
+    private StudyPassProductMapper studyPassProductMapper;
+    @Mock
+    private StudyPassMapper studyPassMapper;
     @Mock
     private UserSubscriptionMapper userSubscriptionMapper;
     @Mock
@@ -1234,6 +1240,8 @@ class BillingDomainServiceImplTest {
         BillingDomainServiceImpl service = new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
+                studyPassProductMapper,
+                studyPassMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
@@ -1326,6 +1334,8 @@ class BillingDomainServiceImplTest {
         BillingDomainServiceImpl service = new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
+                studyPassProductMapper,
+                studyPassMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
@@ -1374,6 +1384,8 @@ class BillingDomainServiceImplTest {
         BillingDomainServiceImpl service = new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
+                studyPassProductMapper,
+                studyPassMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
@@ -2269,6 +2281,8 @@ class BillingDomainServiceImplTest {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
                 addonPackageDefMapper,
+                studyPassProductMapper,
+                studyPassMapper,
                 userSubscriptionMapper,
                 rechargeOrderMapper,
                 planQuotaService,
@@ -2329,6 +2343,8 @@ class BillingDomainServiceImplTest {
             super(
                     subscriptionPlanMapper,
                     addonPackageDefMapper,
+                    studyPassProductMapper,
+                    studyPassMapper,
                     userSubscriptionMapper,
                     rechargeOrderMapper,
                     planQuotaService,

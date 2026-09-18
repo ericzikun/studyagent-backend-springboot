@@ -25,6 +25,38 @@ public interface BillingDomainService {
 
     BillingPortalSessionResult createBillingPortalSession(String clerkUserId, String returnUrl);
 
+    /**
+     * 创建题库通行证的一次性 Stripe Checkout。
+     *
+     * <p>通行证与订阅互不相关：不要求用户是付费会员，也不读写
+     * {@code user_subscriptions}。仅当该用户当前没有未过期的通行证时才允许下单。
+     */
+    CheckoutSessionResult createStudyPassCheckout(
+            String clerkUserId,
+            String customerEmail,
+            String passCode,
+            String successUrl,
+            String cancelUrl,
+            String resumeToken
+    );
+
+    /**
+     * 题库通行证 Checkout 支付成功后的落库：写入一条 30 天有效期的通行证并生成
+     * {@code order_type='study_pass'} 的账单记录。重复投递同一 session 不产生第二条记录。
+     * 返回 false 表示其他会话已发放有效权益，调用者必须幂等退款而非再次发放。
+     */
+    boolean fulfillStudyPassPayment(
+            String clerkUserId,
+            String passCode,
+            String stripeSessionId,
+            String stripePaymentIntentId
+    );
+
+    /**
+     * 会员订阅支付成功后核销该通行证的抵扣资格。幂等；通行证已过期时不追溯。
+     */
+    void consumeStudyPassUpgradeCredit(Long studyPassId);
+
     BillingRecordPageResult getBillingRecords(String clerkUserId, String cursor, Integer limit);
 
     BillingHostedInvoiceResult createBillingHostedInvoice(String clerkUserId, String recordId);

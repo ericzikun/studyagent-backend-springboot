@@ -8,6 +8,7 @@ import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Charge;
+import com.stripe.model.Coupon;
 import com.stripe.model.Invoice;
 import com.stripe.model.Product;
 import com.stripe.model.Subscription;
@@ -17,6 +18,7 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerUpdateParams;
+import com.stripe.param.CouponCreateParams;
 import com.stripe.param.SubscriptionScheduleCreateParams;
 import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
@@ -26,15 +28,21 @@ import com.studyagent.service.domain.billing.BasicTrialAccount;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
+import com.studyagent.infra.entity.StudyPassEntity;
+import com.studyagent.infra.entity.StudyPassProductEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
 import com.studyagent.infra.mapper.AddonPackageDefMapper;
 import com.studyagent.infra.mapper.RechargeOrderMapper;
+import com.studyagent.infra.mapper.StudyPassMapper;
+import com.studyagent.infra.mapper.StudyPassProductMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingAddon;
 import com.studyagent.service.domain.billing.BillingAccessState;
 import com.studyagent.service.domain.billing.BillingCatalogResult;
+import com.studyagent.service.domain.billing.BillingStudyPass;
+import com.studyagent.service.domain.billing.StudyPassAccount;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
@@ -77,6 +85,13 @@ import java.util.UUID;
 public class BillingDomainServiceImpl implements BillingDomainService {
     private record UpgradeCreditBasis(int netPaidCents, String sourceInvoiceId) {
     }
+
+    /**
+     * 本次订阅 checkout 可用的题库通行证抵扣：优惠券已就绪，但尚未核销。
+     * 核销发生在支付成功的 webhook，避免用户放弃结算就损失抵扣。
+     */
+    private record StudyPassUpgradeCredit(Long passId, String couponId) {
+    }
     private static final Set<String> BLOCKING_SUBSCRIPTION_STATUSES = Set.of(
             "active", "trialing", "past_due", "unpaid", "incomplete", "paused"
     );
@@ -100,6 +115,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private final SubscriptionPlanMapper subscriptionPlanMapper;
     private final AddonPackageDefMapper addonPackageDefMapper;
+    private final StudyPassProductMapper studyPassProductMapper;
+    private final StudyPassMapper studyPassMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
     private final PlanQuotaService planQuotaService;
@@ -161,7 +178,34 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stream()
                 .map(this::toAddon)
                 .toList();
-        return BillingCatalogResult.builder().plans(plans).addons(addons).build();
+        return BillingCatalogResult.builder()
+                .plans(plans)
+                .addons(addons)
+                .studyPass(findActiveStudyPassProduct())
+                .build();
+    }
+
+    /**
+     * 返回唯一启用的通行证目录项。没有启用行时返回 null——前端据此完全不展示通行证售卖入口，
+     * 这是"Stripe Price 未就绪前不可售卖"的守门方式。
+     */
+    private BillingStudyPass findActiveStudyPassProduct() {
+        List<StudyPassProductEntity> products = studyPassProductMapper.selectList(
+                new LambdaQueryWrapper<StudyPassProductEntity>()
+                        .eq(StudyPassProductEntity::getIsActive, true)
+                        .orderByAsc(StudyPassProductEntity::getDisplayOrder));
+        if (products.isEmpty()) {
+            return null;
+        }
+        StudyPassProductEntity product = products.get(0);
+        return BillingStudyPass.builder()
+                .passCode(product.getPassCode())
+                .stripeProductId(product.getStripeProductId())
+                .stripePriceId(product.getStripePriceId())
+                .priceCents(product.getPriceCents())
+                .currency(product.getCurrency())
+                .validityDays(product.getValidityDays())
+                .build();
     }
 
     @Override
@@ -276,6 +320,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION);
         }
         SessionCreateParams.SubscriptionData subscriptionData = subscriptionDataBuilder.build();
+        // 有效期内的一次性通行证抵扣。仅在首次建立订阅时适用；已订阅用户的换档
+        // 走 createManualUpgradeCheckout，不重复让利。
+        StudyPassUpgradeCredit studyPassCredit = resolveStudyPassUpgradeCredit(clerkUserId);
         SessionCreateParams params = buildSubscriptionCheckoutParams(
                 clerkUserId,
                 customerId,
@@ -285,7 +332,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 finalCancelUrl,
                 subscriptionData,
                 purchaseType,
-                conversionPlanCode);
+                conversionPlanCode,
+                studyPassCredit);
 
         try {
             return createInitialSubscriptionCheckout(
@@ -314,7 +362,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         finalCancelUrl,
                         subscriptionData,
                         purchaseType,
-                        conversionPlanCode);
+                        conversionPlanCode,
+                        studyPassCredit);
                 try {
                     return createInitialSubscriptionCheckout(
                             clerkUserId,
@@ -344,7 +393,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String finalCancelUrl,
             SessionCreateParams.SubscriptionData subscriptionData,
             String purchaseType,
-            String conversionPlanCode) {
+            String conversionPlanCode,
+            StudyPassUpgradeCredit studyPassCredit) {
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                 .setCustomer(customerId)
@@ -359,6 +409,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData);
+        if (studyPassCredit != null) {
+            builder.addDiscount(SessionCreateParams.Discount.builder()
+                            .setCoupon(studyPassCredit.couponId())
+                            .build())
+                    .putMetadata("study_pass_credit_id", String.valueOf(studyPassCredit.passId()));
+        }
         applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode());
         if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             builder.putMetadata("conversion_plan_code", conversionPlanCode)
@@ -679,6 +735,372 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .build())
                         .build())
                 .build();
+    }
+
+    // ---------------------------------------------------------------------
+    // Study Pass：一次性题库通行证
+    //
+    // 与订阅完全解耦——不要求付费会员身份，也不读写 user_subscriptions。
+    // 权限只在 account 响应里合并成 canReadStudyLibrary，通行证本身不产生
+    // 任何工具额度、add-on 或输出类型权益。
+    // ---------------------------------------------------------------------
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CheckoutSessionResult createStudyPassCheckout(
+            String clerkUserId,
+            String customerEmail,
+            String passCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken) {
+        requireStripeConfigured();
+        userSubscriptionBootstrapService.ensureExists(clerkUserId);
+        UserSubscriptionEntity userSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        if (userSubscription == null) {
+            throw new IllegalStateException("Study Pass user lock unavailable");
+        }
+        // Acquire the lock before any consistent read in this transaction.
+        StudyPassProductEntity product = requireStudyPassProduct(passCode);
+        LocalDateTime now = LocalDateTime.now();
+        if (findActiveStudyPass(clerkUserId, now) != null) {
+            throw new BillingDomainException(
+                    "STUDY_PASS_ALREADY_ACTIVE",
+                    "An active Study Pass already exists for this user");
+        }
+        CheckoutSessionResult pending = findReusableStudyPassCheckout(clerkUserId, resumeToken);
+        if (pending != null) return pending;
+        String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+
+        Session session;
+        try {
+            session = createStripeCheckoutSession(buildStudyPassCheckoutParams(
+                    clerkUserId,
+                    passCode,
+                    requestedSuccessUrl,
+                    requestedCancelUrl,
+                    resumeToken,
+                    product,
+                    customerId));
+        } catch (StripeException e) {
+            if (!isMissingStripeCustomer(e) || !clearStoredStripeCustomer(userSubscription)) {
+                throw stripeFailure("Create Study Pass Checkout failed", e);
+            }
+            UserSubscriptionEntity retrySubscription = getOrCreateUserSubscription(clerkUserId);
+            String retriedCustomerId = ensureStripeCustomer(retrySubscription, clerkUserId, customerEmail);
+            try {
+                session = createStripeCheckoutSession(buildStudyPassCheckoutParams(
+                        clerkUserId,
+                        passCode,
+                        requestedSuccessUrl,
+                        requestedCancelUrl,
+                        resumeToken,
+                        product,
+                        retriedCustomerId));
+            } catch (StripeException retryException) {
+                throw stripeFailure("Create Study Pass Checkout failed", retryException);
+            }
+        }
+        try {
+            // order_type='study_pass' 使这笔订单自动出现在 /v1/billing/records，
+            // 前端 Bill 页签按 orderType 展示产品标签。
+            RechargeOrderEntity order = insertPendingOrder(
+                    clerkUserId,
+                    "study_pass",
+                    "study_pass",
+                    passCode,
+                    null,
+                    null,
+                    0L,
+                    null,
+                    product.getPriceCents(),
+                    product.getCurrency(),
+                    session.getId(),
+                    session.getPaymentIntent(),
+                    null);
+            order.setBizContext(GSON.toJson(Map.of("validityDays", product.getValidityDays())));
+            rechargeOrderMapper.updateById(order);
+        } catch (RuntimeException e) {
+            expireCheckoutAfterPersistenceFailure(session, e);
+            throw e;
+        }
+        return CheckoutSessionResult.builder()
+                .checkoutKind("session")
+                .sessionId(session.getId())
+                .referenceId(session.getId())
+                .checkoutUrl(session.getUrl())
+                .expiresAt(session.getExpiresAt())
+                .resumeToken(resumeToken)
+                .build();
+    }
+
+    /** Called under the user's subscription-row lock, including for first-time buyers. */
+    private CheckoutSessionResult findReusableStudyPassCheckout(String clerkUserId, String resumeToken) {
+        RechargeOrderEntity pending = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .eq(RechargeOrderEntity::getOrderType, "study_pass")
+                        .in(RechargeOrderEntity::getStatus, List.of("pending", "pending_checkout", "checkout_created"))
+                        .orderByDesc(RechargeOrderEntity::getCreatedAt)
+                        .last("LIMIT 1 FOR UPDATE"));
+        if (pending == null || !hasText(pending.getStripeSessionId())) return null;
+        try {
+            Session session = retrieveStripeCheckoutSession(pending.getStripeSessionId());
+            if ("complete".equals(session.getStatus()) || "paid".equals(session.getPaymentStatus())) {
+                throw new BillingDomainException("STUDY_PASS_PAYMENT_PENDING", "Study Pass payment is still being applied");
+            }
+            if ("open".equals(session.getStatus())
+                    && (session.getExpiresAt() == null || session.getExpiresAt() > Instant.now().getEpochSecond())
+                    && hasText(session.getUrl())) {
+                return CheckoutSessionResult.builder().checkoutKind("session")
+                        .sessionId(session.getId()).referenceId(session.getId())
+                        .checkoutUrl(session.getUrl()).expiresAt(session.getExpiresAt())
+                        .resumeToken(resumeToken).build();
+            }
+            if ("open".equals(session.getStatus())) expireStripeCheckoutSession(session);
+            markCheckoutOrderExpired(pending.getId(), "stripe_session_not_reusable");
+            return null;
+        } catch (StripeException e) {
+            throw stripeFailure("Inspect existing Study Pass Checkout failed", e);
+        }
+    }
+
+    private SessionCreateParams buildStudyPassCheckoutParams(
+            String clerkUserId,
+            String passCode,
+            String requestedSuccessUrl,
+            String requestedCancelUrl,
+            String resumeToken,
+            StudyPassProductEntity product,
+            String customerId) {
+        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
+                .putMetadata("purchase_type", "study_pass")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("pass_code", passCode)
+                .build();
+        return SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCustomer(customerId)
+                .setClientReferenceId(clerkUserId)
+                .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
+                .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setPrice(product.getStripePriceId())
+                        .setQuantity(1L)
+                        .build())
+                .putMetadata("purchase_type", "study_pass")
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("pass_code", passCode)
+                .setPaymentIntentData(paymentIntentData)
+                .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
+                        .setEnabled(true)
+                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                                .setDescription("Study Pass: " + passCode)
+                                .putMetadata("purchase_type", "study_pass")
+                                .putMetadata("clerk_user_id", clerkUserId)
+                                .putMetadata("pass_code", passCode)
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private StudyPassProductEntity requireStudyPassProduct(String passCode) {
+        StudyPassProductEntity product = studyPassProductMapper.selectOne(
+                new LambdaQueryWrapper<StudyPassProductEntity>()
+                        .eq(StudyPassProductEntity::getPassCode, passCode)
+                        .eq(StudyPassProductEntity::getIsActive, true)
+                        .last("LIMIT 1"));
+        if (product == null) {
+            throw new BillingDomainException("STUDY_PASS_NOT_SELLABLE", "Study Pass is not available");
+        }
+        if (product.getStripePriceId() == null || product.getStripePriceId().isBlank()) {
+            throw new BillingDomainException(
+                    "STUDY_PASS_PRICE_NOT_CONFIGURED",
+                    "Study Pass has no Stripe price configured");
+        }
+        return product;
+    }
+
+    /** 未过期且状态为 active 的通行证；同一用户至多一条。 */
+    private StudyPassEntity findActiveStudyPass(String clerkUserId, LocalDateTime now) {
+        return studyPassMapper.selectOne(
+                new LambdaQueryWrapper<StudyPassEntity>()
+                        .eq(StudyPassEntity::getClerkUserId, clerkUserId)
+                        .eq(StudyPassEntity::getStatus, "active")
+                        .gt(StudyPassEntity::getExpiresAt, now)
+                        .orderByDesc(StudyPassEntity::getExpiresAt)
+                        .last("LIMIT 1"));
+    }
+
+    /** 最近一次购买记录，含已过期，用于展示到期日与"能否再次购买"。 */
+    private StudyPassEntity findLatestStudyPass(String clerkUserId) {
+        return studyPassMapper.selectOne(
+                new LambdaQueryWrapper<StudyPassEntity>()
+                        .eq(StudyPassEntity::getClerkUserId, clerkUserId)
+                        .orderByDesc(StudyPassEntity::getId)
+                        .last("LIMIT 1"));
+    }
+
+    /**
+     * 构造通行证明细。从未购买过的用户返回 null，前端据此完全不展示通行证区域；
+     * 已过期的用户返回 active=false 且 purchasable=true。
+     */
+    private StudyPassAccount buildStudyPassAccount(String clerkUserId, LocalDateTime now) {
+        StudyPassEntity active = findActiveStudyPass(clerkUserId, now);
+        if (active != null) {
+            return StudyPassAccount.builder()
+                    .active(true)
+                    .startedAt(active.getStartedAt())
+                    .expiresAt(active.getExpiresAt())
+                    .upgradeCreditAvailable(active.getUpgradeCreditUsedAt() == null)
+                    .purchasable(false)
+                    .build();
+        }
+        StudyPassEntity latest = findLatestStudyPass(clerkUserId);
+        if (latest == null) {
+            return null;
+        }
+        return StudyPassAccount.builder()
+                .active(false)
+                .startedAt(latest.getStartedAt())
+                .expiresAt(latest.getExpiresAt())
+                .upgradeCreditAvailable(false)
+                .purchasable(true)
+                .build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean fulfillStudyPassPayment(
+            String clerkUserId,
+            String passCode,
+            String stripeSessionId,
+            String stripePaymentIntentId) {
+        userSubscriptionBootstrapService.ensureExists(clerkUserId);
+        if (userSubscriptionMapper.selectByUserForUpdate(clerkUserId) == null) {
+            throw new IllegalStateException("Study Pass user lock unavailable");
+        }
+        RechargeOrderEntity order = rechargeOrderMapper.selectOne(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeSessionId, stripeSessionId)
+                        .eq(RechargeOrderEntity::getOrderType, "study_pass")
+                        .last("LIMIT 1 FOR UPDATE"));
+        if (order == null || !clerkUserId.equals(order.getClerkUserId())
+                || !passCode.equals(order.getPackageCode())) {
+            throw new IllegalStateException("Study Pass order snapshot missing or mismatched");
+        }
+        if ("refunded".equals(order.getStatus()) || "refund_pending".equals(order.getStatus())) return false;
+        // 幂等：同一 Checkout session 重复投递不产生第二条通行证。
+        if (stripeSessionId != null && !stripeSessionId.isBlank()) {
+            Long existing = studyPassMapper.selectCount(
+                    new LambdaQueryWrapper<StudyPassEntity>()
+                            .eq(StudyPassEntity::getStripeCheckoutSessionId, stripeSessionId));
+            if (existing != null && existing > 0) {
+                return true;
+            }
+        }
+        if (findActiveStudyPass(clerkUserId, LocalDateTime.now()) != null) {
+            order.setStatus("refund_pending");
+            rechargeOrderMapper.updateById(order);
+            return false;
+        }
+        // New orders snapshot duration. Legacy orders may read the retained catalog row,
+        // but fulfillment never depends on whether that row is still sellable.
+        Integer validityDays = null;
+        if (hasText(order.getBizContext())) {
+            validityDays = GSON.fromJson(order.getBizContext(), com.google.gson.JsonObject.class)
+                    .get("validityDays").getAsInt();
+        } else {
+            StudyPassProductEntity product = studyPassProductMapper.selectOne(
+                    new LambdaQueryWrapper<StudyPassProductEntity>()
+                            .eq(StudyPassProductEntity::getPassCode, passCode).last("LIMIT 1"));
+            if (product != null) validityDays = product.getValidityDays();
+        }
+        if (validityDays == null || validityDays <= 0) {
+            throw new IllegalStateException("Study Pass duration snapshot missing");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        StudyPassEntity pass = new StudyPassEntity();
+        pass.setClerkUserId(clerkUserId);
+        pass.setOrderId(order.getId());
+        pass.setPassCode(passCode);
+        pass.setStatus("active");
+        // 每次购买独立计算有效期；即使前一条尚未清理也不累加。
+        pass.setStartedAt(now);
+        pass.setExpiresAt(now.plusDays(validityDays));
+        pass.setStripeCheckoutSessionId(stripeSessionId);
+        pass.setStripePaymentIntentId(stripePaymentIntentId);
+        pass.setCreatedAt(now);
+        pass.setUpdatedAt(now);
+        studyPassMapper.insert(pass);
+        return true;
+    }
+
+    /**
+     * 解析本次订阅 checkout 可用的通行证抵扣。仅在通行证仍在有效期内且尚未核销时返回。
+     *
+     * <p>优惠券创建失败时不阻塞会员购买——抵扣是让利，不能因为 Stripe 出错就让用户
+     * 买不了会员，因此这里降级为"无抵扣"并记录告警。
+     */
+    private StudyPassUpgradeCredit resolveStudyPassUpgradeCredit(String clerkUserId) {
+        StudyPassEntity active = findActiveStudyPass(clerkUserId, LocalDateTime.now());
+        if (active == null || active.getUpgradeCreditUsedAt() != null) {
+            return null;
+        }
+        StudyPassProductEntity product = studyPassProductMapper.selectOne(
+                new LambdaQueryWrapper<StudyPassProductEntity>()
+                        .eq(StudyPassProductEntity::getPassCode, active.getPassCode())
+                        .last("LIMIT 1"));
+        if (product == null || product.getPriceCents() == null || product.getPriceCents() <= 0) {
+            return null;
+        }
+        try {
+            String couponId = ensureStudyPassCreditCoupon(active, product);
+            return couponId == null ? null : new StudyPassUpgradeCredit(active.getId(), couponId);
+        } catch (StripeException e) {
+            log.warn("Study Pass credit coupon unavailable, continuing without credit: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 复用该通行证已创建的优惠券，避免每次结算都新建一张。 */
+    private String ensureStudyPassCreditCoupon(StudyPassEntity pass, StudyPassProductEntity product)
+            throws StripeException {
+        if (pass.getUpgradeCreditCouponId() != null && !pass.getUpgradeCreditCouponId().isBlank()) {
+            return pass.getUpgradeCreditCouponId();
+        }
+        Coupon coupon = Coupon.create(CouponCreateParams.builder()
+                .setName("Study Pass credit")
+                .setAmountOff((long) product.getPriceCents())
+                .setCurrency(product.getCurrency() == null ? "usd" : product.getCurrency())
+                .setDuration(CouponCreateParams.Duration.ONCE)
+                .putMetadata("clerk_user_id", pass.getClerkUserId())
+                .putMetadata("study_pass_id", String.valueOf(pass.getId()))
+                .build());
+        pass.setUpgradeCreditCouponId(coupon.getId());
+        pass.setUpdatedAt(LocalDateTime.now());
+        studyPassMapper.updateById(pass);
+        return coupon.getId();
+    }
+
+    /**
+     * 订阅支付成功后核销通行证抵扣。幂等：已核销的通行证不会被再次写入。
+     * 抵扣不追溯——通行证已过期时不再核销，也不产生任何退款或余额。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void consumeStudyPassUpgradeCredit(Long studyPassId) {
+        if (studyPassId == null) {
+            return;
+        }
+        StudyPassEntity pass = studyPassMapper.selectById(studyPassId);
+        if (pass == null || pass.getUpgradeCreditUsedAt() != null) {
+            return;
+        }
+        pass.setUpgradeCreditUsedAt(LocalDateTime.now());
+        pass.setUpdatedAt(LocalDateTime.now());
+        studyPassMapper.updateById(pass);
     }
 
     private CheckoutSessionResult createOneTimeProTrialCheckout(
@@ -1371,6 +1793,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         result.setEffectiveAllowedOutputTypes(unlimited
                 ? List.of("writing", "ppt", "coding")
                 : parseAllowedOutputTypes(effectivePlan.getAllowedOutputTypes()));
+        // Study Pass 只影响阅读放行与展示，不参与上面任何套餐权益的计算。
+        StudyPassAccount studyPass = buildStudyPassAccount(clerkUserId, LocalDateTime.now());
+        result.setStudyPass(studyPass);
+        result.setCanReadStudyLibrary(Boolean.TRUE.equals(result.getCanConsumePaidEntitlements())
+                || (studyPass != null && Boolean.TRUE.equals(studyPass.getActive())));
         return result;
     }
 
@@ -2457,7 +2884,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .last("LIMIT 1"));
     }
 
-    private void insertPendingOrder(
+    private RechargeOrderEntity insertPendingOrder(
             String clerkUserId,
             String orderType,
             String featureCode,
@@ -2491,6 +2918,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         rechargeOrderMapper.insert(order);
+        return order;
     }
 
     private void insertCompletedMockSubscriptionOrder(

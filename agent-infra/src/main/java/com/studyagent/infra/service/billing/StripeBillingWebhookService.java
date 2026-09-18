@@ -168,6 +168,7 @@ public class StripeBillingWebhookService {
                 || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)
                 || IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)
                 || "addon".equals(purchaseType)
+                || "study_pass".equals(purchaseType)
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
 
@@ -650,6 +651,59 @@ public class StripeBillingWebhookService {
             return;
         }
 
+        if ("study_pass".equals(purchaseType)) {
+            if (!"paid".equals(session.getPaymentStatus())) {
+                log.info("Study Pass Checkout is not paid yet: session={}, payment_status={}",
+                        session.getId(), session.getPaymentStatus());
+                return;
+            }
+            if (clerkUserId == null || clerkUserId.isBlank()) {
+                throw new ReviewRequiredException(
+                        "Study Pass Checkout without clerk user: " + session.getId());
+            }
+            String passCode = metadata.get("pass_code");
+            BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+            if (billingDomainService == null) {
+                throw new IllegalStateException("BillingDomainService unavailable for Study Pass fulfill");
+            }
+            // 通行证与订阅无关：不校验会员状态、不写 user_subscriptions。
+            // fulfillStudyPassPayment 自身按 session 幂等，重复投递不会产生第二条记录。
+            boolean fulfilled = billingDomainService.fulfillStudyPassPayment(
+                    clerkUserId,
+                    passCode,
+                    session.getId(),
+                    session.getPaymentIntent());
+            if (!fulfilled) {
+                refundCheckoutPayment(session.getPaymentIntent(), session.getId(),
+                        "study_pass_already_active", "study-pass-refund");
+                rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
+                        .set(RechargeOrderEntity::getStripePaymentIntentId, session.getPaymentIntent())
+                        .set(RechargeOrderEntity::getStatus, "refunded")
+                        .set(RechargeOrderEntity::getFailureReason, "study_pass_already_active")
+                        .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+                return;
+            }
+            completeOrderBySession(session, passCode, null);
+            capturePaymentSucceeded(
+                    clerkUserId,
+                    session,
+                    passCode,
+                    "study_pass",
+                    "study_pass",
+                    0L,
+                    null);
+            notifyCheckoutSucceeded(
+                    stripeEventId,
+                    stripeEventType,
+                    session,
+                    metadata,
+                    purchaseType,
+                    "study_pass",
+                    0L);
+            return;
+        }
+
         if ("subscription".equals(purchaseType)
                 || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             boolean paymentSettled = "paid".equals(session.getPaymentStatus());
@@ -665,6 +719,7 @@ public class StripeBillingWebhookService {
                         null
                 );
                 notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
+                consumeStudyPassUpgradeCredit(metadata);
                 try {
                     Subscription subscription = Subscription.retrieve(session.getSubscription());
                     syncSubscription(subscription, false, false);
@@ -2387,6 +2442,29 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);
         }
         return plan;
+    }
+
+    /**
+     * 订阅支付成功后核销通行证抵扣。核销失败不阻断订阅落库——抵扣是让利，
+     * 最坏结果是用户保留了抵扣资格，而不是订阅状态不一致。
+     */
+    private void consumeStudyPassUpgradeCredit(Map<String, String> metadata) {
+        String rawPassId = metadata.get("study_pass_credit_id");
+        if (rawPassId == null || rawPassId.isBlank()) {
+            return;
+        }
+        BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+        if (billingDomainService == null) {
+            log.warn("BillingDomainService unavailable to consume Study Pass credit: {}", rawPassId);
+            return;
+        }
+        try {
+            billingDomainService.consumeStudyPassUpgradeCredit(Long.valueOf(rawPassId.trim()));
+        } catch (NumberFormatException e) {
+            log.warn("Study Pass credit metadata is not a pass id: {}", rawPassId);
+        } catch (RuntimeException e) {
+            log.warn("Consume Study Pass credit failed for pass {}: {}", rawPassId, e.getMessage());
+        }
     }
 
     private AddonPackageDefEntity requireAddon(String addonCode) {

@@ -35,4 +35,12 @@ public class SubscriptionResult {
     private LocalDateTime pendingEffectiveAt;
     /** Nested Basic paid-trial state for frontend {@code basicTrial}. */
     private BasicTrialAccount basicTrial;
+    /**
+     * 学习内容库（题库与知识讲解）阅读放行判定：有效付费会员 **或** 未过期的题库通行证。
+     * 与 {@link #canConsumePaidEntitlements} 语义分离——通行证不放行任何工具额度、
+     * add-on 或输出类型权益。
+     */
+    private Boolean canReadStudyLibrary;
+    /** 题库通行证明细，仅用于展示；放行判定一律以 {@link #canReadStudyLibrary} 为准。 */
+    private StudyPassAccount studyPass;
 }

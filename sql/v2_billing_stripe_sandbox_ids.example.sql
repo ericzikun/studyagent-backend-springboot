@@ -77,9 +77,24 @@ UPDATE addon_package_defs
 SET stripe_product_id = 'prod_ADDON_HUMANIZER', stripe_price_id = 'price_ADDON_HUMANIZER_3'
 WHERE addon_code = 'addon_humanizer_3';
 
+-- Study Pass: one-time $0.99 / 30-day reading entitlement.
+-- Create the Price in Stripe as a ONE-TIME price (not recurring), then set both ids
+-- and flip is_active to 1. Until this runs, /v1/billing/config returns studyPass=null
+-- and the frontend shows no purchase entry at all.
+UPDATE study_pass_products
+SET stripe_product_id = 'prod_STUDY_PASS',
+    stripe_price_id = 'price_STUDY_PASS_30D',
+    is_active = 1
+WHERE pass_code = 'study_pass_30d';
+
 SELECT plan_code, converts_to_plan_code, is_active,
        stripe_product_id, stripe_price_id
 FROM subscription_plans
+ORDER BY display_order;
+
+SELECT pass_code, price_cents, currency, validity_days, is_active,
+       stripe_product_id, stripe_price_id
+FROM study_pass_products
 ORDER BY display_order;
 
 SELECT addon_code, stripe_product_id, stripe_price_id

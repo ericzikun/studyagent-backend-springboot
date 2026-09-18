@@ -97,6 +97,43 @@ class StripeBillingWebhookServiceTest {
     private TransactionStatus transactionStatus;
 
     @Test
+    void unpaidStudyPassNeverGrantsEntitlement() throws Exception {
+        Session session = new Session();
+        session.setId("cs_study");
+        session.setPaymentStatus("unpaid");
+        session.setMetadata(Map.of("purchase_type", "study_pass", "clerk_user_id", "user_1", "pass_code", "study_pass_30d"));
+        invokeHandleCheckoutCompleted(service(), session);
+        verify(billingDomainServiceProvider, never()).getIfAvailable();
+        verify(rechargeOrderMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void duplicateStudyPassPaymentRefundsWithoutMarkingCompleted() throws Exception {
+        BillingDomainService domain = org.mockito.Mockito.mock(BillingDomainService.class);
+        when(billingDomainServiceProvider.getIfAvailable()).thenReturn(domain);
+        when(domain.fulfillStudyPassPayment("user_1", "study_pass_30d", "cs_study", "pi_study"))
+                .thenReturn(false);
+        StripeBillingWebhookService handler = org.mockito.Mockito.spy(service());
+        org.mockito.Mockito.doNothing().when(handler).refundCheckoutPayment(
+                "pi_study", "cs_study", "study_pass_already_active", "study-pass-refund");
+        Session session = new Session();
+        session.setId("cs_study");
+        session.setPaymentStatus("paid");
+        session.setPaymentIntent("pi_study");
+        session.setMetadata(Map.of("purchase_type", "study_pass", "clerk_user_id", "user_1", "pass_code", "study_pass_30d"));
+        List<Object> updates = new ArrayList<>();
+        when(rechargeOrderMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            LambdaUpdateWrapper<?> wrapper = invocation.getArgument(1);
+            updates.addAll(wrapper.getParamNameValuePairs().values());
+            return 1;
+        });
+        invokeHandleCheckoutCompleted(handler, session);
+        verify(handler).refundCheckoutPayment("pi_study", "cs_study", "study_pass_already_active", "study-pass-refund");
+        assertTrue(updates.contains("refunded"));
+        assertFalse(updates.contains("completed"));
+    }
+
+    @Test
     void supportsSubscriptionLifecycleEvents() {
         Event event = event("invoice.paid", "invoice", null);
         assertTrue(service().supports(event));

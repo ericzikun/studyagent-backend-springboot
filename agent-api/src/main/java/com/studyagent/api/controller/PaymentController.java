@@ -126,6 +126,58 @@ public class PaymentController {
         }
     }
 
+    /**
+     * 题库通行证的一次性 checkout。不要求付费会员身份——通行证面向的是尚无
+     * 任何付费权益的题库读者。
+     */
+    @PostMapping("/study-pass-checkout")
+    public Result<Map<String, Object>> createStudyPassCheckout(
+            @RequestBody StudyPassCheckoutRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId,
+            @RequestAttribute(value = "userInfo", required = false) ClerkClient.UserInfo userInfo) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        }
+        try {
+            CheckoutSessionResult checkout = billingDomainService.createStudyPassCheckout(
+                    clerkUserId,
+                    userInfo == null ? null : userInfo.email,
+                    request.getPassCode(),
+                    request.getSuccessUrl(),
+                    request.getCancelUrl(),
+                    request.getResumeToken());
+            captureCheckoutSessionCreated(
+                    clerkUserId,
+                    request.getPassCode(),
+                    "study_pass",
+                    userInfo == null ? null : userInfo.email,
+                    checkout
+            );
+            return Result.success(toCheckoutData(checkout));
+        } catch (BillingDomainException e) {
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getPassCode(),
+                    "study_pass",
+                    userInfo == null ? null : userInfo.email,
+                    e.getCode(),
+                    e.getMessage()
+            );
+            return mapBillingException(e);
+        } catch (Exception e) {
+            log.error("创建题库通行证支付会话失败: {}", e.getMessage(), e);
+            captureCheckoutSessionFailed(
+                    clerkUserId,
+                    request.getPassCode(),
+                    "study_pass",
+                    userInfo == null ? null : userInfo.email,
+                    "UNKNOWN",
+                    e.getMessage()
+            );
+            return Result.error(ApiCode.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
     @PostMapping("/create-checkout-session")
     public Result<Map<String, Object>> createCheckoutSession(
             @RequestBody CreateCheckoutSessionRequest request,
@@ -226,6 +278,7 @@ public class PaymentController {
             data.put("sessionId", result.getSessionId());
             data.put("status", result.getStatus());
             data.put("paymentStatus", result.getPaymentStatus());
+            data.put("purchaseType", result.getPurchaseType());
             data.put("amountTotal", result.getAmountTotal());
             data.put("currency", result.getCurrency());
             data.put("createdAt", result.getCreatedAt());
@@ -380,6 +433,14 @@ public class PaymentController {
     @Data
     static class AddonCheckoutRequest {
         private String addonCode;
+        private String successUrl;
+        private String cancelUrl;
+        private String resumeToken;
+    }
+
+    @Data
+    static class StudyPassCheckoutRequest {
+        private String passCode;
         private String successUrl;
         private String cancelUrl;
         private String resumeToken;

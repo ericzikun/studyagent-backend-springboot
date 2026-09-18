@@ -191,6 +191,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         }
         String verifiedOwner = hasText(localOwner) ? localOwner : metadataOwner;
         return SessionStatusResult.builder()
+                .purchaseType(session.getMetadata() == null ? null : session.getMetadata().get("purchase_type"))
                 .sessionId(session.getId())
                 .status(session.getStatus())
                 .paymentStatus(session.getPaymentStatus())

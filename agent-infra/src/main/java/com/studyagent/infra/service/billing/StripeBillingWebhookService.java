@@ -863,6 +863,7 @@ public class StripeBillingWebhookService {
                 return false;
             }
             if (current != null) {
+                clearPaidTrialPendingConversionTarget(current);
                 releasePendingScheduleIfPresent(current, subscription);
             }
             if (subscription.getItems() == null
@@ -897,6 +898,16 @@ public class StripeBillingWebhookService {
                     .set(RechargeOrderEntity::getStatus, "switched")
                     .set(RechargeOrderEntity::getUpgradeEffectiveAt, fromEpoch(periodStartEpoch))
                     .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+            // The checkout upgrade grant is additive. That preserves leftover quota when moving
+            // up a tier, but a lower-tier purchase has to replace it, otherwise the new plan's
+            // allowance would stack on top of the previous (higher) one.
+            if (tierRank(targetPlan.getTier()) < tierRank(currentPlan.getTier())) {
+                quotaGateway().clearPlanQuota(
+                        clerkUserId,
+                        updated.getId(),
+                        targetPlan.getPlanCode(),
+                        "manual-upgrade-lower-tier:" + order.getOrderNo());
+            }
             quotaGateway().grantUpgradeFromCheckout(
                     clerkUserId,
                     updated.getId(),
@@ -2317,6 +2328,28 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Unknown plan code: " + planCode);
         }
         return plan;
+    }
+
+    /**
+     * A subscription-style paid trial carries {@code pending_plan_code} as its Schedule
+     * conversion target, which is the same plan the upgrade checkout just sold. Clearing it
+     * keeps {@link #applySubscription} from classifying the resolved plan as a pending
+     * activation that was never paid for.
+     */
+    private void clearPaidTrialPendingConversionTarget(UserSubscriptionEntity current) {
+        if (current == null
+                || !IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
+                || IntroTrialPlans.isOneTimeProTrialPlanCode(current.getPlanCode())
+                || !hasText(current.getPendingPlanCode())) {
+            return;
+        }
+        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                .eq(UserSubscriptionEntity::getId, current.getId())
+                .set(UserSubscriptionEntity::getPendingPlanCode, null)
+                .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
+                .set(UserSubscriptionEntity::getUpdatedAt, LocalDateTime.now()));
+        current.setPendingPlanCode(null);
+        current.setPendingEffectiveAt(null);
     }
 
     private void releasePendingScheduleIfPresent(

@@ -13,6 +13,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
+import com.studyagent.service.domain.billing.ConvertedYearlyTrialMigrationOutcome;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaVipAccessService;
@@ -21,6 +22,7 @@ import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Invoice;
+import com.stripe.model.InvoiceItem;
 import com.stripe.model.Price;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
@@ -754,6 +756,140 @@ class BillingDomainServiceImplTest {
         assertEquals("plus_monthly", order.getTargetPlanCode());
         assertEquals("monthly_full", order.getUpgradeChargeType());
         assertEquals(3999, order.getPriceCents());
+    }
+
+    @Test
+    void convertedYearlyTrialMigrationVoidsUnpaidInvoiceAndSwitchesToMonthly() throws Exception {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(convertedYearlyTrialSubscription(51L, "user_1"));
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(yearlyProPlan(), monthlyProPlan());
+        when(rechargeOrderMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123", null, "price_pro_yearly", 1789539935L, 1818677935L);
+        Invoice openAnnualInvoice = new Invoice();
+        openAnnualInvoice.setId("in_open_annual");
+        service.openInvoicesToReturn = List.of(openAnnualInvoice);
+
+        var outcome = service.migrateConvertedYearlyTrialToMonthly("user_1");
+
+        assertEquals(ConvertedYearlyTrialMigrationOutcome.VOIDED_AND_SWITCHED_TO_MONTHLY, outcome);
+        assertEquals(List.of("in_open_annual"), service.voidedInvoiceIds);
+        assertEquals(7999, service.lastCreatedInvoiceItemAmount);
+        assertEquals(1, service.createdInvoiceCount);
+        assertNotNull(service.lastSubscriptionUpdateParams);
+        assertNotNull(service.lastSubscriptionUpdateParams.getTrialEnd());
+    }
+
+    @Test
+    void convertedYearlyTrialMigrationRespectsScheduledCancellation() throws Exception {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(convertedYearlyTrialSubscription(52L, "user_2"));
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(yearlyProPlan(), monthlyProPlan());
+        when(rechargeOrderMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123", null, "price_pro_yearly", 1789539935L, 1818677935L);
+        service.subscriptionToRetrieve.setCancelAtPeriodEnd(true);
+        Invoice openAnnualInvoice = new Invoice();
+        openAnnualInvoice.setId("in_open_annual");
+        service.openInvoicesToReturn = List.of(openAnnualInvoice);
+
+        var outcome = service.migrateConvertedYearlyTrialToMonthly("user_2");
+
+        assertEquals(ConvertedYearlyTrialMigrationOutcome.VOIDED_ONLY_CANCEL_AT_PERIOD_END, outcome);
+        assertEquals(List.of("in_open_annual"), service.voidedInvoiceIds);
+        assertNull(service.lastCreatedInvoiceItemAmount);
+        assertEquals(0, service.createdInvoiceCount);
+        assertNull(service.lastSubscriptionUpdateParams);
+    }
+
+    @Test
+    void convertedYearlyTrialMigrationSchedulesMonthlySwitchWhenAnnualTermPaid() throws Exception {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(convertedYearlyTrialSubscription(53L, "user_3"));
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(yearlyProPlan(), monthlyProPlan());
+        when(rechargeOrderMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription(
+                "sub_123", null, "price_pro_yearly", 1789539935L, 1818677935L);
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.updatedScheduleToReturn = schedule("sub_sched_new");
+
+        var outcome = service.migrateConvertedYearlyTrialToMonthly("user_3");
+
+        assertEquals(ConvertedYearlyTrialMigrationOutcome.SCHEDULED_MONTHLY_AT_PERIOD_END, outcome);
+        assertEquals(1, service.createdSchedules);
+        assertEquals(1, service.updatedSchedules);
+        assertNull(service.lastCreatedInvoiceItemAmount);
+        assertEquals(0, service.createdInvoiceCount);
+    }
+
+    @Test
+    void convertedYearlyTrialMigrationSkipsSubscriptionsWithoutYearlyTrialOrder() throws Exception {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(convertedYearlyTrialSubscription(54L, "user_4"));
+        when(rechargeOrderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var outcome = service.migrateConvertedYearlyTrialToMonthly("user_4");
+
+        assertEquals(ConvertedYearlyTrialMigrationOutcome.SKIPPED, outcome);
+        assertEquals(0, service.createdInvoiceCount);
+        assertNull(service.lastSubscriptionUpdateParams);
+    }
+
+    @Test
+    void convertedYearlyTrialMigrationSkipsSubscriptionsAlreadyOnMonthlyPlan() throws Exception {
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(convertedYearlyTrialSubscription(55L, "user_5"));
+        when(rechargeOrderMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(monthlyProPlan());
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+
+        var outcome = service.migrateConvertedYearlyTrialToMonthly("user_5");
+
+        assertEquals(ConvertedYearlyTrialMigrationOutcome.SKIPPED, outcome);
+        assertEquals(0, service.createdInvoiceCount);
+    }
+
+    private UserSubscriptionEntity convertedYearlyTrialSubscription(long id, String clerkUserId) {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(id);
+        current.setClerkUserId(clerkUserId);
+        current.setPlanCode("pro_yearly");
+        current.setTier("pro");
+        current.setStatus("past_due");
+        current.setStripeCustomerId("cus_123");
+        current.setStripeSubscriptionId("sub_123");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-09-16T06:19:35"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2027-09-16T06:19:35"));
+        return current;
+    }
+
+    private SubscriptionPlanEntity yearlyProPlan() {
+        SubscriptionPlanEntity plan = plan("pro_yearly", "pro", "year", 38388);
+        plan.setStripePriceId("price_pro_yearly");
+        return plan;
+    }
+
+    private SubscriptionPlanEntity monthlyProPlan() {
+        SubscriptionPlanEntity plan = plan("pro_monthly", "pro", "month", 7999);
+        plan.setStripePriceId("price_pro_monthly");
+        return plan;
     }
 
     @Test
@@ -2337,6 +2473,12 @@ class BillingDomainServiceImplTest {
         private int createdSchedules;
         private int updatedSchedules;
         private SubscriptionUpdateParams lastSubscriptionUpdateParams;
+        private RequestOptions lastSubscriptionUpdateOptions;
+        private List<Invoice> openInvoicesToReturn = List.of();
+        private final List<String> voidedInvoiceIds = new java.util.ArrayList<>();
+        private Integer lastCreatedInvoiceItemAmount;
+        private String lastCreatedInvoiceItemDescription;
+        private int createdInvoiceCount;
         private com.stripe.exception.StripeException scheduleUpdateFailure;
 
         private TestBillingDomainService() {
@@ -2497,6 +2639,56 @@ class BillingDomainServiceImplTest {
                 subscriptionToRetrieve.setSchedule(null);
             }
             return schedule;
+        }
+
+        @Override
+        Subscription updateStripeSubscription(
+                Subscription subscription,
+                SubscriptionUpdateParams params,
+                RequestOptions options) {
+            lastSubscriptionUpdateParams = params;
+            lastSubscriptionUpdateOptions = options;
+            subscription.setCancelAtPeriodEnd(false);
+            return subscription;
+        }
+
+        @Override
+        List<Invoice> listOpenSubscriptionInvoices(String subscriptionId) {
+            return openInvoicesToReturn;
+        }
+
+        @Override
+        Invoice voidStripeInvoice(String invoiceId) {
+            voidedInvoiceIds.add(invoiceId);
+            Invoice invoice = new Invoice();
+            invoice.setId(invoiceId);
+            return invoice;
+        }
+
+        @Override
+        InvoiceItem createStripeInvoiceItem(
+                String customerId,
+                String subscriptionId,
+                Integer amountCents,
+                String currency,
+                String description,
+                String idempotencyKey) {
+            lastCreatedInvoiceItemAmount = amountCents;
+            lastCreatedInvoiceItemDescription = description;
+            InvoiceItem item = new InvoiceItem();
+            item.setId("ii_created");
+            return item;
+        }
+
+        @Override
+        Invoice createStripeSubscriptionInvoice(
+                String customerId,
+                String subscriptionId,
+                String idempotencyKey) {
+            createdInvoiceCount++;
+            Invoice invoice = new Invoice();
+            invoice.setId("in_created");
+            return invoice;
         }
     }
 

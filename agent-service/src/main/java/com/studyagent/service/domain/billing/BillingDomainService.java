@@ -92,4 +92,16 @@ public interface BillingDomainService {
             String stripeSessionId,
             String stripePaymentIntentId,
             String planCode);
+
+    /**
+     * One-off remediation for subscriptions that converted out of the retired Pro Trial yearly SKU
+     * and therefore renew as an annual plan instead of the intended monthly plan.
+     * <p>
+     * Voids any unpaid annual invoice, then either switches the subscription to Pro monthly
+     * immediately (charged right away, billing cycle restarted) or — when that annual invoice was
+     * already paid — schedules the same monthly switch for the end of the paid annual term. A
+     * subscription that already carries a scheduled cancellation is only voided, so the user's
+     * cancellation intent is respected.
+     */
+    ConvertedYearlyTrialMigrationOutcome migrateConvertedYearlyTrialToMonthly(String clerkUserId);
 }

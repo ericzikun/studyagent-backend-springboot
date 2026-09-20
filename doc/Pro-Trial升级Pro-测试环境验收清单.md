@@ -276,3 +276,69 @@ FROM user_subscriptions WHERE clerk_user_id = '<uid>';
 - 正式年付套餐的停售与存量迁月付（下一轮）。
 - 前端年付入口与会话判定改造（前端同学的分支）。
 - 不放开"付费年付 → 月付到期切换"（`isAnnualToMonthlySwitch` 守卫保持）。
+
+## 十一、已转正的"年付试用"用户改为按月续费（一次性修正）
+
+### 11.1 背景
+
+第十节的停售与重指只覆盖"**还在试用期**"的年付试用账号。但有一批账号**在停售之前就已到期转正**成了 `pro_yearly`，它们的 `plan_code` 不再是 `pro_trial_to_yearly`，因此既不受停售影响、也不在重指任务的候选里——其中未付款的会持续被 Stripe 催付年费（$383.88），与"到期按 Pro 月付续"的意图不一致。
+
+识别这批人**不能用 `plan_code`**，要按订单来源：
+
+```sql
+SELECT s.clerk_user_id, s.plan_code, s.status, s.intro_trial_converted_at,
+       s.current_period_end, s.grace_end_at, s.cancel_at_period_end
+FROM user_subscriptions s
+JOIN (SELECT DISTINCT clerk_user_id FROM recharge_orders
+      WHERE order_type = 'subscription_intro_trial'
+        AND plan_code = 'pro_trial_to_yearly' AND status = 'completed') o
+  ON o.clerk_user_id = s.clerk_user_id
+WHERE s.plan_code = 'pro_yearly';
+```
+
+### 11.2 处理口径（已确认）
+
+| 账号状态 | 处理 |
+| --- | --- |
+| 有未付年费发票、且**未**设置到期取消 | 作废该发票 → 订阅切到 `pro_monthly`、周期从今天重算 → **立即补收当月 $79.99** |
+| 有未付年费发票、且**已**设置到期取消 | **只作废发票**（停止催付），不改变续费方式，尊重用户的取消意愿 |
+| 无未付发票（年费已付清） | 不动已付的那一年；在订阅上安排**到期后自动转 `pro_monthly`** 的 Schedule |
+
+本地 `plan_code` / `current_period_*` / 额度**由既有 webhook 同步**（按 price 反查套餐 + `invoice.paid` 重授），本任务不直接写账单状态，避免出现两套同步逻辑。
+
+### 11.3 执行方式
+
+一次性任务 `ConvertedYearlyTrialMonthlyMigrationScheduler`，**白名单驱动、默认关闭**：
+
+```bash
+BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_ENABLED=true
+BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_USER_IDS=user_xxx,user_yyy,user_zzz
+# 可选：BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_CRON
+```
+
+只填这次要处理的 uid（逗号分隔），跑一轮核对后把 `enabled` 关回 `false`。改完需要**重建**后端容器（`docker compose up -d --force-recreate springboot-backend`），`restart` 读不到新 env。日志按用户输出 `outcome`：`VOIDED_AND_SWITCHED_TO_MONTHLY` / `VOIDED_ONLY_CANCEL_AT_PERIOD_END` / `SCHEDULED_MONTHLY_AT_PERIOD_END` / `SKIPPED`。
+
+**幂等**：所有 Stripe 写入的 idempotency key 都由 subscription id 派生，重复执行不会重复收费；账号一旦变成月付（`billing_interval = month`）或不是"年付试用来源"，直接返回 `SKIPPED`。
+
+### 11.4 每个账号的核对点
+
+```sql
+SELECT plan_code, tier, status, subscription_phase, pending_plan_code, pending_effective_at,
+       current_period_start, current_period_end, quota_period_end, grace_end_at, cancel_at_period_end
+FROM user_subscriptions WHERE clerk_user_id = '<uid>';
+```
+
+- **切月付的账号**：Stripe 侧原年费发票变 `void`、订阅 price 换成 `pro_monthly`、`trial_end` ≈ 今天 + 1 月，并生成一张 $79.99 的发票（若卡仍被拒会回到 `past_due`，属支付方式问题）；本地由 webhook 同步成 `plan_code=pro_monthly`、`subscription_phase=standard`、周期按月。
+- **只作废的账号**：发票 `void`，订阅与续费方式不变（到期按其取消意愿结束）。
+- **安排到期切换的账号**：Schedule 的 Phase 1 = 现价到原年付到期日、Phase 2 = `pro_monthly`；本地 `pending_plan_code='pro_monthly'`、`pending_effective_at` = 原年付到期日。
+
+### 11.5 回滚
+
+- 已作废的发票无法恢复，只能按需重新开票；切月付的账号可在 Stripe 把 price 改回 `pro_yearly` 并重设周期。
+- 到期切换的 Schedule 可直接 release；本地 `pending_plan_code` / `stripe_schedule_id` 随 schedule 事件同步清空。
+
+### 11.6 已知边界
+
+- 只处理**白名单里显式列出的 uid**，不做规则匹配，避免误伤正常购买年付的用户。
+- 未对真实 Stripe 预演过（本地无法使用密钥）；首次执行建议**先跑 1 个账号**，核对通过再补齐其余。
+- 正式年付套餐（`basic/plus/pro_yearly`）的销售与存量迁移仍不在范围内。

@@ -259,6 +259,12 @@ billing:
     enabled: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_ENABLED:false}
     batch-size: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_BATCH_SIZE:100}
     cron: ${BILLING_PRO_TRIAL_YEARLY_REPAIR_CRON:0 45 * * * ?}
+  # 一次性历史修正：把"年付试用已转正为年付"的账号改为按月续费。
+  # 只处理 user-ids 里显式列出的账号（逗号分隔），默认关闭；跑一轮核对后关闭。
+  converted-yearly-trial-monthly-migration:
+    enabled: ${BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_ENABLED:false}
+    user-ids: ${BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_USER_IDS:}
+    cron: ${BILLING_CONVERTED_YEARLY_TRIAL_MIGRATION_CRON:0 55 * * * ?}
 
 # PostHog 分析配置
 posthog:

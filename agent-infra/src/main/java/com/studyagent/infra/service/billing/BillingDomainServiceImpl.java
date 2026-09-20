@@ -9,6 +9,8 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Charge;
 import com.stripe.model.Invoice;
+import com.stripe.model.InvoiceCollection;
+import com.stripe.model.InvoiceItem;
 import com.stripe.model.Product;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
@@ -17,6 +19,9 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerUpdateParams;
+import com.stripe.param.InvoiceCreateParams;
+import com.stripe.param.InvoiceItemCreateParams;
+import com.stripe.param.InvoiceListParams;
 import com.stripe.param.SubscriptionScheduleCreateParams;
 import com.stripe.param.SubscriptionScheduleReleaseParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
@@ -43,6 +48,7 @@ import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.BillingPortalSessionResult;
 import com.studyagent.service.domain.billing.BillingRecordPageResult;
 import com.studyagent.service.domain.billing.BillingRecordResult;
+import com.studyagent.service.domain.billing.ConvertedYearlyTrialMigrationOutcome;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.payment.CheckoutSessionResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
@@ -2256,6 +2262,57 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return schedule.release(params);
     }
 
+    Subscription updateStripeSubscription(
+            Subscription subscription,
+            SubscriptionUpdateParams params,
+            RequestOptions options) throws StripeException {
+        return subscription.update(params, options);
+    }
+
+    List<Invoice> listOpenSubscriptionInvoices(String subscriptionId) throws StripeException {
+        InvoiceCollection invoices = Invoice.list(InvoiceListParams.builder()
+                .setSubscription(subscriptionId)
+                .setStatus(InvoiceListParams.Status.OPEN)
+                .setLimit(10L)
+                .build());
+        return invoices == null || invoices.getData() == null ? List.of() : invoices.getData();
+    }
+
+    Invoice voidStripeInvoice(String invoiceId) throws StripeException {
+        return Invoice.retrieve(invoiceId).voidInvoice();
+    }
+
+    InvoiceItem createStripeInvoiceItem(
+            String customerId,
+            String subscriptionId,
+            Integer amountCents,
+            String currency,
+            String description,
+            String idempotencyKey) throws StripeException {
+        return InvoiceItem.create(
+                InvoiceItemCreateParams.builder()
+                        .setCustomer(customerId)
+                        .setSubscription(subscriptionId)
+                        .setAmount(amountCents == null ? 0L : amountCents.longValue())
+                        .setCurrency(currency == null ? "usd" : currency)
+                        .setDescription(description)
+                        .build(),
+                RequestOptions.builder().setIdempotencyKey(idempotencyKey).build());
+    }
+
+    Invoice createStripeSubscriptionInvoice(
+            String customerId,
+            String subscriptionId,
+            String idempotencyKey) throws StripeException {
+        return Invoice.create(
+                InvoiceCreateParams.builder()
+                        .setCustomer(customerId)
+                        .setSubscription(subscriptionId)
+                        .setAutoAdvance(true)
+                        .build(),
+                RequestOptions.builder().setIdempotencyKey(idempotencyKey).build());
+    }
+
     boolean clearStoredStripeCustomer(UserSubscriptionEntity userSubscription) {
         if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
             return false;
@@ -3036,6 +3093,151 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private LocalDateTime fromEpoch(Long value) {
         return value == null ? null : LocalDateTime.ofInstant(Instant.ofEpochSecond(value), ZoneOffset.UTC);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ConvertedYearlyTrialMigrationOutcome migrateConvertedYearlyTrialToMonthly(String clerkUserId) {
+        requireStripeConfigured();
+        if (!hasText(clerkUserId)) {
+            return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
+        }
+        UserSubscriptionEntity current = findByUser(clerkUserId);
+        if (current == null || !hasText(current.getStripeSubscriptionId())) {
+            return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
+        }
+        // Only subscriptions that actually came out of the retired yearly Pro Trial SKU: a plain
+        // annual purchase must never be touched by this remediation.
+        if (!hasCompletedYearlyProTrialOrder(clerkUserId)) {
+            return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
+        }
+        SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
+        if (!"year".equals(currentPlan.getBillingInterval())) {
+            return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
+        }
+        SubscriptionPlanEntity monthlyPlan = requirePlan(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
+        try {
+            Subscription subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+            releaseScheduleIfReusable(firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule()));
+            List<Invoice> unpaidInvoices = listOpenSubscriptionInvoices(subscription.getId());
+            for (Invoice unpaid : unpaidInvoices) {
+                voidStripeInvoice(unpaid.getId());
+            }
+            if (Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd())) {
+                // The user already asked to stop renewing: voiding the unpaid annual invoice is all
+                // this remediation should do, otherwise we would silently re-subscribe them.
+                return unpaidInvoices.isEmpty()
+                        ? ConvertedYearlyTrialMigrationOutcome.SKIPPED
+                        : ConvertedYearlyTrialMigrationOutcome.VOIDED_ONLY_CANCEL_AT_PERIOD_END;
+            }
+            if (!unpaidInvoices.isEmpty()) {
+                switchConvertedAnnualTrialToMonthly(subscription, monthlyPlan, clerkUserId);
+                return ConvertedYearlyTrialMigrationOutcome.VOIDED_AND_SWITCHED_TO_MONTHLY;
+            }
+            scheduleMonthlySwitchAtPeriodEnd(subscription, monthlyPlan, clerkUserId);
+            return ConvertedYearlyTrialMigrationOutcome.SCHEDULED_MONTHLY_AT_PERIOD_END;
+        } catch (StripeException e) {
+            throw stripeFailure("Migrate converted yearly Pro Trial to monthly failed", e);
+        }
+    }
+
+    private boolean hasCompletedYearlyProTrialOrder(String clerkUserId) {
+        if (!hasText(clerkUserId)) {
+            return false;
+        }
+        Long count = rechargeOrderMapper.selectCount(
+                new LambdaQueryWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
+                        .eq(RechargeOrderEntity::getOrderType, IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL)
+                        .eq(RechargeOrderEntity::getPlanCode, IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY)
+                        .in(RechargeOrderEntity::getStatus, List.of("paid", "completed", "switching")));
+        return count != null && count > 0;
+    }
+
+    /**
+     * Switches an unpaid annual subscription to Pro monthly: the cycle restarts today and the month
+     * that starts now is charged immediately, because the annual invoice it replaced was voided.
+     * Idempotency keys are derived from the subscription so a retry cannot double-charge.
+     */
+    private void switchConvertedAnnualTrialToMonthly(
+            Subscription subscription,
+            SubscriptionPlanEntity monthlyPlan,
+            String clerkUserId) throws StripeException {
+        String idempotencyPrefix = "annual-trial-monthly-fix:" + subscription.getId();
+        SubscriptionItem item = requireSingleSubscriptionItem(subscription);
+        long trialEnd = LocalDateTime.now(ZoneOffset.UTC).plusMonths(1).toEpochSecond(ZoneOffset.UTC);
+        Subscription updated = updateStripeSubscription(
+                subscription,
+                SubscriptionUpdateParams.builder()
+                        .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.NONE)
+                        .setCancelAtPeriodEnd(false)
+                        .setTrialEnd(trialEnd)
+                        .addItem(SubscriptionUpdateParams.Item.builder()
+                                .setId(item.getId())
+                                .setPrice(monthlyPlan.getStripePriceId())
+                                .setQuantity(item.getQuantity() == null ? 1L : item.getQuantity())
+                                .build())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("change_type", "annual_trial_conversion_monthly_fix")
+                        .build(),
+                RequestOptions.builder().setIdempotencyKey(idempotencyPrefix + ":switch").build());
+        String customerId = firstNonBlank(updated.getCustomer(), subscription.getCustomer());
+        createStripeInvoiceItem(
+                customerId,
+                subscription.getId(),
+                monthlyPlan.getPriceCents(),
+                monthlyPlan.getCurrency(),
+                "Pro monthly (converted from the annual Pro Trial plan)",
+                idempotencyPrefix + ":item");
+        createStripeSubscriptionInvoice(customerId, subscription.getId(), idempotencyPrefix + ":invoice");
+    }
+
+    /**
+     * Leaves the paid annual term untouched and only lines up the monthly plan from the moment that
+     * term ends, mirroring the shape the downgrade path already uses for scheduled plan changes.
+     */
+    private void scheduleMonthlySwitchAtPeriodEnd(
+            Subscription subscription,
+            SubscriptionPlanEntity monthlyPlan,
+            String clerkUserId) throws StripeException {
+        String idempotencyPrefix = "annual-trial-monthly-fix:schedule:" + subscription.getId();
+        SubscriptionSchedule schedule = createStripeSubscriptionSchedule(
+                SubscriptionScheduleCreateParams.builder()
+                        .setFromSubscription(subscription.getId())
+                        .build(),
+                RequestOptions.builder().setIdempotencyKey(idempotencyPrefix + ":create").build());
+        SubscriptionItem item = requireSingleSubscriptionItem(subscription);
+        Long currentPhaseStart = currentPhaseStart(schedule, subscription);
+        Long currentPhaseEnd = subscription.getCurrentPeriodEnd();
+        Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
+        SubscriptionScheduleUpdateParams updateParams = SubscriptionScheduleUpdateParams.builder()
+                .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
+                .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
+                .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setStartDate(currentPhaseStart)
+                        .setEndDate(currentPhaseEnd)
+                        .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                        .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                .setPrice(item.getPrice().getId())
+                                .setQuantity(quantity)
+                                .build())
+                        .build())
+                .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setStartDate(currentPhaseEnd)
+                        .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
+                        .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
+                                .setPrice(monthlyPlan.getStripePriceId())
+                                .setQuantity(1L)
+                                .build())
+                        .build())
+                .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("pending_plan_code", monthlyPlan.getPlanCode())
+                .putMetadata("change_type", "annual_trial_conversion_monthly_fix")
+                .build();
+        updateStripeSubscriptionSchedule(
+                schedule,
+                updateParams,
+                RequestOptions.builder().setIdempotencyKey(idempotencyPrefix + ":phases").build());
     }
 
     private int tierRank(String tier) {

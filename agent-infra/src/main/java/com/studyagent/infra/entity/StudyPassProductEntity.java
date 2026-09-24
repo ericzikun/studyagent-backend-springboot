@@ -11,6 +11,8 @@ import lombok.EqualsAndHashCode;
 public class StudyPassProductEntity extends BaseEntity {
     @TableField("pass_code")
     private String passCode;
+    @TableField("billing_type")
+    private String billingType;
     @TableField("stripe_product_id")
     private String stripeProductId;
     @TableField("stripe_price_id")

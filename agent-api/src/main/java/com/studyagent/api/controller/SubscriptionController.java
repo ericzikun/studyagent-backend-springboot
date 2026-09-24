@@ -30,6 +30,16 @@ public class SubscriptionController {
         return Result.success(billingDomainService.getCurrentSubscription(clerkUserId));
     }
 
+    @PostMapping("/study-pass/cancel")
+    public Result<com.studyagent.service.domain.billing.StudyPassAccount> cancelStudyPass(
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        try { return Result.success(billingDomainService.cancelStudyPassAtPeriodEnd(clerkUserId)); }
+        catch (BillingDomainException e) {
+            return Result.error("SUBSCRIPTION_NOT_FOUND".equals(e.getCode()) ? ApiCode.SUBSCRIPTION_NOT_FOUND : ApiCode.STRIPE_API_ERROR, e.getMessage());
+        }
+    }
+
     @PostMapping("/cancel")
     public Result<SubscriptionResult> cancel(
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {

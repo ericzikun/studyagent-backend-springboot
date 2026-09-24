@@ -134,6 +134,34 @@ class StripeBillingWebhookServiceTest {
     }
 
     @Test
+    void recurringStudyCheckoutDelegatesInvoiceWithoutLegacyOrQuotaFulfillment() throws Exception {
+        var domain = org.mockito.Mockito.mock(BillingDomainService.class);
+        when(billingDomainServiceProvider.getIfAvailable()).thenReturn(domain);
+        when(domain.syncStudyPassSubscription("sub_pass", "in_pass")).thenReturn(true);
+        var session = new Session(); session.setId("cs_pass"); session.setPaymentStatus("paid");
+        session.setSubscription("sub_pass"); session.setInvoice("in_pass");
+        session.setMetadata(Map.of("purchase_type", "study_pass", "clerk_user_id", "user_1", "pass_code", "pass"));
+        invokeHandleCheckoutCompleted(service(), session);
+        verify(domain).syncStudyPassSubscription("sub_pass", "in_pass");
+        verify(domain, never()).fulfillStudyPassPayment(any(), any(), any(), any());
+        org.mockito.Mockito.verifyNoInteractions(billingQuotaGateway, userSubscriptionMapper);
+    }
+
+    @Test
+    void passInvoiceIsRoutedBeforeMembershipPlanAndQuotaResolution() throws Exception {
+        var domain = org.mockito.Mockito.mock(BillingDomainService.class);
+        when(billingDomainServiceProvider.getIfAvailable()).thenReturn(domain);
+        when(domain.syncStudyPassSubscription("sub_pass", "in_pass")).thenReturn(true);
+        var sub = new Subscription(); sub.setId("sub_pass"); sub.setMetadata(Map.of("purchase_type", "study_pass"));
+        var handler = org.mockito.Mockito.spy(service());
+        org.mockito.Mockito.doReturn(sub).when(handler).retrieveStripeSubscription("sub_pass");
+        var invoice = new Invoice(); invoice.setId("in_pass"); invoice.setSubscription("sub_pass");
+        invokeHandleInvoicePaid(handler, invoice, "sub_pass", 100L);
+        verify(domain).syncStudyPassSubscription("sub_pass", "in_pass");
+        org.mockito.Mockito.verifyNoInteractions(subscriptionPlanMapper, billingQuotaGateway, userSubscriptionMapper);
+    }
+
+    @Test
     void supportsSubscriptionLifecycleEvents() {
         Event event = event("invoice.paid", "invoice", null);
         assertTrue(service().supports(event));

@@ -14,11 +14,19 @@ import java.time.LocalDateTime;
 public class StudyPassAccount {
     /** 当前是否存在未过期且 status=active 的通行证。 */
     private Boolean active;
+    /** one_time for legacy purchases; subscription for recurring Passes. */
+    private String billingType;
+    private Boolean cancelAtPeriodEnd;
+    private Boolean manageable;
+    private Integer renewalPriceCents;
+    private String currency;
+    private Integer billingIntervalDays;
+
     /** 最近一次购买的开始时间。 */
     private LocalDateTime startedAt;
     /** 最近一次购买的到期时间；已过期时仍保留，供前端展示。 */
     private LocalDateTime expiresAt;
-    /** 当前有效通行证是否仍可用于会员升级抵扣。 */
+    /** 兼容旧客户端，现始终为 false；会员按正常售价购买。 */
     private Boolean upgradeCreditAvailable;
     /**
      * 当前是否处于"到期后才能再次购买"的窗口。前端据此禁用购买入口，

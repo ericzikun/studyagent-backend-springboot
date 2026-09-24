@@ -17,6 +17,23 @@ import java.time.LocalDateTime;
 public class StudyPassEntity extends BaseEntity {
     @TableField("clerk_user_id")
     private String clerkUserId;
+    @TableField("stripe_subscription_id")
+    private String stripeSubscriptionId;
+    @TableField("stripe_price_id")
+    private String stripePriceId;
+    @TableField("purchase_key")
+    private String purchaseKey;
+    @TableField("cancel_at_period_end")
+    private Boolean cancelAtPeriodEnd;
+    @TableField("last_paid_invoice_id")
+    private String lastPaidInvoiceId;
+    @TableField("renewal_price_cents")
+    private Integer renewalPriceCents;
+    @TableField("renewal_currency")
+    private String renewalCurrency;
+    @TableField("billing_interval_days")
+    private Integer billingIntervalDays;
+
     @TableField("pass_code")
     private String passCode;
     private String status;

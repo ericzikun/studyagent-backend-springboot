@@ -302,7 +302,7 @@ class StudyPassBillingTest {
         assertEquals("free", result.getTier());
         assertNotNull(result.getStudyPass());
         assertEquals(Boolean.TRUE, result.getStudyPass().getActive());
-        assertEquals(Boolean.TRUE, result.getStudyPass().getUpgradeCreditAvailable());
+        assertEquals(Boolean.FALSE, result.getStudyPass().getUpgradeCreditAvailable());
         assertEquals(Boolean.FALSE, result.getStudyPass().getPurchasable());
     }
 
@@ -458,5 +458,161 @@ class StudyPassBillingTest {
         when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(userRepository.findByClerkUserId(anyString())).thenReturn(Optional.empty());
         when(quotaVipAccessService.isQuotaVip(anyString())).thenReturn(false);
+    }
+
+    private com.stripe.model.Subscription recurringSubscription() {
+        var sub = new com.stripe.model.Subscription();
+        sub.setId("sub_pass"); sub.setCustomer("cus_pass"); sub.setStatus("active");
+        sub.setCancelAtPeriodEnd(false);
+        sub.setMetadata(java.util.Map.of("purchase_type", "study_pass", "clerk_user_id", USER,
+                "pass_code", PASS_CODE, "purchase_key", "purchase"));
+        return sub;
+    }
+
+    private StudyPassEntity recurringPass() {
+        var pass = passExpiringIn(10);
+        pass.setId(42L); pass.setPurchaseKey("purchase"); pass.setStripeSubscriptionId("sub_pass");
+        pass.setStripePriceId("price_pass"); pass.setRenewalPriceCents(99); pass.setRenewalCurrency("usd");
+        pass.setBillingIntervalDays(30);
+        return pass;
+    }
+
+    private com.stripe.model.Invoice paidInvoice(String id, int daysFromNow) {
+        var invoice = new com.stripe.model.Invoice();
+        invoice.setId(id); invoice.setSubscription("sub_pass"); invoice.setPaid(true);
+        invoice.setPaymentIntent("pi_" + id); invoice.setAmountPaid(99L); invoice.setCurrency("usd");
+        var transitions = new com.stripe.model.Invoice.StatusTransitions();
+        transitions.setPaidAt(Instant.now().getEpochSecond()); invoice.setStatusTransitions(transitions);
+        var price = new com.stripe.model.Price(); price.setId("price_pass"); price.setUnitAmount(99L);
+        var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval("day"); recurring.setIntervalCount(30L);
+        price.setRecurring(recurring);
+        var line = new com.stripe.model.InvoiceLineItem(); line.setType("subscription"); line.setProration(false);
+        line.setPrice(price); line.setCurrency("usd");
+        var period = new com.stripe.model.InvoiceLineItem.Period();
+        period.setEnd(Instant.now().plus(daysFromNow, ChronoUnit.DAYS).getEpochSecond());
+        period.setStart(period.getEnd() - 30 * 86400); line.setPeriod(period);
+        var lines = new com.stripe.model.InvoiceLineItemCollection(); lines.setData(List.of(line)); invoice.setLines(lines);
+        return invoice;
+    }
+
+    private BillingDomainServiceImpl recurringService(StudyPassEntity pass) throws Exception {
+        var service = spy(service());
+        var owner = new UserSubscriptionEntity(); owner.setClerkUserId(USER); owner.setTier("free"); owner.setStripeCustomerId("cus_pass");
+        when(userSubscriptionMapper.selectByUserForUpdate(USER)).thenReturn(owner);
+        when(studyPassMapper.selectOne(any(Wrapper.class))).thenReturn(pass);
+        doReturn(recurringSubscription()).when(service).retrieveStudySubscription("sub_pass");
+        return service;
+    }
+
+    @Test
+    void paidRenewalsAdvanceOnceAndOlderInvoicesCannotShortenAccess() throws Exception {
+        var pass = recurringPass(); var service = recurringService(pass);
+        var newer = paidInvoice("in_new", 40); var older = paidInvoice("in_old", 10);
+        doReturn(newer).when(service).retrieveStudyInvoice("in_new");
+        doReturn(older).when(service).retrieveStudyInvoice("in_old");
+        java.util.Map<String, RechargeOrderEntity> receipts = new java.util.HashMap<>();
+        org.mockito.Mockito.doAnswer(call -> {
+            RechargeOrderEntity receipt = call.getArgument(0); receipts.put(receipt.getStripeInvoiceId(), receipt); return 1;
+        }).when(rechargeOrderMapper).insert(any(RechargeOrderEntity.class));
+        service.syncStudyPassSubscription("sub_pass", "in_new");
+        LocalDateTime paidEnd = pass.getExpiresAt();
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(receipts.get("in_new"));
+        service.syncStudyPassSubscription("sub_pass", "in_new");
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        service.syncStudyPassSubscription("sub_pass", "in_old");
+        assertEquals(paidEnd, pass.getExpiresAt()); assertEquals("in_new", pass.getLastPaidInvoiceId());
+        verify(rechargeOrderMapper, org.mockito.Mockito.times(2)).insert(any(RechargeOrderEntity.class));
+        org.mockito.Mockito.verifyNoInteractions(planQuotaService);
+    }
+
+    @Test
+    void subscriptionNotificationsAloneNeverExtendAccess() throws Exception {
+        var pass = recurringPass(); var service = recurringService(pass); var end = pass.getExpiresAt();
+        service.syncStudyPassSubscription("sub_pass", null);
+        assertEquals(end, pass.getExpiresAt());
+        org.mockito.Mockito.verifyNoInteractions(rechargeOrderMapper, planQuotaService);
+    }
+
+    @Test
+    void lateFirstPaymentForSupersededPassIsRefundedWithoutReactivation() throws Exception {
+        var pass = recurringPass(); pass.setStatus("superseded"); var service = recurringService(pass);
+        var invoice = paidInvoice("in_late", 30);
+        doReturn(invoice).when(service).retrieveStudyInvoice("in_late");
+        doReturn(recurringSubscription()).when(service).cancelStudyStripe("sub_pass", false);
+        org.mockito.Mockito.doNothing().when(service).refundConflictingStudyInvoice(invoice, "sub_pass");
+        service.syncStudyPassSubscription("sub_pass", "in_late");
+        assertEquals("superseded", pass.getStatus());
+        verify(service).refundConflictingStudyInvoice(invoice, "sub_pass");
+        verify(rechargeOrderMapper).updateById(org.mockito.ArgumentMatchers.argThat((RechargeOrderEntity o) -> "refunded".equals(o.getStatus())));
+    }
+
+    @Test
+    void invoiceFromAnotherSubscriptionCannotGrantAccess() throws Exception {
+        var pass = recurringPass(); var service = recurringService(pass);
+        var invoice = paidInvoice("in_wrong", 30); invoice.setSubscription("sub_other");
+        doReturn(invoice).when(service).retrieveStudyInvoice("in_wrong");
+        assertThrows(IllegalStateException.class, () -> service.syncStudyPassSubscription("sub_pass", "in_wrong"));
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void cancellationRetainsPaidAccessAndIsIdempotent() throws Exception {
+        var pass = recurringPass(); var service = recurringService(pass); var end = pass.getExpiresAt();
+        var canceled = recurringSubscription(); canceled.setCancelAtPeriodEnd(true);
+        doReturn(canceled).when(service).cancelStudyStripe("sub_pass", true);
+        assertTrue(service.cancelStudyPassAtPeriodEnd(USER).getActive());
+        doReturn(canceled).when(service).retrieveStudySubscription("sub_pass");
+        service.cancelStudyPassAtPeriodEnd(USER);
+        assertEquals(end, pass.getExpiresAt()); assertEquals("active", pass.getStatus());
+        verify(service, org.mockito.Mockito.times(1)).cancelStudyStripe("sub_pass", true);
+    }
+
+    @Test
+    void memberPurchaseEndsPassAndStopsItsRenewal() throws Exception {
+        var pass = recurringPass(); var service = spy(service());
+        when(userSubscriptionMapper.selectByUserForUpdate(USER)).thenReturn(new UserSubscriptionEntity());
+        when(studyPassMapper.selectList(any(Wrapper.class))).thenReturn(List.of(pass));
+        doReturn(recurringSubscription()).when(service).cancelStudyStripe("sub_pass", false);
+        service.supersedeStudyPasses(USER);
+        assertEquals("superseded", pass.getStatus()); assertTrue(pass.getCancelAtPeriodEnd());
+        assertFalse(pass.getExpiresAt().isAfter(LocalDateTime.now()));
+    }
+
+    @Test
+    void newPassCheckoutUsesSubscriptionModeAndImmutablePurchaseMetadata() throws Exception {
+        stubUserLock();
+        var product = sellableProduct(99, 30); product.setBillingType("subscription");
+        when(studyPassProductMapper.selectOne(any(Wrapper.class))).thenReturn(product);
+        var service = spy(service()); setStripeSecretKey(service, "sk_test_study");
+        var price = paidInvoice("in", 30).getLines().getData().get(0).getPrice();
+        price.setActive(true); price.setCurrency("usd"); price.setProduct(product.getStripeProductId());
+        doReturn(price).when(service).retrieveStudyPrice(product.getStripePriceId());
+        var session = new Session(); session.setId("cs_recurring"); session.setUrl("https://checkout.stripe.com/c/pay/test");
+        doReturn(session).when(service).createStudyCheckout(any(SessionCreateParams.class), any(StudyPassEntity.class));
+        service.createStudyPassCheckout(USER, null, PASS_CODE, "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
+        var params = ArgumentCaptor.forClass(SessionCreateParams.class);
+        var pass = ArgumentCaptor.forClass(StudyPassEntity.class);
+        verify(service).createStudyCheckout(params.capture(), pass.capture());
+        assertEquals(SessionCreateParams.Mode.SUBSCRIPTION, params.getValue().getMode());
+        assertEquals(pass.getValue().getPurchaseKey(), params.getValue().getSubscriptionData().getMetadata().get("purchase_key"));
+        assertEquals("pending", pass.getValue().getStatus());
+        assertEquals(99, pass.getValue().getRenewalPriceCents());
+    }
+
+    @Test
+    void recurringCatalogRejectsCalendarMonthPrice() throws Exception {
+        var service = spy(service()); var product = sellableProduct(99, 30);
+        var price = paidInvoice("in", 30).getLines().getData().get(0).getPrice();
+        price.setActive(true); price.getRecurring().setInterval("month"); price.getRecurring().setIntervalCount(1L);
+        doReturn(price).when(service).retrieveStudyPrice(product.getStripePriceId());
+        assertThrows(BillingDomainException.class, () -> service.validateStudyPassRecurringPrice(product));
+    }
+
+    @Test
+    void cancellationCannotTargetAnotherOwnersSubscription() throws Exception {
+        var pass = recurringPass(); var service = recurringService(pass);
+        service.retrieveStudySubscription("sub_pass").setCustomer("cus_other");
+        assertThrows(IllegalStateException.class, () -> service.cancelStudyPassAtPeriodEnd(USER));
+        verify(service, never()).cancelStudyStripe(anyString(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 }

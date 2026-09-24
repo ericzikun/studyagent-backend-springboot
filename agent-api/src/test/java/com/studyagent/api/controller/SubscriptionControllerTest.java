@@ -70,4 +70,20 @@ class SubscriptionControllerTest {
                 .isEqualTo(ApiCode.SUBSCRIPTION_UPGRADE_REQUIRES_CHECKOUT.getCode());
         assertThat(result.getMeta().getStatusMsg()).contains("/v1/payment/subscription-checkout");
     }
+
+    @Test
+    void passCancellationRequiresAuthenticatedIdentity() {
+        assertThat(controller.cancelStudyPass(null).getMeta().getStatusCode()).isEqualTo(ApiCode.USER_NOT_LOGGED_IN.getCode());
+        verifyNoInteractions(billingDomainService);
+    }
+
+    @Test
+    void passCancellationUsesTheSeparatePassOperation() {
+        var account = com.studyagent.service.domain.billing.StudyPassAccount.builder()
+                .active(true).cancelAtPeriodEnd(true).build();
+        when(billingDomainService.cancelStudyPassAtPeriodEnd("user_1")).thenReturn(account);
+        assertThat(controller.cancelStudyPass("user_1").getData()).isSameAs(account);
+        verify(billingDomainService).cancelStudyPassAtPeriodEnd("user_1");
+        org.mockito.Mockito.verifyNoMoreInteractions(billingDomainService);
+    }
 }

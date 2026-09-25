@@ -21,6 +21,7 @@ public class StudyPassAccount {
     private Integer renewalPriceCents;
     private String currency;
     private Integer billingIntervalDays;
+    private String billingInterval;
 
     /** 最近一次购买的开始时间。 */
     private LocalDateTime startedAt;

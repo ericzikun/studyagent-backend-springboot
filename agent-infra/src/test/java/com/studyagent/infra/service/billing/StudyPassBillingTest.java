@@ -148,6 +148,16 @@ class StudyPassBillingTest {
     }
 
     @Test
+    void getCatalogExposesMonthlyBillingInterval() {
+        when(subscriptionPlanMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        var product = sellableProduct(99, 30);
+        product.setBillingType("subscription");
+        when(studyPassProductMapper.selectList(any(Wrapper.class))).thenReturn(List.of(product));
+        assertEquals("month", service().getCatalog().getStudyPass().getBillingInterval());
+    }
+
+    @Test
     void getCatalogOmitsStudyPassWhenNotSellable() {
         when(subscriptionPlanMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
@@ -560,7 +570,10 @@ class StudyPassBillingTest {
         var pass = recurringPass(); var service = recurringService(pass); var end = pass.getExpiresAt();
         var canceled = recurringSubscription(); canceled.setCancelAtPeriodEnd(true);
         doReturn(canceled).when(service).cancelStudyStripe("sub_pass", true);
-        assertTrue(service.cancelStudyPassAtPeriodEnd(USER).getActive());
+        var account = service.cancelStudyPassAtPeriodEnd(USER);
+        assertTrue(account.getActive());
+        assertEquals(30, account.getBillingIntervalDays());
+        assertNull(account.getBillingInterval());
         doReturn(canceled).when(service).retrieveStudySubscription("sub_pass");
         service.cancelStudyPassAtPeriodEnd(USER);
         assertEquals(end, pass.getExpiresAt()); assertEquals("active", pass.getStatus());
@@ -586,6 +599,7 @@ class StudyPassBillingTest {
         var service = spy(service()); setStripeSecretKey(service, "sk_test_study");
         var price = paidInvoice("in", 30).getLines().getData().get(0).getPrice();
         price.setActive(true); price.setCurrency("usd"); price.setProduct(product.getStripeProductId());
+        price.getRecurring().setInterval("month"); price.getRecurring().setIntervalCount(1L);
         doReturn(price).when(service).retrieveStudyPrice(product.getStripePriceId());
         var session = new Session(); session.setId("cs_recurring"); session.setUrl("https://checkout.stripe.com/c/pay/test");
         doReturn(session).when(service).createStudyCheckout(any(SessionCreateParams.class), any(StudyPassEntity.class));
@@ -597,15 +611,48 @@ class StudyPassBillingTest {
         assertEquals(pass.getValue().getPurchaseKey(), params.getValue().getSubscriptionData().getMetadata().get("purchase_key"));
         assertEquals("pending", pass.getValue().getStatus());
         assertEquals(99, pass.getValue().getRenewalPriceCents());
+        assertNull(pass.getValue().getBillingIntervalDays());
     }
 
     @Test
-    void recurringCatalogRejectsCalendarMonthPrice() throws Exception {
+    void recurringCatalogAcceptsCalendarMonthPriceAndRejectsThirtyDayPrice() throws Exception {
         var service = spy(service()); var product = sellableProduct(99, 30);
         var price = paidInvoice("in", 30).getLines().getData().get(0).getPrice();
-        price.setActive(true); price.getRecurring().setInterval("month"); price.getRecurring().setIntervalCount(1L);
+        price.setActive(true); price.setCurrency("usd"); price.setProduct(product.getStripeProductId());
         doReturn(price).when(service).retrieveStudyPrice(product.getStripePriceId());
         assertThrows(BillingDomainException.class, () -> service.validateStudyPassRecurringPrice(product));
+        price.getRecurring().setInterval("month"); price.getRecurring().setIntervalCount(1L);
+        service.validateStudyPassRecurringPrice(product);
+    }
+
+    @Test
+    void monthlyPaidInvoiceExtendsAccessButThirtyDayInvoiceDoesNot() throws Exception {
+        var pass = recurringPass(); pass.setBillingIntervalDays(null);
+        var service = recurringService(pass);
+        var monthly = paidInvoice("in_month", 40);
+        monthly.getLines().getData().get(0).getPrice().getRecurring().setInterval("month");
+        monthly.getLines().getData().get(0).getPrice().getRecurring().setIntervalCount(1L);
+        var paidPeriod = monthly.getLines().getData().get(0).getPeriod();
+        paidPeriod.setStart(Instant.ofEpochSecond(paidPeriod.getEnd()).atZone(java.time.ZoneOffset.UTC)
+                .minusMonths(1).toEpochSecond());
+        doReturn(monthly).when(service).retrieveStudyInvoice("in_month");
+        service.syncStudyPassSubscription("sub_pass", "in_month");
+        assertEquals("in_month", pass.getLastPaidInvoiceId());
+        assertEquals(LocalDateTime.ofInstant(Instant.ofEpochSecond(paidPeriod.getEnd()), java.time.ZoneOffset.UTC), pass.getExpiresAt());
+        var wrong = paidInvoice("in_day", 70);
+        doReturn(wrong).when(service).retrieveStudyInvoice("in_day");
+        assertThrows(IllegalStateException.class, () -> service.syncStudyPassSubscription("sub_pass", "in_day"));
+    }
+
+    @Test
+    void monthlyAccountDerivesCadenceFromExistingSubscriptionSnapshot() throws Exception {
+        var pass = recurringPass(); pass.setBillingIntervalDays(null);
+        var service = recurringService(pass);
+        var canceled = recurringSubscription(); canceled.setCancelAtPeriodEnd(true);
+        doReturn(canceled).when(service).cancelStudyStripe("sub_pass", true);
+        var account = service.cancelStudyPassAtPeriodEnd(USER);
+        assertEquals("month", account.getBillingInterval());
+        assertNull(account.getBillingIntervalDays());
     }
 
     @Test

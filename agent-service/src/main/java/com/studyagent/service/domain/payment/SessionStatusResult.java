@@ -11,6 +11,8 @@ import java.util.Map;
 @Data
 @Builder
 public class SessionStatusResult {
+    /** Stripe-owned purchase kind; lets the return page verify the matching entitlement. */
+    private String purchaseType;
     private String sessionId;
     private String status;
     private String paymentStatus;

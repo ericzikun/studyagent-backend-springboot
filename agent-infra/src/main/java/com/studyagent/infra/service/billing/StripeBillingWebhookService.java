@@ -168,6 +168,7 @@ public class StripeBillingWebhookService {
                 || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)
                 || IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)
                 || "addon".equals(purchaseType)
+                || "study_pass".equals(purchaseType)
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
 
@@ -255,6 +256,15 @@ public class StripeBillingWebhookService {
         }
         long cumulativeRefund = Math.min(charge.getAmountRefunded(), charge.getAmount());
         boolean fullRefund = cumulativeRefund >= charge.getAmount();
+        if ("study_pass".equals(order.getOrderType())) {
+            if (fullRefund) {
+                BillingDomainService service = billingDomainServiceProvider.getIfAvailable();
+                if (service == null) throw new IllegalStateException("Study Pass billing service unavailable");
+                service.revokeStudyPassPayment(charge.getPaymentIntent());
+            }
+            updateOrderRefundState(order, fullRefund ? "refunded" : "partially_refunded", charge.getId());
+            return;
+        }
         if ("addon".equals(order.getOrderType())) {
             if (isAutoRefundedAddonOrder(order)) {
                 return;
@@ -650,6 +660,65 @@ public class StripeBillingWebhookService {
             return;
         }
 
+        if ("study_pass".equals(purchaseType)) {
+            if (!"paid".equals(session.getPaymentStatus())) {
+                log.info("Study Pass Checkout is not paid yet: session={}, payment_status={}",
+                        session.getId(), session.getPaymentStatus());
+                return;
+            }
+            if (clerkUserId == null || clerkUserId.isBlank()) {
+                throw new ReviewRequiredException(
+                        "Study Pass Checkout without clerk user: " + session.getId());
+            }
+            String passCode = metadata.get("pass_code");
+            BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+            if (billingDomainService == null) {
+                throw new IllegalStateException("BillingDomainService unavailable for Study Pass fulfill");
+            }
+            // Recurring Pass invoices are handled separately from membership quota grants.
+            // Historical one-time sessions keep their existing idempotent fulfillment.
+            if (hasText(session.getSubscription())) {
+                if (!billingDomainService.syncStudyPassSubscription(session.getSubscription(), session.getInvoice())) {
+                    throw new IllegalStateException("Study Pass Checkout subscription mismatch");
+                }
+                return;
+            }
+            boolean fulfilled = billingDomainService.fulfillStudyPassPayment(
+                    clerkUserId,
+                    passCode,
+                    session.getId(),
+                    session.getPaymentIntent());
+            if (!fulfilled) {
+                refundCheckoutPayment(session.getPaymentIntent(), session.getId(),
+                        "study_pass_already_active", "study-pass-refund");
+                rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
+                        .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
+                        .set(RechargeOrderEntity::getStripePaymentIntentId, session.getPaymentIntent())
+                        .set(RechargeOrderEntity::getStatus, "refunded")
+                        .set(RechargeOrderEntity::getFailureReason, "study_pass_already_active")
+                        .set(RechargeOrderEntity::getUpdatedAt, LocalDateTime.now()));
+                return;
+            }
+            completeOrderBySession(session, passCode, null);
+            capturePaymentSucceeded(
+                    clerkUserId,
+                    session,
+                    passCode,
+                    "study_pass",
+                    "study_pass",
+                    0L,
+                    null);
+            notifyCheckoutSucceeded(
+                    stripeEventId,
+                    stripeEventType,
+                    session,
+                    metadata,
+                    purchaseType,
+                    "study_pass",
+                    0L);
+            return;
+        }
+
         if ("subscription".equals(purchaseType)
                 || IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             boolean paymentSettled = "paid".equals(session.getPaymentStatus());
@@ -665,6 +734,9 @@ public class StripeBillingWebhookService {
                         null
                 );
                 notifyCheckoutSucceeded(stripeEventId, stripeEventType, session, metadata, purchaseType, "subscription", 0L);
+                consumeStudyPassUpgradeCredit(metadata);
+                BillingDomainService passBilling = billingDomainServiceProvider.getIfAvailable();
+                if (passBilling != null) passBilling.supersedeStudyPasses(clerkUserId);
                 try {
                     Subscription subscription = Subscription.retrieve(session.getSubscription());
                     syncSubscription(subscription, false, false);
@@ -1176,6 +1248,13 @@ public class StripeBillingWebhookService {
         return builder.build();
     }
 
+    private boolean syncStudyPassIfNeeded(Subscription subscription, String invoiceId) {
+        if (subscription.getMetadata() == null || !"study_pass".equals(subscription.getMetadata().get("purchase_type"))) return false;
+        BillingDomainService service = billingDomainServiceProvider.getIfAvailable();
+        if (service == null) throw new IllegalStateException("Study Pass billing service unavailable");
+        return service.syncStudyPassSubscription(subscription.getId(), invoiceId);
+    }
+
     private void handleInvoicePaid(Invoice invoice, String eventSubscriptionId, Long eventCreatedEpoch) {
         String subscriptionId = firstNonBlank(resolveInvoiceSubscriptionId(invoice), eventSubscriptionId);
         if (subscriptionId == null) {
@@ -1188,6 +1267,7 @@ public class StripeBillingWebhookService {
         } catch (StripeException e) {
             throw new IllegalStateException("Retrieve invoice subscription failed: " + subscriptionId, e);
         }
+        if (syncStudyPassIfNeeded(subscription, invoice.getId())) return;
         String clerkUserId = resolveUserId(subscription);
         UserSubscriptionEntity existing =
                 userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
@@ -1297,6 +1377,8 @@ public class StripeBillingWebhookService {
         }
 
         syncSubscription(subscription, false, true, periodStartEpoch, periodEndEpoch);
+        BillingDomainService membershipBilling = billingDomainServiceProvider.getIfAvailable();
+        if (membershipBilling != null) membershipBilling.supersedeStudyPasses(clerkUserId);
         if (selectedUpgradeOrder != null) {
             completeSubscriptionOrder(selectedUpgradeOrder, invoice, subscriptionId);
         } else if (selectedInitialOrder != null) {
@@ -1320,6 +1402,9 @@ public class StripeBillingWebhookService {
         if (subscriptionId == null) {
             return;
         }
+        try {
+            if (syncStudyPassIfNeeded(retrieveStripeSubscription(subscriptionId), null)) return;
+        } catch (StripeException e) { throw new IllegalStateException("Retrieve failed-invoice subscription", e); }
         UserSubscriptionEntity entity = userSubscriptionMapper.selectOne(
                 new LambdaQueryWrapper<UserSubscriptionEntity>()
                         .eq(UserSubscriptionEntity::getStripeSubscriptionId, subscriptionId)
@@ -1495,6 +1580,7 @@ public class StripeBillingWebhookService {
 
     private void syncSubscription(Event event, boolean deleted, boolean activatePendingPlan) {
         Subscription eventSubscription = resolveRequired(event, Subscription.class);
+        if (syncStudyPassIfNeeded(eventSubscription, null)) return;
         Subscription subscription = eventSubscription;
         boolean authoritativeDeleted = deleted;
         try {
@@ -1588,6 +1674,7 @@ public class StripeBillingWebhookService {
             boolean activatePendingPlan,
             Long periodStartOverride,
             Long periodEndOverride) {
+        if (syncStudyPassIfNeeded(subscription, null)) return;
         String clerkUserId = resolveUserId(subscription);
         UserSubscriptionEntity existing =
                 userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
@@ -2387,6 +2474,29 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);
         }
         return plan;
+    }
+
+    /**
+     * 订阅支付成功后核销通行证抵扣。核销失败不阻断订阅落库——抵扣是让利，
+     * 最坏结果是用户保留了抵扣资格，而不是订阅状态不一致。
+     */
+    private void consumeStudyPassUpgradeCredit(Map<String, String> metadata) {
+        String rawPassId = metadata.get("study_pass_credit_id");
+        if (rawPassId == null || rawPassId.isBlank()) {
+            return;
+        }
+        BillingDomainService billingDomainService = billingDomainServiceProvider.getIfAvailable();
+        if (billingDomainService == null) {
+            log.warn("BillingDomainService unavailable to consume Study Pass credit: {}", rawPassId);
+            return;
+        }
+        try {
+            billingDomainService.consumeStudyPassUpgradeCredit(Long.valueOf(rawPassId.trim()));
+        } catch (NumberFormatException e) {
+            log.warn("Study Pass credit metadata is not a pass id: {}", rawPassId);
+        } catch (RuntimeException e) {
+            log.warn("Consume Study Pass credit failed for pass {}: {}", rawPassId, e.getMessage());
+        }
     }
 
     private AddonPackageDefEntity requireAddon(String addonCode) {

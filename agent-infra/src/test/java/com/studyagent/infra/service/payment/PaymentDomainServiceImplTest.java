@@ -102,4 +102,20 @@ class PaymentDomainServiceImplTest {
 
         assertEquals("SESSION_OWNER_MISMATCH", error.getCode());
     }
+    @Test
+    void sessionStatusReturnsAuthoritativeStudyPassPurchaseType() {
+        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper) {
+            @Override
+            Session retrieveStripeCheckoutSession(String id) {
+                Session session = new Session();
+                session.setId(id);
+                session.setMetadata(java.util.Map.of("purchase_type", "study_pass", "clerk_user_id", "user_study"));
+                return session;
+            }
+        };
+        var result = service.getSessionStatus("cs_study");
+        assertEquals("study_pass", result.getPurchaseType());
+        assertEquals("user_study", result.getClerkUserId());
+    }
+
 }

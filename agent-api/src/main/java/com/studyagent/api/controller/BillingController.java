@@ -41,6 +41,8 @@ public class BillingController {
         data.put("stripePublishableKey", paymentConfig.getStripePublishableKey());
         data.put("plans", catalog.getPlans());
         data.put("addons", catalog.getAddons());
+        // null 表示通行证未启用（Stripe Price 未就绪），前端据此不展示售卖入口。
+        data.put("studyPass", catalog.getStudyPass());
         return Result.success(data);
     }
 

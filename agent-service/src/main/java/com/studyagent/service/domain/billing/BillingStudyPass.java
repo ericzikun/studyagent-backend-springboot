@@ -14,4 +14,5 @@ public class BillingStudyPass {
     private Integer priceCents;
     private String currency;
     private Integer validityDays;
+    private String billingInterval;
 }

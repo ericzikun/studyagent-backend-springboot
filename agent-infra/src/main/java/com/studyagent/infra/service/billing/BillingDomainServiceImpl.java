@@ -204,6 +204,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .priceCents(product.getPriceCents())
                 .currency(product.getCurrency())
                 .validityDays(product.getValidityDays())
+                .billingInterval("subscription".equals(product.getBillingType()) ? "month" : null)
                 .build();
     }
 
@@ -781,7 +782,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             reservation.setStripePriceId(product.getStripePriceId());
             reservation.setRenewalPriceCents(product.getPriceCents());
             reservation.setRenewalCurrency(product.getCurrency());
-            reservation.setBillingIntervalDays(product.getValidityDays());
+            // Null identifies newly purchased monthly subscriptions; historical
+            // 30-day subscriptions retain their saved billing_interval_days=30.
+            reservation.setBillingIntervalDays(null);
             reservation.setCreatedAt(now);
             reservation.setUpdatedAt(now);
             studyPassMapper.insert(reservation);
@@ -976,13 +979,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         try {
             var price = retrieveStudyPrice(product.getStripePriceId());
             if (!Boolean.TRUE.equals(price.getActive()) || price.getRecurring() == null
-                    || !"day".equals(price.getRecurring().getInterval())
-                    || !Long.valueOf(30).equals(price.getRecurring().getIntervalCount())
-                    || !Integer.valueOf(30).equals(product.getValidityDays())
+                    || !"month".equals(price.getRecurring().getInterval())
+                    || !Long.valueOf(1).equals(price.getRecurring().getIntervalCount())
                     || !Long.valueOf(product.getPriceCents()).equals(price.getUnitAmount())
                     || !product.getCurrency().equalsIgnoreCase(price.getCurrency())
                     || !product.getStripeProductId().equals(price.getProduct())) {
-                throw new BillingDomainException("STUDY_PASS_PRICE_NOT_CONFIGURED", "Study Pass requires the configured recurring 30-day price");
+                throw new BillingDomainException("STUDY_PASS_PRICE_NOT_CONFIGURED", "Study Pass requires the configured recurring monthly price");
             }
         } catch (StripeException e) { throw stripeFailure("Validate Study Pass price failed", e); }
     }
@@ -1063,8 +1065,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .findFirst().orElseThrow(() -> new IllegalStateException("Study Pass invoice has no subscription period"));
                 if (paidLine.getPrice() == null || !pass.getStripePriceId().equals(paidLine.getPrice().getId())
                         || paidLine.getPrice().getRecurring() == null
-                        || !"day".equals(paidLine.getPrice().getRecurring().getInterval())
-                        || !Long.valueOf(30).equals(paidLine.getPrice().getRecurring().getIntervalCount())
+                        || !(pass.getBillingIntervalDays() == null
+                            ? "month".equals(paidLine.getPrice().getRecurring().getInterval())
+                                && Long.valueOf(1).equals(paidLine.getPrice().getRecurring().getIntervalCount())
+                            : Integer.valueOf(30).equals(pass.getBillingIntervalDays())
+                                && "day".equals(paidLine.getPrice().getRecurring().getInterval())
+                                && Long.valueOf(30).equals(paidLine.getPrice().getRecurring().getIntervalCount()))
                         || !Long.valueOf(pass.getRenewalPriceCents()).equals(paidLine.getPrice().getUnitAmount())
                         || !pass.getRenewalCurrency().equalsIgnoreCase(paidLine.getCurrency())) {
                     throw new IllegalStateException("Study Pass invoice price mismatch");
@@ -1248,7 +1254,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .billingType(recurring ? "subscription" : "one_time")
                 .cancelAtPeriodEnd(Boolean.TRUE.equals(pass.getCancelAtPeriodEnd()))
                 .manageable(managed).renewalPriceCents(pass.getRenewalPriceCents())
-                .currency(pass.getRenewalCurrency()).billingIntervalDays(pass.getBillingIntervalDays()).build();
+                .currency(pass.getRenewalCurrency()).billingIntervalDays(pass.getBillingIntervalDays())
+                .billingInterval(recurring && pass.getBillingIntervalDays() == null ? "month" : null).build();
     }
 
     @Override

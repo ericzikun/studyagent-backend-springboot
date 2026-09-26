@@ -17,6 +17,7 @@ import com.studyagent.service.application.demo.dto.AiTutorChatDispatchResult;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
+import com.studyagent.service.domain.demo.aitutor.AiTutorMessage;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
@@ -35,9 +36,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -62,6 +67,11 @@ public class AiTutorVerlaCommandDispatcher {
     private static final String INSTANCE_ID = resolveHostname();
     private static final String DEFAULT_COMMAND_EXCHANGE = "studyagent.command";
 
+    /** 带进 prompt 的对话历史上限：40 条消息（约 20 轮 user + assistant）。 */
+    private static final int HISTORY_MAX_MESSAGES = 40;
+    /** 历史正文的 UTF-8 字节预算：这个 payload 里还装着一整篇文档，必须双预算约束。 */
+    private static final int HISTORY_MAX_BYTES = 24 * 1024;
+
     @Value("${verla.mq.command-exchange:" + DEFAULT_COMMAND_EXCHANGE + "}")
     private String commandExchange;
 
@@ -78,11 +88,14 @@ public class AiTutorVerlaCommandDispatcher {
      * @param demoConv demo 会话（{@code verlaConversationId} 必填）
      * @param document 当前文档基线，可为 null（首轮尚未产出）
      * @param message  本轮用户输入（已 trim）
+     * @param history  本轮的「此前」对话快照 —— 必须在 appendMessage 本轮消息 <b>之前</b> 取，
+     *                 否则最后一条就是本轮消息，会与 {@code message} 重复。可为 null/空（首轮）。
      */
     @Transactional
     public AiTutorChatDispatchResult dispatch(AiTutorConversation demoConv,
                                               AiTutorDocument document,
-                                              String message) {
+                                              String message,
+                                              List<AiTutorMessage> history) {
         Long verlaConversationId = demoConv.getVerlaConversationId();
         if (verlaConversationId == null) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE, "会话尚未接入主线事件通道，请重新创建会话");
@@ -154,7 +167,7 @@ public class AiTutorVerlaCommandDispatcher {
                         .kind(VerlaSessionKind.AITUTOR)
                         .feature(session.getFeatureCode())
                         .build())
-                .payload(buildPayload(demoConv, verlaConv, document, message))
+                .payload(buildPayload(demoConv, verlaConv, document, message, history))
                 .build();
 
         mqOutboxService.createVerlaCommand(
@@ -178,16 +191,20 @@ public class AiTutorVerlaCommandDispatcher {
      *   <li>{@code demoConversationId} —— 事件 handler 反查 demo 表用，刻意不复用 {@code conversationId}
      *       这个名字，避免与主线 verla conversationId 混淆</li>
      *   <li>{@code outputLanguage} —— 取自 workspace_json，缺省 english</li>
+     *   <li>{@code history} —— 此前对话（{@code [{role, content}]}，旧→新，已按条数与字节预算裁剪）；
+     *       不含本轮 {@code message}。主 Agent 靠它解析「刚才那段」这类指代，子 Agent 看不到它</li>
      * </ul>
      */
     private Map<String, Object> buildPayload(AiTutorConversation demoConv,
                                              VerlaConversation verlaConv,
                                              AiTutorDocument document,
-                                             String message) {
+                                             String message,
+                                             List<AiTutorMessage> history) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("message", message);
         payload.put("sessionTitle", demoConv.getTitle() == null ? "" : demoConv.getTitle());
         payload.put("sessionContext", demoConv.getSessionContext());
+        payload.put("history", buildHistory(history));
         payload.put("documentContentMd", document == null || document.getContentMd() == null
                 ? "" : document.getContentMd());
         payload.put("documentBaseVersion", document == null || document.getBaseVersion() == null
@@ -195,6 +212,51 @@ public class AiTutorVerlaCommandDispatcher {
         payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
         payload.put("demoConversationId", demoConv.getId());
         return payload;
+    }
+
+    /**
+     * 裁剪对话历史：只保留正文类消息（跳过材料/产物事件等噪声），从最近往前装满，
+     * 受条数与 UTF-8 字节双预算约束，返回旧→新顺序供 prompt 直接渲染。
+     */
+    private List<Map<String, Object>> buildHistory(List<AiTutorMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> picked = new ArrayList<>();
+        int bytes = 0;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            AiTutorMessage m = messages.get(i);
+            if (!isHistoryMessage(m)) {
+                continue;
+            }
+            String content = m.getContentMd() == null ? "" : m.getContentMd();
+            int size = content.getBytes(StandardCharsets.UTF_8).length;
+            if (picked.size() >= HISTORY_MAX_MESSAGES) {
+                break;
+            }
+            if (bytes + size > HISTORY_MAX_BYTES) {
+                // 单条就吃掉预算：跳过它继续往前，而不是 break —— 否则一条超长消息会把
+                // 整段历史清空，模型连上一轮都看不到。
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("role", m.getRole());
+            entry.put("content", content);
+            picked.add(entry);
+            bytes += size;
+        }
+        Collections.reverse(picked);
+        return picked;
+    }
+
+    /** 只有 user / assistant 的正文消息进历史；空 msgType 按正文处理。 */
+    private static boolean isHistoryMessage(AiTutorMessage m) {
+        if (m == null) {
+            return false;
+        }
+        boolean isDialogue = "user".equals(m.getRole()) || "assistant".equals(m.getRole());
+        boolean isText = m.getMsgType() == null || "text".equals(m.getMsgType());
+        return isDialogue && isText;
     }
 
     private static String resolveHostname() {

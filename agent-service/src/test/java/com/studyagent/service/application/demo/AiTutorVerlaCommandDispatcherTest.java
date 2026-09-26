@@ -11,6 +11,7 @@ import com.studyagent.service.application.demo.dto.AiTutorChatDispatchResult;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
+import com.studyagent.service.domain.demo.aitutor.AiTutorMessage;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -106,7 +109,12 @@ class AiTutorVerlaCommandDispatcherTest {
         when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation);
         when(conversationService.resolveOutputLanguage(verlaConversation)).thenReturn("chinese");
 
-        AiTutorChatDispatchResult result = dispatcher.dispatch(demoConversation, document, "帮我写第二章");
+        AiTutorChatDispatchResult result = dispatcher.dispatch(demoConversation, document, "帮我写第二章",
+                List.of(
+                        historyMessage("user", "text", "先帮我看看结构"),
+                        historyMessage("assistant", "artifact_event", "（产物事件，不该进历史）"),
+                        historyMessage("assistant", "text", "建议先定三章"),
+                        historyMessage("system", null, "（system 不该进历史）")));
 
         ArgumentCaptor<VerlaTurn> turnCaptor = ArgumentCaptor.forClass(VerlaTurn.class);
         verify(turnRepository).save(turnCaptor.capture());
@@ -148,6 +156,11 @@ class AiTutorVerlaCommandDispatcherTest {
         assertEquals("示例会话", payload.get("sessionTitle"));
         // sessionContext 是 Java/Python 的隐式契约 key，必须断言，否则改名会静默漏掉。
         assertEquals("{\"subject\":\"高等数学\"}", payload.get("sessionContext"));
+        // 跨轮上下文：只保留 user/assistant 的正文，旧→新，且不含本轮 message。
+        assertEquals(List.of(
+                Map.of("role", "user", "content", "先帮我看看结构"),
+                Map.of("role", "assistant", "content", "建议先定三章")
+        ), payload.get("history"));
         assertEquals("# 引言\n初稿", payload.get("documentContentMd"));
         assertEquals(2L, payload.get("documentBaseVersion"));
         assertEquals("chinese", payload.get("outputLanguage"));
@@ -166,7 +179,7 @@ class AiTutorVerlaCommandDispatcherTest {
         when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
         when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
 
-        dispatcher.dispatch(demoConversation(), null, "先想个题目");
+        dispatcher.dispatch(demoConversation(), null, "先想个题目", List.of());
 
         ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
                 ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
@@ -177,12 +190,42 @@ class AiTutorVerlaCommandDispatcherTest {
     }
 
     @Test
+    void dispatch_caps_history_by_count_and_byte_budget() {
+        when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
+
+        List<AiTutorMessage> history = new ArrayList<>();
+        for (int i = 1; i <= 60; i++) {
+            history.add(historyMessage("user", "text", "第" + i + "条"));
+        }
+        // 最新一条单吃 30KB 预算：应只跳过它，更早的消息照常保留（不能把整段历史清空）。
+        history.add(historyMessage("assistant", "text", "x".repeat(30_000)));
+
+        dispatcher.dispatch(demoConversation(), null, "继续", history);
+
+        ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
+                ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
+        verify(mqOutboxService).createVerlaCommand(envelopeCaptor.capture(), any(), any());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> picked =
+                (List<Map<String, Object>>) envelopeCaptor.getValue().getPayload().get("history");
+
+        assertEquals(40, picked.size(), "条数上限 40");
+        assertTrue(picked.stream().noneMatch(entry -> String.valueOf(entry.get("content")).length() > 1_000),
+                "超字节预算的那条被丢弃，而不是把整段历史清空");
+        // 保留最近 40 条，且仍按旧→新排列。
+        assertEquals("第21条", picked.get(0).get("content"));
+        assertEquals("第60条", picked.get(picked.size() - 1).get("content"));
+    }
+
+    @Test
     void dispatch_rejects_demo_conversation_without_mainline_link() {
         AiTutorConversation unlinked = demoConversation();
         unlinked.setVerlaConversationId(null);
 
         assertThrows(BusinessException.class,
-                () -> dispatcher.dispatch(unlinked, null, "你好"));
+                () -> dispatcher.dispatch(unlinked, null, "你好", List.of()));
 
         // 一行都不该写：没有 verla conversation 就没有事件通道，派发出去必然丢。
         verifyNoInteractions(turnRepository, sessionRepository, mqOutboxService);
@@ -193,10 +236,18 @@ class AiTutorVerlaCommandDispatcherTest {
         when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(null);
 
         assertThrows(BusinessException.class,
-                () -> dispatcher.dispatch(demoConversation(), null, "你好"));
+                () -> dispatcher.dispatch(demoConversation(), null, "你好", List.of()));
 
         verify(sessionRepository, never()).save(any());
         verifyNoInteractions(mqOutboxService);
+    }
+
+    private static AiTutorMessage historyMessage(String role, String msgType, String content) {
+        AiTutorMessage message = new AiTutorMessage();
+        message.setRole(role);
+        message.setMsgType(msgType);
+        message.setContentMd(content);
+        return message;
     }
 
     private static AiTutorConversation demoConversation() {

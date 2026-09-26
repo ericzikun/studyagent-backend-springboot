@@ -15,6 +15,7 @@ import com.studyagent.service.application.demo.DemoAiTutorService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
 import com.studyagent.service.domain.demo.aitutor.AiTutorDocument;
 import com.studyagent.service.domain.demo.aitutor.AiTutorEvidence;
+import com.studyagent.service.domain.demo.aitutor.AiTutorMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,7 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AI Tutor（学术论文写作 Copilot）demo 控制器 —— /v1/demo/ai-tutor/*
+ * AI Tutor（AI 学习助手）demo 控制器 —— /v1/demo/ai-tutor/*
  * <p>鉴权复用 AuthInterceptor（clerkUserId）。
  * <p>chat 不是流式端点：只把 {@code cmd.aitutor.chat} 写入事务性 outbox 后立即返回派发回执；
  * {@code AITUTOR_*} 事件由主线通道回流（verla_event_inbox → AiTutorEventHandler 投影 →
@@ -172,14 +173,16 @@ public class DemoAiTutorController {
                     com.studyagent.common.api.ApiCode.PARAM_ERROR, "message is required");
         }
         AiTutorConversation conv = service.ensureVerlaLink(clerkUserId, id);
-        if (service.listMessages(id).isEmpty()) {
+        // 历史必须在 appendMessage 之前取：append 之后最后一条就是本轮消息，会与 message 重复。
+        List<AiTutorMessage> history = service.listMessages(id);
+        if (history.isEmpty()) {
             // 草稿会话的标题/初始目标/会话上下文都随首条消息确定，且必须在派发前落库
             conv = service.applyFirstMessage(
                     clerkUserId, conv, message.trim(), normalizeSessionContext(req.getSessionContext()));
         }
         service.appendMessage(id, "user", "text", message.trim());
-        return Result.success(AiTutorChatResponseVO.from(
-                commandDispatcher.dispatch(conv, service.getDocumentForConversation(id), message.trim())));
+        return Result.success(AiTutorChatResponseVO.from(commandDispatcher.dispatch(
+                conv, service.getDocumentForConversation(id), message.trim(), history)));
     }
 
     /** sessionContext 入参归一化：对象 -> JSON 字符串；已是字符串则原样；null 透传。 */

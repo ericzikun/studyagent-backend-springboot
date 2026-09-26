@@ -221,7 +221,7 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
         DemoAiTutorConversationEntity e = new DemoAiTutorConversationEntity();
         e.setId(c.getId()); e.setClerkUserId(c.getClerkUserId()); e.setTitle(c.getTitle());
         e.setVerlaConversationId(c.getVerlaConversationId());
-        e.setInitialQuery(c.getInitialQuery()); e.setPaperMeta(c.getPaperMeta()); e.setStatus(c.getStatus());
+        e.setInitialQuery(c.getInitialQuery()); e.setSessionContext(c.getSessionContext()); e.setStatus(c.getStatus());
         e.setBaseVersion(c.getBaseVersion()); e.setCreatedAt(c.getCreatedAt()); e.setUpdatedAt(c.getUpdatedAt());
         return e;
     }
@@ -229,7 +229,7 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
         AiTutorConversation c = new AiTutorConversation();
         c.setId(e.getId()); c.setClerkUserId(e.getClerkUserId()); c.setTitle(e.getTitle());
         c.setVerlaConversationId(e.getVerlaConversationId());
-        c.setInitialQuery(e.getInitialQuery()); c.setPaperMeta(e.getPaperMeta()); c.setStatus(e.getStatus());
+        c.setInitialQuery(e.getInitialQuery()); c.setSessionContext(e.getSessionContext()); c.setStatus(e.getStatus());
         c.setBaseVersion(e.getBaseVersion()); c.setCreatedAt(e.getCreatedAt()); c.setUpdatedAt(e.getUpdatedAt());
         return c;
     }

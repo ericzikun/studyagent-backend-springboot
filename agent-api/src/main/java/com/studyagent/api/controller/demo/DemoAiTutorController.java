@@ -9,7 +9,7 @@ import com.studyagent.api.dto.demo.aitutor.CreateConversationRequest;
 import com.studyagent.api.dto.demo.aitutor.DocumentPatchRequest;
 import com.studyagent.api.dto.demo.aitutor.EvidenceConfirmRequest;
 import com.studyagent.api.dto.demo.aitutor.MaterialRequest;
-import com.studyagent.api.dto.demo.aitutor.PaperMetaRequest;
+import com.studyagent.api.dto.demo.aitutor.SessionContextRequest;
 import com.studyagent.service.application.demo.AiTutorVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.DemoAiTutorService;
 import com.studyagent.service.domain.demo.aitutor.AiTutorConversation;
@@ -60,7 +60,7 @@ public class DemoAiTutorController {
                     com.studyagent.common.api.ApiCode.PARAM_ERROR, "initialQuery is required");
         }
         AiTutorConversation created = service.createConversation(
-                clerkUserId, query.trim(), normalizePaperMeta(req == null ? null : req.getPaperMeta()));
+                clerkUserId, query.trim(), normalizeSessionContext(req == null ? null : req.getSessionContext()));
         return Result.success(AiTutorConversationVO.from(created));
     }
 
@@ -99,12 +99,12 @@ public class DemoAiTutorController {
     }
 
     @PatchMapping("/conversations/{id}")
-    public Result<AiTutorConversationVO> updatePaperMeta(
+    public Result<AiTutorConversationVO> updateSessionContext(
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable Long id,
-            @RequestBody PaperMetaRequest req) {
-        AiTutorConversation updated = service.updatePaperMeta(
-                clerkUserId, id, normalizePaperMeta(req == null ? null : req.getPaperMeta()));
+            @RequestBody SessionContextRequest req) {
+        AiTutorConversation updated = service.updateSessionContext(
+                clerkUserId, id, normalizeSessionContext(req == null ? null : req.getSessionContext()));
         return Result.success(AiTutorConversationVO.from(updated));
     }
 
@@ -173,17 +173,17 @@ public class DemoAiTutorController {
         }
         AiTutorConversation conv = service.ensureVerlaLink(clerkUserId, id);
         if (service.listMessages(id).isEmpty()) {
-            // 草稿会话的标题/初始目标/论文设定都随首条消息确定，且必须在派发前落库
+            // 草稿会话的标题/初始目标/会话上下文都随首条消息确定，且必须在派发前落库
             conv = service.applyFirstMessage(
-                    clerkUserId, conv, message.trim(), normalizePaperMeta(req.getPaperMeta()));
+                    clerkUserId, conv, message.trim(), normalizeSessionContext(req.getSessionContext()));
         }
         service.appendMessage(id, "user", "text", message.trim());
         return Result.success(AiTutorChatResponseVO.from(
                 commandDispatcher.dispatch(conv, service.getDocumentForConversation(id), message.trim())));
     }
 
-    /** paperMeta 入参归一化：对象 -> JSON 字符串；已是字符串则原样；null 透传。 */
-    private String normalizePaperMeta(com.fasterxml.jackson.databind.JsonNode node) {
+    /** sessionContext 入参归一化：对象 -> JSON 字符串；已是字符串则原样；null 透传。 */
+    private String normalizeSessionContext(com.fasterxml.jackson.databind.JsonNode node) {
         if (node == null || node.isNull()) {
             return null;
         }
@@ -194,7 +194,7 @@ public class DemoAiTutorController {
             return objectMapper.writeValueAsString(node);
         } catch (Exception ex) {
             throw new com.studyagent.common.exception.BusinessException(
-                    com.studyagent.common.api.ApiCode.PARAM_ERROR, "paperMeta 参数非法: " + ex.getMessage());
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR, "sessionContext 参数非法: " + ex.getMessage());
         }
     }
 }

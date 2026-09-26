@@ -22,7 +22,7 @@ public class DemoAiTutorConversationEntity {
     @TableField("initial_query")
     private String initialQuery;
     @TableField("paper_meta")
-    private String paperMeta;
+    private String sessionContext;
     private String status;
     @TableField("base_version")
     private Long baseVersion;

@@ -25,7 +25,7 @@ public class AiTutorConversationVO {
     private String clerkUserId;
     private String title;
     private String initialQuery;
-    private String paperMeta;
+    private String sessionContext;
     private String status;
     private Long baseVersion;
     private LocalDateTime createdAt;
@@ -41,7 +41,7 @@ public class AiTutorConversationVO {
                 .clerkUserId(c.getClerkUserId())
                 .title(c.getTitle())
                 .initialQuery(c.getInitialQuery())
-                .paperMeta(c.getPaperMeta())
+                .sessionContext(c.getSessionContext())
                 .status(c.getStatus())
                 .baseVersion(c.getBaseVersion())
                 .createdAt(c.getCreatedAt())

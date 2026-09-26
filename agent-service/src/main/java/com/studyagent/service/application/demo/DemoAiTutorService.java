@@ -55,8 +55,8 @@ public class DemoAiTutorService {
     // ============ 会话 ============
 
     @Transactional
-    public AiTutorConversation createConversation(String clerkUserId, String initialQuery, String paperMetaJson) {
-        return createConversation(clerkUserId, initialQuery, truncate(initialQuery, TITLE_MAX_LENGTH), paperMetaJson);
+    public AiTutorConversation createConversation(String clerkUserId, String initialQuery, String sessionContextJson) {
+        return createConversation(clerkUserId, initialQuery, truncate(initialQuery, TITLE_MAX_LENGTH), sessionContextJson);
     }
 
     /**
@@ -99,12 +99,12 @@ public class DemoAiTutorService {
     }
 
     /**
-     * 首条用户消息：确定标题与初始目标，并把本轮论文设定写入会话。
-     * <p>草稿标题是占位值，派发 payload 的 paperTitle 与主线历史都读标题，必须在派发前落库并同步主线。
+     * 首条用户消息：确定标题与初始目标，并把本轮会话上下文写入会话。
+     * <p>草稿标题是占位值，派发 payload 的 sessionTitle 与主线历史都读标题，必须在派发前落库并同步主线。
      */
     @Transactional
     public AiTutorConversation applyFirstMessage(String clerkUserId, AiTutorConversation c,
-                                                 String message, String paperMetaJson) {
+                                                 String message, String sessionContextJson) {
         if (c.getTitle() == null || c.getTitle().isBlank() || DRAFT_TITLE.equals(c.getTitle())) {
             String title = truncate(message, TITLE_MAX_LENGTH);
             c.setTitle(title);
@@ -121,20 +121,20 @@ public class DemoAiTutorService {
         if (c.getInitialQuery() == null || c.getInitialQuery().isBlank()) {
             c.setInitialQuery(truncate(message, INITIAL_QUERY_MAX_LENGTH));
         }
-        if (paperMetaJson != null) {
-            c.setPaperMeta(paperMetaJson);
+        if (sessionContextJson != null) {
+            c.setSessionContext(sessionContextJson);
         }
         c.setUpdatedAt(LocalDateTime.now());
         return repo.saveConversation(c);
     }
 
     private AiTutorConversation createConversation(String clerkUserId, String initialQuery,
-                                                   String title, String paperMetaJson) {
+                                                   String title, String sessionContextJson) {
         AiTutorConversation c = new AiTutorConversation();
         c.setClerkUserId(clerkUserId);
         c.setInitialQuery(initialQuery);
         c.setTitle(title);
-        c.setPaperMeta(paperMetaJson);
+        c.setSessionContext(sessionContextJson);
         c.setStatus("active");
         c.setBaseVersion(0L);
         c.setVerlaConversationId(linkVerlaConversation(clerkUserId, title));
@@ -196,9 +196,9 @@ public class DemoAiTutorService {
     }
 
     @Transactional
-    public AiTutorConversation updatePaperMeta(String clerkUserId, Long conversationId, String paperMetaJson) {
+    public AiTutorConversation updateSessionContext(String clerkUserId, Long conversationId, String sessionContextJson) {
         AiTutorConversation c = getOwned(clerkUserId, conversationId);
-        c.setPaperMeta(paperMetaJson);
+        c.setSessionContext(sessionContextJson);
         repo.saveConversation(c);
         return c;
     }

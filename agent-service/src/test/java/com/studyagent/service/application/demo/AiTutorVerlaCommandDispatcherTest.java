@@ -145,7 +145,9 @@ class AiTutorVerlaCommandDispatcherTest {
 
         Map<String, Object> payload = envelope.getPayload();
         assertEquals("帮我写第二章", payload.get("message"));
-        assertEquals("示例论文", payload.get("paperTitle"));
+        assertEquals("示例会话", payload.get("sessionTitle"));
+        // sessionContext 是 Java/Python 的隐式契约 key，必须断言，否则改名会静默漏掉。
+        assertEquals("{\"subject\":\"高等数学\"}", payload.get("sessionContext"));
         assertEquals("# 引言\n初稿", payload.get("documentContentMd"));
         assertEquals(2L, payload.get("documentBaseVersion"));
         assertEquals("chinese", payload.get("outputLanguage"));
@@ -202,8 +204,8 @@ class AiTutorVerlaCommandDispatcherTest {
         conversation.setId(DEMO_CONVERSATION_ID);
         conversation.setClerkUserId("user_1");
         conversation.setVerlaConversationId(VERLA_CONVERSATION_ID);
-        conversation.setTitle("示例论文");
-        conversation.setPaperMeta("{\"paperType\":\"thesis\"}");
+        conversation.setTitle("示例会话");
+        conversation.setSessionContext("{\"subject\":\"高等数学\"}");
         return conversation;
     }
 

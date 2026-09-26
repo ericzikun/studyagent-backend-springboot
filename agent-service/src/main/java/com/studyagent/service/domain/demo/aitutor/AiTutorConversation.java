@@ -17,8 +17,8 @@ public class AiTutorConversation {
     private Long verlaConversationId;
     private String title;
     private String initialQuery;
-    /** paperMeta JSON 字符串（类型/字数/语言/要求） */
-    private String paperMeta;
+    /** sessionContext JSON 字符串（学科/年级/学习目标等会话上下文） */
+    private String sessionContext;
     private String status;
     private Long baseVersion;
     private LocalDateTime createdAt;

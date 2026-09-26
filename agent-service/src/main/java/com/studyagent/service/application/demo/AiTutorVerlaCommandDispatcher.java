@@ -186,8 +186,8 @@ public class AiTutorVerlaCommandDispatcher {
                                              String message) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("message", message);
-        payload.put("paperTitle", demoConv.getTitle() == null ? "" : demoConv.getTitle());
-        payload.put("paperMeta", demoConv.getPaperMeta());
+        payload.put("sessionTitle", demoConv.getTitle() == null ? "" : demoConv.getTitle());
+        payload.put("sessionContext", demoConv.getSessionContext());
         payload.put("documentContentMd", document == null || document.getContentMd() == null
                 ? "" : document.getContentMd());
         payload.put("documentBaseVersion", document == null || document.getBaseVersion() == null

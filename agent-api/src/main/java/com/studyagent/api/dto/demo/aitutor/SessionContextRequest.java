@@ -4,8 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 
 @Data
-public class CreateConversationRequest {
-    private String initialQuery;
+public class SessionContextRequest {
     /** sessionContext：兼容对象或 JSON 字符串两种入参 */
     private JsonNode sessionContext;
 }

@@ -26,5 +26,8 @@ public enum VerlaSessionKind {
     TASK_NAME,
 
     /** Demo: AI Tutor copilot 对话（必须与 Python VerlaSessionKind.AITUTOR 同名） */
-    AITUTOR
+    AITUTOR,
+
+    /** Notes: 单轮「素材 → 笔记」生成（必须与 Python VerlaSessionKind.NOTE 同名） */
+    NOTE
 }

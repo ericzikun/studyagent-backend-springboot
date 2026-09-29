@@ -68,7 +68,13 @@ public enum VerlaCommandAction {
     CMD_AITUTOR_CHAT("cmd.aitutor.chat"),
 
     /** Demo: 取消进行中的 AI Tutor 对话轮次 */
-    CMD_AITUTOR_CHAT_CONTROL_CANCEL("cmd.aitutor.chat.control.cancel");
+    CMD_AITUTOR_CHAT_CONTROL_CANCEL("cmd.aitutor.chat.control.cancel"),
+
+    /** Notes: 单轮「素材（上传文件/粘贴文本）→ 笔记」生成 */
+    CMD_NOTE_GENERATE("cmd.note.generate"),
+
+    /** Notes: 取消进行中的笔记生成 */
+    CMD_NOTE_GENERATE_CONTROL_CANCEL("cmd.note.generate.control.cancel");
 
     private final String code;
 

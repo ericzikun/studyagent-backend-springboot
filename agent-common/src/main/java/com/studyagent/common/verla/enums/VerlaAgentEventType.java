@@ -165,7 +165,21 @@ public enum VerlaAgentEventType {
     /** 本轮失败（终态），由 Py runtime 单点收口，runner/service 不发射 */
     AITUTOR_FAILED(true),
     /** 本轮取消（终态），由 Py runtime 单点收口，runner/service 不发射 */
-    AITUTOR_CANCELLED(true);
+    AITUTOR_CANCELLED(true),
+
+    /**
+     * Notes 域 —— 单轮「素材 → 笔记」。
+     * <p>NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED / NOTE_SUMMARIZE_STARTED 是前端三阶段
+     * （文件解析 / 内容归纳梳理 / 内容输出）里前两个阶段的状态信号，均非终态；
+     * 第三阶段由 NOTE_STREAM_CHUNK 累积 + NOTE_COMPLETED 收口。
+     */
+    NOTE_PARSE_STARTED(false),
+    NOTE_PARSE_COMPLETED(false),
+    NOTE_SUMMARIZE_STARTED(false),
+    NOTE_STREAM_CHUNK(false),
+    NOTE_COMPLETED(true),
+    NOTE_FAILED(true),
+    NOTE_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -212,7 +226,10 @@ public enum VerlaAgentEventType {
             AI_HUMANIZER_CANCELLED,
             AITUTOR_TURN_COMPLETED,
             AITUTOR_FAILED,
-            AITUTOR_CANCELLED);
+            AITUTOR_CANCELLED,
+            NOTE_COMPLETED,
+            NOTE_FAILED,
+            NOTE_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

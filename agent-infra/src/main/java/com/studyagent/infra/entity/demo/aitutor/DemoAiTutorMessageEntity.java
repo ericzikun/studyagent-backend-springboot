@@ -19,6 +19,8 @@ public class DemoAiTutorMessageEntity {
     private String role;
     @TableField("msg_type")
     private String msgType;
+    /** 产出该段的 Agent（mentor/outline/writer/main…）；NULL 为历史消息 / 用户消息。 */
+    private String agent;
     @TableField("content_md")
     private String contentMd;
     private Long seq;

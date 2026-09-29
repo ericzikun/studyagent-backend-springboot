@@ -207,10 +207,21 @@ public class DemoAiTutorService {
 
     @Transactional
     public AiTutorMessage appendMessage(Long conversationId, String role, String msgType, String contentMd) {
+        return appendMessage(conversationId, role, msgType, contentMd, null);
+    }
+
+    /**
+     * 带段落归属的落库：agent 记录「这段话是谁说的」（mentor/outline/writer/main…，
+     * 来自 AITUTOR_TURN_COMPLETED.segments），null 表示无归属信息（历史消息 / 用户消息）。
+     * 同一终态多次调用时 seq 依赖同事务内可见性自增，段落顺序即列表顺序。
+     */
+    @Transactional
+    public AiTutorMessage appendMessage(Long conversationId, String role, String msgType, String contentMd, String agent) {
         AiTutorMessage m = new AiTutorMessage();
         m.setConversationId(conversationId);
         m.setRole(role);
         m.setMsgType(msgType == null ? "text" : msgType);
+        m.setAgent(agent);
         m.setContentMd(contentMd);
         m.setSeq((long) (repo.listMessages(conversationId).size() + 1));
         m.setCreatedAt(LocalDateTime.now());

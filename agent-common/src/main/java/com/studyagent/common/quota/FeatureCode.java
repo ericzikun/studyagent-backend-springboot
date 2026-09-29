@@ -10,7 +10,9 @@ public enum FeatureCode {
 
     TASK_CREATE("task_create"),
     AI_DETECTION("ai_detection"),
-    HUMANIZER("humanizer");
+    HUMANIZER("humanizer"),
+    /** Notes demo：素材 → 笔记生成（pure-free 记账） */
+    DEMO_NOTE_MAKER("demo_note_maker");
 
     private final String code;
 

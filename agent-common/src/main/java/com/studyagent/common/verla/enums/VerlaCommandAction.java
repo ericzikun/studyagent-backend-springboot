@@ -62,7 +62,13 @@ public enum VerlaCommandAction {
     CMD_HUMANIZER_RUN("cmd.humanizer.run"),
 
     /** V2: slides source artifact -> editor json seed */
-    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json");
+    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json"),
+
+    /** Notes: 单轮「素材（上传文件/粘贴文本）→ 笔记」生成 */
+    CMD_NOTE_GENERATE("cmd.note.generate"),
+
+    /** Notes: 取消进行中的笔记生成 */
+    CMD_NOTE_GENERATE_CONTROL_CANCEL("cmd.note.generate.control.cancel");
 
     private final String code;
 

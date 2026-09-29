@@ -324,6 +324,9 @@ public class VerlaConversationDashboardStatusService {
             case ARTIFACT_EDIT_PROPOSAL_STARTED, ARTIFACT_EDIT_PROPOSAL_READY,
                     ARTIFACT_EDIT_PROPOSAL_FAILED -> null;
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
+            // Notes demo 会话不属于任何商业分栏，不进 Dashboard 状态推导。
+            case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_SUMMARIZE_STARTED,
+                    NOTE_STREAM_CHUNK, NOTE_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
         };
     }
 

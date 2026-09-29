@@ -33,6 +33,7 @@ import java.util.List;
  *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
  *   verla.cmd.materials   ← cmd.materials.generate   (V2)
  *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
+ *   verla.cmd.note        ← cmd.note.generate        (Notes)
  *
  * 事件侧（新增 studyagent.events Topic）：
  *   verla.event.s00 ~ s03 ← verla.event.s{shard}.#
@@ -65,6 +66,8 @@ public class VerlaRabbitConfig {
     public static final String CMD_MATERIALS_QUEUE   = "verla.cmd.materials";
     /** V2: finalize 上传后触发附件解析 */
     public static final String CMD_ATTACHMENT_QUEUE = "verla.cmd.attachment";
+    /** Notes: 单轮「素材 → 笔记」生成 */
+    public static final String CMD_NOTE_QUEUE       = "verla.cmd.note";
 
     // -------------------- DLX / 兜底 --------------------
 
@@ -259,6 +262,23 @@ public class VerlaRabbitConfig {
     public Binding verlaCmdAgentHumanizerBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_HUMANIZER_RUN.getCode());
+    }
+
+    @Bean
+    public Queue verlaCmdNoteQueue() {
+        return buildVerlaConsumerQueue(CMD_NOTE_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdNoteGenerateBinding(Queue verlaCmdNoteQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdNoteQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_NOTE_GENERATE.getCode());
+    }
+
+    @Bean
+    public Binding verlaCmdNoteCancelBinding(Queue verlaCmdNoteQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdNoteQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_NOTE_GENERATE_CONTROL_CANCEL.getCode());
     }
 
     // ===================== Event Shard Queues =====================

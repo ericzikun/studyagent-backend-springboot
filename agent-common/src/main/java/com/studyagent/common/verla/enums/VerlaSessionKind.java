@@ -23,5 +23,8 @@ public enum VerlaSessionKind {
     MATERIALS,
 
     /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
-    TASK_NAME
+    TASK_NAME,
+
+    /** Notes: 单轮「素材 → 笔记」生成（必须与 Python VerlaSessionKind.NOTE 同名） */
+    NOTE
 }

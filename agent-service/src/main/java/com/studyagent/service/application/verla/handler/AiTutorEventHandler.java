@@ -17,7 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -113,13 +115,47 @@ public class AiTutorEventHandler implements VerlaEventHandler {
     }
 
     private void appendAssistantMessage(VerlaEventInbox row, Map<String, Object> payload) {
+        List<String[]> segments = parseSegments(payload.get("segments"));
         String text = asString(payload.get("assistantText"));
-        if (text == null || text.isBlank()) {
+        if (segments.isEmpty() && (text == null || text.isBlank())) {
             log.warn("[AI-Tutor] AITUTOR_TURN_COMPLETED without assistantText, sessionId={}", row.getSessionId());
             return;
         }
         Long demoConversationId = requireDemoConversationId(row);
-        demoAiTutorService.appendMessage(demoConversationId, "assistant", "text", text);
+        if (!segments.isEmpty()) {
+            // 按段落库：每段一行并记录产出 Agent，前端气泡据此标归属；
+            // seq 由 appendMessage 内部自增（同事务可见），顺序即段落顺序。
+            for (String[] segment : segments) {
+                demoAiTutorService.appendMessage(demoConversationId, "assistant", "text", segment[1], segment[0]);
+            }
+            return;
+        }
+        // 兼容：无 segments 的终态（旧版 Python / 失败轮）退化为整条 blob，无归属。
+        demoAiTutorService.appendMessage(demoConversationId, "assistant", "text", text, null);
+    }
+
+    /**
+     * 解析 {@code segments=[{agent,text},...]}（Python 终态携带的段落归属）。
+     * payload 是不可信边界：非 list、非 map 的条目、空 text 全部跳过；
+     * 全空返回空表，调用方退化为单条 assistantText。
+     */
+    private static List<String[]> parseSegments(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<String[]> out = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            String text = asString(map.get("text"));
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            String agent = asString(map.get("agent"));
+            out.add(new String[]{agent == null ? null : agent.strip(), text.strip()});
+        }
+        return out;
     }
 
     /**

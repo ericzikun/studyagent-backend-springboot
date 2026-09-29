@@ -236,14 +236,14 @@ public class DemoAiTutorRepositoryImpl implements DemoAiTutorRepository {
     private DemoAiTutorMessageEntity toEntity(AiTutorMessage m) {
         DemoAiTutorMessageEntity e = new DemoAiTutorMessageEntity();
         e.setId(m.getId()); e.setConversationId(m.getConversationId()); e.setRole(m.getRole());
-        e.setMsgType(m.getMsgType()); e.setContentMd(m.getContentMd()); e.setSeq(m.getSeq());
+        e.setMsgType(m.getMsgType()); e.setAgent(m.getAgent()); e.setContentMd(m.getContentMd()); e.setSeq(m.getSeq());
         e.setCreatedAt(m.getCreatedAt());
         return e;
     }
     private AiTutorMessage toDomain(DemoAiTutorMessageEntity e) {
         AiTutorMessage m = new AiTutorMessage();
         m.setId(e.getId()); m.setConversationId(e.getConversationId()); m.setRole(e.getRole());
-        m.setMsgType(e.getMsgType()); m.setContentMd(e.getContentMd()); m.setSeq(e.getSeq());
+        m.setMsgType(e.getMsgType()); m.setAgent(e.getAgent()); m.setContentMd(e.getContentMd()); m.setSeq(e.getSeq());
         m.setCreatedAt(e.getCreatedAt());
         return m;
     }

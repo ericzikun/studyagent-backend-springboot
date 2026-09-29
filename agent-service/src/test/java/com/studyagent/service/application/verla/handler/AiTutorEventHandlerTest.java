@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -127,8 +129,49 @@ class AiTutorEventHandlerTest {
         handler.handle(inbox("AITUTOR_TURN_COMPLETED"), envelope("AITUTOR_TURN_COMPLETED",
                 Map.of("assistantText", "第二章已完成。", "versionNo", 3)));
 
+        // 无 segments（旧版 Python）：整条 blob 单行，agent 为 null。
         verify(demoAiTutorService).appendMessage(
-                DEMO_CONVERSATION_ID, "assistant", "text", "第二章已完成。");
+                DEMO_CONVERSATION_ID, "assistant", "text", "第二章已完成。", null);
+    }
+
+    @Test
+    void turn_completed_persists_one_message_row_per_segment_with_agent() {
+        Map<String, Object> mentor = new LinkedHashMap<>();
+        mentor.put("agent", "mentor");
+        mentor.put("text", "乔布斯 1976 年与沃兹尼亚克创办苹果。");
+        Map<String, Object> main = new LinkedHashMap<>();
+        main.put("agent", "main");
+        main.put("text", "以上就是核心生平。");
+        handler.handle(inbox("AITUTOR_TURN_COMPLETED"), envelope("AITUTOR_TURN_COMPLETED", Map.of(
+                "assistantText", "乔布斯 1976 年与沃兹尼亚克创办苹果。以上就是核心生平。",
+                "segments", List.of(mentor, main))));
+
+        // 按段落库：每段一行、顺序保持、agent 记归属；不再退化写整条 blob。
+        verify(demoAiTutorService).appendMessage(
+                DEMO_CONVERSATION_ID, "assistant", "text", "乔布斯 1976 年与沃兹尼亚克创办苹果。", "mentor");
+        verify(demoAiTutorService).appendMessage(
+                DEMO_CONVERSATION_ID, "assistant", "text", "以上就是核心生平。", "main");
+        verify(demoAiTutorService, never()).appendMessage(
+                anyLong(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void turn_completed_segments_are_sanitized_before_persisting() {
+        // 不可信边界：非 map 条目、空 text 条目全部跳过；余下条目 strip。
+        Map<String, Object> blank = new LinkedHashMap<>();
+        blank.put("agent", "writer");
+        blank.put("text", "   ");
+        Map<String, Object> valid = new LinkedHashMap<>();
+        valid.put("agent", " mentor ");
+        valid.put("text", " 讲解正文 ");
+        handler.handle(inbox("AITUTOR_TURN_COMPLETED"), envelope("AITUTOR_TURN_COMPLETED", Map.of(
+                "assistantText", "讲解正文",
+                "segments", List.of("not-a-map", blank, valid))));
+
+        verify(demoAiTutorService).appendMessage(
+                DEMO_CONVERSATION_ID, "assistant", "text", "讲解正文", "mentor");
+        verify(demoAiTutorService, times(1)).appendMessage(
+                anyLong(), anyString(), anyString(), anyString(), any());
     }
 
     @Test

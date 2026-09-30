@@ -9,12 +9,14 @@ import com.studyagent.service.domain.verla.VerlaConversation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -138,6 +140,20 @@ class DemoNoteServiceTest {
         // 脱链是配置错误，必须暴露而不是静默丢弃（否则前端看到笔记、库里没有）
         assertThrows(IllegalStateException.class,
                 () -> service.applyGeneratedNote(VERLA_CONVERSATION_ID, "x", null));
+    }
+
+    @Test
+    void list_conversations_clamps_limit_before_hitting_the_repository() {
+        when(repo.listProcessedConversations(anyString(), anyInt())).thenReturn(List.of(draft()));
+
+        service.listProcessedConversations("user_1", 0);
+        service.listProcessedConversations("user_1", 5_000);
+        service.listProcessedConversations("user_1", 30);
+
+        // 上限 100 / 下限 1：避免调用方传 0 或超大值直接进 LIMIT
+        verify(repo).listProcessedConversations("user_1", 1);
+        verify(repo).listProcessedConversations("user_1", 100);
+        verify(repo).listProcessedConversations("user_1", 30);
     }
 
     private static NoteConversation draft() {

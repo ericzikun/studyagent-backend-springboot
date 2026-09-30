@@ -8,7 +8,9 @@ import com.studyagent.service.domain.demo.note.repo.DemoNoteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /** 笔记 demo 仓库实现：MP 实体 <-> 领域对象互转。 */
 @Repository
@@ -55,6 +57,16 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
                 .orderByDesc(DemoNoteConversationEntity::getId)
                 .last("LIMIT 1"));
         return Optional.ofNullable(e).map(this::toDomain);
+    }
+
+    @Override
+    public List<NoteConversation> listProcessedConversations(String clerkUserId, int limit) {
+        return convMapper.selectList(new LambdaQueryWrapper<DemoNoteConversationEntity>()
+                        .eq(DemoNoteConversationEntity::getClerkUserId, clerkUserId)
+                        .ne(DemoNoteConversationEntity::getStatus, "draft")
+                        .orderByDesc(DemoNoteConversationEntity::getUpdatedAt)
+                        .last("LIMIT " + limit))
+                .stream().map(this::toDomain).collect(Collectors.toList());
     }
 
     private DemoNoteConversationEntity toEntity(NoteConversation c) {

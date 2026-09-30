@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -52,6 +54,41 @@ class DemoNoteControllerTest {
                 .andExpect(jsonPath("$.data.id").value(NOTE_CONVERSATION_ID))
                 .andExpect(jsonPath("$.data.verlaConversationId").isNotEmpty())
                 .andExpect(jsonPath("$.data.status").value("draft"));
+    }
+
+    @Test
+    void list_returns_summaries_without_note_body() throws Exception {
+        NoteConversation completed = conversation();
+        completed.setStatus("completed");
+        completed.setSourceType("file");
+        // 历史栏不该拖正文：列表 VO 必须剔除 noteMd（几十条 × 数十 KB）
+        completed.setNoteMd("# 很长的笔记正文");
+        when(service.listProcessedConversations("user_1", 20)).thenReturn(List.of(completed));
+
+        mockMvc.perform(get("/v1/demo/note/conversations")
+                        .requestAttr("clerkUserId", "user_1")
+                        .param("limit", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(NOTE_CONVERSATION_ID))
+                .andExpect(jsonPath("$.data[0].verlaConversationId").isNotEmpty())
+                .andExpect(jsonPath("$.data[0].status").value("completed"))
+                .andExpect(jsonPath("$.data[0].sourceType").value("file"))
+                .andExpect(jsonPath("$.data[0].noteMd").doesNotExist());
+
+        verify(service).listProcessedConversations("user_1", 20);
+    }
+
+    @Test
+    void list_uses_default_limit_when_absent() throws Exception {
+        when(service.listProcessedConversations("user_1", 50)).thenReturn(List.of());
+
+        mockMvc.perform(get("/v1/demo/note/conversations")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        verify(service).listProcessedConversations("user_1", 50);
     }
 
     @Test

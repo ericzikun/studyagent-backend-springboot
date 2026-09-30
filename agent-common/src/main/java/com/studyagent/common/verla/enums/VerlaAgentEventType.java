@@ -150,6 +150,8 @@ public enum VerlaAgentEventType {
     AITUTOR_AGENT_SELECTED(false),
     /** 子 Agent 开始执行 */
     AITUTOR_AGENT_START(false),
+    /** 共享工具调用过程（主 Agent 计算工具 / 子 Agent 检索工具），前端过程时间线用；纯渲染事件，不落库 */
+    AITUTOR_TOOL_USED(false),
     /** 对话侧流式增量（左侧气泡） */
     AITUTOR_CHAT_STREAM_CHUNK(false),
     /** 产物改写开始，payload 带 baseVersion / versionNo / op / heading */

@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.demo;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.demo.note.NoteConversationSummaryVO;
 import com.studyagent.api.dto.demo.note.NoteConversationVO;
 import com.studyagent.api.dto.demo.note.NoteDraftRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
@@ -16,7 +17,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 笔记生成 demo 控制器 —— {@code /v1/demo/note/*}。
@@ -41,6 +45,19 @@ public class DemoNoteController {
             @RequestBody(required = false) NoteDraftRequest req) {
         return Result.success(NoteConversationVO.from(
                 service.getOrCreateDraft(clerkUserId, req == null ? null : req.getOutputLanguage())));
+    }
+
+    /**
+     * 当前用户的历史笔记（左侧历史栏）：按最近活动倒序，只含已提交过素材的记录。
+     * <p>返回精简 VO（不含笔记正文），正文按需由快照端点取。
+     */
+    @GetMapping("/conversations")
+    public Result<List<NoteConversationSummaryVO>> listConversations(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        return Result.success(service.listProcessedConversations(clerkUserId, limit).stream()
+                .map(NoteConversationSummaryVO::from)
+                .toList());
     }
 
     /**

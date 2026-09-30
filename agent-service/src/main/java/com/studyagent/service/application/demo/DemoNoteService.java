@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,6 +49,8 @@ public class DemoNoteService {
 
     private static final String DRAFT_TITLE = "未命名笔记";
     private static final int TITLE_MAX_LENGTH = 60;
+    /** 历史列表单页上限（单用户记录量小，暂不做游标分页）。 */
+    private static final int MAX_LIST_LIMIT = 100;
 
     /**
      * 粘贴文本的 UTF-8 字节上限。
@@ -98,6 +101,11 @@ public class DemoNoteService {
     public NoteConversation getOwned(String clerkUserId, Long conversationId) {
         return repo.getOwnedConversation(clerkUserId, conversationId)
                 .orElseThrow(() -> new BusinessException(ApiCode.NO_PERMISSION.getCode(), "会话不存在或无权访问"));
+    }
+
+    /** 历史笔记列表：只列已提交过素材的记录，按最近活动倒序。 */
+    public List<NoteConversation> listProcessedConversations(String clerkUserId, int limit) {
+        return repo.listProcessedConversations(clerkUserId, Math.min(Math.max(limit, 1), MAX_LIST_LIMIT));
     }
 
     private NoteConversation createConversation(String clerkUserId, String outputLanguage) {

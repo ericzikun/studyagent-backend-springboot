@@ -23,5 +23,11 @@ public enum VerlaSessionKind {
     MATERIALS,
 
     /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
-    TASK_NAME
+    TASK_NAME,
+
+    /**
+     * Video Tutor 交互式白板教学。
+     * {@code verla_sessions.kind} 是 VARCHAR(16)，本名字 11 字符，放得下。
+     */
+    VIDEO_TUTOR
 }

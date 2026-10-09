@@ -62,7 +62,16 @@ public enum VerlaCommandAction {
     CMD_HUMANIZER_RUN("cmd.humanizer.run"),
 
     /** V2: slides source artifact -> editor json seed */
-    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json");
+    CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json"),
+
+    /**
+     * Video Tutor：一次白板教学 turn。
+     * v1 不提供 retry —— 白板一轮的产物是"板上现有什么"，重打同一轮会重复上板。
+     */
+    CMD_VIDEO_TUTOR_CHAT("cmd.video_tutor.chat"),
+
+    /** Video Tutor：取消进行中的白板 turn */
+    CMD_VIDEO_TUTOR_CHAT_CONTROL_CANCEL("cmd.video_tutor.chat.control.cancel");
 
     private final String code;
 

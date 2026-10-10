@@ -3,6 +3,7 @@ package com.studyagent.api.controller.demo;
 import com.studyagent.api.common.Result;
 import com.studyagent.api.dto.demo.note.NoteConversationSummaryVO;
 import com.studyagent.api.dto.demo.note.NoteConversationVO;
+import com.studyagent.api.dto.demo.note.NoteDocumentPatchRequest;
 import com.studyagent.api.dto.demo.note.NoteDraftRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateResponseVO;
@@ -12,6 +13,7 @@ import com.studyagent.service.domain.demo.note.NoteConversation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -72,6 +74,23 @@ public class DemoNoteController {
         return Result.success(NoteConversationVO.from(conv));
     }
 
+    /**
+     * 右侧编辑器保存笔记（手动/防抖自动保存共用）。
+     * <p>带 {@code baseVersion} 时是乐观锁：版本不匹配返回参数错误，前端重新拉快照后再保存。
+     */
+    @PatchMapping("/conversations/{id}")
+    public Result<NoteConversationVO> saveNote(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long id,
+            @RequestBody NoteDocumentPatchRequest req) {
+        if (req == null) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "request body is required");
+        }
+        NoteConversation conv = service.saveUserNote(clerkUserId, id, req.getContentMd(), req.getBaseVersion());
+        return Result.success(NoteConversationVO.from(conv));
+    }
+
     @PostMapping("/conversations/{id}/generate")
     public Result<NoteGenerateResponseVO> generate(
             @RequestAttribute("clerkUserId") String clerkUserId,
@@ -82,7 +101,8 @@ public class DemoNoteController {
                     com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "request body is required");
         }
         NoteConversation conv = service.prepareGeneration(
-                clerkUserId, id, req.getSourceType(), req.getObjectId(), req.getText(), req.getFilename());
+                clerkUserId, id, req.getSourceType(), req.getObjectId(), req.getText(), req.getFilename(),
+                req.getCourseName(), req.getLearningGoal());
         return Result.success(NoteGenerateResponseVO.from(
                 commandDispatcher.dispatch(conv, req.getOutputLanguage())));
     }

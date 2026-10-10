@@ -20,7 +20,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 笔记 demo 业务服务：会话编排（素材提交 / 结果回填）。
@@ -49,8 +51,15 @@ public class DemoNoteService {
 
     private static final String DRAFT_TITLE = "未命名笔记";
     private static final int TITLE_MAX_LENGTH = 60;
+    private static final int COURSE_NAME_MAX_LENGTH = 255;
     /** 历史列表单页上限（单用户记录量小，暂不做游标分页）。 */
     private static final int MAX_LIST_LIMIT = 100;
+
+    /** 学习目标枚举码：与前端 tab 里的 8 个选项一一对应，未识别回落 other。 */
+    private static final Set<String> LEARNING_GOALS = Set.of(
+            "exam_prep", "quiz_review", "homework", "understand_lesson",
+            "take_notes", "generate_questions", "flashcards", "other");
+    private static final String LEARNING_GOAL_DEFAULT = "take_notes";
 
     /**
      * 粘贴文本的 UTF-8 字节上限。
@@ -157,7 +166,8 @@ public class DemoNoteService {
     @Transactional
     public NoteConversation prepareGeneration(String clerkUserId, Long conversationId,
                                               String sourceType, String objectId,
-                                              String text, String filename) {
+                                              String text, String filename,
+                                              String courseName, String learningGoal) {
         NoteConversation c = getOwned(clerkUserId, conversationId);
         String normalizedType = normalizeSourceType(sourceType, objectId, text);
         if (SOURCE_TYPE_FILE.equals(normalizedType)) {
@@ -174,8 +184,36 @@ public class DemoNoteService {
             c.setInputText(trimmed);
             c.setTitle(truncate(trimmed, TITLE_MAX_LENGTH));
         }
+        c.setCourseName(truncateToNull(courseName, COURSE_NAME_MAX_LENGTH));
+        c.setLearningGoal(normalizeLearningGoal(learningGoal));
         c.setNoteMd(null);
+        // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
+        c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);
+        return repo.saveConversation(c);
+    }
+
+    /**
+     * 用户手改保存：以传入 baseVersion 做乐观锁，成功后版本 +1。
+     * <p>与 AI 生成落库（{@link #applyGeneratedNote}）分开：AI 写入不能被记成用户编辑，
+     * 用户编辑也不能覆盖 AI 之后的新版本 —— 版本不匹配时让前端重新拉快照再重试。
+     */
+    @Transactional
+    public NoteConversation saveUserNote(String clerkUserId, Long conversationId,
+                                         String contentMd, Long baseVersion) {
+        NoteConversation c = getOwned(clerkUserId, conversationId);
+        if (contentMd == null || contentMd.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "contentMd 不能为空");
+        }
+        long current = c.getNoteVersion() == null ? 0L : c.getNoteVersion();
+        if (baseVersion != null && baseVersion != current) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "笔记版本已更新，请刷新后重试");
+        }
+        c.setNoteMd(contentMd);
+        c.setNoteVersion(current + 1);
+        if (!STATUS_COMPLETED.equals(c.getStatus())) {
+            c.setStatus(STATUS_COMPLETED);
+        }
         return repo.saveConversation(c);
     }
 
@@ -191,6 +229,8 @@ public class DemoNoteService {
         if (title != null && !title.isBlank()) {
             c.setTitle(truncate(title.trim(), TITLE_MAX_LENGTH));
         }
+        // AI 写入也推进版本：用户手上的旧基线随之失效，避免用旧 baseVersion 覆盖新生成结果
+        c.setNoteVersion((c.getNoteVersion() == null ? 0L : c.getNoteVersion()) + 1);
         c.setStatus(STATUS_COMPLETED);
         repo.saveConversation(c);
     }
@@ -241,9 +281,31 @@ public class DemoNoteService {
         int bytes = text.getBytes(StandardCharsets.UTF_8).length;
         if (bytes > MAX_INPUT_TEXT_BYTES) {
             throw new BusinessException(
-                    ApiCode.PARAM_ERROR,
+                    ApiCode.PARAM_ERROR.getCode(),
                     "粘贴文本过长（" + bytes + " 字节，上限 " + MAX_INPUT_TEXT_BYTES + "），请改用文件上传");
         }
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** 空值给默认目标；未知码回落 other（前端先行上线新目标时不至于报错）。 */
+    private static String normalizeLearningGoal(String raw) {
+        String value = blankToNull(raw);
+        if (value == null) {
+            return LEARNING_GOAL_DEFAULT;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (LEARNING_GOALS.contains(normalized)) {
+            return normalized;
+        }
+        log.warn("[Notes] unknown learningGoal={} → 回落 other", raw);
+        return "other";
     }
 
     private static String truncate(String value, int maxLength) {
@@ -251,5 +313,14 @@ public class DemoNoteService {
             return "";
         }
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /** 截断且空值保持 null（标题用 truncate 的 "" 语义，可选字段用这个）。 */
+    private static String truncateToNull(String value, int maxLength) {
+        String trimmed = blankToNull(value);
+        if (trimmed == null) {
+            return null;
+        }
+        return trimmed.length() > maxLength ? trimmed.substring(0, maxLength) : trimmed;
     }
 }

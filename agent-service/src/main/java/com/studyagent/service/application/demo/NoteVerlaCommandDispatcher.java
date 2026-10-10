@@ -174,6 +174,8 @@ public class NoteVerlaCommandDispatcher {
      *   <li>{@code inputText} —— text 时的原始素材</li>
      *   <li>{@code filename} —— 展示用的来源名</li>
      *   <li>{@code outputLanguage} —— 取自 workspace_json，缺省 english</li>
+     *   <li>{@code courseName} —— 上传表单的课程名称（可空）</li>
+     *   <li>{@code learningGoal} —— 上传表单的学习目标枚举码，Python 侧映射成中文说明进 prompt</li>
      *   <li>{@code noteConversationId} —— demo 主键，仅排障用（事件回填按主线 id 反查）</li>
      * </ul>
      */
@@ -187,6 +189,9 @@ public class NoteVerlaCommandDispatcher {
                 DemoNoteService.SOURCE_TYPE_FILE.equals(noteConv.getSourceType())
                         ? noteConv.getTitle() : null);
         payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
+        // 表单字段：课程名与学习目标（枚举码）随 payload 下行，Python 据此调整笔记侧重
+        payload.put("courseName", noteConv.getCourseName());
+        payload.put("learningGoal", noteConv.getLearningGoal());
         payload.put("noteConversationId", noteConv.getId());
         return payload;
     }

@@ -137,6 +137,9 @@ class NoteVerlaCommandDispatcherTest {
         assertNull(payload.get("inputText"));
         assertEquals("lecture.pdf", payload.get("filename"));
         assertEquals("chinese", payload.get("outputLanguage"));
+        // 表单字段是 Java → Python 的隐式契约 key，必须断言，否则改名会静默漏掉
+        assertEquals("数据结构", payload.get("courseName"));
+        assertEquals("exam_prep", payload.get("learningGoal"));
         assertEquals(NOTE_CONVERSATION_ID, payload.get("noteConversationId"));
         assertTrue(!payload.containsKey("conversationId"));
 
@@ -215,6 +218,8 @@ class NoteVerlaCommandDispatcherTest {
         conversation.setSourceType("file");
         conversation.setAttachmentObjectId("obj_123");
         conversation.setTitle("lecture.pdf");
+        conversation.setCourseName("数据结构");
+        conversation.setLearningGoal("exam_prep");
         conversation.setStatus("generating");
         return conversation;
     }

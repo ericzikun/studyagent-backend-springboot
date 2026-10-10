@@ -76,17 +76,70 @@ class DemoNoteServiceTest {
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         NoteConversation fileNote = service.prepareGeneration(
-                "user_1", NOTE_CONVERSATION_ID, null, "obj_9", null, "lecture.pdf");
+                "user_1", NOTE_CONVERSATION_ID, null, "obj_9", null, "lecture.pdf",
+                "  数据结构  ", "exam_prep");
         assertEquals("file", fileNote.getSourceType());
         assertEquals("obj_9", fileNote.getAttachmentObjectId());
         assertNull(fileNote.getInputText());
         assertEquals("generating", fileNote.getStatus());
+        // 表单字段落库并归一化（课程名 trim、目标码合法）
+        assertEquals("数据结构", fileNote.getCourseName());
+        assertEquals("exam_prep", fileNote.getLearningGoal());
+        // 新一轮生成重置版本基线
+        assertEquals(0L, fileNote.getNoteVersion());
 
         NoteConversation textNote = service.prepareGeneration(
-                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null);
+                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null, null, null);
         assertEquals("text", textNote.getSourceType());
         assertEquals("一段材料", textNote.getInputText());
         assertNull(textNote.getAttachmentObjectId());
+        // 缺省目标 = 做学习笔记；课程名空值保持 null
+        assertEquals("take_notes", textNote.getLearningGoal());
+        assertNull(textNote.getCourseName());
+    }
+
+    @Test
+    void prepare_generation_falls_back_on_unknown_learning_goal() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation note = service.prepareGeneration(
+                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null, null, "not_a_goal");
+        // 前端先上线新目标时不至于报错，但也不能把任意字符串灌进 prompt
+        assertEquals("other", note.getLearningGoal());
+    }
+
+    @Test
+    void save_user_note_bumps_version_and_rejects_stale_base() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        conversation.setNoteMd("旧正文");
+        conversation.setNoteVersion(2L);
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 基线一致 → 保存成功且版本 +1
+        NoteConversation saved = service.saveUserNote("user_1", NOTE_CONVERSATION_ID, "手改后的正文", 2L);
+        assertEquals("手改后的正文", saved.getNoteMd());
+        assertEquals(3L, saved.getNoteVersion());
+
+        // 基线过期（AI 又生成过）→ 拒绝，让前端刷新后重试
+        conversation.setNoteVersion(5L);
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.saveUserNote("user_1", NOTE_CONVERSATION_ID, "又手改", 3L));
+        assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+    }
+
+    @Test
+    void apply_generated_note_advances_version_so_stale_edits_cannot_overwrite_it() {
+        NoteConversation conversation = draft();
+        conversation.setNoteVersion(1L);
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.applyGeneratedNote(VERLA_CONVERSATION_ID, "# 新生成的笔记", "标题");
+
+        assertEquals(2L, conversation.getNoteVersion());
     }
 
     @Test
@@ -94,11 +147,11 @@ class DemoNoteServiceTest {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
 
         assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "   ", null));
+                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "   ", null, null, null));
         assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", null, null, null));
+                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", null, null, null, null, null));
         assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null));
+                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null, null, null));
     }
 
     @Test
@@ -109,7 +162,7 @@ class DemoNoteServiceTest {
         String tooLong = "中".repeat(20_001);
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null));
+                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null));
         assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
     }
 

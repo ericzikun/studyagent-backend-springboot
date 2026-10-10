@@ -197,6 +197,41 @@ class VideoTutorEventHandlerTest {
     }
 
     @Test
+    void turnCompleted_persistsTheTeacherSummaryIntoMessageMetaForNextTurnHistory() {
+        when(messageRepository.findByTurnRoleScene(TURN_ID, "assistant",
+                VideoTutorEventHandler.SCENE_VIDEO_TUTOR)).thenReturn(null);
+
+        handler().handle(row(VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED),
+                envelope(VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED, Map.of(
+                        "finalText", "那 h 变大时，顶点往哪边走？",
+                        "assistantSummary", "我说：先看这个式子。\n我写上白板的：公式:y=a(x-h)^2+k")));
+
+        ArgumentCaptor<VerlaMessage> captor = ArgumentCaptor.forClass(VerlaMessage.class);
+        verify(messageRepository).save(captor.capture());
+        VerlaMessage msg = captor.getValue();
+        // 气泡仍只显 finalText；摘要另存 meta —— 下一轮组 history 时优先取它，
+        // 否则历史里每条"老师："都只剩一个光秃秃的问题
+        assertThat(msg.getTextContent()).isEqualTo("那 h 变大时，顶点往哪边走？");
+        assertThat(msg.getMetaJson())
+                .contains("\"scene\":\"VIDEO_TUTOR\"")
+                .contains("\"summary\"")
+                .contains("我写上白板的");
+    }
+
+    @Test
+    void turnCompleted_withoutSummaryLeavesMetaWithoutTheSummaryKey() {
+        when(messageRepository.findByTurnRoleScene(TURN_ID, "assistant",
+                VideoTutorEventHandler.SCENE_VIDEO_TUTOR)).thenReturn(null);
+
+        handler().handle(row(VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED),
+                envelope(VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED, Map.of("finalText", "你好")));
+
+        ArgumentCaptor<VerlaMessage> captor = ArgumentCaptor.forClass(VerlaMessage.class);
+        verify(messageRepository).save(captor.capture());
+        assertThat(captor.getValue().getMetaJson()).doesNotContain("summary");
+    }
+
+    @Test
     void turnCompleted_shouldNotWriteADuplicateAssistantMessageOnRedelivery() {
         when(messageRepository.findByTurnRoleScene(TURN_ID, "assistant",
                 VideoTutorEventHandler.SCENE_VIDEO_TUTOR))

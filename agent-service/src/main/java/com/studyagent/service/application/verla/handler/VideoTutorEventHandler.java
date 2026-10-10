@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -151,6 +152,16 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
         if (messageRepository.findByTurnRoleScene(row.getTurnId(), "assistant", SCENE_VIDEO_TUTOR) != null) {
             return;
         }
+        // 气泡只显 finalText（本轮收口那句提问），但老师这轮的经过必须留给下一轮：
+        // Python 算好的 assistantSummary（我说…／我写上白板的…／我问了学生…）存进 meta，
+        // 下一轮组 history 时优先取它。不存的话历史里每条"老师："都只剩一个光秃秃的问题，
+        // 模型看不到自己上一轮口头讲过什么 —— 表现为"讲过的话转头就忘"。
+        String summary = str(payload.get("assistantSummary"));
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("scene", SCENE_VIDEO_TUTOR);
+        if (summary != null && !summary.isBlank()) {
+            meta.put("summary", summary);
+        }
         messageRepository.save(VerlaMessage.builder()
                 .conversationId(row.getConversationId())
                 .turnId(row.getTurnId())
@@ -158,7 +169,7 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
                 .sourceSessionId(row.getSessionId())
                 .textContent(text)
                 .scene(SCENE_VIDEO_TUTOR)
-                .metaJson(toJson(Map.of("scene", SCENE_VIDEO_TUTOR)))
+                .metaJson(toJson(meta))
                 .createdAt(LocalDateTime.now())
                 .build());
     }

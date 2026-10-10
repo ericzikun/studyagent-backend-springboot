@@ -234,6 +234,34 @@ class VideoTutorTurnDispatchTest {
     }
 
     @Test
+    void history_prefersTheTeacherSummaryOverTheBareQuestion() {
+        // 气泡只存 finalText（那句提问），摘要另存 meta_json.summary。历史必须取摘要 ——
+        // 只取 textContent 的话，模型看不到自己上一轮讲过什么（"讲过的话转头就忘"）。
+        // 上面那条用例同时覆盖了没有 summary 时的回落（msg() 的 metaJson 为空 → 取 textContent）。
+        when(messageRepository.findVideoTutorByCursor(eq(CONVERSATION_ID), any(), anyInt()))
+                .thenAnswer(inv -> {
+                    long currentId = savedMessages.get(savedMessages.size() - 1).getId();
+                    return List.of(
+                            msg(currentId, "user", "往右"),
+                            VerlaMessage.builder()
+                                    .id(currentId - 1).conversationId(CONVERSATION_ID)
+                                    .role("assistant")
+                                    .textContent("那 h 变大时，顶点往哪边走？")
+                                    .metaJson("{\"scene\":\"VIDEO_TUTOR\","
+                                            + "\"summary\":\"我说：先看这个式子。\"}")
+                                    .build(),
+                            msg(currentId - 2, "user", "开始讲吧"));
+                });
+
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "再说一遍", null);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> history = (List<Map<String, Object>>) dispatchedPayload().get("history");
+        assertThat(history).extracting(m -> String.valueOf(m.get("content")))
+                .containsExactly("开始讲吧", "我说：先看这个式子。");
+    }
+
+    @Test
     void historyByteBudget_skipsTheOversizedItemInsteadOfTruncatingTheRest() {
         String huge = "x".repeat(30 * 1024);
         when(messageRepository.findVideoTutorByCursor(eq(CONVERSATION_ID), any(), anyInt()))

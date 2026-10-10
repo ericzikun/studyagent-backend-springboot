@@ -584,7 +584,7 @@ public class VerlaTurnOrchestrator {
             if (m.getId() != null && m.getId().equals(excludeMessageId)) {
                 continue;
             }
-            String content = m.getTextContent() == null ? "" : m.getTextContent().trim();
+            String content = historyContent(m);
             if (content.isEmpty()) {
                 continue;
             }
@@ -598,6 +598,34 @@ public class VerlaTurnOrchestrator {
         // 游标查询是 id DESC，翻转正序后才是"旧 → 新"
         java.util.Collections.reverse(picked);
         return picked;
+    }
+
+    /**
+     * 历史里一条消息的正文（模型可见的那份）。
+     * <p>
+     * assistant 轮<b>优先取 {@code meta_json.summary}</b> —— 老师这轮"我说了什么／写了什么／问了什么"。
+     * 只看 {@code text_content} 的话，历史里每条"老师："都只剩最后那句提问
+     * （气泡与历史用途不同：气泡要干净，历史要完整）。
+     */
+    private String historyContent(VerlaMessage m) {
+        String summary = readMessageSummary(m.getMetaJson());
+        if (summary != null && !summary.isBlank()) {
+            return summary.trim();
+        }
+        return m.getTextContent() == null ? "" : m.getTextContent().trim();
+    }
+
+    /** 读 {@code meta_json.summary}；结构不对/没有就返回 null，绝不抛。 */
+    private String readMessageSummary(String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return null;
+        }
+        try {
+            Object summary = objectMapper.readValue(metaJson, Map.class).get("summary");
+            return summary == null ? null : String.valueOf(summary);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

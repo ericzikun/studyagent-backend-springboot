@@ -162,7 +162,7 @@ class VideoTutorTurnDispatchTest {
     void firstTurn_payloadCarriesEveryFieldPythonNeedsToStayStateless() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "k 不存在怎么办？");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "k 不存在怎么办？", null);
 
         Map<String, Object> payload = dispatchedPayload();
         assertThat(payload).containsOnlyKeys(
@@ -182,7 +182,7 @@ class VideoTutorTurnDispatchTest {
     void commandCodeMatchesThePythonDispatchBranchVerbatim() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "开始");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "开始", null);
 
         // envelope.action 是字符串；Python 的 _run_with_context 按值比分支，写错就是静默不执行
         assertThat(dispatchedEnvelope().getAction())
@@ -202,7 +202,7 @@ class VideoTutorTurnDispatchTest {
                 .metaJson("{\"refSeq\":7,\"pacing\":{\"breaks\":0}}")
                 .build());
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "那 h 呢？");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "那 h 呢？", null);
 
         Map<String, Object> payload = dispatchedPayload();
         assertThat((List<?>) payload.get("board")).hasSize(2);
@@ -223,7 +223,7 @@ class VideoTutorTurnDispatchTest {
                             msg(currentId - 2, "user", "开始讲吧"));
                 });
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "再说一遍");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "再说一遍", null);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> history = (List<Map<String, Object>>) dispatchedPayload().get("history");
@@ -242,7 +242,7 @@ class VideoTutorTurnDispatchTest {
                         msg(902L, "assistant", huge),
                         msg(901L, "user", "最早的")));
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "继续");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "继续", null);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> history = (List<Map<String, Object>>) dispatchedPayload().get("history");
@@ -257,7 +257,7 @@ class VideoTutorTurnDispatchTest {
     void emptyFirstMessageIsAllowedAndReachesPythonAsBlank() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        SendMessageResult result = orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "   ");
+        SendMessageResult result = orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "   ", null);
 
         assertThat(dispatchedPayload().get("message")).isEqualTo("");
         assertThat(result.getAgentSessionId()).isNotNull();
@@ -267,9 +267,9 @@ class VideoTutorTurnDispatchTest {
     void runningPreviousTurnIsRejectedSoBoardsCannotSilentlyOverwriteEachOther() {
         // 白板队列不吃 SAC ⇒ 两轮真可能并发；每轮都基于下发时刻的 board 快照 reduce，
         // 后写完的覆盖前一轮，症状只是"少了半轮板书"且不报错 —— 所以在入口硬挡
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮", null);
 
-        assertThatThrownBy(() -> orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "抢跑的第二轮"))
+        assertThatThrownBy(() -> orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "抢跑的第二轮", null))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
@@ -291,7 +291,7 @@ class VideoTutorTurnDispatchTest {
     void conversationRowIsLockedBeforeTheGuardReadsRecentTurns() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮", null);
 
         org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(conversationRepository, turnRepository);
         inOrder.verify(conversationRepository).findByIdForUpdate(CONVERSATION_ID);
@@ -300,10 +300,10 @@ class VideoTutorTurnDispatchTest {
 
     @Test
     void nextTurnIsAllowedOnceThePreviousOneIsTerminal() {
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮", null);
         savedTurns.forEach(t -> t.setStatus(TurnStatus.COMPLETED.name()));
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第二轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第二轮", null);
 
         verify(mqOutboxService, org.mockito.Mockito.times(2)).createVerlaCommand(
                 any(), any(), eq(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT.getCode()));
@@ -313,9 +313,9 @@ class VideoTutorTurnDispatchTest {
     void everyTurnSpawnsItsOwnSessionWithABackfilledCorrelationId() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮", null);
         savedTurns.forEach(t -> t.setStatus(TurnStatus.COMPLETED.name()));
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第二轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第二轮", null);
 
         assertThat(savedSessions).hasSize(2);
         assertThat(savedSessions.get(0).getId()).isNotEqualTo(savedSessions.get(1).getId());
@@ -351,9 +351,34 @@ class VideoTutorTurnDispatchTest {
     void userMessageAndHandlerShareOneSceneConstant() {
         when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
 
-        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮", null);
 
         assertThat(savedMessages.get(0).getRole()).isEqualTo("user");
         assertThat(savedMessages.get(0).getMetaJson()).contains(VideoTutorEventHandler.SCENE_VIDEO_TUTOR);
+    }
+
+    @Test
+    void clientOutputLanguageIsPersistedThroughTheExistingSetter() {
+        when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
+        // 语言取值链路：前端传 locale → setOutputLanguage 归一化落 workspace_json →
+        // resolveOutputLanguage 读它 → 进 payload。这里断言两端：传参被落库、落库结果进 payload。
+        // （"读 workspace 拿到值"是既有 service 的行为，由它自己的测试覆盖。）
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
+
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "开始", "zh-CN");
+
+        verify(conversationService).setOutputLanguage(any(), eq("zh-CN"));
+        assertThat(dispatchedPayload().get("outputLanguage")).isEqualTo("chinese");
+    }
+
+    @Test
+    void blankOutputLanguageMustNotOverwriteAnExistingPreference() {
+        when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("english");
+
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "开始", "  ");
+
+        verify(conversationService, never()).setOutputLanguage(any(), any());
+        assertThat(dispatchedPayload().get("outputLanguage")).isEqualTo("english");
     }
 }

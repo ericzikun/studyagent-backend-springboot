@@ -78,7 +78,10 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setSourceType(c.getSourceType());
         e.setAttachmentObjectId(c.getAttachmentObjectId());
         e.setInputText(c.getInputText());
+        e.setCourseName(c.getCourseName());
+        e.setLearningGoal(c.getLearningGoal());
         e.setNoteMd(c.getNoteMd());
+        e.setNoteVersion(c.getNoteVersion());
         e.setStatus(c.getStatus());
         e.setCreatedAt(c.getCreatedAt());
         e.setUpdatedAt(c.getUpdatedAt());
@@ -94,7 +97,10 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setSourceType(e.getSourceType());
         c.setAttachmentObjectId(e.getAttachmentObjectId());
         c.setInputText(e.getInputText());
+        c.setCourseName(e.getCourseName());
+        c.setLearningGoal(e.getLearningGoal());
         c.setNoteMd(e.getNoteMd());
+        c.setNoteVersion(e.getNoteVersion());
         c.setStatus(e.getStatus());
         c.setCreatedAt(e.getCreatedAt());
         c.setUpdatedAt(e.getUpdatedAt());

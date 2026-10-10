@@ -18,6 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -105,7 +106,8 @@ class DemoNoteControllerTest {
     @Test
     void generate_persists_source_then_dispatches_command() throws Exception {
         NoteConversation prepared = conversation();
-        when(service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf"))
+        when(service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
+                "数据结构", "exam_prep"))
                 .thenReturn(prepared);
         when(dispatcher.dispatch(prepared, "zh-CN")).thenReturn(NoteGenerateDispatchResult.builder()
                 .verlaConversationId(VERLA_CONVERSATION_ID)
@@ -118,21 +120,58 @@ class DemoNoteControllerTest {
                         .requestAttr("clerkUserId", "user_1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"file\",\"objectId\":\"obj_123\","
-                                + "\"filename\":\"lecture.pdf\",\"outputLanguage\":\"zh-CN\"}"))
+                                + "\"filename\":\"lecture.pdf\",\"outputLanguage\":\"zh-CN\","
+                                + "\"courseName\":\"数据结构\",\"learningGoal\":\"exam_prep\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.turnId").isNotEmpty())
                 .andExpect(jsonPath("$.data.sessionId").isNotEmpty())
                 .andExpect(jsonPath("$.data.correlationId").value("conv:11:turn:22:sess:33"));
 
-        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf");
+        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
+                "数据结构", "exam_prep");
         verify(dispatcher).dispatch(eq(prepared), eq("zh-CN"));
+    }
+
+    @Test
+    void save_note_patches_content_with_version_baseline() throws Exception {
+        NoteConversation saved = conversation();
+        saved.setNoteMd("手改后的正文");
+        saved.setNoteVersion(3L);
+        when(service.saveUserNote("user_1", NOTE_CONVERSATION_ID, "手改后的正文", 2L)).thenReturn(saved);
+
+        mockMvc.perform(patch("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID)
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contentMd\":\"手改后的正文\",\"baseVersion\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.noteMd").value("手改后的正文"))
+                .andExpect(jsonPath("$.data.noteVersion").value(3));
+
+        verify(service).saveUserNote("user_1", NOTE_CONVERSATION_ID, "手改后的正文", 2L);
+    }
+
+    @Test
+    void snapshot_exposes_form_fields_and_note_version() throws Exception {
+        NoteConversation conv = conversation();
+        conv.setCourseName("数据结构");
+        conv.setLearningGoal("exam_prep");
+        conv.setNoteVersion(4L);
+        when(service.resolveConversationId("user_1", "vc_abc")).thenReturn(NOTE_CONVERSATION_ID);
+        when(service.getOwned("user_1", NOTE_CONVERSATION_ID)).thenReturn(conv);
+
+        mockMvc.perform(get("/v1/demo/note/conversations/vc_abc")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseName").value("数据结构"))
+                .andExpect(jsonPath("$.data.learningGoal").value("exam_prep"))
+                .andExpect(jsonPath("$.data.noteVersion").value(4));
     }
 
     @Test
     void generate_defaults_missing_optionals_to_null() throws Exception {
         NoteConversation prepared = conversation();
         when(service.prepareGeneration(eq("user_1"), eq(NOTE_CONVERSATION_ID), isNull(), isNull(),
-                eq("一段材料"), isNull())).thenReturn(prepared);
+                eq("一段材料"), isNull(), isNull(), isNull())).thenReturn(prepared);
         when(dispatcher.dispatch(eq(prepared), isNull())).thenReturn(NoteGenerateDispatchResult.builder().build());
 
         mockMvc.perform(post("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID + "/generate")
@@ -141,7 +180,7 @@ class DemoNoteControllerTest {
                         .content("{\"text\":\"一段材料\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null);
+        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null);
     }
 
     private static NoteConversation conversation() {

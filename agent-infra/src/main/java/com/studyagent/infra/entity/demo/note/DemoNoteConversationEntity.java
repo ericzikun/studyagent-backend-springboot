@@ -25,8 +25,14 @@ public class DemoNoteConversationEntity {
     private String attachmentObjectId;
     @TableField("input_text")
     private String inputText;
+    @TableField("course_name")
+    private String courseName;
+    @TableField("learning_goal")
+    private String learningGoal;
     @TableField("note_md")
     private String noteMd;
+    @TableField("note_version")
+    private Long noteVersion;
     private String status;
     @TableField("created_at")
     private LocalDateTime createdAt;

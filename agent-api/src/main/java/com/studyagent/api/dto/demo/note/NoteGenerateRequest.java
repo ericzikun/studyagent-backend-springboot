@@ -20,4 +20,14 @@ public class NoteGenerateRequest {
 
     /** 输出语言（可选，如 zh-CN / chinese）；缺省沿用会话偏好。 */
     private String outputLanguage;
+
+    /** 上传表单：课程名称（可选）。 */
+    private String courseName;
+
+    /**
+     * 上传表单：学习目标枚举码。
+     * <p>exam_prep / quiz_review / homework / understand_lesson /
+     * take_notes / generate_questions / flashcards / other；缺省 take_notes。
+     */
+    private String learningGoal;
 }

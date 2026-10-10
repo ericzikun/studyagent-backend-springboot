@@ -26,7 +26,15 @@ public class NoteConversationVO {
     private String title;
     private String sourceType;
     private String attachmentObjectId;
+    /** 表单：课程名称。 */
+    private String courseName;
+    /** 表单：学习目标枚举码。 */
+    private String learningGoal;
     private String noteMd;
+    /**
+     * 笔记版本号：前端保存时回传作为乐观锁基线（不匹配则 400，需重新拉快照）。
+     */
+    private Long noteVersion;
     private String status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -41,7 +49,10 @@ public class NoteConversationVO {
                 .title(c.getTitle())
                 .sourceType(c.getSourceType())
                 .attachmentObjectId(c.getAttachmentObjectId())
+                .courseName(c.getCourseName())
+                .learningGoal(c.getLearningGoal())
                 .noteMd(c.getNoteMd())
+                .noteVersion(c.getNoteVersion())
                 .status(c.getStatus())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())

@@ -25,8 +25,17 @@ public class NoteConversation {
     private String attachmentObjectId;
     /** 粘贴的原始文本（sourceType=text 时有值）。 */
     private String inputText;
+    /** 表单：课程名称（可为空）。 */
+    private String courseName;
+    /** 表单：学习目标枚举码（exam_prep / quiz_review / homework / understand_lesson / take_notes / generate_questions / flashcards / other）。 */
+    private String learningGoal;
     /** 生成出的笔记 Markdown。 */
     private String noteMd;
+    /**
+     * 笔记版本号：AI 生成或用户手改各 +1。
+     * <p>用户保存带 baseVersion 做乐观锁，与 AI Tutor 的双向基线同语义。
+     */
+    private Long noteVersion;
     /** draft / generating / completed / failed。 */
     private String status;
     private LocalDateTime createdAt;

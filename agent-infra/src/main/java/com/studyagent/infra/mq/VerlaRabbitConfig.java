@@ -33,6 +33,8 @@ import java.util.List;
  *   verla.cmd.clarify     ← cmd.clarify.submit       (V2)
  *   verla.cmd.materials   ← cmd.materials.generate   (V2)
  *   verla.cmd.attachment  ← cmd.attachment.parse     (V2)
+ *   verla.cmd.videotutor  ← cmd.video_tutor.chat / cmd.video_tutor.chat.control.cancel
+ *                         （唯一<strong>不带</strong> x-single-active-consumer 的命令队列，见 buildVerlaParallelQueue）
  *
  * 事件侧（新增 studyagent.events Topic）：
  *   verla.event.s00 ~ s03 ← verla.event.s{shard}.#
@@ -65,6 +67,8 @@ public class VerlaRabbitConfig {
     public static final String CMD_MATERIALS_QUEUE   = "verla.cmd.materials";
     /** V2: finalize 上传后触发附件解析 */
     public static final String CMD_ATTACHMENT_QUEUE = "verla.cmd.attachment";
+    /** Video Tutor: 交互式白板教学 turn */
+    public static final String CMD_VIDEO_TUTOR_QUEUE = "verla.cmd.videotutor";
 
     // -------------------- DLX / 兜底 --------------------
 
@@ -111,6 +115,26 @@ public class VerlaRabbitConfig {
         if (singleActiveConsumerEnabled) {
             b = b.withArgument("x-single-active-consumer", true);
         }
+        if (deadLetterEnabled) {
+            b = b.withArgument("x-dead-letter-exchange", DLX_EXCHANGE);
+        }
+        return b.build();
+    }
+
+    /**
+     * 并发消费的 Verla 队列：durable + 可选 DLX，但**不带** {@code x-single-active-consumer}。
+     * <p>
+     * 为什么必须在这一层做：{@link #singleActiveConsumerEnabled} 是<b>全局</b>开关，
+     * 一旦为 true 就所有 Verla 命令队列一起变成"全集群同时只跑一个 turn"；
+     * 而 Python 侧那份 per-queue SAC 清单在 {@code passive=true}（默认）下根本不向下发
+     * arguments，所以改它没有用 —— 队列参数的唯一真相在这里。
+     * <p>
+     * Video Tutor 适合并发：一轮白板对话不持有跨轮进程状态（上下文由 Java 每轮下发），
+     * 同一会话的串行由前端 composer 锁定 + 每轮新建 session 保证。
+     * 队列参数不可变 —— 新建队列怎么声明都安全，但日后要改必须删队列重建（有停机窗口）。
+     */
+    private Queue buildVerlaParallelQueue(String queueName) {
+        QueueBuilder b = QueueBuilder.durable(queueName);
         if (deadLetterEnabled) {
             b = b.withArgument("x-dead-letter-exchange", DLX_EXCHANGE);
         }
@@ -229,6 +253,26 @@ public class VerlaRabbitConfig {
     public Binding verlaCmdMaterialsBinding(Queue verlaCmdMaterialsQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdMaterialsQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_MATERIALS_GENERATE.getCode());
+    }
+
+    // -------------------- Video Tutor Command Queue --------------------
+
+    /** 不吃 SAC：见 {@link #buildVerlaParallelQueue}。 */
+    @Bean
+    public Queue verlaCmdVideoTutorQueue() {
+        return buildVerlaParallelQueue(CMD_VIDEO_TUTOR_QUEUE);
+    }
+
+    @Bean
+    public Binding verlaCmdVideoTutorChatBinding(Queue verlaCmdVideoTutorQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdVideoTutorQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT.getCode());
+    }
+
+    @Bean
+    public Binding verlaCmdVideoTutorCancelBinding(Queue verlaCmdVideoTutorQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdVideoTutorQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT_CONTROL_CANCEL.getCode());
     }
 
     @Bean

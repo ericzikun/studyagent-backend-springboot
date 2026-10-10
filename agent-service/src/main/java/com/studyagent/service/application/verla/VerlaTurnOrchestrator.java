@@ -545,38 +545,19 @@ public class VerlaTurnOrchestrator {
     /**
      * 读会话级单行白板 artifact：树本体 + {@code meta_json.refSeq} 计数器 + version。
      * <p>
-     * 引用号计数器必须随 board 一起续上、<b>不能从 0 重来</b>：复用旧号会让陈旧的
-     * {@code of:"b3"} 指向擦黑板后新写的无关条目。
+     * 解析委托 {@link VideoTutorBoardStore}（uid 拼法与 meta 结构的唯一真相）：
+     * 引用号计数器必须随 board 一起续上、<b>不能从 0 重来</b>，否则陈旧的 {@code of:"b3"}
+     * 会指向擦黑板后新写的无关条目。
      */
     private Map<String, Object> readBoardContext(Long conversationId) {
-        Object board = List.of();
-        Object refSeq = 0;
-        Object boardVersion = 0;
-        VerlaArtifact artifact = artifactRepository.findByUid(
-                "board_" + conversationId);
-        if (artifact == null) {
-            return Map.of("board", board, "refSeq", refSeq, "boardVersion", boardVersion);
-        }
-        try {
-            if (artifact.getBodyOrRef() != null && !artifact.getBodyOrRef().isBlank()) {
-                board = objectMapper.readValue(artifact.getBodyOrRef(), List.class);
-            }
-            if (artifact.getMetaJson() != null && !artifact.getMetaJson().isBlank()) {
-                Map<?, ?> meta = objectMapper.readValue(artifact.getMetaJson(), Map.class);
-                Object r = meta.get("refSeq");
-                if (r != null) {
-                    refSeq = r;
-                }
-            }
-            if (artifact.getVersion() != null) {
-                boardVersion = artifact.getVersion();
-            }
-        } catch (Exception e) {
-            log.warn("[Verla/videoTutor] board artifact unreadable cid={} uid={}: {} —— "
-                    + "按空板下发，Python 会从零开始重建，但引用号计数器会被重置",
-                    conversationId, artifact.getArtifactUid(), e.getMessage());
-        }
-        return Map.of("board", board, "refSeq", refSeq, "boardVersion", boardVersion);
+        VideoTutorBoardStore.BoardState state = VideoTutorBoardStore.parse(
+                artifactRepository.findByUid(VideoTutorBoardStore.uid(conversationId)),
+                conversationId,
+                objectMapper);
+        return Map.of(
+                "board", state.board(),
+                "refSeq", state.refSeq(),
+                "boardVersion", state.boardVersion());
     }
 
     /**

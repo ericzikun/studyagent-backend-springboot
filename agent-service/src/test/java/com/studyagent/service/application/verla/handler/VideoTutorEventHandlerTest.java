@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla.handler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
+import com.studyagent.service.application.verla.VideoTutorBoardStore;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -54,11 +55,13 @@ class VideoTutorEventHandlerTest {
     private VerlaMessageRepository messageRepository;
     @Mock
     private VerlaConversationRepository conversationRepository;
+    @Mock
+    private VideoTutorBoardStore boardStore;
 
     private VideoTutorEventHandler handler() {
         return new VideoTutorEventHandler(
                 orchestrator, artifactRepository, messageRepository,
-                conversationRepository, new ObjectMapper());
+                conversationRepository, boardStore, new ObjectMapper());
     }
 
     private static VerlaEventInbox row(VerlaAgentEventType type) {
@@ -100,7 +103,7 @@ class VideoTutorEventHandlerTest {
 
     @Test
     void boardCommit_shouldUpsertTheConversationLevelSingleRow() {
-        when(artifactRepository.findByUid("board_" + CONVERSATION_ID)).thenReturn(null);
+        when(boardStore.nextVersion(CONVERSATION_ID)).thenReturn(1);
         when(artifactRepository.upsertByUid(any(VerlaArtifact.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -131,8 +134,8 @@ class VideoTutorEventHandlerTest {
     @Test
     void boardCommit_shouldTakeTheVersionFromJavaNotThePythonEcho() {
         // 已有 version=7，而 Python 回显 99 —— 两个都不能采信，真相是 Java 自己 +1
-        when(artifactRepository.findByUid(anyString()))
-                .thenReturn(VerlaArtifact.builder().version(7).build());
+        // 版本号现在由 boardStore 计算（现存 +1）；本类不再直接读仓储
+        when(boardStore.nextVersion(CONVERSATION_ID)).thenReturn(8);
         when(artifactRepository.upsertByUid(any(VerlaArtifact.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -157,7 +160,7 @@ class VideoTutorEventHandlerTest {
     @Test
     void boardCommit_persistFailureMustPropagateSoInboxMarksFailed() {
         // 吞掉异常 = 这行 inbox 被标 processed、板子永久停在旧状态且没人重试
-        when(artifactRepository.findByUid(anyString())).thenReturn(null);
+        when(boardStore.nextVersion(anyLong())).thenReturn(1);
         when(artifactRepository.upsertByUid(any(VerlaArtifact.class)))
                 .thenThrow(new IllegalStateException("db down"));
 

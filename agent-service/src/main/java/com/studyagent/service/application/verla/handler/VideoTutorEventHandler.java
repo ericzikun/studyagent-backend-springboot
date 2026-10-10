@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.enums.VerlaArtifactStatus;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
+import com.studyagent.service.application.verla.VideoTutorBoardStore;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
@@ -41,7 +42,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class VideoTutorEventHandler implements VerlaEventHandler {
 
-    public static final String BOARD_ARTIFACT_KIND = "video_tutor_board";
+    public static final String BOARD_ARTIFACT_KIND = VideoTutorBoardStore.KIND;
     public static final String SCENE_VIDEO_TUTOR = "VIDEO_TUTOR";
 
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
@@ -55,6 +56,7 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaMessageRepository messageRepository;
     private final VerlaConversationRepository conversationRepository;
+    private final VideoTutorBoardStore boardStore;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -96,9 +98,9 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
                     row.getSessionId(), row.getEventSeq());
             return;
         }
-        String uid = boardArtifactUid(row.getConversationId());
+        String uid = VideoTutorBoardStore.uid(row.getConversationId());
         String body = toJson(payload.get("board"));
-        int nextVersion = nextBoardVersion(uid);
+        int nextVersion = boardStore.nextVersion(row.getConversationId());
 
         VerlaArtifact saved = artifactRepository.upsertByUid(VerlaArtifact.builder()
                 .artifactUid(uid)
@@ -126,12 +128,6 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
         }
 
         conversationRepository.incrementVersion(row.getConversationId());
-    }
-
-    private int nextBoardVersion(String uid) {
-        VerlaArtifact existing = artifactRepository.findByUid(uid);
-        Integer current = existing == null ? null : existing.getVersion();
-        return current == null ? 1 : current + 1;
     }
 
     @SuppressWarnings("unchecked")
@@ -183,8 +179,8 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
         }
     }
 
-    /** 供 snapshot service 复用：会话级单行 uid；{@code uk_artifact_uid} 因此天然幂等。 */
+    /** 会话级单行 uid；真相在 {@link VideoTutorBoardStore#uid}，这里只保留调用点。 */
     public static String boardArtifactUid(Long conversationId) {
-        return "board_" + conversationId;
+        return VideoTutorBoardStore.uid(conversationId);
     }
 }

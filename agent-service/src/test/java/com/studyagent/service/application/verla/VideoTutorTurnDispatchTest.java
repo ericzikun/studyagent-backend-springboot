@@ -282,6 +282,22 @@ class VideoTutorTurnDispatchTest {
                 });
     }
 
+    /**
+     * 顺序是这个守卫唯一的有效前提：<b>先锁会话行，再读"有没有未终态 turn"</b>。
+     * 反过来写的话锁形同虚设 —— 两个并发请求会同时读到"没有"，双双放行，
+     * 后写完的一轮静默覆盖前一轮的板书，且不报错。
+     */
+    @Test
+    void conversationRowIsLockedBeforeTheGuardReadsRecentTurns() {
+        when(artifactRepository.findByUid(BOARD_UID)).thenReturn(null);
+
+        orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(conversationRepository, turnRepository);
+        inOrder.verify(conversationRepository).findByIdForUpdate(CONVERSATION_ID);
+        inOrder.verify(turnRepository).findRecentByConversation(CONVERSATION_ID, 5);
+    }
+
     @Test
     void nextTurnIsAllowedOnceThePreviousOneIsTerminal() {
         orchestrator.startVideoTutorTurn(USER_ID, CONVERSATION_ID, "第一轮");

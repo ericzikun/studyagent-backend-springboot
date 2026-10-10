@@ -30,6 +30,11 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
+    public VerlaConversation findByIdForUpdate(Long id) {
+        return toDomain(this.baseMapper.selectByIdForUpdate(id));
+    }
+
+    @Override
     public List<VerlaConversation> findByUserFilteredPaged(String userId,
                                                            String segmentQueryKey,
                                                            String conversationStatusDb,

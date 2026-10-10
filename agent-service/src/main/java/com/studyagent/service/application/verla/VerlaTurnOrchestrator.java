@@ -358,6 +358,9 @@ public class VerlaTurnOrchestrator {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         String text = message == null ? "" : message.trim();
 
+        // 先锁会话行，再做守卫：守卫读的是"有没有未终态的 turn"，不串行化的话
+        // 两个同时到达的请求会同时读到"没有"、双双放行，后写完的那轮静默覆盖前一轮的板书
+        conversationRepository.findByIdForUpdate(conv.getId());
         requireNoRunningVideoTutorTurn(conv.getId());
 
         VerlaMessage userMsg = insertVideoTutorUserMessage(conv.getId(), text);

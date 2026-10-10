@@ -181,7 +181,24 @@ public enum VerlaAgentEventType {
     NOTE_STREAM_CHUNK(false),
     NOTE_COMPLETED(true),
     NOTE_FAILED(true),
-    NOTE_CANCELLED(true);
+    NOTE_CANCELLED(true),
+
+    /**
+     * Video Tutor 域 —— 交互式白板教学（Py app/services/video_tutor）。
+     * 事件名与 Python {@code app.models.enums.VerlaAgentEventType} 及
+     * openspec/changes/add-video-tutor-board-teaching/design.md §1.2 逐字一致，
+     * 两侧各有单测从该表派生断言。
+     */
+    VIDEO_TUTOR_STARTED(false),
+    /** 零 step 降级通道：本轮没产出任何板书时才发，带老师原文。Java 不订阅。 */
+    VIDEO_TUTOR_CHAT_STREAM_CHUNK(false),
+    /** 一个 step = 该步解说 + 它引出的板书，封在同一帧（讲画同步的传输层保证）。Java 不订阅。 */
+    VIDEO_TUTOR_BOARD_OPS(false),
+    /** 白板树快照 → artifact upsert（kind=video_tutor_board），刷新恢复的主路径。 */
+    VIDEO_TUTOR_BOARD_COMMIT(false),
+    VIDEO_TUTOR_TURN_COMPLETED(true),
+    VIDEO_TUTOR_FAILED(true),
+    VIDEO_TUTOR_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -231,7 +248,10 @@ public enum VerlaAgentEventType {
             AITUTOR_CANCELLED,
             NOTE_COMPLETED,
             NOTE_FAILED,
-            NOTE_CANCELLED);
+            NOTE_CANCELLED,
+            VIDEO_TUTOR_TURN_COMPLETED,
+            VIDEO_TUTOR_FAILED,
+            VIDEO_TUTOR_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

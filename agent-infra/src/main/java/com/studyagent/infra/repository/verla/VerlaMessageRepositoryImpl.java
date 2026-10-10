@@ -53,6 +53,13 @@ public class VerlaMessageRepositoryImpl
     }
 
     @Override
+    public List<VerlaMessage> findVideoTutorByCursor(Long conversationId, Long cursor, int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
+        return this.baseMapper.selectVideoTutorByCursor(conversationId, cursor, safeLimit)
+                .stream().map(this::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
     public VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {
         if (turnId == null || role == null || role.isBlank() || scene == null || scene.isBlank()) {
             return null;

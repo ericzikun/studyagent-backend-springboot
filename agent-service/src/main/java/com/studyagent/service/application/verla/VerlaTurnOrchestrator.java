@@ -333,6 +333,281 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
+    // ==========================================================
+    // Video Tutor（交互式白板教学）
+    // ==========================================================
+
+    /**
+     * 每轮随命令下发的历史双预算：条数 + UTF-8 字节。见 design.md §4.3。
+     * <p>
+     * 单条超预算时 <b>continue 跳过</b>而不是 break —— break 会把最近几轮整段丢掉，
+     * 而最近的对话恰恰最要紧。
+     */
+    private static final int VIDEO_TUTOR_HISTORY_MAX_ITEMS = 40;
+    private static final int VIDEO_TUTOR_HISTORY_MAX_BYTES = 24 * 1024;
+    private static final String VIDEO_TUTOR_INTENT = VerlaSessionKind.VIDEO_TUTOR.name();
+
+    /**
+     * 发起一轮白板教学。
+     * <p>
+     * {@code message} 允许为空：第一轮学生还没说话，Python 侧会回落成固定开场指令，
+     * 保证外发给模型的序列仍然是 {@code [system, user]}。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startVideoTutorTurn(String userId, Long conversationId, String message) {
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        String text = message == null ? "" : message.trim();
+
+        requireNoRunningVideoTutorTurn(conv.getId());
+
+        VerlaMessage userMsg = insertVideoTutorUserMessage(conv.getId(), text);
+        VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());
+
+        TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
+        turn.setStatus(afterSkip.name());
+        turn.setResolvedIntent(VIDEO_TUTOR_INTENT);
+        turn.setUpdatedAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
+        VerlaSession session = spawnVideoTutorSession(conv, turn, text, userMsg.getId());
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .agentSessionId(session.getId())
+                .build();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult cancelVideoTutorTurn(String userId, Long conversationId, Long sessionId) {
+        if (sessionId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId required");
+        }
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaSession session = sessionRepository.findByIdForUpdate(sessionId);
+        if (session == null || !conversationId.equals(session.getConversationId())
+                || !VIDEO_TUTOR_INTENT.equals(session.getKind())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "video tutor session");
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(session.getTurnId());
+        if (turn == null || !conversationId.equals(turn.getConversationId())) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "video tutor turn");
+        }
+
+        SessionStatus curSession = SessionStatus.valueOf(session.getStatus());
+        if (curSession.isTerminal()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE, "video tutor session already terminal");
+        }
+        session.setStatus(sessionStateMachine.next(curSession, SessionEvent.USER_CANCEL).name());
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
+        if (!curTurn.isTerminal()) {
+            turn.setStatus(turnStateMachine.next(curTurn, TurnEvent.USER_CANCEL).name());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        VerlaCommandEnvelope env = baseEnvelope(
+                VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT_CONTROL_CANCEL, conv, turn, session)
+                .payload(new HashMap<>(Map.of("sessionId", session.getId(), "turnId", turn.getId())))
+                .build();
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT_CONTROL_CANCEL.getCode());
+
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(turn.getUserMessageId())
+                .agentSessionId(session.getId())
+                .build();
+    }
+
+    /**
+     * 白板队列<b>不吃</b> {@code x-single-active-consumer}（见 {@code VerlaRabbitConfig#buildVerlaParallelQueue}），
+     * 所以同一 conversation 上的两轮可以被不同 worker 同时执行。
+     * <p>
+     * 这不会崩，但会<b>静默丢板书</b>：两轮都基于各自下发时刻的 board 快照做 reduce，
+     * 写完的那一行 artifact 覆盖前一轮 —— 症状只是"少了半轮的内容"，不报错。
+     * 前端 composer 在终态前锁输入是第一道防线，这里是第二道（防重放 / 双开标签页）。
+     */
+    private void requireNoRunningVideoTutorTurn(Long conversationId) {
+        for (VerlaTurn recent : turnRepository.findRecentByConversation(conversationId, 5)) {
+            if (!VIDEO_TUTOR_INTENT.equals(recent.getResolvedIntent())) {
+                continue;
+            }
+            TurnStatus status = TurnStatus.valueOf(recent.getStatus());
+            if (!status.isTerminal()) {
+                // ⚠️ 不要用 new BusinessException(ApiCode.X, "自定义文案")：那会命中
+                // (ApiCode, Object... formatArgs) 重载，文案被 apiCode.formatEn() 吃掉，
+                // 到前端只剩 "Illegal state"。可操作的信息走 data 带出去。
+                log.warn("[Verla/videoTutor] 拒绝并发 turn：conversationId={} 仍有未终态 turn={} status={}",
+                        conversationId, recent.getId(), status);
+                throw BusinessException.withData(ApiCode.ILLEGAL_STATE, Map.of(
+                        "reason", "VIDEO_TUTOR_TURN_RUNNING",
+                        "runningTurnId", recent.getId()));
+            }
+        }
+    }
+
+    private VerlaMessage insertVideoTutorUserMessage(Long conversationId, String text) {
+        VerlaMessage m = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(0L)
+                .role("user")
+                .textContent(text)
+                .metaJson(VerlaFileChatMetadataHelper.writeMessageMeta(
+                        FileChatMessageMeta.builder()
+                                .scene(VIDEO_TUTOR_INTENT)
+                                .build()))
+                .createdAt(LocalDateTime.now())
+                .build();
+        return messageRepository.save(m);
+    }
+
+    /**
+     * 每轮新建 session（与 assignment chat 同一理由）：event_seq 的保序作用域是 session，
+     * 复用 session 会让新一轮的 seq 从旧游标接着算，一旦丢帧就会<b>永久卡住</b>该会话后续所有事件。
+     * <p>
+     * {@code featureCode} 留 NULL —— v1 不接额度/计费（不动 {@code FeatureCode} 枚举），
+     * 该列可空。⚠️ 连带要验：额度拦截器 / SKU 弹窗链不能因为 feature 未知而误报。
+     */
+    private VerlaSession spawnVideoTutorSession(VerlaConversation conv, VerlaTurn turn,
+                                                String message, Long userMessageId) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .kind(VIDEO_TUTOR_INTENT)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setStatus(TurnStatus.RUNNING_AGENT.name());
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildVideoTutorEnvelope(conv, turn, s, message, userMessageId);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT.getCode());
+        return s;
+    }
+
+    /**
+     * 上下文一律<b>内联随命令下发</b>，不给 Python 留 {@code contextRef} 回拉。
+     * <p>
+     * 与 assignment chat 走 contextRef 的约定不同，理由是刻意的：白板对首帧延迟敏感
+     * （目标 P95 &lt; 800ms），回拉会在第一个 step 之前多插一次内部 RPC 往返；
+     * 而 payload 已被 history 双预算限死在 24KB 量级，不会像全文材料那样失控。
+     * Python 因此完全不持有会话状态。
+     */
+    private VerlaCommandEnvelope buildVideoTutorEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                         VerlaSession session, String message,
+                                                         Long userMessageId) {
+        Map<String, Object> boardContext = readBoardContext(conv.getId());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("message", message);
+        payload.put("topic", conv.getTitle());
+        payload.put("history", buildVideoTutorHistory(conv.getId(), userMessageId));
+        payload.put("board", boardContext.get("board"));
+        payload.put("refSeq", boardContext.get("refSeq"));
+        payload.put("boardVersion", boardContext.get("boardVersion"));
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
+
+        return baseEnvelope(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    /**
+     * 读会话级单行白板 artifact：树本体 + {@code meta_json.refSeq} 计数器 + version。
+     * <p>
+     * 引用号计数器必须随 board 一起续上、<b>不能从 0 重来</b>：复用旧号会让陈旧的
+     * {@code of:"b3"} 指向擦黑板后新写的无关条目。
+     */
+    private Map<String, Object> readBoardContext(Long conversationId) {
+        Object board = List.of();
+        Object refSeq = 0;
+        Object boardVersion = 0;
+        VerlaArtifact artifact = artifactRepository.findByUid(
+                "board_" + conversationId);
+        if (artifact == null) {
+            return Map.of("board", board, "refSeq", refSeq, "boardVersion", boardVersion);
+        }
+        try {
+            if (artifact.getBodyOrRef() != null && !artifact.getBodyOrRef().isBlank()) {
+                board = objectMapper.readValue(artifact.getBodyOrRef(), List.class);
+            }
+            if (artifact.getMetaJson() != null && !artifact.getMetaJson().isBlank()) {
+                Map<?, ?> meta = objectMapper.readValue(artifact.getMetaJson(), Map.class);
+                Object r = meta.get("refSeq");
+                if (r != null) {
+                    refSeq = r;
+                }
+            }
+            if (artifact.getVersion() != null) {
+                boardVersion = artifact.getVersion();
+            }
+        } catch (Exception e) {
+            log.warn("[Verla/videoTutor] board artifact unreadable cid={} uid={}: {} —— "
+                    + "按空板下发，Python 会从零开始重建，但引用号计数器会被重置",
+                    conversationId, artifact.getArtifactUid(), e.getMessage());
+        }
+        return Map.of("board", board, "refSeq", refSeq, "boardVersion", boardVersion);
+    }
+
+    /**
+     * 历史（旧→新）：<b>排除本轮刚插入的那条 user 消息</b> —— 它就是 payload 的 {@code message}，
+     * 再进 history 会让模型看到自己问题的两份。
+     */
+    private List<Map<String, Object>> buildVideoTutorHistory(Long conversationId, Long excludeMessageId) {
+        List<VerlaMessage> recent = messageRepository.findVideoTutorByCursor(conversationId, null,
+                VIDEO_TUTOR_HISTORY_MAX_ITEMS + 1);
+        List<Map<String, Object>> picked = new ArrayList<>();
+        int usedBytes = 0;
+        for (VerlaMessage m : recent) {
+            if (picked.size() >= VIDEO_TUTOR_HISTORY_MAX_ITEMS) {
+                break;
+            }
+            if (m.getId() != null && m.getId().equals(excludeMessageId)) {
+                continue;
+            }
+            String content = m.getTextContent() == null ? "" : m.getTextContent().trim();
+            if (content.isEmpty()) {
+                continue;
+            }
+            int cost = content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1;
+            if (usedBytes + cost > VIDEO_TUTOR_HISTORY_MAX_BYTES) {
+                continue;   // 不是 break：跳过大的一条，仍要把更新的轮次带上
+            }
+            usedBytes += cost;
+            picked.add(Map.of("role", m.getRole() == null ? "user" : m.getRole(), "content", content));
+        }
+        // 游标查询是 id DESC，翻转正序后才是"旧 → 新"
+        java.util.Collections.reverse(picked);
+        return picked;
+    }
+
     /**
      * 运维控制台：取消进行中的 assignment run（主执行链路）。
      * <p>

@@ -10,20 +10,38 @@ import java.util.List;
 public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
 
     /**
-     * 主对话消息分页。文件对话 / 作业追问消息写入同表，但用 meta_json.scene
-     * （FILE_CHAT / ASSIGNMENT_CHAT）隔离，不进入主聊天历史。
+     * 主对话消息分页。文件对话 / 作业追问 / 白板教学消息写入同表，但用 meta_json.scene
+     * （FILE_CHAT / ASSIGNMENT_CHAT / VIDEO_TUTOR）隔离，不进入主聊天历史。
+     * <p>
+     * ⚠️ 只在这里排除 {@code VIDEO_TUTOR}；{@link #selectFirstUserQueryByConversationIds}
+     * 那条 admin 查询**故意保留** —— 管理员列表需要看到白板会话的第一个提问。
      */
     @Select("<script>"
             + "SELECT * FROM verla_messages "
             + "WHERE conversation_id = #{conversationId} "
             + "AND COALESCE(scene, JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')), '') "
-            + "NOT IN ('FILE_CHAT', 'ASSIGNMENT_CHAT') "
+            + "NOT IN ('FILE_CHAT', 'ASSIGNMENT_CHAT', 'VIDEO_TUTOR') "
             + "<if test='cursor != null'> AND id &lt; #{cursor} </if> "
             + "ORDER BY id DESC LIMIT #{limit}"
             + "</script>")
     List<VerlaMessageEntity> selectByCursor(@Param("conversationId") Long conversationId,
                                             @Param("cursor") Long cursor,
                                             @Param("limit") int limit);
+
+    /**
+     * 白板教学（Video Tutor）历史分页：scene=VIDEO_TUTOR，键到 conversation。
+     * 左栏可见、可回看，但与主对话隔离（主路径 selectByCursor 已排除）。
+     */
+    @Select("<script>"
+            + "SELECT * FROM verla_messages "
+            + "WHERE conversation_id = #{conversationId} "
+            + "AND COALESCE(scene, JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.scene')), '') = 'VIDEO_TUTOR' "
+            + "<if test='cursor != null'> AND id &lt; #{cursor} </if> "
+            + "ORDER BY id DESC LIMIT #{limit}"
+            + "</script>")
+    List<VerlaMessageEntity> selectVideoTutorByCursor(@Param("conversationId") Long conversationId,
+                                                     @Param("cursor") Long cursor,
+                                                     @Param("limit") int limit);
 
     /**
      * 作业追问（Chat With Assignment）历史分页：scene=ASSIGNMENT_CHAT，键到 conversation。

@@ -354,7 +354,8 @@ public class VerlaTurnOrchestrator {
      * 保证外发给模型的序列仍然是 {@code [system, user]}。
      */
     @Transactional(propagation = Propagation.REQUIRED)
-    public SendMessageResult startVideoTutorTurn(String userId, Long conversationId, String message) {
+    public SendMessageResult startVideoTutorTurn(
+            String userId, Long conversationId, String message, String outputLanguage) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         String text = message == null ? "" : message.trim();
 
@@ -362,6 +363,13 @@ public class VerlaTurnOrchestrator {
         // 两个同时到达的请求会同时读到"没有"、双双放行，后写完的那轮静默覆盖前一轮的板书
         conversationRepository.findByIdForUpdate(conv.getId());
         requireNoRunningVideoTutorTurn(conv.getId());
+
+        // 授课语言：走仓库既有的 setOutputLanguage（归一化 ISO 别名 + merge 写回 workspace_json）。
+        // 不要试图通过创建接口的 workspace 字段传 —— 控制器把 Map 做成了 String.valueOf，
+        // 存进去的不是合法 JSON，读的时候会被当空处理。
+        if (outputLanguage != null && !outputLanguage.isBlank()) {
+            conversationService.setOutputLanguage(conv, outputLanguage);
+        }
 
         VerlaMessage userMsg = insertVideoTutorUserMessage(conv.getId(), text);
         VerlaTurn turn = createTurn(conv.getId(), userMsg.getId());

@@ -236,7 +236,8 @@ class VerlaVideoTutorHttpBindingTest {
         }
 
         @Override
-        public SendMessageResult startVideoTutorTurn(String userId, Long conversationId, String message) {
+        public SendMessageResult startVideoTutorTurn(
+                String userId, Long conversationId, String message, String outputLanguage) {
             this.lastUserId = userId;
             this.lastConversationId = conversationId;
             this.lastMessage = message;

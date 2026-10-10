@@ -61,7 +61,8 @@ public class VerlaVideoTutorController {
             @RequestBody @Valid VideoTutorTurnRequest req) {
         ensureLogin(clerkUserId);
         return Result.success(SendMessageResponseVO.from(
-                turnOrchestrator.startVideoTutorTurn(clerkUserId, cid, req.getMessage())));
+                turnOrchestrator.startVideoTutorTurn(
+                        clerkUserId, cid, req.getMessage(), req.getOutputLanguage())));
     }
 
     /**

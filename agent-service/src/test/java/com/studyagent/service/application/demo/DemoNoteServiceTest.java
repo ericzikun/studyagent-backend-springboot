@@ -106,6 +106,42 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void first_turn_syncs_the_filename_to_the_mainline_conversation_title() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, "lecture.pdf",
+                null, null, null);
+
+        // Dashboard 的 AI Note 分区读的是主线 title（不是 demo 表），不同步就永远显示「未命名笔记」
+        verify(verlaConversationService).rename("user_1", VERLA_CONVERSATION_ID, "lecture.pdf");
+    }
+
+    @Test
+    void first_turn_without_filename_keeps_the_mainline_title_untouched() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 没有文件名 → demo title 仍是「未命名笔记」占位，没必要写主线
+        service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, null,
+                null, null, null);
+
+        verify(verlaConversationService, never()).rename(any(), any(), any());
+    }
+
+    @Test
+    void follow_up_turn_does_not_touch_the_title() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.prepareFollowUpTurn("user_1", NOTE_CONVERSATION_ID, "再补充一点");
+
+        verify(verlaConversationService, never()).rename(any(), any(), any());
+    }
+
+    @Test
     void first_turn_with_blank_query_records_no_message() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));

@@ -9,6 +9,8 @@ import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateResponseVO;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
+import com.studyagent.service.application.demo.dto.NoteTurnContext;
+import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,7 +73,8 @@ public class DemoNoteController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable String id) {
         NoteConversation conv = service.getOwned(clerkUserId, service.resolveConversationId(clerkUserId, id));
-        return Result.success(NoteConversationVO.from(conv));
+        // 对话栏靠 messages 重建；正文靠 noteMd，版本靠 noteVersion（编辑器乐观锁基线）
+        return Result.success(NoteConversationVO.from(conv, service.listMessages(conv.getId())));
     }
 
     /**
@@ -91,6 +94,13 @@ public class DemoNoteController {
         return Result.success(NoteConversationVO.from(conv));
     }
 
+    /**
+     * 派发一轮笔记回合。
+     * <p>首轮（带 {@code objectId}/{@code text}）：落素材 + 把 query 落成第 1 条用户消息 →
+     * 解析 → 归纳 → 写整篇笔记。<br>
+     * 后续轮（只有 {@code message}）：落用户消息 + 带上编辑器基线（{@code documentContentMd} /
+     * {@code documentBaseVersion}）与会话历史，agent 自行判断要不要改文档。
+     */
     @PostMapping("/conversations/{id}/generate")
     public Result<NoteGenerateResponseVO> generate(
             @RequestAttribute("clerkUserId") String clerkUserId,
@@ -100,10 +110,24 @@ public class DemoNoteController {
             throw new com.studyagent.common.exception.BusinessException(
                     com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "request body is required");
         }
-        NoteConversation conv = service.prepareGeneration(
-                clerkUserId, id, req.getSourceType(), req.getObjectId(), req.getText(), req.getFilename(),
-                req.getCourseName(), req.getLearningGoal());
+        boolean firstTurn = DemoNoteService.isFirstTurnInput(req.getSourceType(), req.getObjectId(), req.getText());
+
+        NoteTurnPreparation prepared = firstTurn
+                ? service.prepareFirstTurn(clerkUserId, id, req.getSourceType(), req.getObjectId(), req.getText(),
+                        req.getFilename(), req.getCourseName(), req.getLearningGoal(), req.getMessage())
+                : service.prepareFollowUpTurn(clerkUserId, id, req.getMessage());
+
+        NoteTurnContext turn = NoteTurnContext.builder()
+                .firstTurn(firstTurn)
+                .message(req.getMessage())
+                .outputLanguage(req.getOutputLanguage())
+                // 首轮的文档基线恒为空：会话刚被重置，不存在可参考的编辑器基线
+                .documentContentMd(firstTurn ? "" : req.getDocumentContentMd())
+                .documentBaseVersion(firstTurn ? 0L : req.getDocumentBaseVersion())
+                .history(prepared.getHistory())
+                .build();
+
         return Result.success(NoteGenerateResponseVO.from(
-                commandDispatcher.dispatch(conv, req.getOutputLanguage())));
+                commandDispatcher.dispatch(prepared.getConversation(), turn)));
     }
 }

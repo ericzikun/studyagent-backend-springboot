@@ -19,11 +19,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Notes demo 的事件投影：把主线通道回流的 {@code NOTE_*} 事件落进 demo 自己的会话行，
- * 并推进 {@code verla_sessions.status}。
+ * Notes demo 的事件投影：把主线通道回流的 {@code NOTE_*} 事件落进 demo 自己的会话行
+ * （并把 AI 写入的文档、助手回复一起落库），同时推进 {@code verla_sessions.status}。
  *
- * <p><b>只订阅需要 Java 侧动作的 4 个事件。</b>{@code NOTE_PARSE_COMPLETED /
- * NOTE_SUMMARIZE_STARTED / NOTE_STREAM_CHUNK} 是纯前端渲染事件，由
+ * <p><b>只订阅需要 Java 侧动作的 5 个事件。</b>{@code NOTE_PARSE_COMPLETED /
+ * NOTE_SUMMARIZE_STARTED / NOTE_CHAT_STREAM_CHUNK / NOTE_ARTIFACT_BEGIN /
+ * NOTE_ARTIFACT_DELTA} 是纯前端渲染事件，由
  * {@link com.studyagent.service.application.verla.VerlaInboxService} 无条件推给 SSE，
  * 不需要 handler；不订阅可避免每个流式 chunk 都触发一次无意义的 DB 往返。
  *
@@ -32,7 +33,7 @@ import java.util.Set;
  * 刻意不复用 {@link VerlaAgentLifecycleEventHandler}（后者耦合 assignment 状态机与配额退款）。
  *
  * <p><b>异常策略</b>：session 状态推进是 best-effort（失败只 warn，且非法转换不该中断整条
- * inbox drain）；笔记正文落库失败刻意向上抛 —— handler 与 inbox 共享事务，抛出会让该行
+ * inbox drain）；笔记正文/消息落库失败刻意向上抛 —— handler 与 inbox 共享事务，抛出会让该行
  * 标记 FAILED 而不推进 cursor，事件可重试；吞掉会造成「前端看到笔记、库里没有」的静默丢失。
  */
 @Slf4j
@@ -42,7 +43,8 @@ public class NoteEventHandler implements VerlaEventHandler {
 
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
             VerlaAgentEventType.NOTE_PARSE_STARTED,
-            VerlaAgentEventType.NOTE_COMPLETED,
+            VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+            VerlaAgentEventType.NOTE_TURN_COMPLETED,
             VerlaAgentEventType.NOTE_FAILED,
             VerlaAgentEventType.NOTE_CANCELLED);
 
@@ -62,19 +64,19 @@ public class NoteEventHandler implements VerlaEventHandler {
                 ? Map.of() : env.getPayload();
 
         switch (type) {
+            // 首轮解析开始 = 本回合真正启动（后续轮没有解析阶段，靠 TURN_COMPLETED 直接收口）
             case NOTE_PARSE_STARTED -> advanceSession(row.getSessionId(), SessionEvent.AGENT_STARTED);
-            case NOTE_COMPLETED -> {
-                saveNote(row, payload);
-                advanceSession(row.getSessionId(), SessionEvent.AGENT_COMPLETED);
-            }
+            // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
+            case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
+            case NOTE_TURN_COMPLETED -> completeTurn(row, payload);
             case NOTE_FAILED -> {
-                log.warn("[Notes] generation failed sessionId={} error={}",
+                log.warn("[Notes] turn failed sessionId={} error={}",
                         row.getSessionId(), payload.get("errorMessage"));
                 demoNoteService.markFailed(row.getConversationId());
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_FAILED);
             }
             case NOTE_CANCELLED -> {
-                log.info("[Notes] generation cancelled sessionId={} reason={}",
+                log.info("[Notes] turn cancelled sessionId={} reason={}",
                         row.getSessionId(), payload.get("reason"));
                 // 取消按「未完成」收口：前端据此提示可重试，不落 failed 事件语义
                 demoNoteService.markFailed(row.getConversationId());
@@ -84,14 +86,18 @@ public class NoteEventHandler implements VerlaEventHandler {
         }
     }
 
-    private void saveNote(VerlaEventInbox row, Map<String, Object> payload) {
-        String noteMd = asString(payload.get("noteMarkdown"));
-        if (noteMd == null || noteMd.isBlank()) {
+    private void saveArtifact(VerlaEventInbox row, Map<String, Object> payload) {
+        String contentMd = asString(payload.get("contentMd"));
+        if (contentMd == null || contentMd.isBlank()) {
             throw new IllegalStateException(
-                    "NOTE_COMPLETED without noteMarkdown, sessionId=" + row.getSessionId());
+                    "NOTE_ARTIFACT_COMMIT without contentMd, sessionId=" + row.getSessionId());
         }
-        demoNoteService.applyGeneratedNote(row.getConversationId(), noteMd, asString(payload.get("title")));
-        log.info("[Notes] note saved convId={} chars={}", row.getConversationId(), noteMd.length());
+        demoNoteService.applyArtifactCommit(row.getConversationId(), contentMd, asLong(payload.get("versionNo")));
+    }
+
+    private void completeTurn(VerlaEventInbox row, Map<String, Object> payload) {
+        demoNoteService.completeTurn(row.getConversationId(), asString(payload.get("assistantText")));
+        advanceSession(row.getSessionId(), SessionEvent.AGENT_COMPLETED);
     }
 
     /** best-effort 推进 session 状态；失败只记录，绝不中断 inbox drain。 */
@@ -123,5 +129,19 @@ public class NoteEventHandler implements VerlaEventHandler {
 
     private static String asString(Object raw) {
         return raw == null ? null : raw.toString();
+    }
+
+    private static Long asLong(Object raw) {
+        if (raw instanceof Number n) {
+            return n.longValue();
+        }
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

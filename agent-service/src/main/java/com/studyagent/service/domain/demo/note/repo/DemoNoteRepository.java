@@ -1,6 +1,7 @@
 package com.studyagent.service.domain.demo.note.repo;
 
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.NoteMessage;
 
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +10,18 @@ import java.util.Optional;
 public interface DemoNoteRepository {
 
     NoteConversation saveConversation(NoteConversation c);
+
+    /** 追加一条回合消息；seq 由实现层取「会话内最大值 +1」。 */
+    NoteMessage appendMessage(NoteMessage message);
+
+    /**
+     * 取会话内**最近** {@code limit} 条消息，按 seq **升序**返回（旧→新）。
+     * <p>快照取足够大的 limit 拿全量；history 裁剪取小 limit 再用字节预算从尾部往前裁。
+     */
+    List<NoteMessage> listRecentMessages(Long conversationId, int limit);
+
+    /** 清空会话消息（首轮重新提交素材时调用：旧对话上下文随即作废）。 */
+    void deleteMessages(Long conversationId);
 
     Optional<NoteConversation> getOwnedConversation(String clerkUserId, Long conversationId);
 

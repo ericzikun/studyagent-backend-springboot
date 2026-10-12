@@ -3,17 +3,25 @@ package com.studyagent.api.controller.demo;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
+import com.studyagent.service.application.demo.dto.NoteTurnContext;
+import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.NoteMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,7 +31,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 笔记端点契约：路径、入参透传与 public id 输出。 */
+/** 笔记端点契约：路径、一回合入参透传、历史消息输出与 public id 输出。 */
 class DemoNoteControllerTest {
 
     private static final long NOTE_CONVERSATION_ID = 44L;
@@ -104,32 +112,85 @@ class DemoNoteControllerTest {
     }
 
     @Test
-    void generate_persists_source_then_dispatches_command() throws Exception {
+    void snapshot_returns_conversation_messages_for_the_chat_rail() throws Exception {
+        when(service.resolveConversationId("user_1", "vc_abc")).thenReturn(NOTE_CONVERSATION_ID);
+        when(service.getOwned("user_1", NOTE_CONVERSATION_ID)).thenReturn(conversation());
+        when(service.listMessages(NOTE_CONVERSATION_ID)).thenReturn(List.of(
+                message(1, "user", "帮我整理笔记"),
+                message(2, "assistant", "好的，已生成。")));
+
+        mockMvc.perform(get("/v1/demo/note/conversations/vc_abc")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messages.length()").value(2))
+                .andExpect(jsonPath("$.data.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.data.messages[0].contentMd").value("帮我整理笔记"))
+                .andExpect(jsonPath("$.data.messages[1].role").value("assistant"))
+                .andExpect(jsonPath("$.data.messages[1].seq").value(2));
+    }
+
+    @Test
+    void generate_prepares_first_turn_then_dispatches() throws Exception {
         NoteConversation prepared = conversation();
-        when(service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep"))
-                .thenReturn(prepared);
-        when(dispatcher.dispatch(prepared, "zh-CN")).thenReturn(NoteGenerateDispatchResult.builder()
-                .verlaConversationId(VERLA_CONVERSATION_ID)
-                .turnId(22L)
-                .sessionId(33L)
-                .correlationId("conv:11:turn:22:sess:33")
-                .build());
+        when(service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
+                "数据结构", "exam_prep", "给我一份复习笔记"))
+                .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
+        when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
+                .thenReturn(NoteGenerateDispatchResult.builder()
+                        .verlaConversationId(VERLA_CONVERSATION_ID)
+                        .turnId(22L)
+                        .sessionId(33L)
+                        .correlationId("conv:11:turn:22:sess:33")
+                        .build());
 
         mockMvc.perform(post("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID + "/generate")
                         .requestAttr("clerkUserId", "user_1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"file\",\"objectId\":\"obj_123\","
                                 + "\"filename\":\"lecture.pdf\",\"outputLanguage\":\"zh-CN\","
-                                + "\"courseName\":\"数据结构\",\"learningGoal\":\"exam_prep\"}"))
+                                + "\"courseName\":\"数据结构\",\"learningGoal\":\"exam_prep\","
+                                + "\"message\":\"给我一份复习笔记\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.turnId").isNotEmpty())
                 .andExpect(jsonPath("$.data.sessionId").isNotEmpty())
                 .andExpect(jsonPath("$.data.correlationId").value("conv:11:turn:22:sess:33"));
 
-        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep");
-        verify(dispatcher).dispatch(eq(prepared), eq("zh-CN"));
+        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
+                "数据结构", "exam_prep", "给我一份复习笔记");
+        ArgumentCaptor<NoteTurnContext> ctx = ArgumentCaptor.forClass(NoteTurnContext.class);
+        verify(dispatcher).dispatch(eq(prepared), ctx.capture());
+        assertTrue(ctx.getValue().isFirstTurn());
+        assertEquals("给我一份复习笔记", ctx.getValue().getMessage());
+        assertEquals("", ctx.getValue().getDocumentContentMd());
+        assertEquals(0L, ctx.getValue().getDocumentBaseVersion());
+    }
+
+    @Test
+    void generate_follow_up_turn_passes_document_baseline_and_history() throws Exception {
+        NoteConversation prepared = conversation();
+        when(service.prepareFollowUpTurn("user_1", NOTE_CONVERSATION_ID, "把要点改简练点"))
+                .thenReturn(NoteTurnPreparation.builder()
+                        .conversation(prepared)
+                        .history(List.of(Map.of("role", "user", "content", "旧问题")))
+                        .build());
+        when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
+                .thenReturn(NoteGenerateDispatchResult.builder().build());
+
+        mockMvc.perform(post("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID + "/generate")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"把要点改简练点\","
+                                + "\"documentContentMd\":\"# 主题\\n## 要点\\n- 长句\","
+                                + "\"documentBaseVersion\":3}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<NoteTurnContext> ctx = ArgumentCaptor.forClass(NoteTurnContext.class);
+        verify(dispatcher).dispatch(eq(prepared), ctx.capture());
+        assertFalse(ctx.getValue().isFirstTurn());
+        assertEquals("把要点改简练点", ctx.getValue().getMessage());
+        assertEquals("# 主题\n## 要点\n- 长句", ctx.getValue().getDocumentContentMd());
+        assertEquals(3L, ctx.getValue().getDocumentBaseVersion());
+        assertEquals(1, ctx.getValue().getHistory().size());
     }
 
     @Test
@@ -168,11 +229,13 @@ class DemoNoteControllerTest {
     }
 
     @Test
-    void generate_defaults_missing_optionals_to_null() throws Exception {
+    void generate_treats_text_source_as_first_turn() throws Exception {
         NoteConversation prepared = conversation();
-        when(service.prepareGeneration(eq("user_1"), eq(NOTE_CONVERSATION_ID), isNull(), isNull(),
-                eq("一段材料"), isNull(), isNull(), isNull())).thenReturn(prepared);
-        when(dispatcher.dispatch(eq(prepared), isNull())).thenReturn(NoteGenerateDispatchResult.builder().build());
+        when(service.prepareFirstTurn(eq("user_1"), eq(NOTE_CONVERSATION_ID), eq(null), eq(null),
+                eq("一段材料"), eq(null), eq(null), eq(null), eq(null)))
+                .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
+        when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
+                .thenReturn(NoteGenerateDispatchResult.builder().build());
 
         mockMvc.perform(post("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID + "/generate")
                         .requestAttr("clerkUserId", "user_1")
@@ -180,7 +243,16 @@ class DemoNoteControllerTest {
                         .content("{\"text\":\"一段材料\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null);
+        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null);
+    }
+
+    private static NoteMessage message(int seq, String role, String content) {
+        NoteMessage m = new NoteMessage();
+        m.setSeq(seq);
+        m.setRole(role);
+        m.setMsgType(NoteMessage.TYPE_TEXT);
+        m.setContentMd(content);
+        return m;
     }
 
     private static NoteConversation conversation() {

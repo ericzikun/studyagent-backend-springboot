@@ -8,8 +8,10 @@ import com.studyagent.common.verla.enums.OutputLanguage;
 import com.studyagent.common.verla.id.VerlaPublicId;
 import com.studyagent.common.verla.id.VerlaPublicIdCodec;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
+import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.NoteMessage;
 import com.studyagent.service.domain.demo.note.repo.DemoNoteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,9 +28,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 笔记 demo 业务服务：会话编排（素材提交 / 结果回填）。
- * <p>解析与单轮 LLM 都在 verla_agent（MQ 命令），事件回流走主线 Verla 通道；
- * 本服务只维护 demo 自己的会话行与产物。
+ * 笔记 demo 业务服务：会话编排（素材提交 / 后续对话 / 结果回填）。
+ * <p>解析、归纳与「是否要改文档」的判断都在 verla_agent（MQ 命令），事件回流走主线
+ * Verla 通道；本服务只维护 demo 自己的会话行、回合消息与产物。
  */
 @Slf4j
 @Service
@@ -55,6 +58,12 @@ public class DemoNoteService {
     /** 历史列表单页上限（单用户记录量小，暂不做游标分页）。 */
     private static final int MAX_LIST_LIMIT = 100;
 
+    /** 快照带回的消息条数上限（对话栏展示用；单会话消息量小）。 */
+    private static final int SNAPSHOT_MESSAGE_LIMIT = 200;
+    /** history 双预算：条数 + 字符数。两个都必须有，否则「20 条超长消息」会撑爆信封。 */
+    private static final int HISTORY_MAX_MESSAGES = 20;
+    private static final int HISTORY_MAX_CHARS = 12_000;
+
     /** 学习目标枚举码：与前端 tab 里的 8 个选项一一对应，未识别回落 other。 */
     private static final Set<String> LEARNING_GOALS = Set.of(
             "exam_prep", "quiz_review", "homework", "understand_lesson",
@@ -62,10 +71,10 @@ public class DemoNoteService {
     private static final String LEARNING_GOAL_DEFAULT = "take_notes";
 
     /**
-     * 粘贴文本的 UTF-8 字节上限。
-     * <p>{@code mq_outbox.payload} 仍是 TEXT（65535 字节，见 026），而粘贴文本会整段进
+     * 文本类输入的 UTF-8 字节上限（粘贴素材与单轮用户消息共用）。
+     * <p>{@code mq_outbox.payload} 仍是 TEXT（65535 字节，见 026），而文本会整段进
      * {@code cmd.note.generate} 信封 —— 超限会让派发直接抛 MysqlDataTruncation。
-     * 这里在 API 边界拦截，给出可执行的提示（改用文件上传）。
+     * 这里在 API 边界拦截，给出可执行的提示。
      */
     private static final int MAX_INPUT_TEXT_BYTES = 60_000;
 
@@ -117,6 +126,20 @@ public class DemoNoteService {
         return repo.listProcessedConversations(clerkUserId, Math.min(Math.max(limit, 1), MAX_LIST_LIMIT));
     }
 
+    /** 对话栏消息（旧→新）。 */
+    public List<NoteMessage> listMessages(Long conversationId) {
+        return repo.listRecentMessages(conversationId, SNAPSHOT_MESSAGE_LIMIT);
+    }
+
+    /**
+     * 本轮是否为首轮：请求带素材（objectId 或粘贴文本）即首轮。
+     * <p>Python 侧用同一判据（payload 带 objectId/inputText）；两处必须一致，
+     * 否则会出现「Java 以为后续轮、Python 以为首轮」地重复解析素材。
+     */
+    public static boolean isFirstTurnInput(String sourceType, String objectId, String text) {
+        return blankToNull(objectId) != null || blankToNull(text) != null;
+    }
+
     private NoteConversation createConversation(String clerkUserId, String outputLanguage) {
         NoteConversation c = new NoteConversation();
         c.setClerkUserId(clerkUserId);
@@ -156,18 +179,19 @@ public class DemoNoteService {
         return verlaConversationId;
     }
 
-    // ============ 素材提交 / 结果回填 ============
+    // ============ 回合准备 ============
 
     /**
-     * 落库本次提交的素材并置为 generating。调用方随后在同一次请求里派发命令。
-     *
-     * @return 更新后的会话（含解析出的素材类型）
+     * 首轮准备：落素材 + 清空上一轮对话 + 把 query 落成第 1 条用户消息。
+     * <p>清空消息是必要的：重新提交素材意味着旧的产物基线与对话上下文都作废，
+     * 而 noteMd/noteVersion 同样被重置 —— 二者必须一起走，否则 history 会指向不存在的旧笔记。
      */
     @Transactional
-    public NoteConversation prepareGeneration(String clerkUserId, Long conversationId,
-                                              String sourceType, String objectId,
-                                              String text, String filename,
-                                              String courseName, String learningGoal) {
+    public NoteTurnPreparation prepareFirstTurn(String clerkUserId, Long conversationId,
+                                                String sourceType, String objectId,
+                                                String text, String filename,
+                                                String courseName, String learningGoal,
+                                                String query) {
         NoteConversation c = getOwned(clerkUserId, conversationId);
         String normalizedType = normalizeSourceType(sourceType, objectId, text);
         if (SOURCE_TYPE_FILE.equals(normalizedType)) {
@@ -178,7 +202,7 @@ public class DemoNoteService {
                     TITLE_MAX_LENGTH));
         } else {
             String trimmed = text.trim();
-            ensureTextFitsCommandPayload(trimmed);
+            ensureTextFitsCommandPayload(trimmed, "粘贴文本");
             c.setSourceType(SOURCE_TYPE_TEXT);
             c.setAttachmentObjectId(null);
             c.setInputText(trimmed);
@@ -190,12 +214,79 @@ public class DemoNoteService {
         // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
         c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);
-        return repo.saveConversation(c);
+        repo.saveConversation(c);
+
+        repo.deleteMessages(c.getId());
+        String q = blankToNull(query);
+        if (q != null) {
+            ensureTextFitsCommandPayload(q, "本轮提问");
+            appendMessage(c, NoteMessage.ROLE_USER, NoteMessage.TYPE_TEXT, q);
+        }
+        return NoteTurnPreparation.builder().conversation(c).history(List.of()).build();
     }
 
     /**
+     * 后续轮准备：校验消息 → **先取历史** → 落本轮用户消息 → 置 generating。
+     * <p>顺序不能反：history 若在本轮消息落库之后取，会把当前这轮重复喂给模型。
+     */
+    @Transactional
+    public NoteTurnPreparation prepareFollowUpTurn(String clerkUserId, Long conversationId, String message) {
+        NoteConversation c = getOwned(clerkUserId, conversationId);
+        String text = blankToNull(message);
+        if (text == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "请输入内容后再发送");
+        }
+        ensureTextFitsCommandPayload(text, "本轮提问");
+        List<Map<String, Object>> history = buildHistory(c.getId());
+        appendMessage(c, NoteMessage.ROLE_USER, NoteMessage.TYPE_TEXT, text);
+        c.setStatus(STATUS_GENERATING);
+        repo.saveConversation(c);
+        return NoteTurnPreparation.builder().conversation(c).history(history).build();
+    }
+
+    /**
+     * 裁剪出下发给 Python 的会话历史（旧→新）。
+     * <p>从最近往前累计，命中「条数上限」或「字符预算」即停 —— 保证拿到的是**连续**的最近若干轮。
+     */
+    public List<Map<String, Object>> buildHistory(Long conversationId) {
+        List<NoteMessage> recent = repo.listRecentMessages(conversationId, HISTORY_MAX_MESSAGES);
+        List<Map<String, Object>> picked = new ArrayList<>();
+        int budget = HISTORY_MAX_CHARS;
+        for (int i = recent.size() - 1; i >= 0; i--) {
+            NoteMessage m = recent.get(i);
+            String content = m.getContentMd() == null ? "" : m.getContentMd();
+            if (content.isBlank()) {
+                continue;
+            }
+            if (content.length() > budget) {
+                break;
+            }
+            budget -= content.length();
+            picked.add(0, Map.of(
+                    "role", normalizeRole(m.getRole()),
+                    "content", content));
+        }
+        return picked;
+    }
+
+    private NoteMessage appendMessage(NoteConversation c, String role, String type, String content) {
+        NoteMessage m = new NoteMessage();
+        m.setConversationId(c.getId());
+        m.setRole(role);
+        m.setMsgType(type);
+        m.setContentMd(content);
+        return repo.appendMessage(m);
+    }
+
+    private static String normalizeRole(String role) {
+        return NoteMessage.ROLE_ASSISTANT.equals(role) ? NoteMessage.ROLE_ASSISTANT : NoteMessage.ROLE_USER;
+    }
+
+    // ============ 用户编辑 / 结果回填 ============
+
+    /**
      * 用户手改保存：以传入 baseVersion 做乐观锁，成功后版本 +1。
-     * <p>与 AI 生成落库（{@link #applyGeneratedNote}）分开：AI 写入不能被记成用户编辑，
+     * <p>与 AI 写入（{@link #applyArtifactCommit}）分开：AI 写入不能被记成用户编辑，
      * 用户编辑也不能覆盖 AI 之后的新版本 —— 版本不匹配时让前端重新拉快照再重试。
      */
     @Transactional
@@ -217,20 +308,51 @@ public class DemoNoteService {
         return repo.saveConversation(c);
     }
 
-    /** 事件回填：由主线 conversationId 反查 demo 行（事件里没有 demo 主键）。 */
+    /**
+     * AI 写入文档（{@code NOTE_ARTIFACT_COMMIT}）：落最新 md 并推进版本。
+     * <p><b>版本以库中最新基线为准</b>：Python 回显的 {@code versionNo} 只用于对账日志 ——
+     * 用户可能在 AI 回合中途 PATCH 过，若按 Python 的号覆盖会把用户编辑的版本抹掉。
+     */
     @Transactional
-    public void applyGeneratedNote(Long verlaConversationId, String noteMd, String title) {
+    public void applyArtifactCommit(Long verlaConversationId, String contentMd, Long reportedVersionNo) {
         NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
         if (c == null) {
             throw new IllegalStateException(
                     "Notes conversation not linked to verla conversation " + verlaConversationId);
         }
-        c.setNoteMd(noteMd);
-        if (title != null && !title.isBlank()) {
-            c.setTitle(truncate(title.trim(), TITLE_MAX_LENGTH));
+        if (contentMd == null || contentMd.isBlank()) {
+            throw new IllegalStateException(
+                    "NOTE_ARTIFACT_COMMIT without contentMd, verlaConversationId=" + verlaConversationId);
         }
-        // AI 写入也推进版本：用户手上的旧基线随之失效，避免用旧 baseVersion 覆盖新生成结果
-        c.setNoteVersion((c.getNoteVersion() == null ? 0L : c.getNoteVersion()) + 1);
+        long next = (c.getNoteVersion() == null ? 0L : c.getNoteVersion()) + 1;
+        c.setNoteMd(contentMd);
+        c.setNoteVersion(next);
+        c.setStatus(STATUS_COMPLETED);
+        repo.saveConversation(c);
+        if (reportedVersionNo != null && reportedVersionNo != next) {
+            // 对账：不一致通常意味着用户在 AI 回合中途手改过（AI 与用户各自推进版本）
+            log.warn("[Notes] artifact version reconciled verlaConvId={} pyVersion={} dbVersion={}",
+                    verlaConversationId, reportedVersionNo, next);
+        }
+        log.info("[Notes] artifact committed verlaConvId={} version={} chars={}",
+                verlaConversationId, next, contentMd.length());
+    }
+
+    /**
+     * 回合终态（{@code NOTE_TURN_COMPLETED}）：追加助手消息并把会话置为 completed。
+     * <p>没有助手文本时不追加空气泡（例如弱模型「只调工具不说话」）。
+     */
+    @Transactional
+    public void completeTurn(Long verlaConversationId, String assistantText) {
+        NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+        if (c == null) {
+            throw new IllegalStateException(
+                    "Notes conversation not linked to verla conversation " + verlaConversationId);
+        }
+        String text = assistantText == null ? "" : assistantText.trim();
+        if (!text.isEmpty()) {
+            appendMessage(c, NoteMessage.ROLE_ASSISTANT, NoteMessage.TYPE_TEXT, text);
+        }
         c.setStatus(STATUS_COMPLETED);
         repo.saveConversation(c);
     }
@@ -243,6 +365,8 @@ public class DemoNoteService {
             repo.saveConversation(c);
         });
     }
+
+    // ============ helpers ============
 
     private static String normalizeSourceType(String sourceType, String objectId, String text) {
         String raw = sourceType == null ? "" : sourceType.trim().toLowerCase();
@@ -277,12 +401,12 @@ public class DemoNoteService {
         }
     }
 
-    private static void ensureTextFitsCommandPayload(String text) {
+    private static void ensureTextFitsCommandPayload(String text, String label) {
         int bytes = text.getBytes(StandardCharsets.UTF_8).length;
         if (bytes > MAX_INPUT_TEXT_BYTES) {
             throw new BusinessException(
                     ApiCode.PARAM_ERROR.getCode(),
-                    "粘贴文本过长（" + bytes + " 字节，上限 " + MAX_INPUT_TEXT_BYTES + "），请改用文件上传");
+                    label + "过长（" + bytes + " 字节，上限 " + MAX_INPUT_TEXT_BYTES + "），请精简后重试");
         }
     }
 

@@ -170,16 +170,20 @@ public enum VerlaAgentEventType {
     AITUTOR_CANCELLED(true),
 
     /**
-     * Notes 域 —— 单轮「素材 → 笔记」。
-     * <p>NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED / NOTE_SUMMARIZE_STARTED 是前端三阶段
-     * （文件解析 / 内容归纳梳理 / 内容输出）里前两个阶段的状态信号，均非终态；
-     * 第三阶段由 NOTE_STREAM_CHUNK 累积 + NOTE_COMPLETED 收口。
+     * Notes 域 —— 「一轮回合」：对话 +（agent 决定）改文档。
+     * <p>首轮才有 NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED（解析素材），
+     * NOTE_SUMMARIZE_STARTED 每轮都有（前端右侧竖排步骤②）。
+     * <p>聊天文本（NOTE_CHAT_STREAM_CHUNK）与文档写入（NOTE_ARTIFACT_*，**全量快照**）
+     * 是两条独立流；单回合以 NOTE_TURN_COMPLETED 收口，NOTE_FAILED / NOTE_CANCELLED 为异常终态。
      */
     NOTE_PARSE_STARTED(false),
     NOTE_PARSE_COMPLETED(false),
     NOTE_SUMMARIZE_STARTED(false),
-    NOTE_STREAM_CHUNK(false),
-    NOTE_COMPLETED(true),
+    NOTE_CHAT_STREAM_CHUNK(false),
+    NOTE_ARTIFACT_BEGIN(false),
+    NOTE_ARTIFACT_DELTA(false),
+    NOTE_ARTIFACT_COMMIT(false),
+    NOTE_TURN_COMPLETED(true),
     NOTE_FAILED(true),
     NOTE_CANCELLED(true),
 
@@ -246,7 +250,7 @@ public enum VerlaAgentEventType {
             AITUTOR_TURN_COMPLETED,
             AITUTOR_FAILED,
             AITUTOR_CANCELLED,
-            NOTE_COMPLETED,
+            NOTE_TURN_COMPLETED,
             NOTE_FAILED,
             NOTE_CANCELLED,
             VIDEO_TUTOR_TURN_COMPLETED,

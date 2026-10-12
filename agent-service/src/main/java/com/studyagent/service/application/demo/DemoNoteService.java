@@ -215,6 +215,7 @@ public class DemoNoteService {
         c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);
         repo.saveConversation(c);
+        syncMainlineTitle(clerkUserId, c);
 
         repo.deleteMessages(c.getId());
         String q = blankToNull(query);
@@ -367,6 +368,29 @@ public class DemoNoteService {
     }
 
     // ============ helpers ============
+
+    /**
+     * 把 demo 侧的标题（文件名 / 粘贴文本）同步到**主线会话**。
+     * <p>Dashboard 的「AI Note」分区与 Recent 卡片读的是 {@code verla_conversations.title}
+     * （走 {@code /v1/verla/conversations?segment=note}），而它只在建会话时写过一次
+     * 「未命名笔记」—— 不同步的话列表里永远是「未命名笔记」，尽管工作台左栏
+     * （读 demo 表）显示的是文件名。
+     * <p>best-effort：标题只是展示信息，同步失败不该让整轮生成失败。
+     */
+    private void syncMainlineTitle(String clerkUserId, NoteConversation c) {
+        Long verlaConversationId = c.getVerlaConversationId();
+        String title = blankToNull(c.getTitle());
+        // 还是草稿占位标题就没必要写（没提交过素材的会话本来就该叫未命名笔记）
+        if (verlaConversationId == null || title == null || DRAFT_TITLE.equals(title)) {
+            return;
+        }
+        try {
+            verlaConversationService.rename(clerkUserId, verlaConversationId, title);
+        } catch (RuntimeException ex) {
+            log.warn("[Notes] 主线标题同步失败 verlaConvId={} title={} reason={}",
+                    verlaConversationId, title, ex.getMessage());
+        }
+    }
 
     private static String normalizeSourceType(String sourceType, String objectId, String text) {
         String raw = sourceType == null ? "" : sourceType.trim().toLowerCase();

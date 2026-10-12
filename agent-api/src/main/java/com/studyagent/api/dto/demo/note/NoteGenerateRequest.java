@@ -2,7 +2,12 @@ package com.studyagent.api.dto.demo.note;
 
 import lombok.Data;
 
-/** 生成笔记的请求体：文件与文本二选一。 */
+/**
+ * 一次「笔记回合」的请求体。
+ * <p><b>首轮</b>：带 {@code objectId}（文件，必填）与可选 {@code message}（= 表单 query），
+ * 以及课程名/学习目标/语言；<b>后续轮</b>：只带 {@code message} + 编辑器基线
+ * （{@code documentContentMd} / {@code documentBaseVersion}）。
+ */
 @Data
 public class NoteGenerateRequest {
 
@@ -14,6 +19,21 @@ public class NoteGenerateRequest {
 
     /** sourceType=text 时粘贴的原始文本。 */
     private String text;
+
+    /**
+     * 本轮用户说了什么。
+     * <p>首轮 = 上传表单里的 query（可选，为空则直接按素材建笔记）；后续轮必填。
+     */
+    private String message;
+
+    /**
+     * 编辑器当前基线 md（后续轮发消息前由前端 flushSave 后带上）。
+     * <p>与 ai-tutor 同「全量快照」语义：AI 在服务端合并后返回整篇。
+     */
+    private String documentContentMd;
+
+    /** 编辑器持有的版本号，作为 AI 写入的乐观锁基线（首轮为 0）。 */
+    private Long documentBaseVersion;
 
     /** 文件展示名（可选，仅用于来源标签与初始标题）。 */
     private String filename;

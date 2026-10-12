@@ -14,6 +14,7 @@ import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
+import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -37,6 +38,7 @@ import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -68,13 +70,15 @@ public class NoteVerlaCommandDispatcher {
     private final MqOutboxService mqOutboxService;
 
     /**
-     * 派发一次笔记生成。调用方须已把素材落库（{@code DemoNoteService.prepareGeneration}）。
+     * 派发一轮笔记回合。调用方须已把素材/消息落库
+     * （{@code DemoNoteService.prepareFirstTurn / prepareFollowUpTurn}）。
      *
-     * @param noteConv       demo 会话（{@code verlaConversationId} 必填）
-     * @param outputLanguage 本轮请求携带的输出语言（可空；非空时会覆盖会话偏好）
+     * @param noteConv    demo 会话（{@code verlaConversationId} 必填）
+     * @param turnContext 本轮上下文：首轮标志、用户消息、编辑器基线、history、输出语言
      */
     @Transactional
-    public NoteGenerateDispatchResult dispatch(NoteConversation noteConv, String outputLanguage) {
+    public NoteGenerateDispatchResult dispatch(NoteConversation noteConv, NoteTurnContext turnContext) {
+        NoteTurnContext ctx = turnContext == null ? NoteTurnContext.builder().build() : turnContext;
         Long verlaConversationId = noteConv.getVerlaConversationId();
         if (verlaConversationId == null) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "会话尚未接入主线事件通道，请重新创建会话");
@@ -84,6 +88,7 @@ public class NoteVerlaCommandDispatcher {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "主线会话不存在: " + verlaConversationId);
         }
+        String outputLanguage = ctx.getOutputLanguage();
         if (outputLanguage != null && !outputLanguage.isBlank()) {
             verlaConv = conversationService.setOutputLanguage(verlaConv, outputLanguage);
         }
@@ -149,14 +154,16 @@ public class NoteVerlaCommandDispatcher {
                         .kind(VerlaSessionKind.NOTE)
                         .feature(session.getFeatureCode())
                         .build())
-                .payload(buildPayload(noteConv, verlaConv))
+                .payload(buildPayload(noteConv, verlaConv, ctx))
                 .build();
 
         mqOutboxService.createVerlaCommand(
                 envelope, commandExchange, VerlaCommandAction.CMD_NOTE_GENERATE.getCode());
 
-        log.info("[Notes] dispatched cmd.note.generate noteConvId={}, verlaConvId={}, turnId={}, sessionId={}, sourceType={}",
-                noteConv.getId(), verlaConversationId, turn.getId(), session.getId(), noteConv.getSourceType());
+        log.info("[Notes] dispatched cmd.note.generate noteConvId={}, verlaConvId={}, turnId={}, sessionId={}, "
+                        + "firstTurn={}, historyMessages={}",
+                noteConv.getId(), verlaConversationId, turn.getId(), session.getId(),
+                ctx.isFirstTurn(), ctx.getHistory() == null ? 0 : ctx.getHistory().size());
 
         return NoteGenerateDispatchResult.builder()
                 .verlaConversationId(verlaConversationId)
@@ -169,31 +176,49 @@ public class NoteVerlaCommandDispatcher {
     /**
      * payload 字段是 Java / Python 的隐式契约，Python 侧 {@code NoteService} 直接按 key 取值：
      * <ul>
-     *   <li>{@code sourceType} —— {@code file} / {@code text}</li>
-     *   <li>{@code objectId} —— file 时的附件 id（Python 用既有 FileService 解析）</li>
-     *   <li>{@code inputText} —— text 时的原始素材</li>
-     *   <li>{@code filename} —— 展示用的来源名</li>
+     *   <li>{@code message} —— 本轮用户说了什么（首轮 = 表单 query，可空；后续轮必填）</li>
+     *   <li>{@code documentContentMd} —— 编辑器当前基线（后续轮前端 flushSave 后带上）</li>
+     *   <li>{@code documentBaseVersion} —— 编辑器持有的版本号（乐观锁基线，首轮为 0）</li>
+     *   <li>{@code history} —— 最近若干轮 {@code {role,content}}（已按条数 + 字节双预算裁剪）</li>
      *   <li>{@code outputLanguage} —— 取自 workspace_json，缺省 english</li>
-     *   <li>{@code courseName} —— 上传表单的课程名称（可空）</li>
-     *   <li>{@code learningGoal} —— 上传表单的学习目标枚举码，Python 侧映射成中文说明进 prompt</li>
+     *   <li>{@code courseName} / {@code learningGoal} —— 从会话行取（首轮由表单落库），每轮都下发</li>
      *   <li>{@code noteConversationId} —— demo 主键，仅排障用（事件回填按主线 id 反查）</li>
+     *   <li><b>仅首轮</b>：{@code sourceType} / {@code objectId} / {@code inputText} / {@code filename}</li>
      * </ul>
+     * <p><b>素材字段只在首轮下发</b>：Python 以「payload 是否带 objectId/inputText」判定首轮，
+     * 若后续轮也带上，会重复解析素材并把这一轮当成首轮重写整篇笔记。
      */
-    private Map<String, Object> buildPayload(NoteConversation noteConv, VerlaConversation verlaConv) {
+    private Map<String, Object> buildPayload(NoteConversation noteConv, VerlaConversation verlaConv,
+                                             NoteTurnContext ctx) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("sourceType", noteConv.getSourceType());
-        payload.put("objectId", noteConv.getAttachmentObjectId());
-        payload.put("inputText", noteConv.getInputText());
-        // 只有文件来源的 title 才是真实文件名；文本来源的 title 是正文片段，不能当来源名渲染。
-        payload.put("filename",
-                DemoNoteService.SOURCE_TYPE_FILE.equals(noteConv.getSourceType())
-                        ? noteConv.getTitle() : null);
+        payload.put("message", blankToNull(ctx.getMessage()));
+        payload.put("documentContentMd", ctx.getDocumentContentMd() == null ? "" : ctx.getDocumentContentMd());
+        payload.put("documentBaseVersion",
+                ctx.getDocumentBaseVersion() == null ? 0L : ctx.getDocumentBaseVersion());
+        payload.put("history", ctx.getHistory() == null ? List.of() : ctx.getHistory());
         payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
-        // 表单字段：课程名与学习目标（枚举码）随 payload 下行，Python 据此调整笔记侧重
+        // 课程名/学习目标是会话级设置：首轮落库后每轮都从会话行下发，后续轮不必再传表单
         payload.put("courseName", noteConv.getCourseName());
         payload.put("learningGoal", noteConv.getLearningGoal());
         payload.put("noteConversationId", noteConv.getId());
+        if (ctx.isFirstTurn()) {
+            payload.put("sourceType", noteConv.getSourceType());
+            payload.put("objectId", noteConv.getAttachmentObjectId());
+            payload.put("inputText", noteConv.getInputText());
+            // 只有文件来源的 title 才是真实文件名；文本来源的 title 是正文片段，不能当来源名渲染。
+            payload.put("filename",
+                    DemoNoteService.SOURCE_TYPE_FILE.equals(noteConv.getSourceType())
+                            ? noteConv.getTitle() : null);
+        }
         return payload;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String resolveHostname() {

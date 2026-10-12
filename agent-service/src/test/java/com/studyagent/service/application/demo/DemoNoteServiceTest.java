@@ -2,19 +2,26 @@ package com.studyagent.service.application.demo;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.NoteMessage;
 import com.studyagent.service.domain.demo.note.repo.DemoNoteRepository;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,7 +31,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 笔记会话编排的边界测试：素材类型推断、命令载荷体积护栏、草稿复用。 */
+/** 笔记会话编排的边界测试：素材类型推断、命令载荷体积护栏、草稿复用、回合消息与 history 裁剪。 */
 class DemoNoteServiceTest {
 
     private static final long VERLA_CONVERSATION_ID = 11L;
@@ -39,6 +46,7 @@ class DemoNoteServiceTest {
         repo = mock(DemoNoteRepository.class);
         verlaConversationService = mock(VerlaConversationService.class);
         service = new DemoNoteService(repo, verlaConversationService, new ObjectMapper());
+        when(repo.appendMessage(any(NoteMessage.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test
@@ -71,42 +79,131 @@ class DemoNoteServiceTest {
     }
 
     @Test
-    void prepare_generation_infers_source_type_from_payload_shape() {
+    void first_turn_infers_source_type_and_records_query_as_first_message() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        NoteConversation fileNote = service.prepareGeneration(
+        NoteTurnPreparation prepared = service.prepareFirstTurn(
                 "user_1", NOTE_CONVERSATION_ID, null, "obj_9", null, "lecture.pdf",
-                "  数据结构  ", "exam_prep");
+                "  数据结构  ", "exam_prep", "帮我整理一份复习笔记");
+
+        NoteConversation fileNote = prepared.getConversation();
         assertEquals("file", fileNote.getSourceType());
         assertEquals("obj_9", fileNote.getAttachmentObjectId());
         assertNull(fileNote.getInputText());
         assertEquals("generating", fileNote.getStatus());
-        // 表单字段落库并归一化（课程名 trim、目标码合法）
         assertEquals("数据结构", fileNote.getCourseName());
         assertEquals("exam_prep", fileNote.getLearningGoal());
-        // 新一轮生成重置版本基线
         assertEquals(0L, fileNote.getNoteVersion());
+        // 首轮 history 恒为空（本轮 query 单独走 message 字段）
+        assertTrue(prepared.getHistory().isEmpty());
+        // 重开一轮：先清空旧消息，再把 query 落成第 1 条用户消息
+        verify(repo).deleteMessages(NOTE_CONVERSATION_ID);
+        ArgumentCaptor<NoteMessage> msg = ArgumentCaptor.forClass(NoteMessage.class);
+        verify(repo).appendMessage(msg.capture());
+        assertEquals(NoteMessage.ROLE_USER, msg.getValue().getRole());
+        assertEquals("帮我整理一份复习笔记", msg.getValue().getContentMd());
+    }
 
-        NoteConversation textNote = service.prepareGeneration(
-                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null, null, null);
+    @Test
+    void first_turn_with_blank_query_records_no_message() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, "a.pdf",
+                null, null, "   ");
+
+        // query 选填：为空时不该落空气泡
+        verify(repo, never()).appendMessage(any(NoteMessage.class));
+    }
+
+    @Test
+    void first_turn_normalizes_text_source_and_default_goal() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation textNote = service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null, null, null, null)
+                .getConversation();
+
         assertEquals("text", textNote.getSourceType());
         assertEquals("一段材料", textNote.getInputText());
         assertNull(textNote.getAttachmentObjectId());
-        // 缺省目标 = 做学习笔记；课程名空值保持 null
         assertEquals("take_notes", textNote.getLearningGoal());
         assertNull(textNote.getCourseName());
     }
 
     @Test
-    void prepare_generation_falls_back_on_unknown_learning_goal() {
+    void first_turn_falls_back_on_unknown_learning_goal() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        NoteConversation note = service.prepareGeneration(
-                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null, null, "not_a_goal");
-        // 前端先上线新目标时不至于报错，但也不能把任意字符串灌进 prompt
+        NoteConversation note = service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null, null, "not_a_goal", null)
+                .getConversation();
+
         assertEquals("other", note.getLearningGoal());
+    }
+
+    @Test
+    void follow_up_turn_appends_user_message_and_builds_history_before_it() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.listRecentMessages(NOTE_CONVERSATION_ID, 20))
+                .thenReturn(List.of(message("user", "第一轮问题"), message("assistant", "第一轮回答")));
+
+        NoteTurnPreparation prepared = service.prepareFollowUpTurn("user_1", NOTE_CONVERSATION_ID, "  再补充一点  ");
+
+        assertEquals("generating", prepared.getConversation().getStatus());
+        // history 必须是「本轮消息落库之前」的快照，否则会把当前这轮重复喂给模型
+        assertEquals(2, prepared.getHistory().size());
+        assertEquals("第一轮问题", prepared.getHistory().get(0).get("content"));
+        ArgumentCaptor<NoteMessage> msg = ArgumentCaptor.forClass(NoteMessage.class);
+        verify(repo).appendMessage(msg.capture());
+        assertEquals("再补充一点", msg.getValue().getContentMd());
+        // 后续轮不清空历史
+        verify(repo, never()).deleteMessages(any());
+    }
+
+    @Test
+    void follow_up_turn_rejects_blank_message() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+
+        assertThrows(BusinessException.class,
+                () -> service.prepareFollowUpTurn("user_1", NOTE_CONVERSATION_ID, "   "));
+        verify(repo, never()).appendMessage(any(NoteMessage.class));
+    }
+
+    @Test
+    void build_history_applies_char_budget_from_the_newest_backwards() {
+        when(repo.listRecentMessages(NOTE_CONVERSATION_ID, 20)).thenReturn(List.of(
+                message("user", "中".repeat(8_000)),
+                message("assistant", "中".repeat(8_000)),
+                message("user", "中".repeat(8_000))));
+
+        List<Map<String, Object>> history = service.buildHistory(NOTE_CONVERSATION_ID);
+
+        // 预算 12_000：只能装下最近一条 8_000 字（再加一条就超），且必须是连续尾段
+        assertEquals(1, history.size());
+        assertEquals("user", history.get(0).get("role"));
+        assertEquals(8_000, ((String) history.get(0).get("content")).length());
+    }
+
+    @Test
+    void build_history_skips_blank_content_and_normalizes_role() {
+        when(repo.listRecentMessages(NOTE_CONVERSATION_ID, 20)).thenReturn(List.of(
+                message("system", "忽略我"),
+                message("assistant", "   "),
+                message("assistant", "有效回答")));
+
+        List<Map<String, Object>> history = service.buildHistory(NOTE_CONVERSATION_ID);
+
+        assertEquals(2, history.size());
+        // 未知 role 归一到 user，避免把脏 role 灌进模型
+        assertEquals("user", history.get(0).get("role"));
+        assertEquals("有效回答", history.get(1).get("content"));
     }
 
     @Test
@@ -118,12 +215,10 @@ class DemoNoteServiceTest {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // 基线一致 → 保存成功且版本 +1
         NoteConversation saved = service.saveUserNote("user_1", NOTE_CONVERSATION_ID, "手改后的正文", 2L);
         assertEquals("手改后的正文", saved.getNoteMd());
         assertEquals(3L, saved.getNoteVersion());
 
-        // 基线过期（AI 又生成过）→ 拒绝，让前端刷新后重试
         conversation.setNoteVersion(5L);
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.saveUserNote("user_1", NOTE_CONVERSATION_ID, "又手改", 3L));
@@ -131,38 +226,91 @@ class DemoNoteServiceTest {
     }
 
     @Test
-    void apply_generated_note_advances_version_so_stale_edits_cannot_overwrite_it() {
+    void artifact_commit_advances_version_from_db_baseline_not_from_ai_echo() {
         NoteConversation conversation = draft();
         conversation.setNoteVersion(1L);
         when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.applyGeneratedNote(VERLA_CONVERSATION_ID, "# 新生成的笔记", "标题");
+        // 用户手改过一版（库为 1），AI 回显自己的号（例如 2）：以库为准 → 2
+        service.applyArtifactCommit(VERLA_CONVERSATION_ID, "# 新生成的笔记", 2L);
 
+        assertEquals("# 新生成的笔记", conversation.getNoteMd());
         assertEquals(2L, conversation.getNoteVersion());
+        assertEquals("completed", conversation.getStatus());
     }
 
     @Test
-    void prepare_generation_rejects_empty_input() {
-        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+    void artifact_commit_rejects_empty_content_and_unlinked_conversation() {
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        assertThrows(IllegalStateException.class,
+                () -> service.applyArtifactCommit(VERLA_CONVERSATION_ID, "   ", 1L));
 
-        assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, null, null, "   ", null, null, null));
-        assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "file", null, null, null, null, null));
-        assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null, null, null));
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.empty());
+        // 脱链是配置错误，必须暴露而不是静默丢弃
+        assertThrows(IllegalStateException.class,
+                () -> service.applyArtifactCommit(VERLA_CONVERSATION_ID, "x", 1L));
     }
 
     @Test
-    void prepare_generation_rejects_text_over_command_payload_budget() {
+    void complete_turn_appends_assistant_message_and_marks_completed() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("generating");
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.completeTurn(VERLA_CONVERSATION_ID, "  这是回答  ");
+
+        assertEquals("completed", conversation.getStatus());
+        ArgumentCaptor<NoteMessage> msg = ArgumentCaptor.forClass(NoteMessage.class);
+        verify(repo).appendMessage(msg.capture());
+        assertEquals(NoteMessage.ROLE_ASSISTANT, msg.getValue().getRole());
+        assertEquals("这是回答", msg.getValue().getContentMd());
+    }
+
+    @Test
+    void complete_turn_skips_blank_assistant_text() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("generating");
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.completeTurn(VERLA_CONVERSATION_ID, "   ");
+
+        // 弱模型「只调工具不说话」：不能落空气泡
+        verify(repo, never()).appendMessage(any(NoteMessage.class));
+        assertEquals("completed", conversation.getStatus());
+    }
+
+    @Test
+    void is_first_turn_input_matches_python_side_predicate() {
+        assertTrue(DemoNoteService.isFirstTurnInput(null, "obj_9", null));
+        assertTrue(DemoNoteService.isFirstTurnInput("text", null, "素材"));
+        assertTrue(DemoNoteService.isFirstTurnInput("file", "obj_9", null));
+        assertFalse(DemoNoteService.isFirstTurnInput(null, null, null));
+        assertFalse(DemoNoteService.isFirstTurnInput(null, "  ", "  "));
+    }
+
+    @Test
+    void prepare_first_turn_rejects_empty_input() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
 
-        // mq_outbox.payload 仍是 TEXT（65535 字节）：超限必须在 API 边界拦下
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, null, null, "   ", null, null, null, null));
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "file", null, null, null, null, null, null));
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null, null, null, null));
+    }
+
+    @Test
+    void prepare_first_turn_rejects_text_over_command_payload_budget() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+
         String tooLong = "中".repeat(20_001);
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.prepareGeneration("user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null));
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null, null));
         assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
     }
 
@@ -173,29 +321,6 @@ class DemoNoteServiceTest {
     }
 
     @Test
-    void apply_generated_note_fills_note_and_marks_completed() {
-        NoteConversation conversation = draft();
-        conversation.setStatus("generating");
-        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
-        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        service.applyGeneratedNote(VERLA_CONVERSATION_ID, "# 光合作用\n正文", "光合作用");
-
-        assertEquals("# 光合作用\n正文", conversation.getNoteMd());
-        assertEquals("光合作用", conversation.getTitle());
-        assertEquals("completed", conversation.getStatus());
-    }
-
-    @Test
-    void apply_generated_note_fails_loudly_when_unlinked() {
-        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.empty());
-
-        // 脱链是配置错误，必须暴露而不是静默丢弃（否则前端看到笔记、库里没有）
-        assertThrows(IllegalStateException.class,
-                () -> service.applyGeneratedNote(VERLA_CONVERSATION_ID, "x", null));
-    }
-
-    @Test
     void list_conversations_clamps_limit_before_hitting_the_repository() {
         when(repo.listProcessedConversations(anyString(), anyInt())).thenReturn(List.of(draft()));
 
@@ -203,10 +328,27 @@ class DemoNoteServiceTest {
         service.listProcessedConversations("user_1", 5_000);
         service.listProcessedConversations("user_1", 30);
 
-        // 上限 100 / 下限 1：避免调用方传 0 或超大值直接进 LIMIT
         verify(repo).listProcessedConversations("user_1", 1);
         verify(repo).listProcessedConversations("user_1", 100);
         verify(repo).listProcessedConversations("user_1", 30);
+    }
+
+    @Test
+    void list_messages_is_old_to_new_from_the_repository() {
+        List<NoteMessage> ordered = new ArrayList<>(List.of(message("user", "问"), message("assistant", "答")));
+        when(repo.listRecentMessages(NOTE_CONVERSATION_ID, 200)).thenReturn(ordered);
+
+        List<NoteMessage> messages = service.listMessages(NOTE_CONVERSATION_ID);
+
+        assertEquals(List.of("问", "答"), messages.stream().map(NoteMessage::getContentMd).toList());
+    }
+
+    private static NoteMessage message(String role, String content) {
+        NoteMessage m = new NoteMessage();
+        m.setRole(role);
+        m.setMsgType(NoteMessage.TYPE_TEXT);
+        m.setContentMd(content);
+        return m;
     }
 
     private static NoteConversation draft() {

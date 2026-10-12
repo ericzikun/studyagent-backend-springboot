@@ -326,7 +326,8 @@ public class VerlaConversationDashboardStatusService {
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
             // Notes demo 会话不属于任何商业分栏，不进 Dashboard 状态推导。
             case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_SUMMARIZE_STARTED,
-                    NOTE_STREAM_CHUNK, NOTE_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
+                    NOTE_CHAT_STREAM_CHUNK, NOTE_ARTIFACT_BEGIN, NOTE_ARTIFACT_DELTA,
+                    NOTE_ARTIFACT_COMMIT, NOTE_TURN_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
         };
     }
 

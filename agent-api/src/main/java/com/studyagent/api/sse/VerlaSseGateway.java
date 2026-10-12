@@ -312,7 +312,7 @@ public class VerlaSseGateway implements VerlaSsePublisher {
             reg.emitter.send(SseEmitter.event()
                     .id(String.valueOf(eventId))
                     .name("verla")
-                    .data(payload, MediaType.APPLICATION_JSON));
+                    .data(VerlaSseEventVO.from(payload), MediaType.APPLICATION_JSON));
             reg.lastSentEventId = eventId;
             return true;
         } catch (IOException ioe) {

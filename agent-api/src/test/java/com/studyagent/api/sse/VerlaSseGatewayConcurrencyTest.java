@@ -87,9 +87,9 @@ class VerlaSseGatewayConcurrencyTest {
         assertNotNull(earlySendAttempts);
         List<Long> sentEventIds = earlySendAttempts.stream()
                 .map(ResponseBodyEmitter.DataWithMediaType::getData)
-                .filter(VerlaSseEventPayload.class::isInstance)
-                .map(VerlaSseEventPayload.class::cast)
-                .map(VerlaSseEventPayload::getId)
+                .filter(VerlaSseEventVO.class::isInstance)
+                .map(VerlaSseEventVO.class::cast)
+                .map(VerlaSseEventVO::id)
                 .toList();
         assertEquals(List.of(100L, 101L), sentEventIds);
     }

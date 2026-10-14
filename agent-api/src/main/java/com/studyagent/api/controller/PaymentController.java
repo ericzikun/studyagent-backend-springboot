@@ -38,10 +38,12 @@ public class PaymentController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         try {
             CheckoutSessionResult checkout = billingDomainService.createSubscriptionCheckout(
                     clerkUserId,
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     request.getPlanCode(),
                     request.getSuccessUrl(),
                     request.getCancelUrl(),
@@ -50,7 +52,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPlanCode(),
                     "subscription",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     checkout
             );
             return Result.success(toCheckoutData(checkout));
@@ -59,7 +61,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPlanCode(),
                     "subscription",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     e.getCode(),
                     e.getMessage()
             );
@@ -70,7 +72,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPlanCode(),
                     "subscription",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     "UNKNOWN",
                     e.getMessage()
             );
@@ -86,10 +88,12 @@ public class PaymentController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         try {
             CheckoutSessionResult checkout = billingDomainService.createAddonCheckout(
                     clerkUserId,
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     request.getAddonCode(),
                     request.getSuccessUrl(),
                     request.getCancelUrl(),
@@ -98,7 +102,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getAddonCode(),
                     "addon",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     checkout
             );
             return Result.success(toCheckoutData(checkout));
@@ -107,7 +111,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getAddonCode(),
                     "addon",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     e.getCode(),
                     e.getMessage()
             );
@@ -118,7 +122,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getAddonCode(),
                     "addon",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     "UNKNOWN",
                     e.getMessage()
             );
@@ -138,10 +142,12 @@ public class PaymentController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         try {
             CheckoutSessionResult checkout = billingDomainService.createStudyPassCheckout(
                     clerkUserId,
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     request.getPassCode(),
                     request.getSuccessUrl(),
                     request.getCancelUrl(),
@@ -150,7 +156,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPassCode(),
                     "study_pass",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     checkout
             );
             return Result.success(toCheckoutData(checkout));
@@ -159,7 +165,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPassCode(),
                     "study_pass",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     e.getCode(),
                     e.getMessage()
             );
@@ -170,7 +176,7 @@ public class PaymentController {
                     clerkUserId,
                     request.getPassCode(),
                     "study_pass",
-                    userInfo == null ? null : userInfo.email,
+                    userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     "UNKNOWN",
                     e.getMessage()
             );
@@ -191,7 +197,9 @@ public class PaymentController {
                 && !clerkUserId.equals(request.getClerkUserId())) {
             return Result.error(ApiCode.NO_PERMISSION);
         }
-        String customerEmail = userInfo == null ? null : userInfo.email;
+        String customerEmail = userInfo == null || !userInfo.emailVerified ? null : userInfo.email;
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         try {
             CreateCheckoutSessionCommand command = CreateCheckoutSessionCommand.builder()
                     .clerkUserId(clerkUserId)
@@ -219,6 +227,8 @@ public class PaymentController {
             data.put("checkoutUrl", result.getCheckoutUrl());
             data.put("expiresAt", result.getExpiresAt());
             return Result.success(data);
+        } catch (BillingDomainException e) {
+            return PricingErrors.result(e);
         } catch (PaymentDomainException e) {
             // 埋点：支付会话创建失败
             Map<String, Object> errorProps = buildCheckoutAnalyticsProps(
@@ -301,6 +311,7 @@ public class PaymentController {
         Map<String, Object> data = new HashMap<>();
         data.put("stripePublishableKey", result.getStripePublishableKey());
         data.put("packages", result.getPackages());
+        data.put("regionalPricingEnabled", catalog.isRegionalPricingEnabled());
         data.put("plans", catalog.getPlans());
         data.put("addons", catalog.getAddons());
         return Result.success(data);
@@ -321,6 +332,7 @@ public class PaymentController {
     }
 
     private Result<Map<String, Object>> mapBillingException(BillingDomainException e) {
+        if (e.getCode().startsWith("PRICING_")) return PricingErrors.result(e);
         return switch (e.getCode()) {
             case "STRIPE_NOT_CONFIGURED" -> Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
             case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED" -> Result.error(ApiCode.INVALID_PLAN, e.getMessage());
@@ -415,6 +427,9 @@ public class PaymentController {
 
     @Data
     static class CreateCheckoutSessionRequest {
+        private String expectedCurrency;
+        private Integer expectedAmountCents;
+        private String quoteVersion;
         private String clerkUserId;
         private String customerEmail;
         private String packageType;
@@ -424,6 +439,9 @@ public class PaymentController {
 
     @Data
     static class SubscriptionCheckoutRequest {
+        private String expectedCurrency;
+        private Integer expectedAmountCents;
+        private String quoteVersion;
         private String planCode;
         private String successUrl;
         private String cancelUrl;
@@ -432,6 +450,9 @@ public class PaymentController {
 
     @Data
     static class AddonCheckoutRequest {
+        private String expectedCurrency;
+        private Integer expectedAmountCents;
+        private String quoteVersion;
         private String addonCode;
         private String successUrl;
         private String cancelUrl;
@@ -440,6 +461,9 @@ public class PaymentController {
 
     @Data
     static class StudyPassCheckoutRequest {
+        private String expectedCurrency;
+        private Integer expectedAmountCents;
+        private String quoteVersion;
         private String passCode;
         private String successUrl;
         private String cancelUrl;

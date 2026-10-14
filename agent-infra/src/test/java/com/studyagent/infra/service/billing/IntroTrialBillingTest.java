@@ -113,7 +113,7 @@ class IntroTrialBillingTest {
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode("basic_trial_weekly"));
         assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_ONCE_PLAN_CODE));
         assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY));
-        assertTrue(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
+        assertFalse(IntroTrialPlans.isSellableIntroTrialPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_BASIC_PAID_TRIAL));
         assertTrue(IntroTrialPlans.isIntroTrialOfferKind(IntroTrialPlans.OFFER_KIND_PRO_PAID_TRIAL));
         assertTrue(IntroTrialPlans.isOneTimeProTrialPlan(

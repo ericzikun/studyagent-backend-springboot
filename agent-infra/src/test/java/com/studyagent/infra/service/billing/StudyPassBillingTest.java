@@ -98,7 +98,13 @@ class StudyPassBillingTest {
                 planQuotaService,
                 userRepository,
                 quotaVipAccessService,
-                userSubscriptionBootstrapService);
+                userSubscriptionBootstrapService,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+            @Override com.stripe.model.Customer retrieveStripeCustomer(String id) {
+                var customer = new com.stripe.model.Customer(); customer.setId(id); customer.setEmail("user@example.com");
+                customer.setMetadata(java.util.Map.of("clerk_user_id", USER)); return customer;
+            }
+        };
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -414,7 +420,7 @@ class StudyPassBillingTest {
         session.setId("cs_new");
         session.setUrl("https://checkout.stripe.com/c/pay/cs_new");
         doReturn(session).when(service).createStripeCheckoutSession(any(SessionCreateParams.class));
-        service.createStudyPassCheckout(USER, null, PASS_CODE,
+        service.createStudyPassCheckout(USER, "user@example.com", PASS_CODE,
                 "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
         ArgumentCaptor<RechargeOrderEntity> order = ArgumentCaptor.forClass(RechargeOrderEntity.class);
         verify(rechargeOrderMapper).updateById(order.capture());
@@ -431,16 +437,21 @@ class StudyPassBillingTest {
         when(studyPassProductMapper.selectOne(any(Wrapper.class))).thenReturn(sellableProduct(99, 30));
         RechargeOrderEntity order = new RechargeOrderEntity();
         order.setStripeSessionId("cs_pending");
+        order.setClerkUserId(USER); order.setCurrency("usd"); order.setPriceCents(99);
         when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
         Session session = new Session();
         session.setId("cs_pending");
+        session.setClientReferenceId(USER); session.setCurrency("usd"); session.setAmountSubtotal(99L);
+        var price = new com.stripe.model.Price(); price.setId("price_study_pass");
+        var line = new com.stripe.model.LineItem(); line.setPrice(price); line.setQuantity(1L);
+        var lines = new com.stripe.model.LineItemCollection(); lines.setData(List.of(line)); session.setLineItems(lines);
         session.setStatus("open");
         session.setUrl("https://checkout.stripe.com/c/pay/cs_pending");
         session.setExpiresAt(Instant.now().plusSeconds(1800).getEpochSecond());
         BillingDomainServiceImpl service = spy(service());
         setStripeSecretKey(service, "sk_test_study");
         doReturn(session).when(service).retrieveStripeCheckoutSession("cs_pending");
-        assertEquals("cs_pending", service.createStudyPassCheckout(USER, null, PASS_CODE, null, null, null).getSessionId());
+        assertEquals("cs_pending", service.createStudyPassCheckout(USER, "user@example.com", PASS_CODE, null, null, null).getSessionId());
         org.mockito.InOrder calls = org.mockito.Mockito.inOrder(userSubscriptionMapper, rechargeOrderMapper);
         calls.verify(userSubscriptionMapper).selectByUserForUpdate(USER);
         calls.verify(rechargeOrderMapper).selectOne(any(Wrapper.class));
@@ -460,7 +471,7 @@ class StudyPassBillingTest {
         setStripeSecretKey(service, "sk_test_study");
         doReturn(session).when(service).retrieveStripeCheckoutSession("cs_paid");
         assertEquals("STUDY_PASS_PAYMENT_PENDING", assertThrows(BillingDomainException.class,
-                () -> service.createStudyPassCheckout(USER, null, PASS_CODE, null, null, null)).getCode());
+                () -> service.createStudyPassCheckout(USER, "user@example.com", PASS_CODE, null, null, null)).getCode());
         verify(service, never()).createStripeCheckoutSession(any(SessionCreateParams.class));
     }
 
@@ -493,7 +504,7 @@ class StudyPassBillingTest {
         invoice.setPaymentIntent("pi_" + id); invoice.setAmountPaid(99L); invoice.setCurrency("usd");
         var transitions = new com.stripe.model.Invoice.StatusTransitions();
         transitions.setPaidAt(Instant.now().getEpochSecond()); invoice.setStatusTransitions(transitions);
-        var price = new com.stripe.model.Price(); price.setId("price_pass"); price.setUnitAmount(99L);
+        var price = new com.stripe.model.Price(); price.setId("price_pass"); price.setUnitAmount(99L); price.setCurrency("usd");
         var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval("day"); recurring.setIntervalCount(30L);
         price.setRecurring(recurring);
         var line = new com.stripe.model.InvoiceLineItem(); line.setType("subscription"); line.setProration(false);
@@ -512,6 +523,64 @@ class StudyPassBillingTest {
         when(studyPassMapper.selectOne(any(Wrapper.class))).thenReturn(pass);
         doReturn(recurringSubscription()).when(service).retrieveStudySubscription("sub_pass");
         return service;
+    }
+
+    @Test
+    void brlMonthlyPaymentUsesCurrencyOptionAndPreservesDiscountedReceipt() throws Exception {
+        var pass = recurringPass();
+        pass.setBillingIntervalDays(null);
+        pass.setRenewalCurrency("brl"); pass.setRenewalPriceCents(499);
+        var service = recurringService(pass);
+        var invoice = paidInvoice("in_brl", 40);
+        invoice.setCurrency("brl"); invoice.setAmountPaid(350L);
+        var line = invoice.getLines().getData().get(0);
+        line.setCurrency("brl"); line.getPrice().getRecurring().setInterval("month");
+        line.getPrice().getRecurring().setIntervalCount(1L);
+        var expanded = new com.stripe.model.Price();
+        expanded.setId("price_pass"); expanded.setCurrency("usd"); expanded.setUnitAmount(99L);
+        var brl = new com.stripe.model.Price.CurrencyOption(); brl.setUnitAmount(499L);
+        expanded.setCurrencyOptions(java.util.Map.of("brl", brl));
+        doReturn(expanded).when(service).retrieveStudyPrice("price_pass");
+        doReturn(invoice).when(service).retrieveStudyInvoice("in_brl");
+
+        assertTrue(service.syncStudyPassSubscription("sub_pass", "in_brl"));
+
+        assertEquals("active", pass.getStatus());
+        assertEquals("in_brl", pass.getLastPaidInvoiceId());
+        assertEquals(LocalDateTime.ofInstant(Instant.ofEpochSecond(line.getPeriod().getEnd()), java.time.ZoneOffset.UTC), pass.getExpiresAt());
+        var receipt = ArgumentCaptor.forClass(RechargeOrderEntity.class);
+        verify(rechargeOrderMapper).insert(receipt.capture());
+        assertEquals("brl", receipt.getValue().getCurrency());
+        assertEquals(350, receipt.getValue().getPriceCents());
+    }
+
+    @Test
+    void brlPaymentRejectsWrongCurrencyOptionEvenWhenDefaultAmountMatches() throws Exception {
+        var pass = recurringPass(); pass.setRenewalCurrency("brl");
+        var service = recurringService(pass);
+        var invoice = paidInvoice("in_wrong_brl", 40); invoice.setCurrency("brl");
+        var line = invoice.getLines().getData().get(0); line.setCurrency("brl");
+        var brl = new com.stripe.model.Price.CurrencyOption(); brl.setUnitAmount(499L);
+        line.getPrice().setCurrencyOptions(java.util.Map.of("brl", brl));
+        doReturn(invoice).when(service).retrieveStudyInvoice("in_wrong_brl");
+        var originalEnd = pass.getExpiresAt();
+
+        assertThrows(IllegalStateException.class, () -> service.syncStudyPassSubscription("sub_pass", "in_wrong_brl"));
+        assertEquals(originalEnd, pass.getExpiresAt());
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void brlPaymentWithoutCurrencyOptionCannotFallBackToUsd() throws Exception {
+        var pass = recurringPass(); pass.setRenewalCurrency("brl");
+        var service = recurringService(pass);
+        var invoice = paidInvoice("in_missing_brl", 40); invoice.setCurrency("brl");
+        var line = invoice.getLines().getData().get(0); line.setCurrency("brl");
+        doReturn(line.getPrice()).when(service).retrieveStudyPrice("price_pass");
+        doReturn(invoice).when(service).retrieveStudyInvoice("in_missing_brl");
+
+        assertThrows(BillingDomainException.class, () -> service.syncStudyPassSubscription("sub_pass", "in_missing_brl"));
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
     }
 
     @Test
@@ -603,7 +672,7 @@ class StudyPassBillingTest {
         doReturn(price).when(service).retrieveStudyPrice(product.getStripePriceId());
         var session = new Session(); session.setId("cs_recurring"); session.setUrl("https://checkout.stripe.com/c/pay/test");
         doReturn(session).when(service).createStudyCheckout(any(SessionCreateParams.class), any(StudyPassEntity.class));
-        service.createStudyPassCheckout(USER, null, PASS_CODE, "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
+        service.createStudyPassCheckout(USER, "user@example.com", PASS_CODE, "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
         var params = ArgumentCaptor.forClass(SessionCreateParams.class);
         var pass = ArgumentCaptor.forClass(StudyPassEntity.class);
         verify(service).createStudyCheckout(params.capture(), pass.capture());

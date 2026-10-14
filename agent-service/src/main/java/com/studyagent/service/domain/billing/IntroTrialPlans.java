@@ -24,7 +24,7 @@ public final class IntroTrialPlans {
 
     /** Sellable Pro Trial → Pro monthly. */
     public static final String PRO_TRIAL_PLAN_CODE_MONTHLY = "pro_trial_to_monthly";
-    /** Sellable Pro Trial → Pro yearly. */
+    /** Historical Pro Trial → Pro yearly; retained for reconciliation only. */
     public static final String PRO_TRIAL_PLAN_CODE_YEARLY = "pro_trial_to_yearly";
     /**
      * Default sellable Pro Trial SKU (monthly conversion).
@@ -93,7 +93,7 @@ public final class IntroTrialPlans {
      * Currently only subscription Pro Trial SKUs are sellable.
      */
     public static boolean isSellableIntroTrialPlanCode(String planCode) {
-        return isProSubscriptionTrialPlanCode(planCode);
+        return PRO_TRIAL_PLAN_CODE_MONTHLY.equalsIgnoreCase(planCode);
     }
 
     public static boolean isIntroTrialOfferKind(String offerKind) {

@@ -48,6 +48,9 @@ import com.studyagent.service.domain.billing.BillingStudyPass;
 import com.studyagent.service.domain.billing.StudyPassAccount;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.BillingPricingContext;
+import com.studyagent.service.domain.billing.BillingQuote;
+import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.billing.BillingHostedInvoiceResult;
 import com.studyagent.service.domain.billing.BillingEntitlementPolicy;
 import com.studyagent.service.domain.billing.BillingPlan;
@@ -121,6 +124,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final UserRepository userRepository;
     private final QuotaVipAccessService quotaVipAccessService;
     private final UserSubscriptionBootstrapService userSubscriptionBootstrapService;
+    private final BillingPricingService pricingService;
+    private final ClerkClient clerkClient;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -133,6 +138,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Value("${billing.portal.mock-url:}")
     private String billingPortalMockUrl;
+
+    @Value("${billing.portal.configuration-id:}")
+    private String billingPortalConfigurationId;
 
     @Value("${billing.checkout.mock-enabled:false}")
     private boolean billingCheckoutMockEnabled;
@@ -160,6 +168,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Override
     public BillingCatalogResult getCatalog() {
+        String currency = currencyForMember(BillingPricingContext.userId());
         List<BillingPlan> plans = subscriptionPlanMapper.selectList(
                         new LambdaQueryWrapper<SubscriptionPlanEntity>()
                                 .eq(SubscriptionPlanEntity::getIsActive, true)
@@ -167,6 +176,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stream()
                 .filter(plan -> !isIntroTrialPlan(plan)
                         || IntroTrialPlans.isSellableIntroTrialPlanCode(plan.getPlanCode()))
+                .map(plan -> catalogPlan(plan, currency))
+                .filter(java.util.Objects::nonNull)
                 .map(this::toPlan)
                 .toList();
         List<BillingAddon> addons = addonPackageDefMapper.selectList(
@@ -174,9 +185,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .eq(AddonPackageDefEntity::getIsActive, true)
                                 .orderByAsc(AddonPackageDefEntity::getDisplayOrder))
                 .stream()
+                .map(addon -> catalogAddon(addon, currency))
+                .filter(java.util.Objects::nonNull)
                 .map(this::toAddon)
                 .toList();
         return BillingCatalogResult.builder()
+                .regionalPricingEnabled(pricingService.isEnabled())
                 .plans(plans)
                 .addons(addons)
                 .studyPass(findActiveStudyPassProduct())
@@ -187,6 +201,162 @@ public class BillingDomainServiceImpl implements BillingDomainService {
      * 返回唯一启用的通行证目录项。没有启用行时返回 null——前端据此完全不展示通行证售卖入口，
      * 这是"Stripe Price 未就绪前不可售卖"的守门方式。
      */
+    /** 不改动商品实体的数据库基准；返回仅用于本次报价/订单的副本。 */
+    private SubscriptionPlanEntity pricedPlan(SubscriptionPlanEntity source, String currency, boolean newSale) {
+        SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setPriceCents(pricingService.amount(source.getStripePriceId(), currency, source.getPriceCents(),
+                source.getCurrency(), isIntroTrialPlan(source) ? "week" : source.getBillingInterval(), newSale, source.getStripeProductId()));
+        copy.setCurrency(currency);
+        return copy;
+    }
+
+    private AddonPackageDefEntity pricedAddon(AddonPackageDefEntity source, String currency) {
+        AddonPackageDefEntity copy = new AddonPackageDefEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setPriceCents(pricingService.amount(source.getStripePriceId(), currency, source.getPriceCents(), source.getCurrency(),
+                null, true, source.getStripeProductId()));
+        copy.setCurrency(currency);
+        return copy;
+    }
+
+    private StudyPassProductEntity pricedProduct(StudyPassProductEntity source, String currency) {
+        StudyPassProductEntity copy = new StudyPassProductEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setPriceCents(pricingService.amount(source.getStripePriceId(), currency, source.getPriceCents(), source.getCurrency(),
+                "subscription".equals(source.getBillingType()) ? "month" : null, true, source.getStripeProductId()));
+        copy.setCurrency(currency);
+        return copy;
+    }
+
+    private SubscriptionPlanEntity catalogPlan(SubscriptionPlanEntity source, String currency) {
+        try {
+            SubscriptionPlanEntity plan = pricedPlan(source, currency, true);
+            if (isIntroTrialPlan(plan) && (pricingService.isEnabled() || !currency.equals(source.getCurrency() == null ? "usd" : source.getCurrency())))
+                pricedPlan(requirePlan(resolveConversionPlanCode(plan), true), currency, true);
+            return plan;
+        } catch (BillingDomainException e) {
+            if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
+            log.warn("SKU unavailable for currency: sku={}, currency={}", source.getPlanCode(), currency);
+            return null;
+        }
+    }
+
+    private AddonPackageDefEntity catalogAddon(AddonPackageDefEntity source, String currency) {
+        try { return pricedAddon(source, currency); }
+        catch (BillingDomainException e) {
+            if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
+            return null;
+        }
+    }
+
+    private String currencyForMember(String userId) {
+        UserSubscriptionEntity current = hasText(userId) ? findByUser(userId) : null;
+        if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
+                && isRealStripeReference(current.getStripeSubscriptionId())) {
+            try { return BillingPricingService.subscriptionCurrency(retrieveStripeSubscription(current.getStripeSubscriptionId())); }
+            catch (StripeException e) { throw stripeFailure("Read subscription currency failed", e); }
+        }
+        if (current != null && "pro_trial_once".equals(current.getPlanCode()) && !isExpiredOneTimeProTrial(current)) {
+            RechargeOrderEntity paid = rechargeOrderMapper.selectOne(new LambdaQueryWrapper<RechargeOrderEntity>()
+                    .eq(RechargeOrderEntity::getClerkUserId, userId).eq(RechargeOrderEntity::getPlanCode, current.getPlanCode())
+                    .in(RechargeOrderEntity::getStatus, List.of("paid", "completed")).orderByDesc(RechargeOrderEntity::getId).last("LIMIT 1"));
+            if (paid == null || !hasText(paid.getCurrency())) throw BillingPricingService.unavailable("Historical trial currency is unavailable");
+            return paid.getCurrency();
+        }
+        return pricingService.newPurchaseCurrency();
+    }
+
+    private BillingQuote simpleQuote(String user, String kind, String sku, String currency, int amount,
+                                    String interval, Integer days, Integer renewal, String context) {
+        return pricingService.quote(user, kind, sku, "purchase", currency, amount, interval, days, renewal, context, null);
+    }
+
+    private BillingQuote initialPurchaseQuote(String user, SubscriptionPlanEntity plan) {
+        SubscriptionPlanEntity renewal = isIntroTrialPlan(plan)
+                ? pricedPlan(requirePlan(resolveConversionPlanCode(plan)), plan.getCurrency(), true) : plan;
+        return simpleQuote(user, "subscription", plan.getPlanCode(), plan.getCurrency(), plan.getPriceCents(),
+                isIntroTrialPlan(plan) ? "week" : plan.getBillingInterval(), plan.getTrialDays(), renewal.getPriceCents(),
+                plan.getStripePriceId() + ":" + renewal.getStripePriceId());
+    }
+
+    private void confirmInitialPurchase(String user, SubscriptionPlanEntity plan) {
+        if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(initialPurchaseQuote(user, plan));
+    }
+
+    private BillingQuote upgradePurchaseQuote(String user, SubscriptionPlanEntity target, UserSubscriptionEntity current, UpgradeChargeQuote quote) {
+        return pricingService.quote(user, "subscription", target.getPlanCode(), "upgrade", target.getCurrency(), quote.getAmountCents(),
+                target.getBillingInterval(), null, target.getPriceCents(), current.getStripeSubscriptionId() + ":" + target.getStripePriceId()
+                        + ":" + current.getCurrentPeriodEnd(), null);
+    }
+
+    private BillingQuote deferredPurchaseQuote(String user, SubscriptionPlanEntity target, UserSubscriptionEntity current) {
+        return pricingService.quote(user, "subscription", target.getPlanCode(), "downgrade", target.getCurrency(), 0,
+                target.getBillingInterval(), null, target.getPriceCents(), current.getStripeSubscriptionId() + ":" + target.getStripePriceId(),
+                current.getCurrentPeriodEnd());
+    }
+
+    @Override
+    public BillingQuote getPurchaseQuote(String user, String kind, String sku) {
+        if (!hasText(user)) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Login is required");
+        if ("subscription".equals(kind)) {
+            SubscriptionPlanEntity plan = requirePlan(sku);
+            assertSellableIntroTrialPlan(plan);
+            UserSubscriptionEntity current = findByUser(user);
+            assertCurrentSubscriptionCannotBuyIntroTrial(current, plan);
+            if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
+                    && isRealStripeReference(current.getStripeSubscriptionId())) {
+                if (BillingEntitlementPolicy.requiresPaymentResolution(current.getStatus()))
+                    throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Resolve the current payment first");
+                String currency = currencyForMember(user);
+                SubscriptionPlanEntity source = pricedPlan(requireCurrentPlan(current), currency, false);
+                plan = pricedPlan(plan, currency, true);
+                PlanChangeAction action = classifyPlanChange(source.getPlanCode(), source.getTier(), source.getBillingInterval(),
+                        plan.getPlanCode(), plan.getTier(), plan.getBillingInterval());
+                if (action == PlanChangeAction.DEFERRED_CHANGE) return deferredPurchaseQuote(user, plan, current);
+                if (action != PlanChangeAction.IMMEDIATE_UPGRADE)
+                    throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "This plan is not a purchasable change");
+                UpgradeCreditBasis basis = resolveUpgradeCreditBasis(source, plan, current);
+                UpgradeChargeQuote charge = UpgradeChargeCalculator.quote(source, plan,
+                        current.getQuotaPeriodStart() != null ? current.getQuotaPeriodStart() : current.getCurrentPeriodStart(),
+                        current.getCurrentPeriodEnd(), LocalDateTime.now(), basis.netPaidCents(), basis.sourceInvoiceId());
+                return upgradePurchaseQuote(user, plan, current, charge);
+            }
+            if (isIntroTrialPlan(plan) && current != null) assertIntroTrialEligible(current, current.getStripeCustomerId());
+            return initialPurchaseQuote(user, pricedPlan(plan, pricingService.newPurchaseCurrency(), true));
+        }
+        if ("addon".equals(kind)) {
+            if (!isPaidMember(user)) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "A paid membership is required");
+            AddonPackageDefEntity addon = pricedAddon(requireAddon(sku), currencyForMember(user));
+            return simpleQuote(user, kind, sku, addon.getCurrency(), addon.getPriceCents(), null, null, null, addon.getStripePriceId());
+        }
+        if ("study_pass".equals(kind)) {
+            if (hasStudyMembership(findByUser(user)) || findActiveStudyPass(user, LocalDateTime.now()) != null)
+                throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Study access is already included");
+            StudyPassEntity latestPass = findLatestStudyPass(user, false);
+            if (latestPass != null && hasText(latestPass.getStripeSubscriptionId())
+                    && !List.of("canceled", "superseded", "refunded").contains(latestPass.getStatus()))
+                throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Manage the existing Study Pass subscription first");
+            StudyPassProductEntity pass = pricedProduct(requireStudyPassProduct(sku), pricingService.newPurchaseCurrency());
+            boolean recurring = "subscription".equals(pass.getBillingType());
+            return simpleQuote(user, kind, sku, pass.getCurrency(), pass.getPriceCents(), recurring ? "month" : null,
+                    null, recurring ? pass.getPriceCents() : null, pass.getStripePriceId());
+        }
+        throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Unsupported purchase kind");
+    }
+
+    private boolean matchesCheckoutSnapshot(Session session, RechargeOrderEntity order, int amount, String currency, String priceId) {
+        if (session == null || !java.util.Objects.equals(order.getClerkUserId(), session.getClientReferenceId())
+                || !java.util.Objects.equals(currency, session.getCurrency())
+                || !java.util.Objects.equals(currency, order.getCurrency())
+                || !java.util.Objects.equals(amount, order.getPriceCents())) return false;
+        Long subtotal = session.getAmountSubtotal() != null ? session.getAmountSubtotal() : session.getAmountTotal();
+        if (!java.util.Objects.equals((long) amount, subtotal) || session.getLineItems() == null
+                || session.getLineItems().getData() == null || session.getLineItems().getData().size() != 1) return false;
+        var item = session.getLineItems().getData().get(0);
+        return Long.valueOf(1).equals(item.getQuantity()) && item.getPrice() != null && priceId.equals(item.getPrice().getId());
+    }
+
     private BillingStudyPass findActiveStudyPassProduct() {
         List<StudyPassProductEntity> products = studyPassProductMapper.selectList(
                 new LambdaQueryWrapper<StudyPassProductEntity>()
@@ -196,6 +366,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return null;
         }
         StudyPassProductEntity product = products.get(0);
+        try { product = pricedProduct(product, pricingService.newPurchaseCurrency()); }
+        catch (BillingDomainException e) {
+            if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
+            return null;
+        }
         return BillingStudyPass.builder()
                 .billingType("subscription".equals(product.getBillingType()) ? "subscription" : "one_time")
                 .passCode(product.getPassCode())
@@ -243,6 +418,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         assertCurrentSubscriptionCannotBuyIntroTrial(userSubscription, plan);
         if (mockCheckout) {
+            plan = pricedPlan(plan, pricingService.newPurchaseCurrency(), true);
+            confirmInitialPurchase(clerkUserId, plan);
             return createMockSubscriptionCheckout(
                     clerkUserId,
                     plan,
@@ -276,6 +453,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         assertLapsedCheckoutAllowed(userSubscription, plan);
 
         boolean oneTimeProTrialCheckout = introTrialEnabled && isOneTimeProTrialPlan(plan);
+        plan = pricedPlan(plan, pricingService.newPurchaseCurrency(), true);
+        confirmInitialPurchase(clerkUserId, plan);
         if (oneTimeProTrialCheckout) {
             return createOneTimeProTrialCheckout(
                     clerkUserId,
@@ -312,6 +491,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SessionCreateParams.SubscriptionData.Builder subscriptionDataBuilder =
                 SessionCreateParams.SubscriptionData.builder()
                         .putMetadata("purchase_type", purchaseType)
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
                         .putMetadata("clerk_user_id", clerkUserId)
                         .putMetadata("plan_code", planCode);
         if (introTrialCheckout) {
@@ -391,6 +571,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String conversionPlanCode) {
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+                .setCurrency(plan.getCurrency())
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(finalSuccessUrl)
@@ -400,10 +581,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setQuantity(1L)
                         .build())
                 .putMetadata("purchase_type", purchaseType)
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData);
-        applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode());
+        applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode(), plan.getCurrency());
         if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             builder.putMetadata("conversion_plan_code", conversionPlanCode)
                     .putMetadata("change_type", IntroTrialPlans.SCHEDULE_CHANGE_TYPE_INTRO_CONVERSION);
@@ -472,6 +654,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             boolean notExpired = session.getExpiresAt() == null || session.getExpiresAt() > nowEpoch;
             boolean samePlan = planCode.equals(pending.getPlanCode());
             if (samePlan
+                    && matchesCheckoutSnapshot(session, pending, plan.getPriceCents(), plan.getCurrency(), plan.getStripePriceId())
                     && "open".equals(session.getStatus())
                     && notExpired
                     && hasText(session.getUrl())) {
@@ -624,6 +807,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
         }
         AddonPackageDefEntity addon = requireAddon(addonCode);
+        addon = pricedAddon(addon, currencyForMember(clerkUserId));
+        if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(simpleQuote(clerkUserId, "addon", addonCode,
+                addon.getCurrency(), addon.getPriceCents(), null, null, null, addon.getStripePriceId()));
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
 
@@ -696,11 +882,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String customerId) {
         SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                 .putMetadata("purchase_type", "addon")
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("addon_code", addonCode)
                 .build();
         return SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCurrency(addon.getCurrency())
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
@@ -710,6 +898,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setQuantity(1L)
                         .build())
                 .putMetadata("purchase_type", "addon")
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("addon_code", addonCode)
                 .setPaymentIntentData(paymentIntentData)
@@ -718,6 +907,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
                                 .setDescription("Add-on purchase: " + addonCode)
                                 .putMetadata("purchase_type", "addon")
+                                .putMetadata("pricing_region", pricingService.pricingRegion())
                                 .putMetadata("clerk_user_id", clerkUserId)
                                 .putMetadata("addon_code", addonCode)
                                 .build())
@@ -750,6 +940,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         // Acquire the lock before any consistent read in this transaction.
         StudyPassProductEntity product = requireStudyPassProduct(passCode);
+        product = pricedProduct(product, pricingService.newPurchaseCurrency());
+        if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(simpleQuote(clerkUserId, "study_pass", passCode,
+                product.getCurrency(), product.getPriceCents(), "subscription".equals(product.getBillingType()) ? "month" : null,
+                null, "subscription".equals(product.getBillingType()) ? product.getPriceCents() : null, product.getStripePriceId()));
         LocalDateTime now = LocalDateTime.now();
         if (findActiveStudyPass(clerkUserId, now) != null) {
             throw new BillingDomainException(
@@ -759,7 +953,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (hasStudyMembership(userSubscription)) {
             throw new BillingDomainException("STUDY_PASS_ALREADY_ACTIVE", "Study reading is included in your membership");
         }
-        CheckoutSessionResult pending = findReusableStudyPassCheckout(clerkUserId, resumeToken);
+        CheckoutSessionResult pending = findReusableStudyPassCheckout(clerkUserId, resumeToken, product);
         if (pending != null) return pending;
         StudyPassEntity reservation = null;
         if ("subscription".equals(product.getBillingType())) {
@@ -769,7 +963,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     && !List.of("canceled", "superseded", "refunded").contains(latest.getStatus())) {
                 throw new BillingDomainException("STUDY_PASS_ALREADY_ACTIVE", "Manage your existing Study Pass subscription first");
             }
-            String purchaseKey = UUID.nameUUIDFromBytes((clerkUserId + ":" + product.getStripePriceId() + ":"
+            String purchaseKey = UUID.nameUUIDFromBytes((clerkUserId + ":" + product.getStripePriceId() + ":" + product.getCurrency() + ":"
                     + (latest == null ? "initial" : latest.getId())).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
             reservation = new StudyPassEntity();
             reservation.setClerkUserId(clerkUserId);
@@ -859,7 +1053,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     /** Called under the user's subscription-row lock, including for first-time buyers. */
-    private CheckoutSessionResult findReusableStudyPassCheckout(String clerkUserId, String resumeToken) {
+    private CheckoutSessionResult findReusableStudyPassCheckout(String clerkUserId, String resumeToken, StudyPassProductEntity product) {
         RechargeOrderEntity pending = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
@@ -885,6 +1079,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 throw new BillingDomainException("STUDY_PASS_PAYMENT_PENDING", "Study Pass payment is still being applied");
             }
             if ("open".equals(session.getStatus())
+                    && matchesCheckoutSnapshot(session, pending, product.getPriceCents(), product.getCurrency(), product.getStripePriceId())
                     && (session.getExpiresAt() == null || session.getExpiresAt() > Instant.now().getEpochSecond())
                     && hasText(session.getUrl())) {
                 return CheckoutSessionResult.builder().checkoutKind("session")
@@ -917,24 +1112,29 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if ("subscription".equals(product.getBillingType())) {
             return SessionCreateParams.builder()
                     .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+                    .setCurrency(product.getCurrency())
                     .setCustomer(customerId).setClientReferenceId(clerkUserId)
                     .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
                     .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
                     .addLineItem(SessionCreateParams.LineItem.builder().setPrice(product.getStripePriceId()).setQuantity(1L).build())
-                    .putMetadata("purchase_type", "study_pass").putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("purchase_type", "study_pass").putMetadata("pricing_region", pricingService.pricingRegion())
+                .putMetadata("clerk_user_id", clerkUserId)
                     .putMetadata("pass_code", passCode)
                     .setSubscriptionData(SessionCreateParams.SubscriptionData.builder()
-                            .putMetadata("purchase_type", "study_pass").putMetadata("clerk_user_id", clerkUserId)
+                            .putMetadata("purchase_type", "study_pass").putMetadata("pricing_region", pricingService.pricingRegion())
+                .putMetadata("clerk_user_id", clerkUserId)
                             .putMetadata("pass_code", passCode).putMetadata("purchase_key", purchaseKey).build())
                     .build();
         }
         SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                 .putMetadata("purchase_type", "study_pass")
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("pass_code", passCode)
                 .build();
         return SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCurrency(product.getCurrency())
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
@@ -944,6 +1144,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setQuantity(1L)
                         .build())
                 .putMetadata("purchase_type", "study_pass")
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("pass_code", passCode)
                 .setPaymentIntentData(paymentIntentData)
@@ -952,6 +1153,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
                                 .setDescription("Study Pass: " + passCode)
                                 .putMetadata("purchase_type", "study_pass")
+                                .putMetadata("pricing_region", pricingService.pricingRegion())
                                 .putMetadata("clerk_user_id", clerkUserId)
                                 .putMetadata("pass_code", passCode)
                                 .build())
@@ -972,7 +1174,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     com.stripe.model.Price retrieveStudyPrice(String id) throws StripeException {
-        return studyStripe().prices().retrieve(id);
+        return studyStripe().prices().retrieve(id, com.stripe.param.PriceRetrieveParams.builder().addExpand("currency_options").build());
     }
 
     void validateStudyPassRecurringPrice(StudyPassProductEntity product) {
@@ -981,8 +1183,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             if (!Boolean.TRUE.equals(price.getActive()) || price.getRecurring() == null
                     || !"month".equals(price.getRecurring().getInterval())
                     || !Long.valueOf(1).equals(price.getRecurring().getIntervalCount())
-                    || !Long.valueOf(product.getPriceCents()).equals(price.getUnitAmount())
-                    || !product.getCurrency().equalsIgnoreCase(price.getCurrency())
+                    || product.getPriceCents() != BillingPricingService.amountForCurrency(price, product.getCurrency())
                     || !product.getStripeProductId().equals(price.getProduct())) {
                 throw new BillingDomainException("STUDY_PASS_PRICE_NOT_CONFIGURED", "Study Pass requires the configured recurring monthly price");
             }
@@ -1071,8 +1272,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                             : Integer.valueOf(30).equals(pass.getBillingIntervalDays())
                                 && "day".equals(paidLine.getPrice().getRecurring().getInterval())
                                 && Long.valueOf(30).equals(paidLine.getPrice().getRecurring().getIntervalCount()))
-                        || !Long.valueOf(pass.getRenewalPriceCents()).equals(paidLine.getPrice().getUnitAmount())
-                        || !pass.getRenewalCurrency().equalsIgnoreCase(paidLine.getCurrency())) {
+                        || !pass.getRenewalCurrency().equalsIgnoreCase(paidLine.getCurrency())
+                        || !pass.getRenewalCurrency().equalsIgnoreCase(invoice.getCurrency())
+                        || pass.getRenewalPriceCents() != studyPassInvoiceUnitAmount(paidLine.getPrice(), pass.getRenewalCurrency())) {
                     throw new IllegalStateException("Study Pass invoice price mismatch");
                 }
                 LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochSecond(paidLine.getPeriod().getEnd()), ZoneOffset.UTC);
@@ -1095,6 +1297,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             studyPassMapper.updateById(pass);
             return true;
         } catch (StripeException e) { throw stripeFailure("Synchronize Study Pass subscription failed", e); }
+    }
+
+    /** Invoice Price keeps its default currency; expand options for a non-default contract currency.
+     * Compare the contractual unit price, not amount_paid, which can include discounts, tax or balance credit. */
+    private int studyPassInvoiceUnitAmount(com.stripe.model.Price price, String currency) throws StripeException {
+        if (!currency.equalsIgnoreCase(price.getCurrency())
+                && (price.getCurrencyOptions() == null || !price.getCurrencyOptions().containsKey(currency))) {
+            price = retrieveStudyPrice(price.getId());
+        }
+        return BillingPricingService.amountForCurrency(price, currency);
     }
 
     void refundConflictingStudyInvoice(com.stripe.model.Invoice invoice, String subscriptionId) throws StripeException {
@@ -1432,11 +1644,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String customerId) {
         SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                 .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .build();
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCurrency(plan.getCurrency())
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
@@ -1446,6 +1660,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setQuantity(1L)
                         .build())
                 .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .setPaymentIntentData(paymentIntentData)
@@ -1454,11 +1669,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
                                 .setDescription("Pro Trial: " + planCode)
                                 .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
+                                .putMetadata("pricing_region", pricingService.pricingRegion())
                                 .putMetadata("clerk_user_id", clerkUserId)
                                 .putMetadata("plan_code", planCode)
                                 .build())
                         .build());
-        applyCheckoutProductDescription(builder, plan.getStripeProductId(), planCode);
+        applyCheckoutProductDescription(builder, plan.getStripeProductId(), planCode, plan.getCurrency());
         return builder.build();
     }
 
@@ -1478,9 +1694,23 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .build();
         }
         requireStripeConfigured();
+        if (pricingService.isEnabled()) {
+            if (!hasText(billingPortalConfigurationId))
+                throw BillingPricingService.unavailable("A billing management-only Portal configuration is required");
+            try {
+                var configuration = retrieveStripePortalConfiguration(billingPortalConfigurationId);
+                if (configuration == null || !billingPortalConfigurationId.equals(configuration.getId())
+                        || !Boolean.TRUE.equals(configuration.getActive())
+                        || Boolean.TRUE.equals(configuration.getLivemode()) != stripeSecretKey.startsWith("sk_live_")
+                        || configuration.getFeatures() == null || configuration.getFeatures().getSubscriptionUpdate() == null
+                        || !Boolean.FALSE.equals(configuration.getFeatures().getSubscriptionUpdate().getEnabled()))
+                    throw BillingPricingService.unavailable("Portal subscription sales must be disabled");
+            } catch (StripeException e) { throw BillingPricingService.unavailable("Portal configuration cannot be verified"); }
+        }
         com.stripe.param.billingportal.SessionCreateParams params =
                 com.stripe.param.billingportal.SessionCreateParams.builder()
                         .setCustomer(current.getStripeCustomerId())
+                        .setConfiguration(hasText(billingPortalConfigurationId) ? billingPortalConfigurationId : null)
                         .setReturnUrl(returnUrl)
                         .build();
         try {
@@ -1759,6 +1989,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedCancelUrl,
             String resumeToken) {
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
+        String actualCurrency = currencyForMember(clerkUserId);
+        currentPlan = pricedPlan(currentPlan, actualCurrency, false);
+        targetPlan = pricedPlan(targetPlan, actualCurrency, true);
         PlanChangeAction action = classifyPlanChange(
                 currentPlan.getPlanCode(),
                 currentPlan.getTier(),
@@ -1775,8 +2008,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             throw new BillingDomainException("INVALID_DOWNGRADE_TARGET", "Target plan is not an upgrade");
         }
 
-        clearPendingUpgradeStateForRetry(current);
-        String customerId = ensureStripeCustomer(current, clerkUserId, customerEmail);
         UpgradeCreditBasis creditBasis = resolveUpgradeCreditBasis(currentPlan, targetPlan, current);
         UpgradeChargeQuote quote = UpgradeChargeCalculator.quote(
                 currentPlan,
@@ -1786,6 +2017,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 LocalDateTime.now(),
                 creditBasis.netPaidCents(),
                 creditBasis.sourceInvoiceId());
+        pricingService.assertConfirmed(upgradePurchaseQuote(clerkUserId, targetPlan, current, quote));
+        clearPendingUpgradeStateForRetry(current);
+        String customerId = ensureStripeCustomer(current, clerkUserId, customerEmail);
         String orderNo = generateOrderNo();
 
         try {
@@ -1793,6 +2027,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
                     .putMetadata("purchase_type", "subscription_upgrade_manual")
                     .putMetadata("upgrade_order_no", orderNo)
+                    .putMetadata("pricing_region", pricingService.pricingRegion())
                     .putMetadata("clerk_user_id", clerkUserId)
                     .putMetadata("current_plan_code", currentPlan.getPlanCode())
                     .putMetadata("target_plan_code", targetPlan.getPlanCode())
@@ -1911,6 +2146,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         "The settled source invoice is unavailable; retry after billing sync");
             }
             Invoice invoice = retrieveStripeInvoice(invoiceId);
+            if (invoice.getCurrency() != null && !invoice.getCurrency().equalsIgnoreCase(currentPlan.getCurrency()))
+                throw BillingPricingService.unavailable("Upgrade credit must use the subscription currency");
             long amountPaid = invoice.getAmountPaid() == null ? 0L : invoice.getAmountPaid();
             Long subtotal = invoice.getSubtotalExcludingTax() != null
                     ? invoice.getSubtotalExcludingTax()
@@ -2109,6 +2346,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
+            targetPlan = pricedPlan(targetPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), true);
+            if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(deferredPurchaseQuote(clerkUserId, targetPlan, current));
             stripeSubscription = resumeCancellationBeforePaidPlanChangeIfNeeded(current, stripeSubscription);
             SubscriptionSchedule schedule = upsertDowngradeSchedule(
                     clerkUserId,
@@ -2366,13 +2605,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return false;
         }
         try {
-            Customer customer = Customer.retrieve(stripeCustomerId);
+            Customer customer = retrieveStripeCustomer(stripeCustomerId);
             if (customer.getMetadata() == null) {
                 return false;
             }
             return "true".equalsIgnoreCase(
                     customer.getMetadata().get(IntroTrialPlans.STRIPE_CUSTOMER_META_INTRO_TRIAL_USED));
         } catch (StripeException e) {
+            if (pricingService.isEnabled()) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Trial eligibility cannot be verified", e);
             log.warn("Failed to read Stripe customer intro trial metadata: customer={}", stripeCustomerId, e);
             return false;
         }
@@ -2395,7 +2635,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return;
         }
         try {
-            Customer.retrieve(customerId).update(CustomerUpdateParams.builder()
+            updateStripeCustomer(retrieveStripeCustomer(customerId), CustomerUpdateParams.builder()
                     .putMetadata(IntroTrialPlans.STRIPE_CUSTOMER_META_INTRO_TRIAL_USED, "true")
                     .build());
         } catch (StripeException e) {
@@ -2410,6 +2650,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SubscriptionPlanEntity conversionPlan = requirePlan(conversionPlanCode, true);
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(stripeSubscriptionId);
+            conversionPlan = pricedPlan(conversionPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), false);
             SubscriptionSchedule schedule;
             String existingScheduleId = firstNonBlank(
                     stripeSubscription.getSchedule(), current.getStripeScheduleId());
@@ -2476,6 +2717,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
                 .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(conversionPlan.getCurrency())
                         .setStartDate(currentPhaseStart)
                         .setEndDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
@@ -2485,6 +2727,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .build())
                         .build())
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(conversionPlan.getCurrency())
                         .setStartDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
                         .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()
@@ -2500,7 +2743,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 schedule,
                 updateParams,
                 RequestOptions.builder()
-                        .setIdempotencyKey("intro-trial-schedule:fix:" + schedule.getId()
+                        .setIdempotencyKey("intro-trial-schedule:fix:v2:" + conversionPlan.getCurrency() + ":" + schedule.getId()
                                 + ":" + conversionPlanCode + ":" + conversionPriceId + ":" + currentPhaseEnd)
                         .build());
     }
@@ -2631,6 +2874,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             UserSubscriptionEntity current,
             Subscription stripeSubscription,
             SubscriptionPlanEntity targetPlan) throws StripeException {
+        targetPlan = pricedPlan(targetPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), true);
         String scheduleId = firstNonBlank(current.getStripeScheduleId(), stripeSubscription.getSchedule());
         Subscription scheduleSubscription = stripeSubscription;
         if (scheduleId != null && !scheduleId.isBlank()) {
@@ -2664,7 +2908,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 item.getPrice().getId(),
                 quantity);
         RequestOptions updateOptions = RequestOptions.builder()
-                .setIdempotencyKey("downgrade-schedule:update:" + schedule.getId() + ":"
+                .setIdempotencyKey("downgrade-schedule:update:v2:" + targetPlan.getCurrency() + ":" + schedule.getId() + ":"
                         + targetPlan.getPlanCode() + ":" + currentPhaseEnd)
                 .build();
         try {
@@ -2694,6 +2938,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
                 .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(targetPlan.getCurrency())
                         .setStartDate(currentPhaseStart)
                         .setEndDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
@@ -2703,6 +2948,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .build())
                         .build())
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(targetPlan.getCurrency())
                         .setStartDate(currentPhaseEnd)
                         .setIterations(1L)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
@@ -2829,9 +3075,27 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             UserSubscriptionEntity userSubscription,
             String clerkUserId,
             String customerEmail) {
+        if (!hasText(customerEmail)) customerEmail = clerkClient.getUserEmail(clerkUserId);
+        if (!hasText(customerEmail)) throw new BillingDomainException("CUSTOMER_EMAIL_UNAVAILABLE", "Verified account email is unavailable");
         if (userSubscription.getStripeCustomerId() != null
                 && !userSubscription.getStripeCustomerId().isBlank()) {
-            return userSubscription.getStripeCustomerId();
+            try {
+                Customer customer = retrieveStripeCustomer(userSubscription.getStripeCustomerId());
+                if (customer == null || Boolean.TRUE.equals(customer.getDeleted()))
+                    throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "Customer is unavailable");
+                String owner = customer.getMetadata() == null ? null : customer.getMetadata().get("clerk_user_id");
+                if (hasText(owner) && !clerkUserId.equals(owner))
+                    throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "Customer ownership cannot be verified");
+                // 本地用户映射是归属事实；若旧 Customer 尚无 metadata，补齐已验证归属。
+                if (!customerEmail.equalsIgnoreCase(java.util.Objects.toString(customer.getEmail(), "")) || !hasText(owner))
+                    updateStripeCustomer(customer, CustomerUpdateParams.builder().setEmail(customerEmail)
+                .putMetadata("clerk_user_id", clerkUserId).build());
+                return customer.getId();
+            } catch (StripeException e) {
+                if (shouldRetrySubscriptionCheckoutWithFreshCustomer(userSubscription, e) && clearStoredStripeCustomer(userSubscription))
+                    return ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+                throw stripeFailure("Verify Stripe customer email failed", e);
+            }
         }
         CustomerCreateParams.Builder builder = CustomerCreateParams.builder()
                 .putMetadata("clerk_user_id", clerkUserId);
@@ -2864,6 +3128,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return Customer.create(params);
     }
 
+    com.stripe.model.billingportal.Configuration retrieveStripePortalConfiguration(String id) throws StripeException { return com.stripe.model.billingportal.Configuration.retrieve(id); }
+
+    Customer retrieveStripeCustomer(String id) throws StripeException { return Customer.retrieve(id); }
+    Customer updateStripeCustomer(Customer customer, CustomerUpdateParams params) throws StripeException { return customer.update(params); }
+
     Product retrieveStripeProduct(String productId) throws StripeException {
         return Product.retrieve(productId);
     }
@@ -2882,7 +3151,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     Session retrieveStripeCheckoutSession(String sessionId) throws StripeException {
-        return Session.retrieve(sessionId);
+        return Session.retrieve(sessionId, com.stripe.param.checkout.SessionRetrieveParams.builder().addExpand("line_items").build(), null);
     }
 
     Session expireStripeCheckoutSession(Session session) throws StripeException {
@@ -3322,6 +3591,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SessionCreateParams.PaymentIntentData paymentIntentData) {
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCurrency(targetPlan.getCurrency())
                 .setCustomer(customerId)
                 .setClientReferenceId(clerkUserId)
                 .setSuccessUrl(resolveCheckoutSuccessUrl(requestedSuccessUrl, resumeToken))
@@ -3343,6 +3613,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                         + currentPlan.getPlanCode() + " to " + targetPlan.getPlanCode())
                                 .putMetadata("purchase_type", "subscription_upgrade_manual")
                                 .putMetadata("upgrade_order_no", orderNo)
+                                .putMetadata("pricing_region", pricingService.pricingRegion())
                                 .putMetadata("clerk_user_id", clerkUserId)
                                 .putMetadata("current_plan_code", currentPlan.getPlanCode())
                                 .putMetadata("target_plan_code", targetPlan.getPlanCode())
@@ -3351,12 +3622,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .build())
                 .putMetadata("purchase_type", "subscription_upgrade_manual")
                 .putMetadata("upgrade_order_no", orderNo)
+                .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("current_plan_code", currentPlan.getPlanCode())
                 .putMetadata("target_plan_code", targetPlan.getPlanCode())
                 .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
                 .setPaymentIntentData(paymentIntentData);
-        applyCheckoutProductDescription(builder, targetPlan.getStripeProductId(), targetPlan.getPlanCode());
+        applyCheckoutProductDescription(builder, targetPlan.getStripeProductId(), targetPlan.getPlanCode(), targetPlan.getCurrency());
         return builder.build();
     }
 
@@ -3370,7 +3642,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private void applyCheckoutProductDescription(
             SessionCreateParams.Builder builder,
             String stripeProductId,
-            String planCode) {
+            String planCode, String currency) {
+        if (IntroTrialPlans.isIntroTrialPlanCode(planCode)) {
+            SubscriptionPlanEntity trial = pricedPlan(requirePlan(planCode), currency, true);
+            SubscriptionPlanEntity renewal = pricedPlan(requirePlan(resolveConversionPlanCode(trial)), currency, true);
+            String message = "Get Verla Pro for " + trial.getTrialDays() + " days for " + formatBillingMoney(trial.getPriceCents(), currency)
+                    + ". After " + trial.getTrialDays() + " days, renews at " + formatBillingMoney(renewal.getPriceCents(), currency)
+                    + " per " + renewal.getBillingInterval() + " unless you cancel. Cancel anytime.";
+            builder.setCustomText(SessionCreateParams.CustomText.builder()
+                    .setSubmit(SessionCreateParams.CustomText.Submit.builder().setMessage(message).build()).build());
+            return;
+        }
         if (!hasText(stripeProductId)) {
             return;
         }
@@ -3388,6 +3670,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             log.warn("Unable to load Stripe Product description for Checkout: planCode={}, productId={}",
                     planCode, stripeProductId, e);
         }
+    }
+
+    private String formatBillingMoney(int amount, String currency) {
+        java.text.NumberFormat format = java.text.NumberFormat.getCurrencyInstance(
+                "brl".equals(currency) ? Locale.forLanguageTag("pt-BR") : Locale.US);
+        format.setCurrency(java.util.Currency.getInstance(currency.toUpperCase(Locale.ROOT)));
+        return format.format(java.math.BigDecimal.valueOf(amount, 2));
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {
@@ -3824,6 +4113,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             Subscription subscription,
             SubscriptionPlanEntity monthlyPlan,
             String clerkUserId) throws StripeException {
+        monthlyPlan = pricedPlan(monthlyPlan, BillingPricingService.subscriptionCurrency(subscription), false);
         String idempotencyPrefix = "annual-trial-monthly-fix:" + subscription.getId();
         SubscriptionItem item = requireSingleSubscriptionItem(subscription);
         long trialEnd = LocalDateTime.now(ZoneOffset.UTC).plusMonths(1).toEpochSecond(ZoneOffset.UTC);
@@ -3838,7 +4128,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .setPrice(monthlyPlan.getStripePriceId())
                                 .setQuantity(item.getQuantity() == null ? 1L : item.getQuantity())
                                 .build())
-                        .putMetadata("clerk_user_id", clerkUserId)
+                .putMetadata("clerk_user_id", clerkUserId)
                         .putMetadata("change_type", "annual_trial_conversion_monthly_fix")
                         .build(),
                 RequestOptions.builder().setIdempotencyKey(idempotencyPrefix + ":switch").build());
@@ -3861,6 +4151,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             Subscription subscription,
             SubscriptionPlanEntity monthlyPlan,
             String clerkUserId) throws StripeException {
+        monthlyPlan = pricedPlan(monthlyPlan, BillingPricingService.subscriptionCurrency(subscription), false);
         String idempotencyPrefix = "annual-trial-monthly-fix:schedule:" + subscription.getId();
         SubscriptionSchedule schedule = createStripeSubscriptionSchedule(
                 SubscriptionScheduleCreateParams.builder()
@@ -3875,6 +4166,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .setEndBehavior(SubscriptionScheduleUpdateParams.EndBehavior.RELEASE)
                 .setProrationBehavior(SubscriptionScheduleUpdateParams.ProrationBehavior.NONE)
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(monthlyPlan.getCurrency())
                         .setStartDate(currentPhaseStart)
                         .setEndDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
@@ -3884,6 +4176,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .build())
                         .build())
                 .addPhase(SubscriptionScheduleUpdateParams.Phase.builder()
+                        .setCurrency(monthlyPlan.getCurrency())
                         .setStartDate(currentPhaseEnd)
                         .setProrationBehavior(SubscriptionScheduleUpdateParams.Phase.ProrationBehavior.NONE)
                         .addItem(SubscriptionScheduleUpdateParams.Phase.Item.builder()

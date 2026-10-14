@@ -28,4 +28,6 @@ public interface PaymentDomainService {
      * 获取支付配置（Stripe 公钥、套餐列表）
      */
     PaymentConfigResult getPaymentConfig();
+
+    com.studyagent.service.domain.billing.BillingQuote getPurchaseQuote(String clerkUserId, String packageCode);
 }

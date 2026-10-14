@@ -245,15 +245,19 @@ public class ClerkClientImpl implements ClerkClient {
         // 提取邮箱信息
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> emailAddresses = (List<Map<String, Object>>) userData.get("email_addresses");
-        if (emailAddresses != null && !emailAddresses.isEmpty()) {
-            Map<String, Object> firstEmail = emailAddresses.get(0);
-            userInfo.email = (String) firstEmail.get("email_address");
-            
-            @SuppressWarnings("unchecked")
-            Map<String, Object> verification = (Map<String, Object>) firstEmail.get("verification");
-            if (verification != null) {
-                String status = (String) verification.get("status");
-                userInfo.emailVerified = "verified".equals(status);
+        String primaryEmailId = (String) userData.get("primary_email_address_id");
+        if (emailAddresses != null && primaryEmailId != null) {
+            Map<String, Object> primaryEmail = emailAddresses.stream()
+                    .filter(email -> primaryEmailId.equals(email.get("id"))).findFirst().orElse(null);
+            if (primaryEmail != null) {
+                userInfo.email = (String) primaryEmail.get("email_address");
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> verification = (Map<String, Object>) primaryEmail.get("verification");
+                if (verification != null) {
+                    String status = (String) verification.get("status");
+                    userInfo.emailVerified = "verified".equals(status);
+                }
             }
         }
         
@@ -281,7 +285,7 @@ public class ClerkClientImpl implements ClerkClient {
             Map<String, Object> userData = getClerkUser(clerkUserId);
             if (userData != null) {
                 UserInfo info = extractUserInfo(userData);
-                if (info.email != null && !info.email.isEmpty()) {
+                if (info.emailVerified && info.email != null && !info.email.isEmpty()) {
                     log.debug("成功获取用户邮箱: clerkUserId={}", clerkUserId);
                     return info.email;
                 }

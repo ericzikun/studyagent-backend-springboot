@@ -243,6 +243,13 @@ payment:
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/payment-canceled}
 
 billing:
+  portal:
+    configuration-id: ${BILLING_PORTAL_CONFIGURATION_ID:}
+  regional-pricing:
+    enabled: ${BILLING_REGIONAL_PRICING_ENABLED:false}
+    country-currencies: ${BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES:BR=brl}
+    test-override: ${BILLING_REGION_TEST_OVERRIDE:}
+    proxy-secret: ${BILLING_REGION_PROXY_SECRET:}
   intro-trial:
     enabled: ${BILLING_INTRO_TRIAL_ENABLED:true}
     plan-code: ${BILLING_INTRO_TRIAL_PLAN_CODE:pro_trial_to_monthly}

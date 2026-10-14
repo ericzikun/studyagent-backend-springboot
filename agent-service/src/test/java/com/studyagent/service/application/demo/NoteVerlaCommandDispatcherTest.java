@@ -8,6 +8,7 @@ import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.common.verla.util.VerlaCorrelationId;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
+import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -23,9 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -44,9 +47,10 @@ import static org.mockito.Mockito.when;
  * <ol>
  *   <li>correlationId 必须先 save 拿自增 id 再回填（uk_correlation 唯一约束）；</li>
  *   <li>命令必须走 {@code MqOutboxService}（事务性 outbox），不能裸发；</li>
- *   <li>payload 的 key（{@code sourceType} / {@code objectId} / {@code inputText} / {@code filename} /
- *       {@code outputLanguage}）是 Java → Python 的隐式契约，Python 侧按 key 直接取值。</li>
+ *   <li>payload 的 key 是 Java → Python 的隐式契约，Python 侧按 key 直接取值。</li>
  * </ol>
+ * <p>另有一条本轮新增、最容易踩的：<b>素材字段只在首轮下发</b> —— Python 以
+ * 「是否带 objectId/inputText」判定首轮，后续轮若也带上会被重复解析。
  */
 class NoteVerlaCommandDispatcherTest {
 
@@ -93,11 +97,11 @@ class NoteVerlaCommandDispatcherTest {
     }
 
     @Test
-    void dispatch_creates_mainline_rows_and_enqueues_transactional_outbox_for_file_source() {
+    void dispatch_creates_mainline_rows_and_enqueues_transactional_outbox_for_first_turn() {
         when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
         when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
 
-        NoteGenerateDispatchResult result = dispatcher.dispatch(fileConversation(), null);
+        NoteGenerateDispatchResult result = dispatcher.dispatch(fileConversation(), firstTurn(null));
 
         ArgumentCaptor<VerlaTurn> turnCaptor = ArgumentCaptor.forClass(VerlaTurn.class);
         verify(turnRepository).save(turnCaptor.capture());
@@ -131,19 +135,57 @@ class NoteVerlaCommandDispatcherTest {
         assertTrue(VerlaCorrelationId.isValid(envelope.getCorrelationId()));
 
         Map<String, Object> payload = envelope.getPayload();
+        // 首轮带素材
         assertEquals("file", payload.get("sourceType"));
         assertEquals("obj_123", payload.get("objectId"));
-        // 文件来源不带 inputText，filename 才是真实来源名
         assertNull(payload.get("inputText"));
         assertEquals("lecture.pdf", payload.get("filename"));
+        // 回合通用字段
         assertEquals("chinese", payload.get("outputLanguage"));
+        assertEquals("数据结构", payload.get("courseName"));
+        assertEquals("exam_prep", payload.get("learningGoal"));
+        assertEquals("给我一份复习笔记", payload.get("message"));
+        assertEquals("", payload.get("documentContentMd"));
+        assertEquals(0L, payload.get("documentBaseVersion"));
+        assertEquals(List.of(), payload.get("history"));
         assertEquals(NOTE_CONVERSATION_ID, payload.get("noteConversationId"));
-        assertTrue(!payload.containsKey("conversationId"));
+        assertFalse(payload.containsKey("conversationId"));
 
         assertEquals(VERLA_CONVERSATION_ID, result.getVerlaConversationId());
         assertEquals(TURN_ID, result.getTurnId());
         assertEquals(SESSION_ID, result.getSessionId());
         assertEquals(session.getCorrelationId(), result.getCorrelationId());
+    }
+
+    @Test
+    void dispatch_omits_source_fields_on_follow_up_turn() {
+        when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
+
+        NoteTurnContext followUp = NoteTurnContext.builder()
+                .firstTurn(false)
+                .message("把要点那节改简练点")
+                .documentContentMd("# 主题\n## 要点\n- 长句")
+                .documentBaseVersion(3L)
+                .history(List.of(Map.of("role", "user", "content", "旧问题")))
+                .build();
+
+        // 会话行上仍留着首轮的素材，但后续轮绝不能下发（否则 Python 会重复解析）
+        dispatcher.dispatch(fileConversation(), followUp);
+
+        ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
+                ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
+        verify(mqOutboxService).createVerlaCommand(envelopeCaptor.capture(), any(), any());
+        Map<String, Object> payload = envelopeCaptor.getValue().getPayload();
+        assertFalse(payload.containsKey("sourceType"));
+        assertFalse(payload.containsKey("objectId"));
+        assertFalse(payload.containsKey("inputText"));
+        assertFalse(payload.containsKey("filename"));
+        // 后续轮该有的都在
+        assertEquals("把要点那节改简练点", payload.get("message"));
+        assertEquals("# 主题\n## 要点\n- 长句", payload.get("documentContentMd"));
+        assertEquals(3L, payload.get("documentBaseVersion"));
+        assertEquals(1, ((List<?>) payload.get("history")).size());
     }
 
     @Test
@@ -158,7 +200,7 @@ class NoteVerlaCommandDispatcherTest {
         // 文本来源的 title 是正文片段，不能被当作来源文件名回传
         textConversation.setTitle("一段原始材料");
 
-        dispatcher.dispatch(textConversation, null);
+        dispatcher.dispatch(textConversation, firstTurn(null));
 
         ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
                 ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
@@ -177,7 +219,7 @@ class NoteVerlaCommandDispatcherTest {
         when(conversationService.setOutputLanguage(any(), eq("ja"))).thenReturn(verlaConversation);
         when(conversationService.resolveOutputLanguage(any())).thenReturn("japanese");
 
-        dispatcher.dispatch(fileConversation(), "ja");
+        dispatcher.dispatch(fileConversation(), firstTurn("ja"));
 
         verify(conversationService).setOutputLanguage(verlaConversation, "ja");
         ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
@@ -191,7 +233,7 @@ class NoteVerlaCommandDispatcherTest {
         NoteConversation unlinked = fileConversation();
         unlinked.setVerlaConversationId(null);
 
-        assertThrows(BusinessException.class, () -> dispatcher.dispatch(unlinked, null));
+        assertThrows(BusinessException.class, () -> dispatcher.dispatch(unlinked, firstTurn(null)));
 
         // 没有 verla conversation 就没有事件通道，一行都不该写
         verifyNoInteractions(turnRepository, sessionRepository, mqOutboxService);
@@ -201,10 +243,21 @@ class NoteVerlaCommandDispatcherTest {
     void dispatch_rejects_dangling_mainline_conversation() {
         when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(null);
 
-        assertThrows(BusinessException.class, () -> dispatcher.dispatch(fileConversation(), null));
+        assertThrows(BusinessException.class, () -> dispatcher.dispatch(fileConversation(), firstTurn(null)));
 
         verify(sessionRepository, never()).save(any());
         verifyNoInteractions(mqOutboxService);
+    }
+
+    private static NoteTurnContext firstTurn(String outputLanguage) {
+        return NoteTurnContext.builder()
+                .firstTurn(true)
+                .message("给我一份复习笔记")
+                .documentContentMd("")
+                .documentBaseVersion(0L)
+                .history(List.of())
+                .outputLanguage(outputLanguage)
+                .build();
     }
 
     private static NoteConversation fileConversation() {
@@ -215,6 +268,8 @@ class NoteVerlaCommandDispatcherTest {
         conversation.setSourceType("file");
         conversation.setAttachmentObjectId("obj_123");
         conversation.setTitle("lecture.pdf");
+        conversation.setCourseName("数据结构");
+        conversation.setLearningGoal("exam_prep");
         conversation.setStatus("generating");
         return conversation;
     }

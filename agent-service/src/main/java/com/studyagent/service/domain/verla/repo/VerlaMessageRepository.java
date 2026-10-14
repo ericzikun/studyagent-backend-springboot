@@ -35,6 +35,16 @@ public interface VerlaMessageRepository {
     }
 
     /**
+     * 白板教学（Video Tutor）历史分页（scene=VIDEO_TUTOR）。
+     * <p>
+     * 用途有二：P2-3 每轮把历史随命令下发给 Python（Python 不持有会话状态），
+     * 以及 P2-5 snapshot 返回左栏消息。default 空实现供测试桩，生产实现覆盖。
+     */
+    default List<VerlaMessage> findVideoTutorByCursor(Long conversationId, Long cursor, int limit) {
+        return List.of();
+    }
+
+    /**
      * Find an isolated scene message by turn and role for idempotent terminal writeback.
      */
     default VerlaMessage findByTurnRoleScene(Long turnId, String role, String scene) {

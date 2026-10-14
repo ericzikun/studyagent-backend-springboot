@@ -14,6 +14,17 @@ public interface VerlaConversationRepository {
     VerlaConversation findById(Long id);
 
     /**
+     * 行锁读会话（{@code SELECT ... FOR UPDATE}），用于把"同一 conversation 的 turn 提交"串行化。
+     * <p>
+     * default 退化到<b>无锁</b>的 {@link #findById}，只为让既有测试桩不必逐一实现 ——
+     * 生产实现 {@code VerlaConversationRepositoryImpl} 覆盖它。<b>别在单测里验证锁真的存在</b>，
+     * 那条断言在这里必然是假的。
+     */
+    default VerlaConversation findByIdForUpdate(Long id) {
+        return findById(id);
+    }
+
+    /**
      * @param segmentQueryKey {@link com.studyagent.common.verla.enums.VerlaConversationListSegment#getQueryKey()}，可为 null
      * @param conversationStatusDb {@link com.studyagent.service.domain.verla.state.ConversationStatus#getDbValue()}，可为 null
      */

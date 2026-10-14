@@ -29,5 +29,10 @@ public enum VerlaSessionKind {
     AITUTOR,
 
     /** Notes: 单轮「素材 → 笔记」生成（必须与 Python VerlaSessionKind.NOTE 同名） */
-    NOTE
+    NOTE,
+    /**
+     * Video Tutor 交互式白板教学。
+     * {@code verla_sessions.kind} 是 VARCHAR(16)，本名字 11 字符，放得下。
+     */
+    VIDEO_TUTOR
 }

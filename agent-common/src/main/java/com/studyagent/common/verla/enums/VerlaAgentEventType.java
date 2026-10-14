@@ -170,18 +170,39 @@ public enum VerlaAgentEventType {
     AITUTOR_CANCELLED(true),
 
     /**
-     * Notes 域 —— 单轮「素材 → 笔记」。
-     * <p>NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED / NOTE_SUMMARIZE_STARTED 是前端三阶段
-     * （文件解析 / 内容归纳梳理 / 内容输出）里前两个阶段的状态信号，均非终态；
-     * 第三阶段由 NOTE_STREAM_CHUNK 累积 + NOTE_COMPLETED 收口。
+     * Notes 域 —— 「一轮回合」：对话 +（agent 决定）改文档。
+     * <p>首轮才有 NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED（解析素材），
+     * NOTE_SUMMARIZE_STARTED 每轮都有（前端右侧竖排步骤②）。
+     * <p>聊天文本（NOTE_CHAT_STREAM_CHUNK）与文档写入（NOTE_ARTIFACT_*，**全量快照**）
+     * 是两条独立流；单回合以 NOTE_TURN_COMPLETED 收口，NOTE_FAILED / NOTE_CANCELLED 为异常终态。
      */
     NOTE_PARSE_STARTED(false),
     NOTE_PARSE_COMPLETED(false),
     NOTE_SUMMARIZE_STARTED(false),
-    NOTE_STREAM_CHUNK(false),
-    NOTE_COMPLETED(true),
+    NOTE_CHAT_STREAM_CHUNK(false),
+    NOTE_ARTIFACT_BEGIN(false),
+    NOTE_ARTIFACT_DELTA(false),
+    NOTE_ARTIFACT_COMMIT(false),
+    NOTE_TURN_COMPLETED(true),
     NOTE_FAILED(true),
-    NOTE_CANCELLED(true);
+    NOTE_CANCELLED(true),
+
+    /**
+     * Video Tutor 域 —— 交互式白板教学（Py app/services/video_tutor）。
+     * 事件名与 Python {@code app.models.enums.VerlaAgentEventType} 及
+     * openspec/changes/add-video-tutor-board-teaching/design.md §1.2 逐字一致，
+     * 两侧各有单测从该表派生断言。
+     */
+    VIDEO_TUTOR_STARTED(false),
+    /** 零 step 降级通道：本轮没产出任何板书时才发，带老师原文。Java 不订阅。 */
+    VIDEO_TUTOR_CHAT_STREAM_CHUNK(false),
+    /** 一个 step = 该步解说 + 它引出的板书，封在同一帧（讲画同步的传输层保证）。Java 不订阅。 */
+    VIDEO_TUTOR_BOARD_OPS(false),
+    /** 白板树快照 → artifact upsert（kind=video_tutor_board），刷新恢复的主路径。 */
+    VIDEO_TUTOR_BOARD_COMMIT(false),
+    VIDEO_TUTOR_TURN_COMPLETED(true),
+    VIDEO_TUTOR_FAILED(true),
+    VIDEO_TUTOR_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -229,9 +250,12 @@ public enum VerlaAgentEventType {
             AITUTOR_TURN_COMPLETED,
             AITUTOR_FAILED,
             AITUTOR_CANCELLED,
-            NOTE_COMPLETED,
+            NOTE_TURN_COMPLETED,
             NOTE_FAILED,
-            NOTE_CANCELLED);
+            NOTE_CANCELLED,
+            VIDEO_TUTOR_TURN_COMPLETED,
+            VIDEO_TUTOR_FAILED,
+            VIDEO_TUTOR_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

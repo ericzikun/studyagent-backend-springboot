@@ -330,7 +330,16 @@ public class VerlaConversationDashboardStatusService {
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
             // Notes demo 会话不属于任何商业分栏，不进 Dashboard 状态推导。
             case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_SUMMARIZE_STARTED,
-                    NOTE_STREAM_CHUNK, NOTE_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
+                    NOTE_CHAT_STREAM_CHUNK, NOTE_ARTIFACT_BEGIN, NOTE_ARTIFACT_DELTA,
+                    NOTE_ARTIFACT_COMMIT, NOTE_TURN_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
+            // Video Tutor 是独立产品入口，按主流程口径给状态；不像 FILE_CHAT /
+            // ASSIGNMENT_CHAT 那样整体 null（那两个是"追问不改主对话状态"的语义）。
+            case VIDEO_TUTOR_STARTED, VIDEO_TUTOR_BOARD_COMMIT -> STATUS_PROGRESSING;
+            case VIDEO_TUTOR_TURN_COMPLETED -> STATUS_COMPLETED;
+            case VIDEO_TUTOR_FAILED, VIDEO_TUTOR_CANCELLED -> STATUS_FAILED;
+            // 这两个是纯渲染帧，Java 不订阅、不会进 inbox，所以这里不可能被命中；
+            // 列出来只为满足穷尽性，返回 null 而不是给它编一个状态。
+            case VIDEO_TUTOR_BOARD_OPS, VIDEO_TUTOR_CHAT_STREAM_CHUNK -> null;
         };
     }
 

@@ -74,7 +74,16 @@ public enum VerlaCommandAction {
     CMD_NOTE_GENERATE("cmd.note.generate"),
 
     /** Notes: 取消进行中的笔记生成 */
-    CMD_NOTE_GENERATE_CONTROL_CANCEL("cmd.note.generate.control.cancel");
+    CMD_NOTE_GENERATE_CONTROL_CANCEL("cmd.note.generate.control.cancel"),
+
+    /**
+     * Video Tutor：一次白板教学 turn。
+     * v1 不提供 retry —— 白板一轮的产物是"板上现有什么"，重打同一轮会重复上板。
+     */
+    CMD_VIDEO_TUTOR_CHAT("cmd.video_tutor.chat"),
+
+    /** Video Tutor：取消进行中的白板 turn */
+    CMD_VIDEO_TUTOR_CHAT_CONTROL_CANCEL("cmd.video_tutor.chat.control.cancel");
 
     private final String code;
 

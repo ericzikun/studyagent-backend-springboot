@@ -18,6 +18,16 @@ import java.util.List;
 public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEntity> {
 
     /**
+     * 行锁读（与 {@code VerlaSessionMapper.selectByIdForUpdate} 同一手法）。
+     * <p>
+     * Video Tutor 的"同一 conversation 不允许并行的第二个 turn"必须靠它串行化：
+     * 只做普通读的话，两个同时到达的请求会同时看到"没有未终态 turn"，双双放行，
+     * 结果是一轮的板书被另一轮覆盖 —— 不报错，只是内容变少。
+     */
+    @Select("SELECT * FROM verla_conversations WHERE id = #{id} FOR UPDATE")
+    VerlaConversationEntity selectByIdForUpdate(@Param("id") Long id);
+
+    /**
      * 会话列表（支持 Dashboard segment / status 过滤），与非过滤语义兼容：
      * {@code segment == null && conversationStatus == null} 时等价于旧「全部未删除」列表。
      */
@@ -33,6 +43,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " ORDER BY COALESCE(last_active_at, last_message_at, created_at) DESC, id DESC "
@@ -56,6 +67,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + "</script>")
@@ -80,6 +92,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND c.primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
@@ -108,6 +121,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND c.primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
@@ -138,6 +152,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " ORDER BY COALESCE(last_active_at, last_message_at, created_at) DESC, id DESC "
@@ -166,6 +181,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + "</script>")
@@ -191,6 +207,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND c.primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
@@ -224,6 +241,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"ai_writing\"'> AND c.primary_intent IN ('AI_DETECTION','AI_HUMANIZER') </when>"
             + "<when test='segment == \"ai_detection\"'> AND c.primary_intent = 'AI_DETECTION' </when>"
             + "<when test='segment == \"ai_humanizer\"'> AND c.primary_intent = 'AI_HUMANIZER' </when>"
+            + "<when test='segment == \"note\"'> AND c.primary_intent = 'NOTE_MAKER' </when>"
             + "</choose>"
             + "</if>"
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "

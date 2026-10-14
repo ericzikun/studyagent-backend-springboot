@@ -448,6 +448,7 @@ class StripeBillingWebhookServiceTest {
         when(subscriptionPlanMapper.selectOne(any())).thenReturn(plan);
 
         Subscription authoritative = new Subscription();
+        authoritative.setCurrency("usd");
         authoritative.setId("sub_disputed");
         authoritative.setCustomer("cus_disputed");
         authoritative.setStatus("active");
@@ -472,7 +473,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -543,10 +545,12 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
                 subscription.setId(subscriptionId);
                 subscription.setLatestInvoice("in_current");
                 return subscription;
@@ -604,10 +608,12 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
                 subscription.setId(subscriptionId);
                 subscription.setLatestInvoice("in_unrelated");
                 return subscription;
@@ -745,6 +751,7 @@ class StripeBillingWebhookServiceTest {
                 .thenReturn(existing);
 
         Subscription authoritative = new Subscription();
+        authoritative.setCurrency("usd");
         authoritative.setId("sub_recovered");
         authoritative.setStatus("active");
 
@@ -765,7 +772,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -803,6 +811,7 @@ class StripeBillingWebhookServiceTest {
         when(rechargeOrderMapper.selectOne(any())).thenReturn(disputed);
 
         Subscription authoritative = new Subscription();
+        authoritative.setCurrency("usd");
         authoritative.setId("sub_disputed");
         authoritative.setStatus("past_due");
         List<Object> updateValues = new ArrayList<>();
@@ -821,7 +830,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -856,6 +866,7 @@ class StripeBillingWebhookServiceTest {
         disputed.setStripeSubscriptionId("sub_disputed");
         when(rechargeOrderMapper.selectOne(any())).thenReturn(disputed);
         Subscription authoritative = new Subscription();
+        authoritative.setCurrency("usd");
         authoritative.setId("sub_disputed");
         authoritative.setStatus("active");
         authoritative.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -869,7 +880,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -901,6 +913,7 @@ class StripeBillingWebhookServiceTest {
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Subscription authoritative = new Subscription();
+        authoritative.setCurrency("usd");
         authoritative.setId("sub_canceled");
         authoritative.setStatus("canceled");
         authoritative.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -914,7 +927,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -966,11 +980,13 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 retrievedRemote.set(true);
                 Subscription remote = new Subscription();
+        remote.setCurrency("usd");
                 remote.setId(subscriptionId);
                 remote.setCustomer("cus_123");
                 remote.setStatus("canceled");
@@ -1087,7 +1103,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
                 refunded.set(true);
             }
@@ -1125,7 +1142,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
                 refunded.set(true);
@@ -1176,10 +1194,12 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
                 subscription.setTestClock("clock_123");
                 return subscription;
             }
@@ -1222,6 +1242,7 @@ class StripeBillingWebhookServiceTest {
         String originalApiKey = Stripe.apiKey;
         Stripe.apiKey = "sk_test_123";
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setTestClock("clock_upgrade");
 
         StripeBillingWebhookService service = new StripeBillingWebhookService(
@@ -1234,7 +1255,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Long retrieveTestClockFrozenTime(String testClockId) {
                 return LocalDateTime.parse("2028-07-17T05:20:39")
@@ -1389,15 +1411,18 @@ class StripeBillingWebhookServiceTest {
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setCurrency("usd"); currentPlan.setPriceCents(299);
         currentPlan.setPlanCode("plus_monthly");
         currentPlan.setBillingInterval("month");
         SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setCurrency("usd"); targetPlan.setPriceCents(7999);
         targetPlan.setPlanCode("pro_monthly");
         targetPlan.setBillingInterval("month");
         targetPlan.setStripePriceId("price_pro_monthly");
         when(subscriptionPlanMapper.selectOne(any())).thenReturn(currentPlan, targetPlan);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_test_clock");
         SubscriptionItem item = new SubscriptionItem();
         item.setId("si_test_clock");
@@ -1422,7 +1447,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1482,12 +1508,14 @@ class StripeBillingWebhookServiceTest {
         current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
 
         SubscriptionPlanEntity trialPlan = new SubscriptionPlanEntity();
+        trialPlan.setCurrency("usd"); trialPlan.setPriceCents(299);
         trialPlan.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
         trialPlan.setTier("pro");
         trialPlan.setBillingInterval("month");
         trialPlan.setStripePriceId("price_pro_trial_monthly");
 
         SubscriptionPlanEntity proPlan = new SubscriptionPlanEntity();
+        proPlan.setCurrency("usd"); proPlan.setPriceCents(7999);
         proPlan.setPlanCode(IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY);
         proPlan.setTier("pro");
         proPlan.setBillingInterval("month");
@@ -1499,6 +1527,7 @@ class StripeBillingWebhookServiceTest {
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Subscription trialSubscription = new Subscription();
+        trialSubscription.setCurrency("usd");
         trialSubscription.setId("sub_trial");
         trialSubscription.setStatus("active");
         trialSubscription.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -1512,6 +1541,7 @@ class StripeBillingWebhookServiceTest {
         trialSubscription.getItems().setData(List.of(trialItem));
 
         Subscription switched = new Subscription();
+        switched.setCurrency("usd");
         switched.setId("sub_trial");
         switched.setStatus("trialing");
         switched.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -1536,7 +1566,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return trialSubscription;
@@ -1599,12 +1630,14 @@ class StripeBillingWebhookServiceTest {
         current.setQuotaPeriodStart(LocalDateTime.parse("2026-06-24T10:00:00"));
 
         SubscriptionPlanEntity trialPlan = new SubscriptionPlanEntity();
+        trialPlan.setCurrency("usd"); trialPlan.setPriceCents(299);
         trialPlan.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);
         trialPlan.setTier("pro");
         trialPlan.setBillingInterval("month");
         trialPlan.setStripePriceId("price_pro_trial_monthly");
 
         SubscriptionPlanEntity plusPlan = new SubscriptionPlanEntity();
+        plusPlan.setCurrency("usd"); plusPlan.setPriceCents(3999);
         plusPlan.setPlanCode("plus_monthly");
         plusPlan.setTier("plus");
         plusPlan.setBillingInterval("month");
@@ -1616,6 +1649,7 @@ class StripeBillingWebhookServiceTest {
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Subscription trialSubscription = new Subscription();
+        trialSubscription.setCurrency("usd");
         trialSubscription.setId("sub_trial");
         trialSubscription.setStatus("active");
         trialSubscription.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -1629,6 +1663,7 @@ class StripeBillingWebhookServiceTest {
         trialSubscription.getItems().setData(List.of(trialItem));
 
         Subscription switched = new Subscription();
+        switched.setCurrency("usd");
         switched.setId("sub_trial");
         switched.setStatus("trialing");
         switched.setMetadata(Map.of("clerk_user_id", "user_1"));
@@ -1653,7 +1688,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return trialSubscription;
@@ -1721,6 +1757,7 @@ class StripeBillingWebhookServiceTest {
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_current");
         AtomicBoolean refunded = new AtomicBoolean(false);
         AtomicBoolean switched = new AtomicBoolean(false);
@@ -1741,7 +1778,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1798,6 +1836,7 @@ class StripeBillingWebhookServiceTest {
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_current");
         AtomicBoolean refunded = new AtomicBoolean(false);
         AtomicBoolean switched = new AtomicBoolean(false);
@@ -1818,7 +1857,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1884,6 +1924,7 @@ class StripeBillingWebhookServiceTest {
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_disputed");
         AtomicBoolean refunded = new AtomicBoolean(false);
         AtomicBoolean switched = new AtomicBoolean(false);
@@ -1898,7 +1939,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1962,11 +2004,13 @@ class StripeBillingWebhookServiceTest {
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(current);
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setCurrency("usd"); currentPlan.setPriceCents(299);
         currentPlan.setPlanCode("plus_yearly");
         currentPlan.setStripePriceId("price_plus_yearly");
         when(subscriptionPlanMapper.selectOne(any())).thenReturn(currentPlan);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_annual");
         subscription.setLatestInvoice("in_newer_cycle");
         SubscriptionItem item = new SubscriptionItem();
@@ -1994,7 +2038,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -2137,8 +2182,10 @@ class StripeBillingWebhookServiceTest {
         order.setUpgradeChargeType("annual_diff");
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setCurrency("usd"); currentPlan.setPriceCents(299);
         currentPlan.setBillingInterval("year");
         SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setCurrency("usd"); targetPlan.setPriceCents(7999);
         targetPlan.setBillingInterval("year");
 
         StripeBillingWebhookService.ManualUpgradeSwitchStrategy strategy =
@@ -2158,8 +2205,10 @@ class StripeBillingWebhookServiceTest {
         order.setQuotedAmountCents(23988);
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setCurrency("usd"); currentPlan.setPriceCents(299);
         currentPlan.setBillingInterval("year");
         SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setCurrency("usd"); targetPlan.setPriceCents(7999);
         targetPlan.setBillingInterval("year");
         targetPlan.setPriceCents(23988);
 
@@ -2181,8 +2230,10 @@ class StripeBillingWebhookServiceTest {
         order.setUpgradeChargeType("monthly_full");
 
         SubscriptionPlanEntity currentPlan = new SubscriptionPlanEntity();
+        currentPlan.setCurrency("usd"); currentPlan.setPriceCents(299);
         currentPlan.setBillingInterval("month");
         SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setCurrency("usd"); targetPlan.setPriceCents(7999);
         targetPlan.setBillingInterval("month");
 
         java.time.LocalDateTime now = java.time.LocalDateTime.parse("2026-06-24T12:00:00");
@@ -2204,6 +2255,7 @@ class StripeBillingWebhookServiceTest {
         item.setQuantity(1L);
 
         SubscriptionPlanEntity targetPlan = new SubscriptionPlanEntity();
+        targetPlan.setCurrency("usd"); targetPlan.setPriceCents(7999);
         targetPlan.setStripePriceId("price_plus_yearly");
 
         SubscriptionUpdateParams params = StripeBillingWebhookService.buildManualUpgradeUpdateParams(
@@ -2329,7 +2381,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             void refundIneligibleAddon(String paymentIntentId, String stripeSessionId) {
                 assertEquals("pi_refund", paymentIntentId);
@@ -2433,10 +2486,12 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager) {
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
                 subscription.setId(subscriptionId);
                 subscription.setStatus("past_due");
                 return subscription;
@@ -2514,6 +2569,7 @@ class StripeBillingWebhookServiceTest {
         entity.setGraceEndAt(java.time.LocalDateTime.parse("2026-06-24T14:58:10"));
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setCustomer("cus_123");
         subscription.setId("sub_123");
         subscription.setStatus("canceled");
@@ -2564,6 +2620,7 @@ class StripeBillingWebhookServiceTest {
         plan.setBillingInterval("month");
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_123");
         subscription.setCustomer("cus_123");
         subscription.setStatus("active");
@@ -2596,6 +2653,7 @@ class StripeBillingWebhookServiceTest {
         entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setCustomer("cus_123");
         subscription.setId("sub_123");
         subscription.setStatus("canceled");
@@ -2632,6 +2690,7 @@ class StripeBillingWebhookServiceTest {
         entity.setPendingEffectiveAt(java.time.LocalDateTime.parse("2026-07-23T14:58:10"));
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setCustomer("cus_123");
         subscription.setId("sub_123");
         subscription.setStatus("active");
@@ -2698,6 +2757,7 @@ class StripeBillingWebhookServiceTest {
         entity.setStripeSubscriptionId("sub_existing");
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setCustomer(null);
         subscription.setId("sub_existing");
         subscription.setStatus("canceled");
@@ -2736,6 +2796,7 @@ class StripeBillingWebhookServiceTest {
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId("sub_123");
         subscription.setCustomer("cus_123");
         subscription.setStatus("canceled");
@@ -2794,6 +2855,28 @@ class StripeBillingWebhookServiceTest {
         return com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
     }
 
+    @Test
+    void brlInvoiceCompletionKeepsActualDiscountedPaymentSnapshot() {
+        var order = new RechargeOrderEntity(); order.setId(91L); order.setCurrency("brl"); order.setPriceCents(39999);
+        var invoice = new Invoice(); invoice.setId("in_brl"); invoice.setCurrency("brl"); invoice.setAmountPaid(35000L);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service(), "completeSubscriptionOrder", order, invoice, "sub_brl");
+        assertEquals("brl", order.getCurrency()); assertEquals(35000, order.getPriceCents());
+        var update = org.mockito.ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(rechargeOrderMapper).update(isNull(), update.capture());
+        assertTrue(update.getValue().getParamNameValuePairs().containsValue("brl"));
+        assertTrue(update.getValue().getParamNameValuePairs().containsValue(35000));
+    }
+
+    @Test
+    void mismatchedInvoiceCurrencyCannotOverwriteConfirmedOrder() {
+        var order = new RechargeOrderEntity(); order.setId(92L); order.setCurrency("brl"); order.setPriceCents(39999);
+        var invoice = new Invoice(); invoice.setId("in_wrong"); invoice.setCurrency("usd"); invoice.setAmountPaid(7999L);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+            () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service(), "completeSubscriptionOrder", order, invoice, "sub_brl"));
+        assertEquals("brl", order.getCurrency()); assertEquals(39999, order.getPriceCents());
+        verify(rechargeOrderMapper, never()).update(any(), any());
+    }
+
     private StripeBillingWebhookService service() {
         return new StripeBillingWebhookService(
                 webhookEventMapper,
@@ -2805,7 +2888,8 @@ class StripeBillingWebhookServiceTest {
                 quotaGatewayProvider,
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
-                transactionManager);
+                transactionManager,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()));
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {

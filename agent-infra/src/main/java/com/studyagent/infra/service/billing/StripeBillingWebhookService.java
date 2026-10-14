@@ -136,6 +136,7 @@ public class StripeBillingWebhookService {
     private final ObjectProvider<BillingRobotNotifyGateway> billingRobotNotifyGatewayProvider;
     private final ObjectProvider<BillingDomainService> billingDomainServiceProvider;
     private final PlatformTransactionManager transactionManager;
+    private final BillingPricingService pricingService;
 
     @Value("${billing.payment-grace-days:3}")
     private int paymentGraceDays = 3;
@@ -934,10 +935,6 @@ public class StripeBillingWebhookService {
                 clearPendingUpgradeCheckoutByOrderNo(order.getOrderNo());
                 return false;
             }
-            if (current != null) {
-                clearPaidTrialPendingConversionTarget(current);
-                releasePendingScheduleIfPresent(current, subscription);
-            }
             if (subscription.getItems() == null
                     || subscription.getItems().getData() == null
                     || subscription.getItems().getData().size() != 1) {
@@ -946,6 +943,14 @@ public class StripeBillingWebhookService {
             SubscriptionItem item = subscription.getItems().getData().get(0);
             SubscriptionPlanEntity currentPlan = requirePlan(order.getPlanCode());
             SubscriptionPlanEntity targetPlan = requirePlan(order.getTargetPlanCode());
+            String currency = BillingPricingService.subscriptionCurrency(subscription);
+            currentPlan = pricedWebhookPlan(currentPlan, currency);
+            targetPlan = pricedWebhookPlan(targetPlan, currency);
+            if (current != null) {
+                clearPaidTrialPendingConversionTarget(current);
+                releasePendingScheduleIfPresent(current, subscription);
+            }
+
             ManualUpgradeSwitchStrategy strategy = resolveManualUpgradeSwitchStrategy(
                     order,
                     currentPlan,
@@ -2009,10 +2014,18 @@ public class StripeBillingWebhookService {
     }
 
     private void completeOrderBySession(Session session, String packageCode, String planCode) {
+        RechargeOrderEntity snapshot = rechargeOrderMapper.selectOne(new LambdaQueryWrapper<RechargeOrderEntity>()
+                .eq(RechargeOrderEntity::getStripeSessionId, session.getId()).last("LIMIT 1"));
+        if (snapshot != null && snapshot.getCurrency() != null && session.getCurrency() != null
+                && !snapshot.getCurrency().equalsIgnoreCase(session.getCurrency()))
+            throw new IllegalStateException("Checkout currency differs from the confirmed order: " + session.getId());
         rechargeOrderMapper.update(null, new LambdaUpdateWrapper<RechargeOrderEntity>()
                 .eq(RechargeOrderEntity::getStripeSessionId, session.getId())
                 .set(RechargeOrderEntity::getPackageCode, packageCode)
                 .set(RechargeOrderEntity::getPlanCode, planCode)
+                .set(session.getCurrency() != null, RechargeOrderEntity::getCurrency, session.getCurrency())
+                .set(session.getAmountTotal() != null, RechargeOrderEntity::getPriceCents,
+                        session.getAmountTotal() == null ? null : Math.toIntExact(session.getAmountTotal()))
                 .set(RechargeOrderEntity::getStripePaymentIntentId, session.getPaymentIntent())
                 .set(session.getInvoice() != null && !session.getInvoice().isBlank(),
                         RechargeOrderEntity::getStripeInvoiceId,
@@ -2175,6 +2188,9 @@ public class StripeBillingWebhookService {
     }
 
     private void completeSubscriptionOrder(RechargeOrderEntity order, Invoice invoice, String subscriptionId) {
+        if (order.getCurrency() != null && invoice.getCurrency() != null
+                && !order.getCurrency().equalsIgnoreCase(invoice.getCurrency()))
+            throw new IllegalStateException("Invoice currency differs from the confirmed order: " + invoice.getId());
         RechargeOrderEntity existingInvoiceOrder = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
@@ -2191,11 +2207,16 @@ public class StripeBillingWebhookService {
                 .eq(RechargeOrderEntity::getId, order.getId())
                 .set(RechargeOrderEntity::getStripeInvoiceId, invoice.getId())
                 .set(RechargeOrderEntity::getStripeSubscriptionId, subscriptionId)
+                .set(invoice.getCurrency() != null, RechargeOrderEntity::getCurrency, invoice.getCurrency())
+                .set(invoice.getAmountPaid() != null, RechargeOrderEntity::getPriceCents,
+                        invoice.getAmountPaid() == null ? null : Math.toIntExact(invoice.getAmountPaid()))
                 .set(RechargeOrderEntity::getStripePaymentIntentId, invoice.getPaymentIntent())
                 .set(RechargeOrderEntity::getStatus, "completed")
                 .set(RechargeOrderEntity::getFailureReason, null)
                 .set(RechargeOrderEntity::getPaidAt, now)
                 .set(RechargeOrderEntity::getUpdatedAt, now));
+        if (invoice.getCurrency() != null) order.setCurrency(invoice.getCurrency());
+        if (invoice.getAmountPaid() != null) order.setPriceCents(Math.toIntExact(invoice.getAmountPaid()));
     }
 
     String resolveInvoiceOrderType(Invoice invoice) {
@@ -2404,6 +2425,15 @@ public class StripeBillingWebhookService {
                 .last("LIMIT 1"));
     }
 
+    private SubscriptionPlanEntity pricedWebhookPlan(SubscriptionPlanEntity source, String currency) {
+        SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setPriceCents(pricingService.amount(source.getStripePriceId(), currency, source.getPriceCents(), source.getCurrency(),
+                IntroTrialPlans.isIntroTrialPlanCode(source.getPlanCode()) ? "week" : source.getBillingInterval(), false, source.getStripeProductId()));
+        copy.setCurrency(currency);
+        return copy;
+    }
+
     private SubscriptionPlanEntity requirePlan(String planCode) {
         // Webhooks reconcile subscriptions/orders created while a plan was sellable.
         // Retiring a plan must not make those historical Stripe events unresolvable.
@@ -2548,9 +2578,11 @@ public class StripeBillingWebhookService {
                     "missing_addon_order_snapshot");
             return null;
         }
-        if (session.getAmountTotal() != null
+        Long expectedAmount = "completed".equals(order.getStatus()) ? session.getAmountTotal()
+                : session.getAmountSubtotal() != null ? session.getAmountSubtotal() : session.getAmountTotal();
+        if (expectedAmount != null
                 && order.getPriceCents() != null
-                && session.getAmountTotal().longValue() != order.getPriceCents().longValue()) {
+                && expectedAmount.longValue() != order.getPriceCents().longValue()) {
             throw new IllegalStateException("Add-on Checkout amount does not match order: " + session.getId());
         }
         if (session.getCurrency() != null

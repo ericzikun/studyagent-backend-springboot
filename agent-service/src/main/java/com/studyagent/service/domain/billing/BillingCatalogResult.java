@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 @Builder
 public class BillingCatalogResult {
+    private boolean regionalPricingEnabled;
     private List<BillingPlan> plans;
     private List<BillingAddon> addons;
     /** 题库通行证一次性购买项；未配置或未启用时为 null。 */

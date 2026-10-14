@@ -56,6 +56,8 @@ public class SubscriptionController {
     public Result<SubscriptionResult> change(
             @RequestBody ChangePlanRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         return execute(clerkUserId, () -> billingDomainService.changeSubscription(clerkUserId, request.getResolvedPlanCode()));
     }
 
@@ -76,6 +78,8 @@ public class SubscriptionController {
     public Result<SubscriptionResult> downgrade(
             @RequestBody ChangePlanRequest request,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        com.studyagent.service.domain.billing.BillingPricingContext.confirm(
+                request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         return execute(clerkUserId, () -> billingDomainService.downgradeSubscription(clerkUserId, request.getResolvedPlanCode()));
     }
 
@@ -86,6 +90,7 @@ public class SubscriptionController {
         try {
             return Result.success(action.execute());
         } catch (BillingDomainException e) {
+            if (e.getCode().startsWith("PRICING_")) return PricingErrors.result(e);
             return switch (e.getCode()) {
                 case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
                 case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED" ->
@@ -110,6 +115,9 @@ public class SubscriptionController {
 
     @Data
     static class ChangePlanRequest {
+        private String expectedCurrency;
+        private Integer expectedAmountCents;
+        private String quoteVersion;
         @JsonAlias({"targetPlanCode", "newPlanCode", "plan_code", "target_plan_code", "new_plan_code"})
         private String planCode;
 

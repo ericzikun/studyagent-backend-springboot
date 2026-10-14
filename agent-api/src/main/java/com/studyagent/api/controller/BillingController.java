@@ -38,6 +38,7 @@ public class BillingController {
         BillingCatalogResult catalog = billingDomainService.getCatalog();
         Map<String, Object> data = new HashMap<>();
         data.put("version", "v2");
+        data.put("regionalPricingEnabled", catalog.isRegionalPricingEnabled());
         data.put("stripePublishableKey", paymentConfig.getStripePublishableKey());
         data.put("plans", catalog.getPlans());
         data.put("addons", catalog.getAddons());
@@ -53,6 +54,18 @@ public class BillingController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         return Result.success(billingDomainService.getCurrentSubscription(clerkUserId));
+    }
+
+    @GetMapping("/quote")
+    public Result<com.studyagent.service.domain.billing.BillingQuote> quote(
+            @RequestParam String kind, @RequestParam String skuCode,
+            @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        try {
+            return Result.success("credit_pack".equals(kind)
+                    ? paymentDomainService.getPurchaseQuote(clerkUserId, skuCode)
+                    : billingDomainService.getPurchaseQuote(clerkUserId, kind, skuCode));
+        } catch (BillingDomainException e) { return PricingErrors.result(e); }
     }
 
     @GetMapping("/records")
@@ -109,6 +122,7 @@ public class BillingController {
     }
 
     private <T> Result<T> mapBillingException(BillingDomainException e) {
+        if (e.getCode().startsWith("PRICING_")) return PricingErrors.result(e);
         return switch (e.getCode()) {
             case "STRIPE_NOT_CONFIGURED" -> Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
             case "STRIPE_CUSTOMER_NOT_FOUND" -> Result.error(ApiCode.BILLING_CUSTOMER_NOT_FOUND);

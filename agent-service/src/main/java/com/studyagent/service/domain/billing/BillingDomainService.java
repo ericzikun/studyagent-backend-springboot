@@ -5,6 +5,8 @@ import com.studyagent.service.domain.payment.CheckoutSessionResult;
 public interface BillingDomainService {
     BillingCatalogResult getCatalog();
 
+    BillingQuote getPurchaseQuote(String clerkUserId, String kind, String skuCode);
+
     CheckoutSessionResult createSubscriptionCheckout(
             String clerkUserId,
             String customerEmail,

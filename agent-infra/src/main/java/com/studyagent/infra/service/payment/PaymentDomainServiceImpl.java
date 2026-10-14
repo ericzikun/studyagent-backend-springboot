@@ -35,6 +35,8 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
     private final AiFeaturePackageMapper aiFeaturePackageMapper;
     private final RechargeOrderMapper rechargeOrderMapper;
+    private final com.studyagent.infra.service.billing.BillingPricingService pricingService;
+    private final com.studyagent.service.domain.user.ClerkClient clerkClient;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -106,6 +108,16 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         String finalCancelUrl = command.getCancelUrl() != null && !command.getCancelUrl().isEmpty()
                 ? command.getCancelUrl() : cancelUrl;
 
+        String currency = pricingService.newPurchaseCurrency();
+        int amount = pricingService.amount(targetPriceId, currency, pkg.getPriceCents(), pkg.getCurrency(), null, true, null);
+        var quote = pricingService.quote(command.getClerkUserId(), "credit_pack", pkg.getPackageCode(), "purchase",
+                currency, amount, null, null, null, targetPriceId, null);
+        pricingService.assertConfirmed(quote);
+        String email = command.getCustomerEmail();
+        if (email == null || email.isBlank()) email = clerkClient.getUserEmail(command.getClerkUserId());
+        if (email == null || email.isBlank())
+            throw new com.studyagent.service.domain.billing.BillingDomainException("CUSTOMER_EMAIL_UNAVAILABLE", "Verified account email is unavailable");
+
         if (!finalSuccessUrl.contains("{CHECKOUT_SESSION_ID}")) {
             finalSuccessUrl = finalSuccessUrl + (finalSuccessUrl.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
         }
@@ -119,6 +131,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
 
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setCurrency(currency)
                 .setSuccessUrl(finalSuccessUrl)
                 .setCancelUrl(finalCancelUrl)
                 .addLineItem(
@@ -127,7 +140,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                                 .setQuantity(1L)
                                 .build()
                 )
-                .setCustomerEmail(command.getCustomerEmail())
+                .setCustomerEmail(email)
                 .putMetadata("package_type", command.getPackageType())
                 .putMetadata("feature_code", pkg.getFeatureCode())
                 .putMetadata("clerk_user_id", command.getClerkUserId() != null ? command.getClerkUserId() : "")
@@ -229,6 +242,17 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
             m.put("featureCode", e.getFeatureCode());
             m.put("priceCents", e.getPriceCents());
             m.put("currency", e.getCurrency() != null ? e.getCurrency() : "usd");
+            if (pricingService.isEnabled()) {
+                try {
+                    if (e.getStripePriceId() == null || !e.getStripePriceId().startsWith("price_")) continue;
+                    String currency = pricingService.newPurchaseCurrency();
+                    m.put("priceCents", pricingService.amount(e.getStripePriceId(), currency, e.getPriceCents(), e.getCurrency(), null, true, null));
+                    m.put("currency", currency);
+                } catch (com.studyagent.service.domain.billing.BillingDomainException unavailable) {
+                    if (!"PRICING_CURRENCY_UNAVAILABLE".equals(unavailable.getCode())) throw unavailable;
+                    continue;
+                }
+            }
             m.put("label", e.getLabel() != null ? e.getLabel() : "normal");
             packages.add(m);
         }
@@ -250,6 +274,16 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                 new LambdaQueryWrapper<AiFeaturePackageEntity>()
                         .eq(AiFeaturePackageEntity::getPackageCode, packageCode)
                         .eq(AiFeaturePackageEntity::getIsActive, true));
+    }
+
+    @Override
+    public com.studyagent.service.domain.billing.BillingQuote getPurchaseQuote(String user, String packageCode) {
+        AiFeaturePackageEntity pkg = findPackageByCode(packageCode);
+        if (pkg == null || pkg.getStripePriceId() == null || !pkg.getStripePriceId().startsWith("price_"))
+            throw new com.studyagent.service.domain.billing.BillingDomainException("PRICING_NOT_ELIGIBLE", "This package is not configured for purchase");
+        String currency = pricingService.newPurchaseCurrency();
+        int amount = pricingService.amount(pkg.getStripePriceId(), currency, pkg.getPriceCents(), pkg.getCurrency(), null, true, null);
+        return pricingService.quote(user, "credit_pack", packageCode, "purchase", currency, amount, null, null, null, pkg.getStripePriceId(), null);
     }
 
     private String resolveQuotaUnit(String featureCode) {

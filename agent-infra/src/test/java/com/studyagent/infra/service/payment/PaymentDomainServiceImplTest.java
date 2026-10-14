@@ -51,7 +51,8 @@ class PaymentDomainServiceImplTest {
         when(aiFeaturePackageMapper.selectList(any(Wrapper.class))).thenReturn(List.of(detection, assignment));
 
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
         ReflectionTestUtils.setField(service, "stripePublishableKey", "pk_test_123");
 
         var result = service.getPaymentConfig();
@@ -66,7 +67,8 @@ class PaymentDomainServiceImplTest {
     @Test
     void getSessionStatusReturnsPaidForMockCheckoutSession() {
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper);
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
         ReflectionTestUtils.setField(service, "paymentCheckoutMockEnabled", true);
 
         var result = service.getSessionStatus("mock_cs_123");
@@ -85,7 +87,8 @@ class PaymentDomainServiceImplTest {
         when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
 
         PaymentDomainServiceImpl service =
-                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper) {
+                new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
                     @Override
                     Session retrieveStripeCheckoutSession(String sessionId) {
                         Session session = new Session();
@@ -104,7 +107,8 @@ class PaymentDomainServiceImplTest {
     }
     @Test
     void sessionStatusReturnsAuthoritativeStudyPassPurchaseType() {
-        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper) {
+        PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
             @Override
             Session retrieveStripeCheckoutSession(String id) {
                 Session session = new Session();

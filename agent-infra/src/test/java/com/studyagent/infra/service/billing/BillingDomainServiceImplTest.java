@@ -94,6 +94,10 @@ class BillingDomainServiceImplTest {
     @Mock
     private UserSubscriptionBootstrapService userSubscriptionBootstrapService;
 
+    private final StripePriceGateway regionalPrices = org.mockito.Mockito.mock(StripePriceGateway.class);
+    private final BillingRegionalPricingProperties regionalConfiguration = new BillingRegionalPricingProperties();
+    private final BillingPricingService regionalPricing = new BillingPricingService(regionalPrices, regionalConfiguration);
+
     @Test
     void getCatalogMapsActivePlansAndAddons() {
         SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
@@ -167,20 +171,20 @@ class BillingDomainServiceImplTest {
         monthlyTrial.setTrialDays(7);
 
         when(subscriptionPlanMapper.selectList(any(Wrapper.class)))
-                .thenReturn(List.of(proTrialMonthly, proTrialYearly, onceRetired, monthlyTrial));
+                 .thenReturn(List.of(proTrialMonthly, proTrialYearly, onceRetired, monthlyTrial));
+        for (var offer : List.of(proTrialMonthly, proTrialYearly, onceRetired, monthlyTrial)) {
+            offer.setPriceCents(299); offer.setCurrency("usd");
+        }
         when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
 
         var result = service().getCatalog();
 
-        assertEquals(2, result.getPlans().size());
+        assertEquals(1, result.getPlans().size());
         assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY, result.getPlans().get(0).getPlanCode());
         assertEquals(
                 IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
                 result.getPlans().get(0).getConvertsToPlanCode());
-        assertEquals(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY, result.getPlans().get(1).getPlanCode());
-        assertEquals(
-                IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY,
-                result.getPlans().get(1).getConvertsToPlanCode());
+
     }
 
     @Test
@@ -1383,7 +1387,13 @@ class BillingDomainServiceImplTest {
                 planQuotaService,
                 userRepository,
                 quotaVipAccessService,
-                userSubscriptionBootstrapService) {
+                userSubscriptionBootstrapService,
+                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+            @Override Customer retrieveStripeCustomer(String id) {
+                var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
+                customer.setMetadata(java.util.Map.of()); return customer;
+            }
+            @Override Customer updateStripeCustomer(Customer customer, com.stripe.param.CustomerUpdateParams params) { return customer; }
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1477,7 +1487,13 @@ class BillingDomainServiceImplTest {
                 planQuotaService,
                 userRepository,
                 quotaVipAccessService,
-                userSubscriptionBootstrapService) {
+                userSubscriptionBootstrapService,
+                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+            @Override Customer retrieveStripeCustomer(String id) {
+                var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
+                customer.setMetadata(java.util.Map.of()); return customer;
+            }
+            @Override Customer updateStripeCustomer(Customer customer, com.stripe.param.CustomerUpdateParams params) { return customer; }
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1527,7 +1543,13 @@ class BillingDomainServiceImplTest {
                 planQuotaService,
                 userRepository,
                 quotaVipAccessService,
-                userSubscriptionBootstrapService) {
+                userSubscriptionBootstrapService,
+                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+            @Override Customer retrieveStripeCustomer(String id) {
+                var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
+                customer.setMetadata(java.util.Map.of()); return customer;
+            }
+            @Override Customer updateStripeCustomer(Customer customer, com.stripe.param.CustomerUpdateParams params) { return customer; }
             @Override
             Session createStripeCheckoutSession(SessionCreateParams params) {
                 Session session = new Session();
@@ -1571,6 +1593,7 @@ class BillingDomainServiceImplTest {
         pending.setOrderType("subscription_initial");
         pending.setPlanCode("basic_monthly");
         pending.setStripeSessionId("cs_concurrent_open");
+        pending.setCurrency("usd"); pending.setPriceCents(1999);
         pending.setStatus("pending");
 
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan);
@@ -1665,6 +1688,7 @@ class BillingDomainServiceImplTest {
         pending.setClerkUserId("user_5");
         pending.setOrderType("subscription_initial");
         pending.setPlanCode("plus_yearly");
+        pending.setPriceCents(19188); pending.setCurrency("usd");
         pending.setStripeSessionId("cs_existing_open");
         pending.setStatus("pending");
 
@@ -2413,6 +2437,117 @@ class BillingDomainServiceImplTest {
         assertEquals("cus_stale", subscription.getStripeCustomerId());
     }
 
+    @Test
+    void brazilQuoteBindsTrialAndRenewalBeforeAnyStripeWrite() throws Exception {
+        regionalConfiguration.setEnabled(true);
+        var trial = plan("pro_trial_to_monthly", "pro", "month", 299);
+        trial.setStripePriceId("price_trial"); trial.setCurrency("usd"); trial.setIsActive(true);
+        trial.setOfferKind("pro_paid_trial"); trial.setTrialDays(7); trial.setConvertsToPlanCode("pro_monthly");
+        var monthly = plan("pro_monthly", "pro", "month", 7999);
+        monthly.setStripePriceId("price_monthly"); monthly.setCurrency("usd"); monthly.setIsActive(true);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(trial, monthly);
+        when(regionalPrices.retrieve("price_trial", false)).thenReturn(regionalPrice("price_trial", "week", 299, 499));
+        when(regionalPrices.retrieve("price_monthly", false)).thenReturn(regionalPrice("price_monthly", "month", 7999, 39999));
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("BR")) {
+            var quote = service().getPurchaseQuote("user_br", "subscription", "pro_trial_to_monthly");
+            assertEquals("brl", quote.getCurrency()); assertEquals(499, quote.getAmountCents());
+            assertEquals(39999, quote.getRenewalAmountCents()); assertEquals("brl", quote.getRenewalCurrency());
+            assertEquals(7, quote.getTrialDays());
+            verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+            verify(userSubscriptionMapper, never()).update(any(), any());
+            assertEquals(299, trial.getPriceCents()); assertEquals("usd", trial.getCurrency());
+        }
+    }
+
+    @Test
+    void brazilConversionPhasesKeepSevenDayBoundaryAndCurrencyWhenFlagIsOff() throws Exception {
+        var service = new TestBillingDomainService();
+        var subscription = new Subscription(); subscription.setId("sub_br"); subscription.setCurrency("brl");
+        subscription.setCurrentPeriodStart(1700000000L); subscription.setCurrentPeriodEnd(1700604800L);
+        var item = new com.stripe.model.SubscriptionItem(); item.setQuantity(1L);
+        var price = new com.stripe.model.Price(); price.setId("price_trial"); item.setPrice(price);
+        var items = new com.stripe.model.SubscriptionItemCollection(); items.setData(List.of(item)); subscription.setItems(items);
+        var conversion = plan("pro_monthly", "pro", "month", 39999); conversion.setCurrency("brl"); conversion.setStripePriceId("price_monthly");
+        var schedule = new SubscriptionSchedule(); schedule.setId("sub_sched_br"); service.updatedScheduleToReturn = schedule;
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "applyIntroTrialConversionPhases", schedule, subscription, conversion, "user_br", "pro_monthly");
+        var phases = service.lastScheduleUpdateParams.getPhases();
+        assertEquals(2, phases.size()); assertEquals("brl", phases.get(0).getCurrency()); assertEquals("brl", phases.get(1).getCurrency());
+        assertEquals(604800L, (Long) phases.get(0).getEndDate() - (Long) phases.get(0).getStartDate());
+        assertEquals(phases.get(0).getEndDate(), phases.get(1).getStartDate());
+        assertEquals("price_monthly", phases.get(1).getItems().get(0).getPrice());
+    }
+
+    @Test
+    void enabledRegionalPricingRejectsUnrestrictedPortalBeforeCreatingSession() throws Exception {
+        regionalConfiguration.setEnabled(true);
+        var user = new UserSubscriptionEntity(); user.setStripeCustomerId("cus_owned");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+        var service = new TestBillingDomainService(); setStripeSecretKey(service, "sk_test_123");
+        assertEquals("PRICING_CURRENCY_UNAVAILABLE", assertThrows(BillingDomainException.class,
+            () -> service.createBillingPortalSession("user_1", "http://localhost:3001/pricing")).getCode());
+        assertEquals(0, service.portalAttempts);
+    }
+
+    @Test
+    void brlCheckoutUpdatesOwnedCustomerEmailAndPersistsConfirmedCurrency() throws Exception {
+        regionalConfiguration.setEnabled(true);
+        var plan = plan("pro_monthly", "pro", "month", 7999); plan.setCurrency("usd"); plan.setStripePriceId("price_monthly"); plan.setIsActive(true);
+        var user = new UserSubscriptionEntity(); user.setId(71L); user.setClerkUserId("user_br"); user.setTier("free"); user.setStatus("free"); user.setStripeCustomerId("cus_owned");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_br")).thenReturn(user);
+        when(regionalPrices.retrieve("price_monthly", false)).thenReturn(regionalPrice("price_monthly", "month", 7999, 39999));
+        when(regionalPrices.retrieve("price_monthly", true)).thenReturn(regionalPrice("price_monthly", "month", 7999, 39999));
+        var service = new TestBillingDomainService(); service.checkoutAttempts = 1; setStripeSecretKey(service, "sk_test_123");
+        var pending = new RechargeOrderEntity(); pending.setId(72L); pending.setClerkUserId("user_br"); pending.setPlanCode("pro_monthly");
+        pending.setCurrency("usd"); pending.setPriceCents(7999); pending.setStripeSessionId("cs_old_usd"); pending.setStatus("pending");
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(pending);
+        var old = new Session(); old.setId("cs_old_usd"); old.setStatus("open"); old.setUrl("https://checkout.stripe.test/old-usd");
+        old.setExpiresAt(Instant.now().plusSeconds(1800).getEpochSecond()); old.setClientReferenceId("user_br"); old.setCurrency("usd"); old.setAmountSubtotal(7999L);
+        var oldLine = new com.stripe.model.LineItem(); var oldPrice = new com.stripe.model.Price(); oldPrice.setId("price_monthly"); oldLine.setPrice(oldPrice); oldLine.setQuantity(1L);
+        var oldLines = new com.stripe.model.LineItemCollection(); oldLines.setData(List.of(oldLine)); old.setLineItems(oldLines); service.checkoutSnapshotToRetrieve = old;
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("BR")) {
+            var quote = service.getPurchaseQuote("user_br", "subscription", "pro_monthly");
+            com.studyagent.service.domain.billing.BillingPricingContext.confirm(quote.getCurrency(), quote.getAmountCents(), quote.getQuoteVersion());
+            service.createSubscriptionCheckout("user_br", "verified+location_BR@example.com", "pro_monthly", "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
+            assertEquals("cs_old_usd", service.expiredCheckoutSessionId);
+            assertEquals("brl", service.lastCheckoutParams.getCurrency());
+            assertEquals(SessionCreateParams.Mode.SUBSCRIPTION, service.lastCheckoutParams.getMode());
+            assertEquals("price_monthly", service.lastCheckoutParams.getLineItems().get(0).getPrice());
+            assertEquals(1L, service.lastCheckoutParams.getLineItems().get(0).getQuantity());
+            assertEquals("verified+location_BR@example.com", service.lastCustomerUpdateParams.getEmail());
+            var saved = ArgumentCaptor.forClass(RechargeOrderEntity.class); verify(rechargeOrderMapper).insert(saved.capture());
+            assertEquals("brl", saved.getValue().getCurrency()); assertEquals(39999, saved.getValue().getPriceCents());
+        }
+    }
+
+    @Test
+    void travelingKrwMemberAddonQuoteKeepsContractCurrency() throws Exception {
+        regionalConfiguration.setEnabled(true);
+        var user = new UserSubscriptionEntity(); user.setClerkUserId("user_kr"); user.setPlanCode("pro_monthly"); user.setTier("pro"); user.setStatus("active"); user.setStripeSubscriptionId("sub_kr");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+        var addon = new AddonPackageDefEntity(); addon.setAddonCode("extra"); addon.setValidityMonths(1); addon.setFeatureCode("humanizer"); addon.setQuotaAmount(1000L); addon.setStripePriceId("price_extra"); addon.setCurrency("usd"); addon.setPriceCents(999); addon.setIsActive(true);
+        when(addonPackageDefMapper.selectOne(any(Wrapper.class))).thenReturn(addon);
+        var price = new com.stripe.model.Price(); price.setId("price_extra"); price.setActive(true); price.setLivemode(false); price.setCurrency("usd"); price.setUnitAmount(999L);
+        var won = new com.stripe.model.Price.CurrencyOption(); won.setUnitAmount(12300L); price.setCurrencyOptions(Map.of("krw", won));
+        when(regionalPrices.retrieve("price_extra", false)).thenReturn(price);
+        var service = new TestBillingDomainService(); service.subscriptionToRetrieve = new Subscription(); service.subscriptionToRetrieve.setCurrency("krw");
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("BR")) {
+            var quote = service.getPurchaseQuote("user_kr", "addon", "extra"); assertEquals("krw", quote.getCurrency()); assertEquals(12300, quote.getAmountCents());
+        }
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("US")) {
+            var quote = service.getPurchaseQuote("user_kr", "addon", "extra"); assertEquals("krw", quote.getCurrency()); assertEquals(12300, quote.getAmountCents());
+        }
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    private com.stripe.model.Price regionalPrice(String id, String interval, long usd, long brl) {
+        var price = new com.stripe.model.Price(); price.setId(id); price.setCurrency("usd"); price.setUnitAmount(usd);
+        price.setActive(true); price.setLivemode(false);
+        var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval(interval); recurring.setIntervalCount(1L); price.setRecurring(recurring);
+        var option = new com.stripe.model.Price.CurrencyOption(); option.setUnitAmount(brl); price.setCurrencyOptions(Map.of("brl", option)); return price;
+    }
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
@@ -2424,7 +2559,8 @@ class BillingDomainServiceImplTest {
                 planQuotaService,
                 userRepository,
                 quotaVipAccessService,
-                userSubscriptionBootstrapService);
+                userSubscriptionBootstrapService,
+                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -2461,6 +2597,7 @@ class BillingDomainServiceImplTest {
         private String checkoutSessionInvoiceId;
         private String checkoutSessionSubscriptionId;
         private String checkoutSessionStatus;
+        private Session checkoutSnapshotToRetrieve;
         private String checkoutSessionUrl;
         private Long checkoutSessionExpiresAt;
         private String expiredCheckoutSessionId;
@@ -2472,6 +2609,8 @@ class BillingDomainServiceImplTest {
         private String releasedScheduleId;
         private int createdSchedules;
         private int updatedSchedules;
+        private SubscriptionScheduleUpdateParams lastScheduleUpdateParams;
+        private com.stripe.param.CustomerUpdateParams lastCustomerUpdateParams;
         private SubscriptionUpdateParams lastSubscriptionUpdateParams;
         private RequestOptions lastSubscriptionUpdateOptions;
         private List<Invoice> openInvoicesToReturn = List.of();
@@ -2492,8 +2631,21 @@ class BillingDomainServiceImplTest {
                     planQuotaService,
                     userRepository,
                     quotaVipAccessService,
-                    userSubscriptionBootstrapService);
+                    userSubscriptionBootstrapService,
+                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
         }
+
+        @Override
+        Customer retrieveStripeCustomer(String id) {
+            Customer customer = new Customer();
+            customer.setId(id);
+            customer.setEmail("user@example.com");
+            customer.setMetadata(java.util.Map.of());
+            return customer;
+        }
+
+        @Override
+        Customer updateStripeCustomer(Customer customer, com.stripe.param.CustomerUpdateParams params) { lastCustomerUpdateParams = params; return customer; }
 
         @Override
         Customer createStripeCustomer(CustomerCreateParams params) throws com.stripe.exception.StripeException {
@@ -2564,11 +2716,24 @@ class BillingDomainServiceImplTest {
         Session retrieveStripeCheckoutSession(String sessionId) throws com.stripe.exception.StripeException {
             checkoutSessionRetrieveAttempts++;
             lastRetrievedCheckoutSessionId = sessionId;
+            if (checkoutSnapshotToRetrieve != null) return checkoutSnapshotToRetrieve;
             Session session = new Session();
             session.setId(sessionId);
             session.setInvoice(checkoutSessionInvoiceId);
             session.setSubscription(checkoutSessionSubscriptionId);
             session.setStatus(checkoutSessionStatus);
+            if ("cs_concurrent_open".equals(sessionId)) {
+                session.setClientReferenceId("user_concurrent_first_checkout"); session.setCurrency("usd"); session.setAmountSubtotal(1999L);
+                var price = new com.stripe.model.Price(); price.setId("price_basic_monthly");
+                var item = new com.stripe.model.LineItem(); item.setPrice(price); item.setQuantity(1L);
+                var lines = new com.stripe.model.LineItemCollection(); lines.setData(List.of(item)); session.setLineItems(lines);
+            }
+            if ("cs_existing_open".equals(sessionId)) {
+                session.setClientReferenceId("user_5"); session.setCurrency("usd"); session.setAmountSubtotal(19188L);
+                var price = new com.stripe.model.Price(); price.setId("price_plus_yearly");
+                var item = new com.stripe.model.LineItem(); item.setPrice(price); item.setQuantity(1L);
+                var lines = new com.stripe.model.LineItemCollection(); lines.setData(List.of(item)); session.setLineItems(lines);
+            }
             session.setUrl(checkoutSessionUrl);
             session.setExpiresAt(checkoutSessionExpiresAt);
             return session;
@@ -2589,6 +2754,7 @@ class BillingDomainServiceImplTest {
                 return subscriptionToRetrieve;
             }
             Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
             subscription.setId(subscriptionId);
             subscription.setSchedule(null);
             subscription.setLatestInvoice(subscriptionLatestInvoiceId);
@@ -2627,6 +2793,7 @@ class BillingDomainServiceImplTest {
                 throw scheduleUpdateFailure;
             }
             updatedSchedules++;
+            lastScheduleUpdateParams = params;
             return updatedScheduleToReturn;
         }
 
@@ -2708,6 +2875,7 @@ class BillingDomainServiceImplTest {
             Long periodStart,
             Long periodEnd) {
         Subscription subscription = new Subscription();
+        subscription.setCurrency("usd");
         subscription.setId(subscriptionId);
         subscription.setSchedule(scheduleId);
         subscription.setCurrentPeriodStart(periodStart);

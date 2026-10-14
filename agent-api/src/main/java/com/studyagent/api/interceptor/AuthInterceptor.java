@@ -50,6 +50,9 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 公开目录可匿名访问；携带身份时仍必须验证，才能提供有效订阅币种。
+        if (("/v1/billing/config".equals(request.getRequestURI()) || "/v1/payment/config".equals(request.getRequestURI()))
+                && (request.getHeader("Authorization") == null || request.getHeader("Authorization").isBlank())) return true;
         // 允许 OPTIONS 预检请求（CORS）
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
@@ -134,6 +137,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             
             // 将用户信息存储到 request 属性中
             request.setAttribute("clerkUserId", userInfo.clerkUserId);
+            com.studyagent.service.domain.billing.BillingPricingContext.identify(userInfo.clerkUserId);
             request.setAttribute("userInfo", userInfo);
             // 注入 userId 到 MDC，供日志框架自动携带（配合 TraceIdFilter 清理）
             TraceIdUtil.setUserId(userInfo.clerkUserId);

@@ -24,4 +24,15 @@ public class VideoTutorTurnRequest {
      * 允许别名 / 大小写，落库前由 OutputLanguage.fromRaw 归一化。
      */
     private String outputLanguage;
+
+    /**
+     * 学生是否开启了声音（前端开关）。
+     * <p>
+     * 每轮都带、<b>不落库</b>：它是"这一轮要不要朗读"的即时意图，不是会话属性 ——
+     * 学生随时可以关掉（例如进了图书馆），下一轮就该立刻安静。
+     * <p>
+     * 缺省 / null 一律按 <b>false</b> 处理：语音是增量能力，老客户端不带这个字段时，
+     * 链路必须与加语音之前完全一致（Python 侧一次合成都不会发生）。
+     */
+    private Boolean soundEnabled;
 }

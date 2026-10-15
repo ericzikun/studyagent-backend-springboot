@@ -81,6 +81,23 @@ class VerlaVideoTutorHttpBindingTest {
         assertThat(turnOrchestrator.lastUserId).isEqualTo("user_1");
         assertThat(turnOrchestrator.lastConversationId).isEqualTo(24L);
         assertThat(turnOrchestrator.lastMessage).isEqualTo("k 不存在怎么办？");
+        // 老客户端不带这个字段 ⇒ 必须按静音处理，链路与加语音之前一致
+        assertThat(turnOrchestrator.lastSoundEnabled).isFalse();
+    }
+
+    @Test
+    void soundEnabledFlag_shouldReachTheOrchestrator() throws Exception {
+        turnOrchestrator.result = SendMessageResult.builder().turnId(456L).agentSessionId(789L).build();
+
+        mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/messages")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"message": "接着讲", "soundEnabled": true}
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(turnOrchestrator.lastSoundEnabled).isTrue();
     }
 
     @Test
@@ -226,6 +243,7 @@ class VerlaVideoTutorHttpBindingTest {
         private String lastUserId;
         private Long lastConversationId;
         private String lastMessage;
+        private Boolean lastSoundEnabled;
         private Long lastCancelledSessionId;
         private Long lastCancelledConversationId;
         private SendMessageResult result;
@@ -237,7 +255,9 @@ class VerlaVideoTutorHttpBindingTest {
 
         @Override
         public SendMessageResult startVideoTutorTurn(
-                String userId, Long conversationId, String message, String outputLanguage) {
+                String userId, Long conversationId, String message, String outputLanguage,
+                boolean soundEnabled) {
+            this.lastSoundEnabled = soundEnabled;
             this.lastUserId = userId;
             this.lastConversationId = conversationId;
             this.lastMessage = message;

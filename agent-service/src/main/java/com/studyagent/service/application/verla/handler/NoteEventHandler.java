@@ -22,7 +22,7 @@ import java.util.Set;
  * Notes demo 的事件投影：把主线通道回流的 {@code NOTE_*} 事件落进 demo 自己的会话行
  * （并把 AI 写入的文档、助手回复一起落库），同时推进 {@code verla_sessions.status}。
  *
- * <p><b>只订阅需要 Java 侧动作的 5 个事件。</b>{@code NOTE_PARSE_COMPLETED /
+ * <p><b>只订阅需要 Java 侧动作的 6 个事件。</b>{@code NOTE_PARSE_COMPLETED /
  * NOTE_SUMMARIZE_STARTED / NOTE_CHAT_STREAM_CHUNK / NOTE_ARTIFACT_BEGIN /
  * NOTE_ARTIFACT_DELTA} 是纯前端渲染事件，由
  * {@link com.studyagent.service.application.verla.VerlaInboxService} 无条件推给 SSE，
@@ -43,6 +43,7 @@ public class NoteEventHandler implements VerlaEventHandler {
 
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
             VerlaAgentEventType.NOTE_PARSE_STARTED,
+            VerlaAgentEventType.NOTE_TITLE_RESOLVED,
             VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
             VerlaAgentEventType.NOTE_TURN_COMPLETED,
             VerlaAgentEventType.NOTE_FAILED,
@@ -66,6 +67,9 @@ public class NoteEventHandler implements VerlaEventHandler {
         switch (type) {
             // 首轮解析开始 = 本回合真正启动（后续轮没有解析阶段，靠 TURN_COMPLETED 直接收口）
             case NOTE_PARSE_STARTED -> advanceSession(row.getSessionId(), SessionEvent.AGENT_STARTED);
+            // AI 起的会话名：demo 表 + 主线表一起写（两处展示读的是不同表）
+            case NOTE_TITLE_RESOLVED ->
+                    demoNoteService.applyGeneratedTitle(row.getConversationId(), asString(payload.get("title")));
             // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
             case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
             case NOTE_TURN_COMPLETED -> completeTurn(row, payload);

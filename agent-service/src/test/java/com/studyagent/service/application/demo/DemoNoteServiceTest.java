@@ -351,6 +351,47 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void generated_title_writes_both_tables() {
+        NoteConversation conversation = draft();
+        conversation.setTitle("Biz Ethics SP 2025.pdf");
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.applyGeneratedTitle(VERLA_CONVERSATION_ID, "  Business Ethics Memo Guidelines  ");
+
+        assertEquals("Business Ethics Memo Guidelines", conversation.getTitle());
+        // 工作台读 demo 表、Dashboard 读主线表：两处都必须写
+        verify(verlaConversationService).rename(
+                "user_1", VERLA_CONVERSATION_ID, "Business Ethics Memo Guidelines");
+    }
+
+    @Test
+    void generated_title_ignores_blank_and_keeps_status_version_untouched() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("generating");
+        conversation.setNoteVersion(3L);
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        service.applyGeneratedTitle(VERLA_CONVERSATION_ID, "   ");
+
+        verify(repo, never()).saveConversation(any(NoteConversation.class));
+        verify(verlaConversationService, never()).rename(any(), any(), any());
+        assertEquals("generating", conversation.getStatus());
+        assertEquals(3L, conversation.getNoteVersion());
+    }
+
+    @Test
+    void generated_title_for_an_unlinked_conversation_only_warns() {
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.empty());
+
+        // 标题丢失只是不好看：绝不能抛异常（handler 抛异常会让该事件标 FAILED、cursor 不推进，
+        // 用「好不好看」的失败把整条会话卡住）
+        service.applyGeneratedTitle(VERLA_CONVERSATION_ID, "Some Title");
+
+        verify(repo, never()).saveConversation(any(NoteConversation.class));
+    }
+
+    @Test
     void resolve_conversation_id_rejects_non_public_numeric_identifier() {
         assertThrows(BusinessException.class, () -> service.resolveConversationId("user_1", ""));
         assertThrows(BusinessException.class, () -> service.resolveConversationId("user_1", "not-an-id"));

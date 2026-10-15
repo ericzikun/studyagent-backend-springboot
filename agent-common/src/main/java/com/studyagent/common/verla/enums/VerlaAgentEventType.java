@@ -178,6 +178,8 @@ public enum VerlaAgentEventType {
      */
     NOTE_PARSE_STARTED(false),
     NOTE_PARSE_COMPLETED(false),
+    /** 会话名：首轮由便宜模型依据素材内容生成（与主 Agent 并发）。Java 同步写 demo 表 + 主线表标题。 */
+    NOTE_TITLE_RESOLVED(false),
     NOTE_SUMMARIZE_STARTED(false),
     NOTE_CHAT_STREAM_CHUNK(false),
     NOTE_ARTIFACT_BEGIN(false),

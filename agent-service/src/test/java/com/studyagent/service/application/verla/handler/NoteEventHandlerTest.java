@@ -50,11 +50,23 @@ class NoteEventHandlerTest {
         assertEquals(
                 java.util.Set.of(
                         VerlaAgentEventType.NOTE_PARSE_STARTED,
+                        VerlaAgentEventType.NOTE_TITLE_RESOLVED,
                         VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
                         VerlaAgentEventType.NOTE_TURN_COMPLETED,
                         VerlaAgentEventType.NOTE_FAILED,
                         VerlaAgentEventType.NOTE_CANCELLED),
                 handler.supportedTypes());
+    }
+
+    @Test
+    void title_resolved_writes_the_generated_name_and_does_not_touch_session() {
+        handler.handle(
+                row(VerlaAgentEventType.NOTE_TITLE_RESOLVED),
+                env(VerlaAgentEventType.NOTE_TITLE_RESOLVED, Map.of("title", "Business Ethics Memo Guidelines")));
+
+        verify(demoNoteService).applyGeneratedTitle(VERLA_CONVERSATION_ID, "Business Ethics Memo Guidelines");
+        // 起名与生成进度无关：不该推进 session 状态
+        verify(sessionRepository, never()).save(any());
     }
 
     @Test

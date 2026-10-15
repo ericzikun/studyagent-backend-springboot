@@ -286,6 +286,35 @@ public class DemoNoteService {
     // ============ 用户编辑 / 结果回填 ============
 
     /**
+     * AI 起的会话名（{@code NOTE_TITLE_RESOLVED}）：写 demo 表并同步主线表。
+     * <p>两张表必须一起写：工作台左栏读 demo 表、Dashboard 的 AI Note 分区读主线表，
+     * 只写一处就会出现「列表里一个名字、工作台里另一个」。
+     * <p>只动标题，不碰 status / note_version（起名与生成进度无关）。
+     * <p><b>刻意不抛异常</b>（与 {@link #applyArtifactCommit} 相反）：正文丢了是数据事故，
+     * 而标题丢了只是不好看 —— handler 抛异常会让该行标 FAILED 且 cursor 不推进，
+     * 用一次"好不好看"的失败把整条会话卡住不划算，所以这里降级成可 grep 的 WARN。
+     */
+    @Transactional
+    public void applyGeneratedTitle(Long verlaConversationId, String title) {
+        String trimmed = blankToNull(title);
+        if (trimmed == null) {
+            return;
+        }
+        NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+        if (c == null) {
+            log.warn("[Notes] title dropped: no note conversation linked to verlaConvId={}",
+                    verlaConversationId);
+            return;
+        }
+        String next = truncate(trimmed, TITLE_MAX_LENGTH);
+        c.setTitle(next);
+        repo.saveConversation(c);
+        syncMainlineTitle(c.getClerkUserId(), c);
+        log.info("[Notes] generated title applied verlaConvId={} title={}", verlaConversationId, next);
+    }
+
+
+    /**
      * 用户手改保存：以传入 baseVersion 做乐观锁，成功后版本 +1。
      * <p>与 AI 写入（{@link #applyArtifactCommit}）分开：AI 写入不能被记成用户编辑，
      * 用户编辑也不能覆盖 AI 之后的新版本 —— 版本不匹配时让前端重新拉快照再重试。

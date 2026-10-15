@@ -329,7 +329,7 @@ public class VerlaConversationDashboardStatusService {
                     AITUTOR_FAILED, AITUTOR_CANCELLED -> null;
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
             // Notes demo 会话不属于任何商业分栏，不进 Dashboard 状态推导。
-            case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_SUMMARIZE_STARTED,
+            case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_TITLE_RESOLVED, NOTE_SUMMARIZE_STARTED,
                     NOTE_CHAT_STREAM_CHUNK, NOTE_ARTIFACT_BEGIN, NOTE_ARTIFACT_DELTA,
                     NOTE_ARTIFACT_COMMIT, NOTE_TURN_COMPLETED, NOTE_FAILED, NOTE_CANCELLED -> null;
             // Video Tutor 是独立产品入口，按主流程口径给状态；不像 FILE_CHAT /

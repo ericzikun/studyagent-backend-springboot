@@ -355,7 +355,8 @@ public class VerlaTurnOrchestrator {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public SendMessageResult startVideoTutorTurn(
-            String userId, Long conversationId, String message, String outputLanguage) {
+            String userId, Long conversationId, String message, String outputLanguage,
+            boolean soundEnabled) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         String text = message == null ? "" : message.trim();
 
@@ -386,7 +387,7 @@ public class VerlaTurnOrchestrator {
         refreshConversationVersion(conv,
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
 
-        VerlaSession session = spawnVideoTutorSession(conv, turn, text, userMsg.getId());
+        VerlaSession session = spawnVideoTutorSession(conv, turn, text, userMsg.getId(), soundEnabled);
         return SendMessageResult.builder()
                 .turnId(turn.getId())
                 .userMessageId(userMsg.getId())
@@ -489,7 +490,8 @@ public class VerlaTurnOrchestrator {
      * 该列可空。⚠️ 连带要验：额度拦截器 / SKU 弹窗链不能因为 feature 未知而误报。
      */
     private VerlaSession spawnVideoTutorSession(VerlaConversation conv, VerlaTurn turn,
-                                                String message, Long userMessageId) {
+                                                String message, Long userMessageId,
+                                                boolean soundEnabled) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv.getId())
@@ -518,7 +520,8 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildVideoTutorEnvelope(conv, turn, s, message, userMessageId);
+        VerlaCommandEnvelope env = buildVideoTutorEnvelope(conv, turn, s, message, userMessageId,
+                soundEnabled);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT.getCode());
         return s;
@@ -534,7 +537,7 @@ public class VerlaTurnOrchestrator {
      */
     private VerlaCommandEnvelope buildVideoTutorEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                          VerlaSession session, String message,
-                                                         Long userMessageId) {
+                                                         Long userMessageId, boolean soundEnabled) {
         Map<String, Object> boardContext = readBoardContext(conv.getId());
         Map<String, Object> payload = new HashMap<>();
         payload.put("message", message);
@@ -544,6 +547,9 @@ public class VerlaTurnOrchestrator {
         payload.put("refSeq", boardContext.get("refSeq"));
         payload.put("boardVersion", boardContext.get("boardVersion"));
         payload.put("outputLanguage", resolveOutputLanguage(conv));
+        // 学生这一轮要不要听语音。Python 只在 true 时才发起合成 ——
+        // 关掉 = 零请求、零成本（学生可能在图书馆，也可能是流量敏感场景）。
+        payload.put("soundEnabled", soundEnabled);
 
         return baseEnvelope(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT, conv, turn, session)
                 .payload(payload)

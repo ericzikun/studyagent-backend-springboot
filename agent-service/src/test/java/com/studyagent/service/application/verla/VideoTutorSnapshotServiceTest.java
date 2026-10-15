@@ -88,6 +88,46 @@ class VideoTutorSnapshotServiceTest {
         assertThat(view.messages()).isEmpty();
     }
 
+    @Test
+    void illustrationUrlMustSurviveTheArtifactRoundTrip() {
+        // 教学配图只在板子树里留一个 OSS URL：Java 这边不做任何字段过滤、也不落音频/图片本体。
+        // 哪天有人"顺手"给板子加一道白名单校验，这张图会静默消失（板子还在、图没了），所以钉住。
+        when(messageRepository.findVideoTutorByCursor(eq(CID), isNull(), anyInt())).thenReturn(List.of());
+        when(eventInboxRepository.findRecentProcessedByConversation(CID, 100)).thenReturn(List.of());
+        String board = """
+                [
+                  {"op":"figure","kind":"illustration","prompt":"水墨庐山瀑布","caption":"望瀑",
+                   "url":"https://studyagent.oss-us-west-1.aliyuncs.com/studyagent/video_tutor/illustration/abc.jpg",
+                   "ref":"b1"},
+                  {"op":"eq","latex":"y=a(x-h)^2+k","ref":"b2"}
+                ]
+                """;
+
+        VideoTutorSnapshotView view = service(new VerlaArtifactRepositoryStub(artifactWith(board)))
+                .getSnapshot(CID);
+
+        assertThat(view.board()).hasSize(2);
+        assertThat(view.board().get(0))
+                .containsEntry("kind", "illustration")
+                .containsEntry("caption", "望瀑")
+                .containsEntry(
+                        "url",
+                        "https://studyagent.oss-us-west-1.aliyuncs.com/studyagent/video_tutor/illustration/abc.jpg");
+        assertThat(view.board().get(0)).containsEntry("ref", "b1");
+        assertThat(view.board().get(1)).containsEntry("latex", "y=a(x-h)^2+k");
+    }
+
+    private static com.studyagent.service.domain.verla.VerlaArtifact artifactWith(String boardJson) {
+        return com.studyagent.service.domain.verla.VerlaArtifact.builder()
+                .artifactUid("board_" + CID)
+                .conversationId(CID)
+                .kind("video_tutor_board")
+                .bodyOrRef(boardJson)
+                .metaJson("{\"refSeq\":2}")
+                .version(3)
+                .build();
+    }
+
     /** 只实现本测试用到的那一个方法，其余留空 —— 避免把 20 个无关方法都写一遍。 */
     private static final class VerlaArtifactRepositoryStub
             implements com.studyagent.service.domain.verla.repo.VerlaArtifactRepository {

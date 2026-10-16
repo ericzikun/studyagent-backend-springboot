@@ -1,6 +1,7 @@
 package com.studyagent.service.application.demo;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -281,6 +283,183 @@ public class DemoNoteService {
 
     private static String normalizeRole(String role) {
         return NoteMessage.ROLE_ASSISTANT.equals(role) ? NoteMessage.ROLE_ASSISTANT : NoteMessage.ROLE_USER;
+    }
+
+    // ============ 章节级改动提案（后续轮） ============
+
+    /**
+     * 落一份**待确认**提案（{@code NOTE_EDIT_PROPOSAL_READY}）。
+     * <p>只写待审列：{@code note_md} 与 {@code note_version} 都**不动** —— 用户在编辑器里
+     * 逐块接受/忽略后才由 {@link #commitProposal} 落库。
+     * <p>同一会话只保留一份提案（新提案覆盖旧的，记日志）：审到一半基线又被改比丢掉提案更难排查。
+     */
+    @Transactional
+    public void savePendingProposal(Long verlaConversationId, Map<String, Object> proposal) {
+        if (proposal == null || proposal.isEmpty() || !proposal.containsKey("changes")) {
+            log.warn("[Notes] proposal dropped: empty payload verlaConvId={}", verlaConversationId);
+            return;
+        }
+        String proposalJson;
+        try {
+            proposalJson = objectMapper.writeValueAsString(proposal);
+        } catch (JsonProcessingException e) {
+            log.warn("[Notes] proposal dropped: un-serializable payload verlaConvId={}", verlaConversationId);
+            return;
+        }
+        Long baseVersion = asLong(proposal.get("baseVersion"));
+        NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+        if (c == null) {
+            // 同 applyGeneratedTitle：提案丢了只是"没得审"，不该把 inbox cursor 卡住
+            log.warn("[Notes] proposal dropped: no note conversation linked to verlaConvId={}",
+                    verlaConversationId);
+            return;
+        }
+        if (c.getPendingProposalJson() != null && !c.getPendingProposalJson().isBlank()) {
+            log.info("[Notes] pending proposal replaced verlaConvId={}", verlaConversationId);
+        }
+        c.setPendingProposalJson(proposalJson);
+        repo.saveConversation(c);
+        log.info("[Notes] proposal staged verlaConvId={} baseVersion={}", verlaConversationId, baseVersion);
+    }
+
+    /**
+     * 用户逐块决策后提交：只应用 **accepted** 的 hunk。
+     * <ul>
+     *   <li>乐观锁：{@code baseVersion} 与库中基线不一致 → 参数错误（前端刷新重审）</li>
+     *   <li>全部接受 → 直接用提案里的完整 md（零歧义）；**部分接受** → 逐 hunk 按上下文定位替换</li>
+     *   <li>一个都没接受 → 只清空提案，正文与版本都不动</li>
+     * </ul>
+     */
+    @Transactional
+    public NoteConversation commitProposal(String clerkUserId, Long conversationId, String proposalId,
+                                           Long baseVersion, List<Map<String, Object>> decisions) {
+        NoteConversation c = getOwned(clerkUserId, conversationId);
+        String raw = c.getPendingProposalJson();
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "没有待确认的改动");
+        }
+        Map<String, Object> proposal = readJson(raw);
+        if (proposalId == null || !proposalId.equals(str(proposal.get("proposalId")))) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "改动提案已更新，请刷新后重试");
+        }
+        long current = c.getNoteVersion() == null ? 0L : c.getNoteVersion();
+        if (baseVersion != null && baseVersion != current) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "笔记版本已更新，请刷新后重试");
+        }
+
+        Map<String, String> decisionByHunk = new HashMap<>();
+        for (Map<String, Object> decision : decisions == null ? List.<Map<String, Object>>of() : decisions) {
+            String hunkId = str(decision.get("hunkId"));
+            if (!hunkId.isBlank()) {
+                decisionByHunk.put(hunkId, str(decision.get("status")).toLowerCase(Locale.ROOT));
+            }
+        }
+        List<Map<String, Object>> changes = asHunkList(proposal.get("changes"));
+        List<Map<String, Object>> accepted = changes.stream()
+                .filter(hunk -> "accepted".equals(decisionByHunk.get(str(hunk.get("id")))))
+                .toList();
+
+        if (accepted.isEmpty()) {
+            // 全拒绝：什么都不改，只把待审清掉
+            c.setPendingProposalJson(null);
+            repo.saveConversation(c);
+            log.info("[Notes] proposal rejected verlaConvId={} hunks={}",
+                    c.getVerlaConversationId(), changes.size());
+            return c;
+        }
+
+        String nextMd;
+        if (accepted.size() == changes.size()) {
+            // 全接受：提案里那份完整 md 就是结果，不必逐块重放（避免定位歧义）
+            nextMd = str(proposal.get("proposedContentMd"));
+            if (nextMd.isBlank()) {
+                throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "改动内容为空，请刷新后重试");
+            }
+        } else {
+            nextMd = c.getNoteMd() == null ? "" : c.getNoteMd();
+            for (Map<String, Object> hunk : accepted) {
+                nextMd = applyHunk(nextMd, hunk);
+            }
+        }
+
+        c.setNoteMd(nextMd);
+        c.setNoteVersion(current + 1);
+        c.setPendingProposalJson(null);
+        c.setStatus(STATUS_COMPLETED);
+        repo.saveConversation(c);
+        log.info("[Notes] proposal committed verlaConvId={} accepted={}/{} version={}",
+                c.getVerlaConversationId(), accepted.size(), changes.size(), c.getNoteVersion());
+        return c;
+    }
+
+    /** 快照用：把待审提案解析成结构化数据（无提案返回 null）。 */
+    public Map<String, Object> parsePendingProposal(NoteConversation c) {
+        String raw = c == null ? null : c.getPendingProposalJson();
+        return raw == null || raw.isBlank() ? null : readJson(raw);
+    }
+
+    /** 按「prefix + originalText + suffix」定位并替换；只凭 originalText 兜底，找不到就报错。 */
+    private static String applyHunk(String md, Map<String, Object> hunk) {
+        String original = str(hunk.get("originalText"));
+        String proposed = str(hunk.get("proposedText"));
+        Map<String, Object> anchor = asMap(hunk.get("anchor"));
+        String prefix = str(anchor.get("prefix"));
+        String suffix = str(anchor.get("suffix"));
+
+        String needle = prefix + original + suffix;
+        int index = (prefix.isEmpty() && suffix.isEmpty()) ? -1 : md.indexOf(needle);
+        if (index >= 0) {
+            return md.substring(0, index) + prefix + proposed + suffix + md.substring(index + needle.length());
+        }
+        int fallback = original.isEmpty() ? -1 : md.indexOf(original);
+        if (fallback >= 0) {
+            return md.substring(0, fallback) + proposed + md.substring(fallback + original.length());
+        }
+        // 定位不到 = 用户在这期间手改过：必须让前端刷新重审，不能静默跳过
+        throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
+                "笔记内容已变化，无法定位要修改的片段，请刷新后重试");
+    }
+
+    private Map<String, Object> readJson(String raw) {
+        try {
+            return objectMapper.readValue(raw, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to parse note pending proposal", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> asHunkList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .toList();
+    }
+
+    private static String str(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private static Long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     // ============ 用户编辑 / 结果回填 ============

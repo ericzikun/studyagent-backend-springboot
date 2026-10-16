@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -347,6 +348,184 @@ class DemoNoteServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
                 "user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null, null));
+        assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+    }
+
+    // ---------- 章节级改动提案（后续轮） ----------
+
+    private static Map<String, Object> hunk(String id, String original, String proposed,
+                                             String anchorOriginal, String prefix, String suffix) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id);
+        body.put("kind", "replace");
+        body.put("originalText", original);
+        body.put("proposedText", proposed);
+        body.put("anchor", Map.of(
+                "from", 5, "to", 12, "originalText", anchorOriginal,
+                "prefix", prefix, "suffix", suffix));
+        return body;
+    }
+
+    private static Map<String, Object> oneHunkProposal(String proposalId, long baseVersion, String proposedMd) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("proposalId", proposalId);
+        body.put("baseVersion", baseVersion);
+        body.put("proposedContentMd", proposedMd);
+        body.put("changes", List.of(hunk(
+                "h1", "## 要点\n- 旧", "## 要点\n- 新",
+                "## 要点\n- 旧", "# 主题\n\n", "\n\n## 小结")));
+        return body;
+    }
+
+    private String toJson(Map<String, Object> value) {
+        try {
+            return new ObjectMapper().writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    void pending_proposal_is_stored_without_touching_content_or_version() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        conversation.setNoteMd("# 主题\n\n## 要点\n- 旧\n\n## 小结");
+        conversation.setNoteVersion(3L);
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.savePendingProposal(VERLA_CONVERSATION_ID,
+                oneHunkProposal("np_1", 3L, "# 主题\n\n## 要点\n- 新\n\n## 小结"));
+
+        // 提案只挂在待审列上：正文与版本必须原封不动
+        assertEquals("# 主题\n\n## 要点\n- 旧\n\n## 小结", conversation.getNoteMd());
+        assertEquals(3L, conversation.getNoteVersion());
+        assertTrue(conversation.getPendingProposalJson().contains("np_1"));
+        assertEquals("np_1", service.parsePendingProposal(conversation).get("proposalId"));
+    }
+
+    @Test
+    void commit_proposal_accepting_all_uses_the_proposed_md_and_bumps_version_once() {
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        conversation.setNoteMd("# 主题\n\n## 要点\n- 旧\n\n## 小结");
+        conversation.setNoteVersion(3L);
+        conversation.setPendingProposalJson(
+                toJson(oneHunkProposal("np_1", 3L, "# 主题\n\n## 要点\n- 新\n\n## 小结")));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation result = service.commitProposal("user_1", NOTE_CONVERSATION_ID, "np_1", 3L,
+                List.of(Map.of("hunkId", "h1", "status", "accepted")));
+
+        assertEquals("# 主题\n\n## 要点\n- 新\n\n## 小结", result.getNoteMd());
+        assertEquals(4L, result.getNoteVersion());
+        assertNull(result.getPendingProposalJson());
+    }
+
+    @Test
+    void commit_proposal_rejecting_everything_leaves_content_and_version_alone() {
+        NoteConversation conversation = draft();
+        conversation.setNoteMd("# 主题\n\n## 要点\n- 旧\n\n## 小结");
+        conversation.setNoteVersion(3L);
+        conversation.setPendingProposalJson(
+                toJson(oneHunkProposal("np_1", 3L, "# 主题\n\n## 要点\n- 新\n\n## 小结")));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation result = service.commitProposal("user_1", NOTE_CONVERSATION_ID, "np_1", 3L,
+                List.of(Map.of("hunkId", "h1", "status", "rejected")));
+
+        // 「拒绝则不改变」：正文与版本都不动，只把待审清掉
+        assertEquals("# 主题\n\n## 要点\n- 旧\n\n## 小结", result.getNoteMd());
+        assertEquals(3L, result.getNoteVersion());
+        assertNull(result.getPendingProposalJson());
+    }
+
+    @Test
+    void commit_proposal_applies_only_the_accepted_hunks() {
+        NoteConversation conversation = draft();
+        conversation.setNoteMd("# 主题\n\n## A\n- 旧A\n\n## B\n- 旧B");
+        conversation.setNoteVersion(1L);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("proposalId", "np_2");
+        body.put("baseVersion", 1);
+        body.put("proposedContentMd", "# 主题\n\n## A\n- 新A\n\n## B\n- 新B");
+        body.put("changes", List.of(
+                hunk("h1", "## A\n- 旧A", "## A\n- 新A", "## A\n- 旧A", "", "\n\n## B"),
+                hunk("h2", "## B\n- 旧B", "## B\n- 新B", "## B\n- 旧B", "\n\n", "")));
+        conversation.setPendingProposalJson(toJson(body));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation result = service.commitProposal("user_1", NOTE_CONVERSATION_ID, "np_2", 1L, List.of(
+                Map.of("hunkId", "h1", "status", "accepted"),
+                Map.of("hunkId", "h2", "status", "rejected")));
+
+        // 部分接受：只应用 A，B 保持原样（不能拿 proposedContentMd 整篇覆盖）
+        assertTrue(result.getNoteMd().contains("- 新A"));
+        assertTrue(result.getNoteMd().contains("- 旧B"));
+        assertEquals(2L, result.getNoteVersion());
+    }
+
+    @Test
+    void commit_proposal_rejects_a_stale_base_version() {
+        NoteConversation conversation = draft();
+        conversation.setNoteVersion(5L);
+        conversation.setPendingProposalJson(toJson(oneHunkProposal("np_1", 3L, "x")));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        // 审阅期间基线又动过 → 必须让前端刷新重审
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.commitProposal(
+                "user_1", NOTE_CONVERSATION_ID, "np_1", 3L,
+                List.of(Map.of("hunkId", "h1", "status", "accepted"))));
+        assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+    }
+
+    @Test
+    void commit_proposal_rejects_a_superseded_proposal_id() {
+        NoteConversation conversation = draft();
+        conversation.setNoteVersion(3L);
+        conversation.setPendingProposalJson(toJson(oneHunkProposal("np_new", 3L, "x")));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.commitProposal(
+                "user_1", NOTE_CONVERSATION_ID, "np_old", 3L, List.of()));
+        assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+    }
+
+    @Test
+    void commit_proposal_fails_loudly_when_an_accepted_hunk_cannot_be_located() {
+        NoteConversation conversation = draft();
+        // 用户手改过：h1 那段原文已不在正文里（h2 仍在，用来走「部分接受」这条路径 ——
+        // 全接受时直接用 proposedContentMd，不逐块定位）
+        conversation.setNoteMd("# 主题\n\n## A\n- 完全不同的内容\n\n## B\n- 旧B");
+        conversation.setNoteVersion(3L);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("proposalId", "np_3");
+        body.put("baseVersion", 3);
+        body.put("proposedContentMd", "# 主题\n\n## A\n- 新A\n\n## B\n- 新B");
+        body.put("changes", List.of(
+                hunk("h1", "## A\n- 旧A", "## A\n- 新A", "## A\n- 旧A", "", "\n\n## B"),
+                hunk("h2", "## B\n- 旧B", "## B\n- 新B", "## B\n- 旧B", "\n\n", "")));
+        conversation.setPendingProposalJson(toJson(body));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        // 定位不到 → 报错让前端刷新，绝不静默跳过
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.commitProposal(
+                "user_1", NOTE_CONVERSATION_ID, "np_3", 3L, List.of(
+                        Map.of("hunkId", "h1", "status", "accepted"),
+                        Map.of("hunkId", "h2", "status", "rejected"))));
+        assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+    }
+
+    @Test
+    void commit_proposal_without_any_pending_proposal_is_rejected() {
+        NoteConversation conversation = draft();
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.commitProposal(
+                "user_1", NOTE_CONVERSATION_ID, "np_1", 0L, List.of()));
         assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
     }
 

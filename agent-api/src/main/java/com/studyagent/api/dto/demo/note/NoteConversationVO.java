@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 笔记会话响应体。
@@ -43,14 +44,24 @@ public class NoteConversationVO {
      * 对话栏消息（旧→新）。快照端点返回；派发/保存等端点不查消息表，故为 null。
      */
     private List<NoteMessageVO> messages;
+    /**
+     * 待用户接受/忽略的章节级改动提案；无待审为 null。
+     * <p>落库而不是只放前端内存，刷新页面仍能继续审阅。
+     */
+    private Map<String, Object> pendingProposal;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     public static NoteConversationVO from(NoteConversation c) {
-        return from(c, null);
+        return from(c, null, null);
     }
 
     public static NoteConversationVO from(NoteConversation c, List<NoteMessage> messages) {
+        return from(c, messages, null);
+    }
+
+    public static NoteConversationVO from(NoteConversation c, List<NoteMessage> messages,
+                                         Map<String, Object> pendingProposal) {
         if (c == null) {
             return null;
         }
@@ -66,6 +77,7 @@ public class NoteConversationVO {
                 .noteVersion(c.getNoteVersion())
                 .status(c.getStatus())
                 .messages(messages == null ? null : messages.stream().map(NoteMessageVO::from).toList())
+                .pendingProposal(pendingProposal)
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .build();

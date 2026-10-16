@@ -246,6 +246,45 @@ class DemoNoteControllerTest {
         verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null);
     }
 
+    @Test
+    void commit_proposal_passes_decisions_and_returns_the_updated_document() throws Exception {
+        NoteConversation committed = conversation();
+        committed.setNoteMd("# 主题\n\n## 要点\n- 新");
+        committed.setNoteVersion(4L);
+        when(service.commitProposal(eq("user_1"), eq(NOTE_CONVERSATION_ID), eq("np_1"), eq(3L), any()))
+                .thenReturn(committed);
+
+        mockMvc.perform(post("/v1/demo/note/conversations/" + NOTE_CONVERSATION_ID + "/proposal/commit")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"proposalId\":\"np_1\",\"baseVersion\":3,"
+                                + "\"decisions\":[{\"hunkId\":\"h1\",\"status\":\"accepted\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.noteMd").value("# 主题\n\n## 要点\n- 新"))
+                .andExpect(jsonPath("$.data.noteVersion").value(4));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> captor = ArgumentCaptor.forClass(List.class);
+        verify(service).commitProposal(eq("user_1"), eq(NOTE_CONVERSATION_ID), eq("np_1"), eq(3L), captor.capture());
+        assertEquals("h1", captor.getValue().get(0).get("hunkId"));
+        assertEquals("accepted", captor.getValue().get(0).get("status"));
+    }
+
+    @Test
+    void snapshot_exposes_the_pending_proposal() throws Exception {
+        NoteConversation conv = conversation();
+        when(service.resolveConversationId("user_1", "vc_abc")).thenReturn(NOTE_CONVERSATION_ID);
+        when(service.getOwned("user_1", NOTE_CONVERSATION_ID)).thenReturn(conv);
+        when(service.parsePendingProposal(conv)).thenReturn(Map.of("proposalId", "np_1", "baseVersion", 3));
+
+        // 刷新页面后仍能继续审阅：提案必须随快照带出来
+        mockMvc.perform(get("/v1/demo/note/conversations/vc_abc")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pendingProposal.proposalId").value("np_1"))
+                .andExpect(jsonPath("$.data.pendingProposal.baseVersion").value(3));
+    }
+
     private static NoteMessage message(int seq, String role, String content) {
         NoteMessage m = new NoteMessage();
         m.setSeq(seq);

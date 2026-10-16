@@ -52,10 +52,28 @@ class NoteEventHandlerTest {
                         VerlaAgentEventType.NOTE_PARSE_STARTED,
                         VerlaAgentEventType.NOTE_TITLE_RESOLVED,
                         VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+                        VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
                         VerlaAgentEventType.NOTE_TURN_COMPLETED,
                         VerlaAgentEventType.NOTE_FAILED,
                         VerlaAgentEventType.NOTE_CANCELLED),
                 handler.supportedTypes());
+    }
+
+    @Test
+    void edit_proposal_is_stored_as_pending_and_does_not_touch_the_document() {
+        Map<String, Object> payload = Map.of(
+                "proposalId", "np_1",
+                "baseVersion", 3,
+                "proposedContentMd", "# 主题\n\n## 要点\n- 新",
+                "changes", java.util.List.of(Map.of("id", "h1", "kind", "replace")));
+
+        handler.handle(row(VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY),
+                env(VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY, payload));
+
+        // 只落待审列：正文与版本都交给用户接受后的 commit 端点
+        verify(demoNoteService).savePendingProposal(VERLA_CONVERSATION_ID, payload);
+        verify(demoNoteService, never()).applyArtifactCommit(any(), any(), any());
+        verify(sessionRepository, never()).save(any());
     }
 
     @Test

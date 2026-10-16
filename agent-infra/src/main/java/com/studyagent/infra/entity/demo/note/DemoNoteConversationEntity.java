@@ -33,6 +33,9 @@ public class DemoNoteConversationEntity {
     private String noteMd;
     @TableField("note_version")
     private Long noteVersion;
+    /** 待用户接受/忽略的章节级改动提案（JSON）；NULL = 无待审提案。 */
+    @TableField("pending_proposal_json")
+    private String pendingProposalJson;
     private String status;
     @TableField("created_at")
     private LocalDateTime createdAt;

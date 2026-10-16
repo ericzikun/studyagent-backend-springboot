@@ -134,6 +134,7 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setLearningGoal(c.getLearningGoal());
         e.setNoteMd(c.getNoteMd());
         e.setNoteVersion(c.getNoteVersion());
+        e.setPendingProposalJson(c.getPendingProposalJson());
         e.setStatus(c.getStatus());
         e.setCreatedAt(c.getCreatedAt());
         e.setUpdatedAt(c.getUpdatedAt());
@@ -177,6 +178,7 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setLearningGoal(e.getLearningGoal());
         c.setNoteMd(e.getNoteMd());
         c.setNoteVersion(e.getNoteVersion());
+        c.setPendingProposalJson(e.getPendingProposalJson());
         c.setStatus(e.getStatus());
         c.setCreatedAt(e.getCreatedAt());
         c.setUpdatedAt(e.getUpdatedAt());

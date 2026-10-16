@@ -36,6 +36,12 @@ public class NoteConversation {
      * <p>用户保存带 baseVersion 做乐观锁，与 AI Tutor 的双向基线同语义。
      */
     private Long noteVersion;
+    /**
+     * 待用户接受/忽略的章节级改动提案（JSON 原文）。
+     * <p>后续轮 agent 改文档不再直接落库：提案先存这里等用户在编辑器里逐块决策，
+     * 提交时才写 {@link #noteMd} 并推进版本。NULL = 无待审提案。
+     */
+    private String pendingProposalJson;
     /** draft / generating / completed / failed。 */
     private String status;
     private LocalDateTime createdAt;

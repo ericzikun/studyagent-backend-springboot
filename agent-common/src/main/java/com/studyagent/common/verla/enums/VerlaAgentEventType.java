@@ -200,6 +200,12 @@ public enum VerlaAgentEventType {
     VIDEO_TUTOR_CHAT_STREAM_CHUNK(false),
     /** 一个 step = 该步解说 + 它引出的板书，封在同一帧（讲画同步的传输层保证）。Java 不订阅。 */
     VIDEO_TUTOR_BOARD_OPS(false),
+    /**
+     * 素材（语音）就绪时单独补一帧：让 step 不再等音频的关键。
+     * <p>生产实测单句 TTS 3.5–5.2s、配图 ~14s，挂在 step 上会把每步间隔拖成 ~5.5s，
+     * 而模型本身 7.5s 就能吐完整轮。Java 不订阅（纯渲染帧），但**必须在终态之前发完**。
+     */
+    VIDEO_TUTOR_ASSET_READY(false),
     /** 白板树快照 → artifact upsert（kind=video_tutor_board），刷新恢复的主路径。 */
     VIDEO_TUTOR_BOARD_COMMIT(false),
     VIDEO_TUTOR_TURN_COMPLETED(true),

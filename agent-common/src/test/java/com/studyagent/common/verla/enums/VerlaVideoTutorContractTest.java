@@ -23,6 +23,7 @@ class VerlaVideoTutorContractTest {
             "VIDEO_TUTOR_STARTED",
             "VIDEO_TUTOR_CHAT_STREAM_CHUNK",
             "VIDEO_TUTOR_BOARD_OPS",
+            "VIDEO_TUTOR_ASSET_READY",
             "VIDEO_TUTOR_BOARD_COMMIT",
             "VIDEO_TUTOR_TURN_COMPLETED",
             "VIDEO_TUTOR_FAILED",
@@ -47,7 +48,7 @@ class VerlaVideoTutorContractTest {
                     .as(terminal).isTrue();
         }
         for (String renderOnly : List.of("VIDEO_TUTOR_BOARD_OPS", "VIDEO_TUTOR_CHAT_STREAM_CHUNK",
-                "VIDEO_TUTOR_STARTED", "VIDEO_TUTOR_BOARD_COMMIT")) {
+                "VIDEO_TUTOR_STARTED", "VIDEO_TUTOR_BOARD_COMMIT", "VIDEO_TUTOR_ASSET_READY")) {
             assertThat(VerlaAgentEventType.isTerminal(VerlaAgentEventType.valueOf(renderOnly)))
                     .as(renderOnly).isFalse();
         }

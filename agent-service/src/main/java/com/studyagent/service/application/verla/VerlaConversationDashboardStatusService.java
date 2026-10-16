@@ -337,9 +337,10 @@ public class VerlaConversationDashboardStatusService {
             case VIDEO_TUTOR_STARTED, VIDEO_TUTOR_BOARD_COMMIT -> STATUS_PROGRESSING;
             case VIDEO_TUTOR_TURN_COMPLETED -> STATUS_COMPLETED;
             case VIDEO_TUTOR_FAILED, VIDEO_TUTOR_CANCELLED -> STATUS_FAILED;
-            // 这两个是纯渲染帧，Java 不订阅、不会进 inbox，所以这里不可能被命中；
+            // 这几个是纯渲染帧，Java 不订阅、不会进 inbox，所以这里不可能被命中；
             // 列出来只为满足穷尽性，返回 null 而不是给它编一个状态。
-            case VIDEO_TUTOR_BOARD_OPS, VIDEO_TUTOR_CHAT_STREAM_CHUNK -> null;
+            case VIDEO_TUTOR_BOARD_OPS, VIDEO_TUTOR_CHAT_STREAM_CHUNK,
+                    VIDEO_TUTOR_ASSET_READY -> null;
         };
     }
 

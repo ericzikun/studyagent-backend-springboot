@@ -13,6 +13,7 @@ import lombok.Getter;
  *     <li>{@link #AI_DETECTION} — AI Detection</li>
  *     <li>{@link #AI_HUMANIZER} — Humanizer</li>
  *     <li>{@link #NOTE} — AI Note（笔记 demo 域，intent = NOTE_MAKER）</li>
+ *     <li>{@link #VIDEO_TUTOR} — AI 画板（交互式白板教学域，intent = video_tutor）</li>
  * </ul>
  * GET {@code /v1/verla/conversations?segment=...} 使用 {@link #queryKey}。
  */
@@ -24,7 +25,13 @@ public enum VerlaConversationListSegment {
     AI_WRITING("ai_writing"),
     AI_DETECTION("ai_detection"),
     AI_HUMANIZER("ai_humanizer"),
-    NOTE("note");
+    NOTE("note"),
+    /**
+     * 值是**小写** {@code video_tutor}：画板建会话时前端传的就是这个小写串，而
+     * {@code VerlaConversationService#create} 只 trim 不做大小写归一，库里存的就是它。
+     * （其余分栏的 intent 都是大写，别照抄。）
+     */
+    VIDEO_TUTOR("video_tutor");
 
     private final String queryKey;
 

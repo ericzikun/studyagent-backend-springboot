@@ -7,6 +7,7 @@ import com.studyagent.api.dto.demo.note.NoteDocumentPatchRequest;
 import com.studyagent.api.dto.demo.note.NoteDraftRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateResponseVO;
+import com.studyagent.api.dto.demo.note.NoteProposalCommitRequest;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 笔记生成 demo 控制器 —— {@code /v1/demo/note/*}。
@@ -73,8 +75,10 @@ public class DemoNoteController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable String id) {
         NoteConversation conv = service.getOwned(clerkUserId, service.resolveConversationId(clerkUserId, id));
-        // 对话栏靠 messages 重建；正文靠 noteMd，版本靠 noteVersion（编辑器乐观锁基线）
-        return Result.success(NoteConversationVO.from(conv, service.listMessages(conv.getId())));
+        // 对话栏靠 messages 重建；正文靠 noteMd，版本靠 noteVersion（编辑器乐观锁基线）；
+        // 待审提案也一并带出，刷新页面仍能继续审阅
+        return Result.success(NoteConversationVO.from(
+                conv, service.listMessages(conv.getId()), service.parsePendingProposal(conv)));
     }
 
     /**
@@ -92,6 +96,40 @@ public class DemoNoteController {
         }
         NoteConversation conv = service.saveUserNote(clerkUserId, id, req.getContentMd(), req.getBaseVersion());
         return Result.success(NoteConversationVO.from(conv));
+    }
+
+    /**
+     * 提交待审提案：用户在编辑器里逐块接受/忽略后一次性提交。
+     * <p>只应用 accepted 的块；一个都没接受就只清空提案，正文与版本都不动。
+     * <p>不是流式端点：写库后直接返回最新会话（正文 + 版本），前端据此替换编辑器内容。
+     */
+    @PostMapping("/conversations/{id}/proposal/commit")
+    public Result<NoteConversationVO> commitProposal(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long id,
+            @RequestBody NoteProposalCommitRequest req) {
+        if (req == null) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "request body is required");
+        }
+        NoteConversation conv = service.commitProposal(
+                clerkUserId, id, req.getProposalId(), req.getBaseVersion(), toDecisions(req));
+        return Result.success(NoteConversationVO.from(conv));
+    }
+
+    private static List<Map<String, Object>> toDecisions(NoteProposalCommitRequest req) {
+        if (req.getDecisions() == null) {
+            return List.of();
+        }
+        return req.getDecisions().stream()
+                .filter(decision -> decision != null)
+                .map(decision -> {
+                    Map<String, Object> row = new java.util.HashMap<>();
+                    row.put("hunkId", decision.getHunkId());
+                    row.put("status", decision.getStatus());
+                    return row;
+                })
+                .toList();
     }
 
     /**

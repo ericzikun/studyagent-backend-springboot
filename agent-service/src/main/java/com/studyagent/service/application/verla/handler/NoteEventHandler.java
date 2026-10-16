@@ -45,6 +45,7 @@ public class NoteEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.NOTE_PARSE_STARTED,
             VerlaAgentEventType.NOTE_TITLE_RESOLVED,
             VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+            VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
             VerlaAgentEventType.NOTE_TURN_COMPLETED,
             VerlaAgentEventType.NOTE_FAILED,
             VerlaAgentEventType.NOTE_CANCELLED);
@@ -72,6 +73,8 @@ public class NoteEventHandler implements VerlaEventHandler {
                     demoNoteService.applyGeneratedTitle(row.getConversationId(), asString(payload.get("title")));
             // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
             case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
+            // 后续轮改文档只**提案**：存成待审，等用户接受才写正文（首轮不走这里）
+            case NOTE_EDIT_PROPOSAL_READY -> saveProposal(row, payload);
             case NOTE_TURN_COMPLETED -> completeTurn(row, payload);
             case NOTE_FAILED -> {
                 log.warn("[Notes] turn failed sessionId={} error={}",
@@ -97,6 +100,14 @@ public class NoteEventHandler implements VerlaEventHandler {
                     "NOTE_ARTIFACT_COMMIT without contentMd, sessionId=" + row.getSessionId());
         }
         demoNoteService.applyArtifactCommit(row.getConversationId(), contentMd, asLong(payload.get("versionNo")));
+    }
+
+    /**
+     * 待审提案：整份 payload 交给 service 存起来（Java 不解读 hunk 细节，提交时再按用户决策重放）。
+     * <p>提案缺了只是"没得审"，所以 service 侧是 best-effort —— 别让它把 inbox cursor 卡住。
+     */
+    private void saveProposal(VerlaEventInbox row, Map<String, Object> payload) {
+        demoNoteService.savePendingProposal(row.getConversationId(), payload);
     }
 
     private void completeTurn(VerlaEventInbox row, Map<String, Object> payload) {

@@ -185,6 +185,8 @@ public enum VerlaAgentEventType {
     NOTE_ARTIFACT_BEGIN(false),
     NOTE_ARTIFACT_DELTA(false),
     NOTE_ARTIFACT_COMMIT(false),
+    /** 后续轮改文档的**待确认提案**（hunk：改前/改后 + 上下文）。Java 只落待审列，不动正文与版本。 */
+    NOTE_EDIT_PROPOSAL_READY(false),
     NOTE_TURN_COMPLETED(true),
     NOTE_FAILED(true),
     NOTE_CANCELLED(true),

@@ -398,26 +398,38 @@ public class DemoNoteService {
         return raw == null || raw.isBlank() ? null : readJson(raw);
     }
 
-    /** 按「prefix + originalText + suffix」定位并替换；只凭 originalText 兜底，找不到就报错。 */
+    /**
+     * 按「prefix + originalText + suffix」定位并替换（没带上下文时只用 originalText）。
+     * <p>Python 目前**刻意不带** prefix/suffix —— 前端的改动装饰在"渲染后的显示文本"里定位，
+     * 而这里在原始 md 里定位，同一个字段服务两个文本空间必然有一边对不上。所以：
+     * <ul>
+     *   <li>命中唯一 → 替换；</li>
+     *   <li>命中多次（少见，但可能是同一段文本出现两遍）→ 报错，**不赌**第一个；</li>
+     *   <li>一次都没命中（用户手改过）→ 报错让前端刷新重审。</li>
+     * </ul>
+     */
     private static String applyHunk(String md, Map<String, Object> hunk) {
         String original = str(hunk.get("originalText"));
         String proposed = str(hunk.get("proposedText"));
+        if (original.isEmpty()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "改动缺少定位文本，请刷新后重试");
+        }
         Map<String, Object> anchor = asMap(hunk.get("anchor"));
         String prefix = str(anchor.get("prefix"));
         String suffix = str(anchor.get("suffix"));
 
         String needle = prefix + original + suffix;
         int index = (prefix.isEmpty() && suffix.isEmpty()) ? -1 : md.indexOf(needle);
-        if (index >= 0) {
+        if (index >= 0 && md.indexOf(needle, index + 1) < 0) {
             return md.substring(0, index) + prefix + proposed + suffix + md.substring(index + needle.length());
         }
-        int fallback = original.isEmpty() ? -1 : md.indexOf(original);
-        if (fallback >= 0) {
-            return md.substring(0, fallback) + proposed + md.substring(fallback + original.length());
+
+        int first = md.indexOf(original);
+        if (first < 0 || md.indexOf(original, first + 1) >= 0) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
+                    "笔记内容已变化，无法唯一定位要修改的片段，请刷新后重试");
         }
-        // 定位不到 = 用户在这期间手改过：必须让前端刷新重审，不能静默跳过
-        throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
-                "笔记内容已变化，无法定位要修改的片段，请刷新后重试");
+        return md.substring(0, first) + proposed + md.substring(first + original.length());
     }
 
     private Map<String, Object> readJson(String raw) {

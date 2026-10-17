@@ -32,6 +32,12 @@ public class VideoTutorSnapshotVO {
     private Integer refSeq;
     private Integer boardVersion;
     private List<VerlaMessageVO> messages;
+    /**
+     * 已落库的语音轨道：{@code "step:3"} / {@code "ask"} → {@code {url, durationMs}}。
+     * 直播时音频走 ASSET_READY 帧（一次性），重新进入会话只能靠这里 —— 空对象表示这一轮没有语音
+     * （开关关 / 合成失败 / 本次改动之前落的板子），前端据此不显示重听即可。
+     */
+    private Map<String, Object> audio;
 
     public static VideoTutorSnapshotVO from(VideoTutorSnapshotView view) {
         return VideoTutorSnapshotVO.builder()
@@ -40,6 +46,7 @@ public class VideoTutorSnapshotVO {
                 .board(view.board())
                 .refSeq(view.refSeq())
                 .boardVersion(view.boardVersion())
+                .audio(view.audio())
                 .messages(view.messages().stream().map(VerlaMessageVO::from).toList())
                 .build();
     }

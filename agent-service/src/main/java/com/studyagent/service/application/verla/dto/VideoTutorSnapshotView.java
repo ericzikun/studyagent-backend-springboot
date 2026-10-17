@@ -15,6 +15,10 @@ import java.util.Map;
  * 前端恢复顺序（design.md §4.2）：先拿本快照出板子与消息（{@code reveal=instant}，不重播书写动画），
  * 再用 {@code resumeAfterEventId} 校准 lastEventId 后开 EventSource；重放帧由
  * {@code (sessionId, stepIndex)} 幂等键吞掉。{@code refSeq} 也要从这里取，别让前端自己数。
+ *
+ * <p>{@code audio} 是**已落库的语音轨道**（{@code "step:3"} / {@code "ask"} → url + 时长）。
+ * SSE 的 ASSET_READY 是一次性帧，所以刷新或从历史重进时这是唯一还能听到这一轮讲解的来源；
+ * 加这个键之前落的板子没有它，前端拿到空轨道就只是不显示重听，不是错误。
  */
 public record VideoTutorSnapshotView(
         Long conversationId,
@@ -22,5 +26,6 @@ public record VideoTutorSnapshotView(
         List<Map<String, Object>> board,
         int refSeq,
         int boardVersion,
-        List<VerlaMessage> messages) {
+        List<VerlaMessage> messages,
+        Map<String, Object> audio) {
 }

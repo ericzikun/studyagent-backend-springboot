@@ -171,7 +171,9 @@ class VerlaVideoTutorHttpBindingTest {
                         .id(201L).conversationId(24L).turnId(456L).role("assistant")
                         .sourceSessionId(789L).textContent("顶点是 (h,k)。")
                         .scene("VIDEO_TUTOR").createdAt(LocalDateTime.parse("2026-10-10T09:00:00"))
-                        .build())));
+                        .build()),
+                // 已落库的语音轨道：直播走 ASSET_READY（一次性帧），重进会话只能靠它
+                Map.of("step:0", Map.of("url", "https://oss.example/a.mp3", "durationMs", 4100))));
 
         mockMvc.perform(get("/v1/verla/conversations/24/video-tutor/snapshot")
                         .requestAttr("clerkUserId", "user_1"))
@@ -185,6 +187,9 @@ class VerlaVideoTutorHttpBindingTest {
                 .andExpect(jsonPath("$.data.refSeq").value(7))
                 .andExpect(jsonPath("$.data.boardVersion").value(3))
                 .andExpect(jsonPath("$.data.board[0].ref").value("b2"))
+                // 没有它，刷新/从历史重进就永远没有语音（ASSET_READY 是一次性帧）
+                .andExpect(jsonPath("$.data.audio['step:0'].url").value("https://oss.example/a.mp3"))
+                .andExpect(jsonPath("$.data.audio['step:0'].durationMs").value(4100))
                 .andExpect(jsonPath("$.data.messages[0].text").value("顶点是 (h,k)。"));
 
         verify(conversationService).getOwned("user_1", 24L);

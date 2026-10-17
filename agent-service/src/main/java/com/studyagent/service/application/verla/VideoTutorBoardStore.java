@@ -70,7 +70,8 @@ public class VideoTutorBoardStore {
         try {
             List<Map<String, Object>> board = parseBoard(artifact.getBodyOrRef(), mapper);
             return new BoardState(board, parseRefSeq(artifact.getMetaJson(), mapper),
-                    artifact.getVersion() == null ? 0 : artifact.getVersion());
+                    artifact.getVersion() == null ? 0 : artifact.getVersion(),
+                    parseAudio(artifact.getMetaJson(), mapper));
         } catch (Exception e) {
             log.warn("[Verla/videoTutor] board artifact unreadable cid={} uid={}: {} —— 按空板下发，"
                             + "Python 会从零重建，但引用号计数器会被重置",
@@ -99,10 +100,26 @@ public class VideoTutorBoardStore {
         return 0;
     }
 
+    /**
+     * 本轮送达的音频轨道（{@code "step:3"} / {@code "ask"} → url + 时长）。
+     * <p>
+     * 老行没有这个键（本次改动之前落库的板子），一律按空轨道返回 —— 前端据此就是不显示重听，
+     * 不是错误。SSE 的 ASSET_READY 是一次性帧，所以这条轨道是刷新/重进后唯一还有声音的来源。
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseAudio(String metaJson, ObjectMapper mapper) throws Exception {
+        if (metaJson == null || metaJson.isBlank()) {
+            return Map.of();
+        }
+        Object audio = mapper.readValue(metaJson, Map.class).get("audio");
+        return audio instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+    }
+
     /** 引用号计数器随板子一起续上；复用旧号会让陈旧的 {@code of:"b3"} 指向擦黑板后新写的条目。 */
-    public record BoardState(List<Map<String, Object>> board, int refSeq, int boardVersion) {
+    public record BoardState(List<Map<String, Object>> board, int refSeq, int boardVersion,
+                             Map<String, Object> audio) {
         public static BoardState empty() {
-            return new BoardState(List.of(), 0, 0);
+            return new BoardState(List.of(), 0, 0, Map.of());
         }
     }
 }

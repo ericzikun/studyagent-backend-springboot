@@ -48,6 +48,9 @@ public class VerlaConversationDashboardStatusService {
     public static final String STATUS_COMPLETED = "completed";
     public static final String STATUS_FAILED = "failed";
 
+    /** 笔记 demo 会话：turn 状态机刻意不推进，状态改由 session 推导（见 NoteEventHandler）。 */
+    private static final String PRIMARY_INTENT_NOTE = "NOTE_MAKER";
+
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaClarifyFormRepository clarifyFormRepository;
@@ -93,6 +96,11 @@ public class VerlaConversationDashboardStatusService {
         if (IntentLifecycle.conversationIsDraft(conversation.getIntentLifecycle())) {
             return STATUS_NEEDS_CHOICE;
         }
+        // 笔记的 verla_turns 永远是 CREATED（NoteEventHandler 刻意不碰 turn 状态机），
+        // 只能看 session：任一回合成功即「已完成」，后续对话不再改状态。
+        if (PRIMARY_INTENT_NOTE.equals(conversation.getPrimaryIntent())) {
+            return resolveNoteStatus(conversation, batch);
+        }
 
         VerlaTurn turn = findLatestTurn(conversation, batch);
         String eventStatus = resolveFromLatestEvents(conversation.getId(), batch.eventsByConversation());
@@ -133,6 +141,32 @@ public class VerlaConversationDashboardStatusService {
             return STATUS_PROGRESSING;
         }
         return STATUS_PROGRESSING;
+    }
+
+    /**
+     * 笔记会话的状态只看 session：
+     * <ul>
+     *   <li>任一回合的 session 成功 → 已完成（首轮写完笔记后即为完成，追问不会把它改回进行中）</li>
+     *   <li>否则只要有过失败/取消 → 失败</li>
+     *   <li>其余（尚无终态 session）→ 进行中</li>
+     * </ul>
+     */
+    private String resolveNoteStatus(VerlaConversation conversation, DashboardBatchContext batch) {
+        List<VerlaTurn> turns = limitTurns(
+                batch.turnsByConversation().getOrDefault(conversation.getId(), List.of()),
+                TURN_SCAN_LIMIT);
+        boolean sawFailure = false;
+        for (VerlaTurn turn : turns) {
+            VerlaSession session = findRelevantSession(turn, batch);
+            SessionStatus status = parseSessionStatus(session == null ? null : session.getStatus());
+            if (status == SessionStatus.SUCCEEDED) {
+                return STATUS_COMPLETED;
+            }
+            if (status == SessionStatus.FAILED || status == SessionStatus.CANCELLED) {
+                sawFailure = true;
+            }
+        }
+        return sawFailure ? STATUS_FAILED : STATUS_PROGRESSING;
     }
 
     private DashboardBatchContext prefetch(List<VerlaConversation> conversations) {
@@ -324,7 +358,7 @@ public class VerlaConversationDashboardStatusService {
             case ARTIFACT_EDIT_PROPOSAL_STARTED, ARTIFACT_EDIT_PROPOSAL_READY,
                     ARTIFACT_EDIT_PROPOSAL_FAILED -> null;
             case PLAN_INTENT_RESOLVED, PLAN_TASK_NAME_RESOLVED, PLAN_TASK_NAME_FAILED -> null;
-            // Notes demo 会话不属于任何商业分栏，不进 Dashboard 状态推导。
+            // 笔记事件不参与通用推导：NOTE_MAKER 在 resolve() 里按 session 单独算状态。
             case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_TITLE_RESOLVED, NOTE_SUMMARIZE_STARTED,
                     NOTE_CHAT_STREAM_CHUNK, NOTE_ARTIFACT_BEGIN, NOTE_ARTIFACT_DELTA,
                     NOTE_ARTIFACT_COMMIT, NOTE_EDIT_PROPOSAL_READY, NOTE_TURN_COMPLETED,

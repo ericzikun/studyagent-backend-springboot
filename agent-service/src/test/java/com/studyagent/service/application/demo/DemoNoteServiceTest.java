@@ -86,11 +86,14 @@ class DemoNoteServiceTest {
 
         NoteTurnPreparation prepared = service.prepareFirstTurn(
                 "user_1", NOTE_CONVERSATION_ID, null, "obj_9", null, "lecture.pdf",
-                "  数据结构  ", "exam_prep", "帮我整理一份复习笔记");
+                "  数据结构  ", "exam_prep", "zh-CN", "帮我整理一份复习笔记");
 
         NoteConversation fileNote = prepared.getConversation();
         assertEquals("file", fileNote.getSourceType());
         assertEquals("obj_9", fileNote.getAttachmentObjectId());
+        // 文件名另存一份：title 会被 AI 起的会话名覆盖，左栏摘要气泡要靠它画文件 chip
+        assertEquals("lecture.pdf", fileNote.getAttachmentFilename());
+        assertEquals("zh-CN", fileNote.getOutputLanguage());
         assertNull(fileNote.getInputText());
         assertEquals("generating", fileNote.getStatus());
         assertEquals("数据结构", fileNote.getCourseName());
@@ -112,7 +115,7 @@ class DemoNoteServiceTest {
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, "lecture.pdf",
-                null, null, null);
+                null, null, null, null);
 
         // Dashboard 的 AI Note 分区读的是主线 title（不是 demo 表），不同步就永远显示「未命名笔记」
         verify(verlaConversationService).rename("user_1", VERLA_CONVERSATION_ID, "lecture.pdf");
@@ -125,7 +128,7 @@ class DemoNoteServiceTest {
 
         // 没有文件名 → demo title 仍是「未命名笔记」占位，没必要写主线
         service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, null,
-                null, null, null);
+                null, null, null, null);
 
         verify(verlaConversationService, never()).rename(any(), any(), any());
     }
@@ -148,7 +151,7 @@ class DemoNoteServiceTest {
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_9", null, "a.pdf",
-                null, null, "   ");
+                null, null, null, "   ");
 
         // query 选填：为空时不该落空气泡
         verify(repo, never()).appendMessage(any(NoteMessage.class));
@@ -160,12 +163,14 @@ class DemoNoteServiceTest {
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         NoteConversation textNote = service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null, null, null, null)
+                "user_1", NOTE_CONVERSATION_ID, null, null, "  一段材料  ", null, null, null, null, null)
                 .getConversation();
 
         assertEquals("text", textNote.getSourceType());
         assertEquals("一段材料", textNote.getInputText());
         assertNull(textNote.getAttachmentObjectId());
+        // 换回文本来源要清掉上一轮的文件名，否则摘要气泡会挂着一个不存在的文件
+        assertNull(textNote.getAttachmentFilename());
         assertEquals("take_notes", textNote.getLearningGoal());
         assertNull(textNote.getCourseName());
     }
@@ -176,7 +181,7 @@ class DemoNoteServiceTest {
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         NoteConversation note = service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null, null, "not_a_goal", null)
+                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null, null, "not_a_goal", null, null)
                 .getConversation();
 
         assertEquals("other", note.getLearningGoal());
@@ -333,11 +338,11 @@ class DemoNoteServiceTest {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
 
         assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, null, null, "   ", null, null, null, null));
+                "user_1", NOTE_CONVERSATION_ID, null, null, "   ", null, null, null, null, null));
         assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, "file", null, null, null, null, null, null));
+                "user_1", NOTE_CONVERSATION_ID, "file", null, null, null, null, null, null, null));
         assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null, null, null, null));
+                "user_1", NOTE_CONVERSATION_ID, "pdf", "obj", null, null, null, null, null, null));
     }
 
     @Test
@@ -347,7 +352,7 @@ class DemoNoteServiceTest {
         String tooLong = "中".repeat(20_001);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
-                "user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null, null));
+                "user_1", NOTE_CONVERSATION_ID, "text", null, tooLong, null, null, null, null, null));
         assertEquals(com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), ex.getCode());
     }
 

@@ -129,9 +129,11 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setTitle(c.getTitle());
         e.setSourceType(c.getSourceType());
         e.setAttachmentObjectId(c.getAttachmentObjectId());
+        e.setAttachmentFilename(c.getAttachmentFilename());
         e.setInputText(c.getInputText());
         e.setCourseName(c.getCourseName());
         e.setLearningGoal(c.getLearningGoal());
+        e.setOutputLanguage(c.getOutputLanguage());
         e.setNoteMd(c.getNoteMd());
         e.setNoteVersion(c.getNoteVersion());
         e.setPendingProposalJson(c.getPendingProposalJson());
@@ -173,9 +175,11 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setTitle(e.getTitle());
         c.setSourceType(e.getSourceType());
         c.setAttachmentObjectId(e.getAttachmentObjectId());
+        c.setAttachmentFilename(e.getAttachmentFilename());
         c.setInputText(e.getInputText());
         c.setCourseName(e.getCourseName());
         c.setLearningGoal(e.getLearningGoal());
+        c.setOutputLanguage(e.getOutputLanguage());
         c.setNoteMd(e.getNoteMd());
         c.setNoteVersion(e.getNoteVersion());
         c.setPendingProposalJson(e.getPendingProposalJson());

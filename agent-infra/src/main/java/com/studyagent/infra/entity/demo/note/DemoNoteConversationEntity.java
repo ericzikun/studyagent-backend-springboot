@@ -23,12 +23,18 @@ public class DemoNoteConversationEntity {
     private String sourceType;
     @TableField("attachment_object_id")
     private String attachmentObjectId;
+    /** 上传附件的原始文件名（title 会被 AI 起的会话名覆盖，所以另存一份）。 */
+    @TableField("attachment_filename")
+    private String attachmentFilename;
     @TableField("input_text")
     private String inputText;
     @TableField("course_name")
     private String courseName;
     @TableField("learning_goal")
     private String learningGoal;
+    /** 表单：笔记输出语言码。 */
+    @TableField("output_language")
+    private String outputLanguage;
     @TableField("note_md")
     private String noteMd;
     @TableField("note_version")

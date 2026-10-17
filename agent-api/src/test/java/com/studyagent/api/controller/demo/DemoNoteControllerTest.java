@@ -133,7 +133,7 @@ class DemoNoteControllerTest {
     void generate_prepares_first_turn_then_dispatches() throws Exception {
         NoteConversation prepared = conversation();
         when(service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep", "给我一份复习笔记"))
+                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记"))
                 .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
         when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
                 .thenReturn(NoteGenerateDispatchResult.builder()
@@ -156,7 +156,7 @@ class DemoNoteControllerTest {
                 .andExpect(jsonPath("$.data.correlationId").value("conv:11:turn:22:sess:33"));
 
         verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep", "给我一份复习笔记");
+                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记");
         ArgumentCaptor<NoteTurnContext> ctx = ArgumentCaptor.forClass(NoteTurnContext.class);
         verify(dispatcher).dispatch(eq(prepared), ctx.capture());
         assertTrue(ctx.getValue().isFirstTurn());
@@ -232,7 +232,7 @@ class DemoNoteControllerTest {
     void generate_treats_text_source_as_first_turn() throws Exception {
         NoteConversation prepared = conversation();
         when(service.prepareFirstTurn(eq("user_1"), eq(NOTE_CONVERSATION_ID), eq(null), eq(null),
-                eq("一段材料"), eq(null), eq(null), eq(null), eq(null)))
+                eq("一段材料"), eq(null), eq(null), eq(null), eq(null), eq(null)))
                 .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
         when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
                 .thenReturn(NoteGenerateDispatchResult.builder().build());
@@ -243,7 +243,7 @@ class DemoNoteControllerTest {
                         .content("{\"text\":\"一段材料\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null);
+        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null, null);
     }
 
     @Test

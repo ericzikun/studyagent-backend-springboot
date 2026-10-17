@@ -30,10 +30,22 @@ public class NoteConversationVO {
     private String title;
     private String sourceType;
     private String attachmentObjectId;
+    /**
+     * 上传附件的原始文件名（标题会被 AI 起的会话名覆盖，所以单独回传）。
+     * <p>左栏首页的「提交摘要」气泡靠它渲染带类型图标的文件 chip。
+     */
+    private String attachmentFilename;
+    /**
+     * sourceType=text 时粘贴的原始文本。
+     * <p>刻意不截断：前端按行数折叠展示，截断会破坏「看全文」。
+     */
+    private String inputText;
     /** 表单：课程名称。 */
     private String courseName;
     /** 表单：学习目标枚举码。 */
     private String learningGoal;
+    /** 表单：笔记输出语言码。 */
+    private String outputLanguage;
     private String noteMd;
     /**
      * 笔记版本号：前端保存时回传作为乐观锁基线（不匹配则 400，需重新拉快照）。
@@ -71,8 +83,11 @@ public class NoteConversationVO {
                 .title(c.getTitle())
                 .sourceType(c.getSourceType())
                 .attachmentObjectId(c.getAttachmentObjectId())
+                .attachmentFilename(c.getAttachmentFilename())
+                .inputText(c.getInputText())
                 .courseName(c.getCourseName())
                 .learningGoal(c.getLearningGoal())
+                .outputLanguage(c.getOutputLanguage())
                 .noteMd(c.getNoteMd())
                 .noteVersion(c.getNoteVersion())
                 .status(c.getStatus())

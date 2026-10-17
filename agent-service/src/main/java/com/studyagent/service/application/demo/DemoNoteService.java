@@ -57,6 +57,10 @@ public class DemoNoteService {
     private static final String DRAFT_TITLE = "未命名笔记";
     private static final int TITLE_MAX_LENGTH = 60;
     private static final int COURSE_NAME_MAX_LENGTH = 255;
+    /** 附件的原始文件名（列宽同 092 的 VARCHAR(255)）。 */
+    private static final int ATTACHMENT_FILENAME_MAX_LENGTH = 255;
+    /** 笔记输出语言码（列宽同 092 的 VARCHAR(32)）。 */
+    private static final int OUTPUT_LANGUAGE_MAX_LENGTH = 32;
     /** 历史列表单页上限（单用户记录量小，暂不做游标分页）。 */
     private static final int MAX_LIST_LIMIT = 100;
 
@@ -193,12 +197,13 @@ public class DemoNoteService {
                                                 String sourceType, String objectId,
                                                 String text, String filename,
                                                 String courseName, String learningGoal,
-                                                String query) {
+                                                String outputLanguage, String query) {
         NoteConversation c = getOwned(clerkUserId, conversationId);
         String normalizedType = normalizeSourceType(sourceType, objectId, text);
         if (SOURCE_TYPE_FILE.equals(normalizedType)) {
             c.setSourceType(SOURCE_TYPE_FILE);
             c.setAttachmentObjectId(objectId.trim());
+            c.setAttachmentFilename(truncateToNull(filename, ATTACHMENT_FILENAME_MAX_LENGTH));
             c.setInputText(null);
             c.setTitle(truncate(filename == null || filename.isBlank() ? DRAFT_TITLE : filename.trim(),
                     TITLE_MAX_LENGTH));
@@ -207,11 +212,13 @@ public class DemoNoteService {
             ensureTextFitsCommandPayload(trimmed, "粘贴文本");
             c.setSourceType(SOURCE_TYPE_TEXT);
             c.setAttachmentObjectId(null);
+            c.setAttachmentFilename(null);
             c.setInputText(trimmed);
             c.setTitle(truncate(trimmed, TITLE_MAX_LENGTH));
         }
         c.setCourseName(truncateToNull(courseName, COURSE_NAME_MAX_LENGTH));
         c.setLearningGoal(normalizeLearningGoal(learningGoal));
+        c.setOutputLanguage(truncateToNull(outputLanguage, OUTPUT_LANGUAGE_MAX_LENGTH));
         c.setNoteMd(null);
         // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
         c.setNoteVersion(0L);

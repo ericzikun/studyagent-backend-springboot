@@ -23,12 +23,20 @@ public class NoteConversation {
     private String sourceType;
     /** 上传文件的附件 objectId（sourceType=file 时有值）。 */
     private String attachmentObjectId;
+    /**
+     * 上传附件的原始文件名（sourceType=file 时有值）。
+     * <p>单独存一份是因为 {@link #title} 会被 AI 起的会话名覆盖，
+     * 只留 objectId 的话前端画不出「文件 + 类型图标」。
+     */
+    private String attachmentFilename;
     /** 粘贴的原始文本（sourceType=text 时有值）。 */
     private String inputText;
     /** 表单：课程名称（可为空）。 */
     private String courseName;
     /** 表单：学习目标枚举码（exam_prep / quiz_review / homework / understand_lesson / take_notes / generate_questions / flashcards / other）。 */
     private String learningGoal;
+    /** 表单：笔记输出语言码。 */
+    private String outputLanguage;
     /** 生成出的笔记 Markdown。 */
     private String noteMd;
     /**

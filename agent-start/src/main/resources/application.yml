@@ -250,6 +250,11 @@ billing:
     country-currencies: ${BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES:BR=brl}
     test-override: ${BILLING_REGION_TEST_OVERRIDE:}
     proxy-secret: ${BILLING_REGION_PROXY_SECRET:}
+  # 区域定价目录（DB 注册表）。catalog-cache-seconds 影响回填 Price ID / 启用国家后的生效延迟；
+  # internal-token 保护 /v1/internal/billing/zone-pricing/**（preflight / rollout），默认空=拒绝所有请求。
+  zone-pricing:
+    catalog-cache-seconds: ${BILLING_ZONE_PRICING_CATALOG_CACHE_SECONDS:60}
+    internal-token: ${BILLING_ZONE_PRICING_INTERNAL_TOKEN:}
   intro-trial:
     enabled: ${BILLING_INTRO_TRIAL_ENABLED:true}
     plan-code: ${BILLING_INTRO_TRIAL_PLAN_CODE:pro_trial_to_monthly}

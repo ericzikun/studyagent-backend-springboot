@@ -87,6 +87,21 @@ class StudyPassBillingTest {
     @Mock
     private UserSubscriptionBootstrapService userSubscriptionBootstrapService;
 
+    /** 空目录的 zone 选价：全部反查为空，测试走 legacy 路径。 */
+    private final ZonePricingSelectionService zonePricing = new ZonePricingSelectionService(
+            new ZonePricingCatalog(
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class),
+                    60),
+            new com.studyagent.infra.service.billing.BillingPricingService(
+                    org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class),
+                    new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()));
+
+    private final com.studyagent.infra.service.billing.SubscriptionPriceRolloutService rolloutService =
+            org.mockito.Mockito.mock(com.studyagent.infra.service.billing.SubscriptionPriceRolloutService.class);
+
     private BillingDomainServiceImpl service() {
         return new BillingDomainServiceImpl(
                 subscriptionPlanMapper,
@@ -99,7 +114,7 @@ class StudyPassBillingTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
             @Override com.stripe.model.Customer retrieveStripeCustomer(String id) {
                 var customer = new com.stripe.model.Customer(); customer.setId(id); customer.setEmail("user@example.com");
                 customer.setMetadata(java.util.Map.of("clerk_user_id", USER)); return customer;

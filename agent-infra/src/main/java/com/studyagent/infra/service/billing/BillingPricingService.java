@@ -82,7 +82,8 @@ public class BillingPricingService {
         BillingQuote result = BillingQuote.builder().kind(kind).skuCode(sku).action(action).currency(currency)
                 .amountCents(amount).billingInterval(interval).trialDays(days).renewalAmountCents(renewalAmount)
                 .renewalCurrency(renewalAmount == null ? null : currency).effectiveAt(effectiveAt).build();
-        result.setQuoteVersion(fingerprint(String.join("|", "v1", userId, kind, sku, action, currency,
+        // v2：context 现携带绑区/版本/当前与转正 Price ID（DE/IT 同额 Trial 指纹必须不同）
+        result.setQuoteVersion(fingerprint(String.join("|", "v2", userId, kind, sku, action, currency,
                 Integer.toString(amount), Objects.toString(interval, ""), Objects.toString(days, ""),
                 Objects.toString(renewalAmount, ""), Objects.toString(context, ""), Objects.toString(effectiveAt, ""))));
         return result;

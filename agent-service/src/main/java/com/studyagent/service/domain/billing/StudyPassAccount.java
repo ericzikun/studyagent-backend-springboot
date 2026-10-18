@@ -34,4 +34,6 @@ public class StudyPassAccount {
      * 而不是自己按时间推算。
      */
     private Boolean purchasable;
+    /** 下周期换价预告（rollout 已安排未生效）；legacy 合同为 null。 */
+    private NextCyclePriceChange nextCyclePriceChange;
 }

@@ -337,15 +337,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return pricedProduct(source, fallbackCurrency);
     }
 
-    /** Stripe 元数据：绑定区/版本/SKU（试用加转正价）。legacy 副本返回空 map。 */
+    /** Stripe 元数据：购买国家 + 绑定区/版本/SKU（试用加转正价）。legacy 只带国家。 */
     private Map<String, String> zoneMetadata(String stripePriceId) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        String country = purchaseCountry();
+        if (country != null) {
+            metadata.put("pricing_country", country);
+        }
         Optional<ZonePricingSelectionService.RegistryBinding> binding =
                 zonePricing.registryBinding(stripePriceId);
         if (binding.isEmpty()) {
-            return Map.of();
+            return metadata;
         }
         ZonePricingSelectionService.RegistryBinding registry = binding.get();
-        Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("pricing_zone", registry.zoneCode());
         metadata.put("pricing_version", registry.priceVersion());
         metadata.put("sku_code", registry.skuCode());
@@ -353,6 +357,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             metadata.put("renewal_price_id", registry.renewalPriceId());
         }
         return metadata;
+    }
+
+    /** 请求作用域的可信国家（过滤层已校验 ISO）；无头/未知返回 null。 */
+    private static String purchaseCountry() {
+        String country = BillingPricingContext.country();
+        return country == null || country.isBlank() ? null : country.trim().toUpperCase(Locale.ROOT);
     }
 
     private static void putAllMetadata(
@@ -1182,6 +1192,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             var reservationZone = zonePricing.registryBinding(product.getStripePriceId()).orElse(null);
             reservation.setPricingZone(reservationZone == null ? null : reservationZone.zoneCode());
             reservation.setPriceVersion(reservationZone == null ? null : reservationZone.priceVersion());
+            reservation.setPricingCountry(purchaseCountry());
             // Null identifies newly purchased monthly subscriptions; historical
             // 30-day subscriptions retain their saved billing_interval_days=30.
             reservation.setBillingIntervalDays(null);
@@ -1244,6 +1255,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             if (orderZone != null) {
                 passContext.put("pricing_zone", orderZone.zoneCode());
                 passContext.put("price_version", orderZone.priceVersion());
+            }
+            String purchaseCountry = purchaseCountry();
+            if (purchaseCountry != null) {
+                passContext.put("pricing_country", purchaseCountry);
             }
             order.setBizContext(GSON.toJson(passContext));
             rechargeOrderMapper.updateById(order);
@@ -1697,7 +1712,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .manageable(managed).renewalPriceCents(pass.getRenewalPriceCents())
                 .currency(pass.getRenewalCurrency()).billingIntervalDays(pass.getBillingIntervalDays())
                 .billingInterval(recurring && pass.getBillingIntervalDays() == null ? "month" : null).build();
-        if (hasText(pass.getPricingZone()) && hasText(pass.getStripeSubscriptionId())) {
+        if (hasText(pass.getStripeSubscriptionId())) {
             rolloutService.scheduledChangeFor(clerkUserId, pass.getStripeSubscriptionId())
                     .ifPresent(account::setNextCyclePriceChange);
         }
@@ -1743,6 +1758,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         Integer validityDays = null;
         String pricingZone = null;
         String priceVersion = null;
+        String pricingCountry = null;
         if (hasText(order.getBizContext())) {
             com.google.gson.JsonObject contextJson =
                     GSON.fromJson(order.getBizContext(), com.google.gson.JsonObject.class);
@@ -1753,6 +1769,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             }
             if (contextJson.has("price_version") && !contextJson.get("price_version").isJsonNull()) {
                 priceVersion = contextJson.get("price_version").getAsString();
+            }
+            if (contextJson.has("pricing_country") && !contextJson.get("pricing_country").isJsonNull()) {
+                pricingCountry = contextJson.get("pricing_country").getAsString();
             }
         } else {
             StudyPassProductEntity product = studyPassProductMapper.selectOne(
@@ -1777,6 +1796,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         pass.setStripePaymentIntentId(stripePaymentIntentId);
         pass.setPricingZone(pricingZone);
         pass.setPriceVersion(priceVersion);
+        pass.setPricingCountry(pricingCountry);
         pass.setCreatedAt(now);
         pass.setUpdatedAt(now);
         studyPassMapper.insert(pass);
@@ -2520,9 +2540,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean isQuotaVip = quotaVipAccessService.isQuotaVip(clerkUserId);
         boolean unlimited = isAdmin || isQuotaVip;
         SubscriptionResult result = entity == null ? freeSubscription() : toResult(entity);
-        // 区域合同且 rollout 已安排下周期换价：展示「下期将按新价续费」。
-        if (entity != null && hasText(entity.getPricingZone())
-                && hasText(entity.getStripeSubscriptionId())) {
+        // rollout 已安排下周期换价：展示「下期将按新价续费」（含尚未回填 zone 的旧合同）。
+        if (entity != null && hasText(entity.getStripeSubscriptionId())) {
             rolloutService.scheduledChangeFor(clerkUserId, entity.getStripeSubscriptionId())
                     .ifPresent(result::setNextCyclePriceChange);
         }
@@ -3851,6 +3870,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (targetZone != null) {
             snapshot.put("pricing_zone", targetZone.zoneCode());
             snapshot.put("price_version", targetZone.priceVersion());
+        }
+        String upgradeCountry = purchaseCountry();
+        if (upgradeCountry != null) {
+            snapshot.put("pricing_country", upgradeCountry);
         }
         order.setBizContext(GSON.toJson(snapshot));
         order.setCreatedAt(now);

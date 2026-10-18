@@ -142,7 +142,7 @@ class SubscriptionPriceRolloutServiceTest {
     }
 
     @Test
-    void dryRunBackfillsLegacyOrderEvidenceContract() throws Exception {
+    void dryRunClassifiesLegacyOrderEvidenceWithoutEarlyBackfill() throws Exception {
         long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
         loadCatalog();
         when(userSubscriptionMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
@@ -163,18 +163,48 @@ class SubscriptionPriceRolloutServiceTest {
         SubscriptionPriceRolloutService.DryRunSummary summary = service.dryRun(ZONE, TARGET_VERSION);
 
         assertEquals(1, summary.preview());
-        assertEquals(1, summary.backfilled());
-        ArgumentCaptor<Wrapper<UserSubscriptionEntity>> updateWrapper = ArgumentCaptor.forClass(Wrapper.class);
-        verify(userSubscriptionMapper).update(isNull(), updateWrapper.capture());
-        var params = ((com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<UserSubscriptionEntity>)
-                updateWrapper.getValue()).getParamNameValuePairs();
-        assertTrue(params.containsValue(ZONE));
-        assertTrue(params.containsValue("legacy"));
-        assertTrue(params.containsValue("brl"));
+        // 旧合同到期前不得回填 zone/版本，否则会员目录会提前按新价展示。
+        assertEquals(0, summary.backfilled());
+        verify(userSubscriptionMapper, never()).update(isNull(), any(Wrapper.class));
         ArgumentCaptor<SubscriptionPriceRolloutEntity> inserted =
                 ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
         verify(rolloutMapper).insert(inserted.capture());
         assertEquals("legacy", inserted.getValue().getSourceVersion());
+        assertEquals("brl", inserted.getValue().getCurrency());
+    }
+
+    @Test
+    void dryRunDefaultZoneIncludesLegacyUsdContracts() throws Exception {
+        long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
+        loadCatalog();
+        when(userSubscriptionMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(studyPassMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        RechargeOrderEntity evidence = new RechargeOrderEntity();
+        evidence.setClerkUserId("user_legacy_usd");
+        evidence.setCurrency("usd");
+        when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(evidence));
+        UserSubscriptionEntity legacy = new UserSubscriptionEntity();
+        legacy.setId(13L);
+        legacy.setClerkUserId("user_legacy_usd");
+        legacy.setStripeSubscriptionId("sub_legacy_usd");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(legacy);
+        SubscriptionPlanEntity legacyPlan = new SubscriptionPlanEntity();
+        legacyPlan.setPlanCode("pro_monthly");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(legacyPlan);
+        when(rolloutMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        TestableRolloutService service = service();
+        service.subscriptions.put("sub_legacy_usd",
+                subscription("sub_legacy_usd", "price_legacy_pro_monthly", "usd", periodEnd, false));
+
+        SubscriptionPriceRolloutService.DryRunSummary summary = service.dryRun("Z100", TARGET_VERSION);
+
+        assertEquals(1, summary.preview());
+        assertEquals(0, summary.backfilled());
+        ArgumentCaptor<SubscriptionPriceRolloutEntity> inserted =
+                ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
+        verify(rolloutMapper).insert(inserted.capture());
+        assertEquals("price_z100_pro_v2", inserted.getValue().getTargetPriceId());
+        assertEquals("usd", inserted.getValue().getCurrency());
     }
 
     @Test
@@ -635,9 +665,9 @@ class SubscriptionPriceRolloutServiceTest {
         return service;
     }
 
-    /** v1=v2 两版 pro_monthly 绑定 + BR 路由：v1 3999 brl、v2 4499 brl。 */
+    /** v1=v2 两版 pro_monthly 绑定 + BR 路由 + 默认 Z100 档：v1 3999 brl、v2 4499 brl。 */
     private void loadCatalog() {
-        when(zoneMapper.selectList(any())).thenReturn(List.of(zone(true)));
+        when(zoneMapper.selectList(any())).thenReturn(List.of(zone(true), zoneRow("Z100", "默认 1.00 档", true)));
         PricingCountryRouteEntity brRoute = new PricingCountryRouteEntity();
         brRoute.setCountryCode("BR");
         brRoute.setZoneCode(ZONE);
@@ -647,8 +677,18 @@ class SubscriptionPriceRolloutServiceTest {
         when(routeMapper.selectList(any())).thenReturn(List.of(brRoute));
         when(priceMapper.selectList(any())).thenReturn(List.of(
                 binding(ZONE, SOURCE_VERSION, "pro_monthly", SOURCE_PRICE, "{\"brl\":{\"amountMinor\":3999}}"),
-                binding(ZONE, TARGET_VERSION, "pro_monthly", TARGET_PRICE, "{\"brl\":{\"amountMinor\":4499}}")));
+                binding(ZONE, TARGET_VERSION, "pro_monthly", TARGET_PRICE, "{\"brl\":{\"amountMinor\":4499}}"),
+                binding("Z100", TARGET_VERSION, "pro_monthly", "price_z100_pro_v2", "{\"usd\":{\"amountMinor\":2999}}")));
         when(aliasMapper.selectList(any())).thenReturn(List.of());
+    }
+
+    private static PricingZoneEntity zoneRow(String code, String label, boolean active) {
+        PricingZoneEntity entity = new PricingZoneEntity();
+        entity.setZoneCode(code);
+        entity.setLabel(label);
+        entity.setActiveVersion(TARGET_VERSION);
+        entity.setIsActive(active);
+        return entity;
     }
 
     private static PricingZoneEntity zone(boolean active) {

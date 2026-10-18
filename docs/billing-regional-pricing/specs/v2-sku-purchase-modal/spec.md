@@ -25,3 +25,12 @@ SKU 弹层、题库 Study Pass 确认和已有套餐变更确认 SHALL 使用后
 - **WHEN** 提交旧确认得到 PRICING_QUOTE_CHANGED
 - **THEN** 弹层 SHALL 展示最新适用金额并等待用户重新确认
 - **AND** SHALL NOT 自动创建新 Checkout 或丢失任务输入
+
+### Requirement: 两组弹层统一新金额且不扩散Pro例外
+
+第一、第二组全部地区的购买弹层 SHALL 消费新价格表，Pro仅采用新Pro金额。线上已购Pro当前周期保旧价仅限该会员已付周期，不扩展到本次额外包、套餐变更或独立Study Pass报价。
+
+#### Scenario: 保旧价Pro购买新额外包
+- **GIVEN** 符合资格的巴西线上Pro本期已付BRL399.90
+- **WHEN** 打开会员作业额外包弹层
+- **THEN** 界面 SHALL 报价新表BRL19.99，并保持原任务输入和确认交互

@@ -5,10 +5,10 @@
 V2 Pricing、登录后的会员变更及账号账单 SHALL 消费后端适用的 currency 和 amount，而不硬编码 USD 或由前端判定 BRL 资格。新购目录 SHALL 区分访问地区，账号相关报价 SHALL 保持有效订阅币种。金额格式 SHALL 按币种显示，BRL 使用明确的 R$ 格式；语言选项 SHALL 不授予地区价格。公开 Trial 卡仍遵循既有展示策略，Checkout SHALL 披露实际首段和正式续费价格。
 
 #### Scenario: 巴西用户查看 Pricing 和付款
-- **GIVEN** legacy 基线后端返回 Pro Trial 为 brl 490，后续正式月付为 brl 39990
+- **GIVEN** 方案A后端返回巴西新Trial为brl599，后续新Pro月付为brl6099
 - **WHEN** 用户查看 Pricing 并进入 Checkout
-- **THEN** Pricing SHALL 展示 R$ 4,90 与 7 天期限
-- **AND** Checkout SHALL 准确披露 7 天后 R$ 399,90/月，不包含硬编码 USD 说明
+- **THEN** Pricing SHALL 展示 R$ 5,99 与 7 天期限
+- **AND** Checkout SHALL 准确披露 7 天后 R$ 60,99/月，不包含硬编码 USD 说明
 - **AND** 年付视图 SHALL 使用同一可售月付 Trial，不重新启用停售 yearly Trial
 
 #### Scenario: 账单同时包含多种历史币种
@@ -26,9 +26,9 @@ Pricing SHALL 在登录回跳后刷新账号资格和适用报价；购买/收�
 - **THEN** 页面 SHALL 展示新的适用价格并要求重新确认
 - **AND** SHALL NOT 自动跳转到不同币种的 Checkout
 
-### Requirement: 首批地区金额按 Stripe 扣款单位展示
+### Requirement: 第一第二组金额按核验的扣款单位展示
 
-前后端金额格式 SHALL 使用 Stripe 扣款最小单位；首批 KRW 为零小数单位，HKD/TWD/IDR/TRY/EUR/SEK/THB/BRL 为两位单位。报价接口 SHALL 保持现有字段兼容，页面不自行计算地区价格。Checkout 试用说明 SHALL 使用后端同一合同区版本的首付和转正金额。
+前后端金额格式 SHALL 使用 Stripe 扣款最小单位；第一、第二组全币种逐项核验扣款单位；已整理资料中KRW/JPY/VND/RWF为零小数，TWD/IDR等按两位，TND待支持和扣款单位确认。报价接口 SHALL 保持现有字段兼容，页面不自行计算地区价格。Checkout 试用说明 SHALL 使用后端同一合同区版本的首付和转正金额。
 
 #### Scenario: 韩元试用说明与台湾金额
 - **WHEN** 后端返回 KRW amountCents=2490 或 TWD amountCents=5900
@@ -36,7 +36,7 @@ Pricing SHALL 在登录回跳后刷新账号资格和适用报价；购买/收�
 - **AND** SHALL NOT 将 KRW 固定除以 100，也不得把 TWD payout 特例用于扣款展示
 
 #### Scenario: 新 Pro 与既有会员展示
-- **GIVEN** 新德国用户与既有 legacy Pro 用户分别查看账号适用价格
+- **GIVEN** 新德国用户与本次需求确认时线上已购Pro用户分别查看账号适用价格
 - **WHEN** 页面展示购买和后续续费金额
 - **THEN** 新合同 SHALL 使用 Z080 新 Pro 月价 EUR 20.99；旧合同 SHALL 显示实际当前金额，并在已有换价安排时披露下一期金额和生效日期
 - **AND** 前端不得按当前访问国家改写旧会员报价
@@ -50,3 +50,16 @@ Pricing SHALL 在登录回跳后刷新账号资格和适用报价；购买/收�
 - **WHEN** 用户查看账号续费信息
 - **THEN** 页面 SHALL 保留本期金额，并展示下一期 BRL 60.99 及实际生效日期
 - **AND** 仅修改销售配置、尚未安排成功时 SHALL NOT 展示为已确定的合同新价
+
+### Requirement: 两组新价与唯一Pro例外在界面一致
+
+Pricing、账号、购买弹层和Checkout SHALL 对第一组10地区、第二组53地区全部消费新金额，Pro采用新Pro列。只有本次需求确认时线上已购买Pro的当前已付周期展示旧金额保护，下期展示实际已安排新金额及生效日期。Basic、Plus、Trial、Pass和额外包不得因合同已存在继承旧价；已付历史仍按事实展示，不追溯重算。
+
+#### Scenario: 第二组新Pro与旧Pro区分
+- **WHEN** 美国新用户与符合资格的线上旧Pro用户查看账号或购买页
+- **THEN** 新用户 SHALL 看到USD29.99/月；旧Pro当前已付金额按实际合同展示，下期目标为本区新Pro金额且安排状态真实
+- **AND** SHALL NOT 向美国用户展示“第二组暂不采用新价”
+
+#### Scenario: 非Pro和额外包不继承旧价
+- **WHEN** 已有Basic/Plus/Trial/Pass用户取得新报价，或线上旧Pro用户购买会员额外包
+- **THEN** 界面 SHALL 展示对应新金额并提交报价确认，不按历史Pro版本补齐商品价格

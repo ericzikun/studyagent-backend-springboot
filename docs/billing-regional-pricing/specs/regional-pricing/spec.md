@@ -1,8 +1,10 @@
 ## ADDED Requirements
 
+2026-10-18 r5（Pass全量固定金额已齐）：第一、第二组全部新价，仅本次需求确认时线上已购Pro当前已付周期保旧价、下个付费周期切新价。下文早期BR-only场景用于legacy功能关闭／旧事件回归；扩展启用后以“两组定价区选择新金额”和线上Pro换价规格为准。
+
 ### Requirement: 可信地区决定独立新购资格
 
-系统 SHALL 仅使用通过自有代理链路认证的国家信号和服务端配置决定独立新购币种。legacy 国家→币种规则 SHALL 保留 BR→brl；方案 A SHALL 对启用名单中的 HK、TW、ID、KR、TR、DE、IT、SE、TH、AT、BR 的会员、extra packs 及 Study Pass 叠加地区目录路由。非首批或未启用国家 SHALL 走 legacy 路由；unknown 或地区总开关关闭时新购 SHALL 使用既有 USD 销售策略。旧 credit packs SHALL 保留 legacy 规则；Study Pass 新购纳入新增路由；适用存量合同本期保持原价，下个付费周期按 subscription-price-rollout 规格切换新版本，区和币种不变。系统 MUST NOT 根据客户端传入的 currency/region/Price ID、界面语言、时区、Clerk 邮箱 location 标记或未认证转发头授予地区优惠资格。首版国家信号表示当前网络地区，不证明居住地。
+系统 SHALL 仅使用通过自有代理链路认证的国家信号和服务端配置决定独立新购币种。方案A SHALL 对第一组10地区、第二组53地区全部使用地区新目录，覆盖会员、Trial、extra packs与Study Pass；Pro只用新Pro价格，不按组别排除国家。只有本次需求确认时线上已购买Pro的当前已付周期按subscription-price-rollout保留旧金额，下个付费周期切新价；其他商品和新收费动作不得继承此例外。两组范围外、unknown及总开关关闭时保留既有销售路由供兼容；范围内尚未完成配置须明确列待办，不能以旧价销售声称完成新需求。旧独立额度SKU缺少对应新金额时先核对，不套用会员addon金额或新增保旧价资格。系统 MUST NOT 根据客户端currency/region/Price ID、界面语言、时区、邮箱location标记或未认证转发头授予地区优惠资格。可信国家信号表示网络地区，不证明居住地。
 
 #### Scenario: 巴西用户首次购买
 - **GIVEN** 用户通过可信链路访问，国家为 BR，且不存在需恢复的有效同类订阅
@@ -184,15 +186,15 @@
 
 ### Requirement: 通用地区定价配置
 
-系统 SHALL 使用通用总开关 BILLING_REGIONAL_PRICING_ENABLED，默认 false；国家→币种规则 SHALL 由 BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES 提供，以逗号分隔 COUNTRY=currency，默认仅 BR=brl。空规则 SHALL 移除全部新购地区映射；规则 SHALL 整体替换而非与默认 BR 规则合并。系统 SHALL 规范化国家大写、币种小写，并在启动时拒绝非法 ISO 国家、币种、格式或重复国家。未来经业务批准并配置对应 SKU 价格后 SHALL 能通过规则增加国家，不增加国家专用开关；方案 A SHALL 通过独立定价区目录叠加 11 地区路由，legacy 配置语义保持；实际 Stripe 配置按对应执行授权处理。BILLING_BRAZIL_PRICING_ENABLED SHALL 不再作为启用入口，前端报价契约和已有订阅币种权威 SHALL 保持不变。
+系统 SHALL 保留通用总开关BILLING_REGIONAL_PRICING_ENABLED（默认false）及legacy国家币种配置BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES（默认BR=brl）的兼容语义。legacy空规则移除映射、整体替换默认规则、规范化大小写及拒绝非法或重复配置的行为不变。方案A SHALL 通过独立定价区目录覆盖第一、第二组全部63地区；legacy的BR-only回归场景不限定扩展范围。开关和国家名单记录实际发布状态，配置未齐不构成第二组继续旧价的规则。实际Stripe写入按对应执行授权处理，旧BILLING_BRAZIL_PRICING_ENABLED不再生效，报价确认及合同币种权威保持。
 
-#### Scenario: 当前默认规则与 unknown
-- **GIVEN** 通用开关开启且规则为 BR=brl
+#### Scenario: legacy默认规则与unknown回归
+- **GIVEN** 未启用方案A扩展目录，通用开关开启且legacy规则为BR=brl
 - **WHEN** 可信国家分别为 BR、KR、US、SG 或 unknown
 - **THEN** 仅 BR SHALL 使用 brl，其他 SHALL 使用 usd
 
-#### Scenario: 配置替换与扩展
-- **GIVEN** 隔离本地测试配置 KR=krw，并使用 mock Stripe 价格
+#### Scenario: legacy配置替换与扩展回归
+- **GIVEN** 未启用方案A扩展目录，隔离本地测试配置KR=krw，并使用mock Stripe价格
 - **WHEN** 系统解析可信 KR 与 BR 的独立新购报价
 - **THEN** KR SHALL 使用 krw，BR SHALL 使用 usd，不保留默认 BR 映射
 - **AND** 已有 BRL/USD 订阅 SHALL 保持原币种
@@ -210,77 +212,93 @@
 - **THEN** Spring 容器 SHALL 收到通用开关和完整国家规则，默认 false 与 BR=brl
 - **AND** 显式空规则 SHALL 保持为空，不重新插入默认 BR
 
-### Requirement: 首批定价区选择固定版本 Price
+### Requirement: 两组定价区选择新金额
 
-系统 SHALL 对方案 A 的 11 地区使用后端国家→区/币种→版本→SKU Price 映射，覆盖七个定价区的 11 个在售 SKU。首批新合同 Pro SHALL 使用“新 Pro”列，权益和 SKU 不变；具体金额 SHALL 以 regional-expansion-prices.json 的固定金额为配置核对基准。Stripe 读取值与核对基准不一致时 MUST 禁止相关销售。系统 MUST NOT 运行时计算倍率/汇率，也 MUST NOT 因区 Price 缺币种而静默使用 USD。仅新建地区 Price 的统一 USD 默认金额不得覆盖 legacy 商品表金额。
+系统 SHALL 对第一组10地区、第二组53地区全部选择对应新价格，Pro SHALL 只使用新Pro月／年列，Trial转正 SHALL 使用新Pro月价。分组不是销售资格条件，巴西无单独准入特例。固定金额以regional-price-matrix.md及regional-expansion-prices.json核对；共63地区、16区、62个区币种组合。系统 MUST NOT 运行时按倍率／汇率计算，缺配置 MUST NOT 回退旧销售价或技术USD默认金额。
 
-#### Scenario: 欧元同币种不同价
-- **GIVEN** DE、AT 和 IT 已启用方案 A
-- **WHEN** 用户分别新购 Basic 月付
-- **THEN** DE/AT SHALL 共用 Z080 的 EUR 13.99 Price，IT SHALL 使用 Z070 的 EUR 11.99 Price
-- **AND** 虽然两个地区 Trial 均为 EUR 1.99，其转正 Pro 月价 SHALL 分别为 EUR 20.99 和 EUR 18.99
+#### Scenario: 第二组美国印度使用新金额
+- **WHEN** 美国或印度用户新购Pro
+- **THEN** 系统 SHALL 分别报价USD29.99/月、INR569/月，年付为USD359.88、INR6828
+- **AND** SHALL NOT 因属于第二组沿用旧Pro价格或排除本次范围
 
-#### Scenario: 未开放地区与范围外商品
-- **WHEN** 非首批地区新购，或用户购买旧 credit packs
-- **THEN** 系统 SHALL 沿用原 legacy 路由、SKU 及价格，不因附加目录含 USD 或其他本币而自动切换
-- **AND** 巴西已在售旧 Price、当前已付周期及历史订单 SHALL NOT 被覆盖；适用存量合同 SHALL 按下周期换价规格安排新 Price；巴西新购 SHALL 使用新建 Z040/BRL Price，Trial 5.99 后转 Pro 60.99/月
+#### Scenario: 同币种地区金额不同
+- **WHEN** DE、AT、IT分别请求Basic月价，US、EC、ZW分别请求USD Basic月价
+- **THEN** DE/AT SHALL 为EUR13.99，IT为EUR11.99；US/EC/ZW SHALL 分别为USD19.99/6.99/3.99
+- **AND** USD实际销售区Price默认金额 SHALL 与该区USD新金额一致，不能覆盖成统一美国价
 
-### Requirement: 合同保留定价区且按生效阶段解析版本
+### Requirement: 线上Pro当前周期保护不扩展到其他商品
 
-系统 SHALL 维护不可变 Price ID→区/版本/SKU 注册表，并在已有订单 biz_context 合并 pricing 快照。合同 SHALL 保留原区和实际 Subscription.currency；当前周期动作使用实际生效版本，下一付费周期按 subscription-price-rollout 规格切换已安排版本。Trial 转正、升级、降级、会员 extra packs 及重试 SHALL 区分当前与未来目标，不提前覆盖当前价格。系统 SHALL 支持旧合同无新增 metadata 的 legacy alias 解析；未登记 ID 不得凭国家、金额或 metadata 猜测 SKU。历史权益、退款、事件时间排序及幂等保护 SHALL 保持。
+系统 SHALL 按subscription-price-rollout固化线上已购Pro资格并保留其当前已付事实，下个付费周期采用同区同币种新金额。新购Pro、Basic、Plus、Trial、Pass、额外包及新变更目标 SHALL 使用新表；合同当前旧Price仅解释已有付款和权益，不作为其他商品新报价依据。
 
-#### Scenario: 旅行与目录更新
-- **GIVEN** 用户已购买 Z080/v1/EUR，后访问 IT，且新购销售版本变为 v2
-- **WHEN** 用户续费、变更套餐或购买会员额外包
-- **THEN** 系统 SHALL 保留 Z080/EUR；本期使用 v1，下期按已成功安排的目标使用 v2，不因旅行切到 Z070
+#### Scenario: 旧Pro合同购买新额外包
+- **GIVEN** 线上已购巴西Pro当前已付BRL399.90，下期安排BRL60.99
+- **WHEN** 用户购买会员作业额外包
+- **THEN** 本次 SHALL 为新表BRL19.99，本期Pro原已付金额保持，不沿用旧版本额外包价
 
-#### Scenario: 旧合同和新 Price 回调
-- **WHEN** 收到已登记的旧 USD/BRL/KRW 或新地区 Price 的签名支付事件
-- **THEN** 系统 SHALL 按该事件合同及订单快照识别 SKU、金额、币种和区版本，按既有幂等规则处理
-- **AND** SHALL NOT 因商品表只有一个当前 Price ID 而丢失新 Price 的权益发放
+#### Scenario: BasicPlus与Trial不享受Pro保护
+- **WHEN** 已有Basic、Plus、Trial或Pass产生上线后的新报价／后续应付
+- **THEN** 系统 SHALL 使用新金额，Trial转正用新Pro月价，不授予当期保旧价资格
+- **AND** 已支付历史 SHALL 不追溯改写、补扣或退款
 
-### Requirement: 地区报价覆盖当前与未来收费目标
+### Requirement: 合同归属与历史快照可恢复
 
-报价指纹 SHALL 绑定区、版本、当前/目标 Price、币种和金额，Trial SHALL 同时绑定转正 Price 和金额。创建 Checkout、修改订阅或 Schedule 前 MUST 从同一上下文重验。Schedule 创建失败 SHALL 保留恢复能力，重复事件 SHALL NOT 创建错误版本的转正目标。
+系统 SHALL 维护Price ID到区／版本／SKU的不可变注册表，订单biz_context合并pricing快照。已有合同保持区和实际币种，旅行不换区；实际当前Price、已安排目标与新收费上下文分别处理。只信任登记映射与可靠购买证据，未知ID不猜SKU，旧事件不回退新合同状态。
 
-#### Scenario: 相同试用金额但不同转正金额
-- **GIVEN** 用户先取得 DE Trial EUR 1.99 报价，确认时仅符合 IT 新购资格
-- **WHEN** 用户提交旧 quoteVersion
-- **THEN** 系统 SHALL 返回报价变化，不因首付金额相同而接受旧报价
+#### Scenario: 旅行后按原合同区使用新报价
+- **GIVEN** 德国区EUR合同用户访问意大利
+- **WHEN** 报价或续费
+- **THEN** 系统 SHALL 保留德国区EUR，使用该区适用新目标；只有符合线上Pro资格的当前已付周期保留原金额
 
-### Requirement: 新 Pro 保持既有套餐变更算法
+#### Scenario: 历史区无法确认
+- **WHEN** 旧EUR合同无法确认所属德国或意大利
+- **THEN** 系统 SHALL 列待处理并记录原因，不以当前IP猜区，不把待处理当成永久保旧价资格
 
-系统 SHALL 按既有 plan/tier/interval 判断升降级，不用金额大小替代权益等级。新目录仅提供正确的当前/目标价格；月付升级、年付抵扣、零额和实际付款处理 SHALL 保持既有政策。同 SKU 存量换价 SHALL 通过受控发布流程在下一付费周期生效，不作为立即升级或降级，不产生本期差额。
+### Requirement: 地区报价覆盖实际收费目标
 
-#### Scenario: 更便宜的 Pro 月付仍是权益升级
-- **GIVEN** 用户持有 Z080/v1 的 Plus 月付 EUR 27.99
-- **WHEN** 升级到同版本 Pro 月付 EUR 20.99
-- **THEN** 系统 SHALL 按既有 monthly_full 规则报价 EUR 20.99 并在付款后切换权益及周期
-- **AND** SHALL NOT 将其按负差价退款或按售价判成权益降级
+报价指纹 SHALL 绑定用户、动作、SKU、区、版本、当前／目标Price、币种金额与Trial转正Price金额。Checkout／Schedule变更前重验；新旧Session仅在完整上下文匹配时复用，报价变化等待用户再次确认。webhook SHALL 按实际付款快照识别SKU并幂等发权益。
 
-### Requirement: 地区启用与历史履约相互独立
+#### Scenario: 相同试用价但转正目标不同
+- **GIVEN** 原报价为德国Trial EUR1.99，确认时独立新购资格变为意大利
+- **WHEN** 提交旧quoteVersion
+- **THEN** 系统 SHALL 拒绝旧报价并刷新，因转正价分别为EUR20.99与EUR18.99
 
-地区新购开关和国家名单 SHALL 只决定新合同销售路由，不影响已建立合同的 Price 注册表解析和履约。只有所需 Price、币种、Product、环境和目标全部验证通过的国家才能启用。回滚 SHALL 保留历史映射及兼容代码。
+### Requirement: 新Pro保留既有套餐变更算法
 
-#### Scenario: 关闭首批销售
-- **GIVEN** 已存在首批地区合同
-- **WHEN** 管理员从名单移除国家或关闭地区新购
-- **THEN** 新购 SHALL 回到 legacy 销售路由，旧合同 SHALL 保持原区和币种，按当前生效 Price 及已安排 Schedule 完成续费、转正和故障恢复；关闭新购不撤销已安排换价
-- **AND** 已完成旧 Checkout 的延迟支付事件 SHALL 仍按原快照处理
+系统 SHALL 按权益等级及既有周期规则判断升降级，价格目标用新表，抵扣依据真实净付款。Pro当前周期保护不阻止用户主动变更，不给新变更保旧价；已预约降级仍保留用户目标和日期。
+
+#### Scenario: 新Pro低于Plus月价
+- **GIVEN** 德国Plus月付用户请求升级Pro
+- **WHEN** 按原monthly_full算法计算
+- **THEN** 系统 SHALL 报价新Pro EUR20.99，按既有规则切换权益和周期，不按负差价退EUR7
+
+### Requirement: 全部地区配置待办不能变成旧价特例
+
+两组63地区 SHALL 全部纳入新价交付。金额未齐、Stripe币种支持未验证、Price未创建等 SHALL 显式列为配置／验证待办，不能排除国家或继续以旧价声称需求完成。11个SKU目标176条Price／682个金额；现有620个会员／Trial／额外包金额和62个Pass建议金额已补齐主单位值，但不等于全部配置通过；TND最小单位仍待核验。原表GHS/TND保留待核验，USD替代建议不自动获准。旧独立额度SKU未有新金额时列待核对，不套用会员addon金额、不新增保旧价资格。
+
+#### Scenario: 第二组Pass金额缺失
+- **WHEN** 某地区Study Pass尚无确认固定金额或最低扣款证据
+- **THEN** 系统 SHALL 保持该地区在需求范围，缺项标待补，不使用旧金额或把整个地区改成范围外
+
+### Requirement: StudyPass独立合同使用新应付金额
+
+Study Pass SHALL 按自身区、币种、自然月合同使用确认的新金额，不继承Pro保旧价资格。固定月价按既有USD0.99基价、倍率与固定折算参考补齐，全部62组合以JSON及study-pass-pricing.md为准。建议低额下限 SHALL 取USD0.60固定参考缓冲、HKD4按固定参考折算及已公布同币种结算最低金额中的最大值，金额 SHALL 不低于原始倍率价和该下限，按记录步长向上取整。实际最低扣款仍取决于目标账户结算设置；未实测不得声称已通过，低于实测下限时上线配置阶段再上调，不得付款时动态加价。首付、优惠后金额和次月扣款均需目标账户验证。
+
+#### Scenario: 会员与Pass分开处理
+- **GIVEN** 用户有Study Pass或以后购买会员
+- **WHEN** 处理Pass续费／覆盖取消／重复事件
+- **THEN** 系统 SHALL 按Pass自身合同与实际付款处理，后续目标用新金额，不沿用Pro当期保护
 
 
-### Requirement: Study Pass 地区固定月价与最低扣款核验
+#### Scenario: 第二组倍率低额价上调并全部补齐
+- **WHEN** 计算美国、印度、厄瓜多尔、津巴布韦的Study Pass月价
+- **THEN** 固定建议金额 SHALL 分别为USD0.99、INR57、USD0.60、USD0.60，且印度及两个低倍率USD区 SHALL 记录低额上调依据
+- **AND** 全部63地区的62个区币种主单位金额 SHALL 非空，原有10组合保持；计算与最低参考通过不代表实际账户扣款已通过
 
-Study Pass 新购 SHALL 在 11 地区按 USD 0.99 基价、地区倍率和文档固定折算参考生成本币月价；低于实际最低扣款时 SHALL 在上线配置阶段上调固定价格，不在付款时动态加价。USD 0.60 等值仅为建议配置缓冲参考，MUST NOT 当作 Stripe 实际统一门槛。启用前 SHALL 核验结算币种、支付方式和优惠后金额，并验证首付及次月扣款。Pass SHALL 保持自身区、币种和独立周期，并按下周期换价规格更新版本，不继承会员的定价上下文。
+### Requirement: 发布状态与历史履约独立
 
-#### Scenario: 低倍率地区补价
-- **GIVEN** 按倍率计算的本币金额低于目标账户实际最低扣款
-- **WHEN** 准备启用该地区 Study Pass
-- **THEN** 配置负责人 SHALL 上调固定本币 Price 并完成核验后再启用
-- **AND** 未完成核验的建议金额 SHALL NOT 被标记为已验证可扣款，运行时 SHALL NOT 临时抬高已确认报价
+地区开关 SHALL 记录实际配置发布状态，不能表达第二组继续旧价的业务规则。关停期间停止新销售不删除历史注册表；已安排Schedule继续按实际目标处理。停止销售、停止待执行迁移、撤销未来阶段分别执行，不影响历史快照。
 
-#### Scenario: Pass 续费和会员分别定价
-- **GIVEN** 用户已有一个 legacy 或 Z080/v1 的 Study Pass，之后旅行或购买其他适用地区会员
-- **WHEN** 处理 Pass 续费、覆盖取消或重复事件
-- **THEN** 系统 SHALL 按 Pass 实际 Price、Subscription.currency 和订单快照解析自身合同
-- **AND** SHALL NOT 用当前 Study Pass 商品表 Price、当前国家或会员区价覆盖实际价格；发布新版本时 SHALL 按自身 Schedule 在下一付费周期生效
+#### Scenario: 关停不撤销Pro下期新价
+- **GIVEN** 已为线上Pro安排下期新Price
+- **WHEN** 关闭新购开关
+- **THEN** 该安排 SHALL 保持；撤销必须另行核对并保留用户取消／降级等设置

@@ -1,11 +1,14 @@
-# 地区定价方案 A 后端交接
+# 地区定价方案A后端交接
 
-2026-10-18 按用户要求随后端 `feat/billing-brazil-pricing` 分支提交的交接快照。跨工程规格来源为 Verla 根仓库 `openspec/changes/add-brazil-regional-pricing/`；后续规则调整同步该来源与本目录。当前仅交付文档和配置草案，扩展功能尚未实施，未修改 Stripe。
+2026-10-18 r5。跨工程来源：Verla根`openspec/changes/add-brazil-regional-pricing/`；调整同时同步来源与此交接目录。本轮仅修正文档与配置草案，代码扩展、Stripe写入和部署尚未执行。
+
+第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。
 
 阅读顺序：
 
-1. [简版技术方案](regional-expansion-brief.md)：范围、问题和实现方式。
-2. [下周期换价规格](specs/subscription-price-rollout/spec.md)：本期不变、下个付费周期同区同币种换新价及验收场景。
-3. [实施任务](tasks.md)、[详细交接方案](regional-expansion-plan-a.md) 与 [价格草案](regional-expansion-prices.json)。
+1. [简版方案](regional-expansion-brief.md)：范围、唯一例外及例子。
+2. [两组完整新价格表](regional-price-matrix.md)：63地区固定金额及来源。
+3. [线上Pro换价规格](specs/subscription-price-rollout/spec.md)：资格、当期保护、下期换价与验收。
+4. [详细方案](regional-expansion-plan-a.md)、[价格JSON](regional-expansion-prices.json)和[任务](tasks.md)。
 
-旧独立额度包保持原规则。Study Pass 建议金额仍需目标账户最低扣款及续费验证。价格草案不是当前应用会自动读取的运行配置，Price ID 与地区启用状态尚未填写或开启。`price-matrix.md` 记录巴西基础阶段历史价格，不作为方案 A 新价；新价以价格草案为准。
+原“仅第一组加巴西”及“所有存量订阅本期保旧价”的口径已被替代。JSON已包含63地区；销售开关关闭、ID为空表示未配置，不是第二组不在需求范围。Study Pass已补齐原缺失52组合，全部62组合固定建议金额已齐，原10组合保持；[测算与低额上调](study-pass-pricing.md)可复核。全部实际最低扣款／续费及GHS/TND支持、TND最小单位与替代建议仍待核验。配置缺口不能成为继续旧价的业务例外。`price-matrix.md`只记录历史巴西沙盒价格。

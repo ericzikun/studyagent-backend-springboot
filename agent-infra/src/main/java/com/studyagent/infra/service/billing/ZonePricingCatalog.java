@@ -89,40 +89,46 @@ public class ZonePricingCatalog {
     }
 
     private Snapshot load() {
-        Map<String, PricingZoneEntity> zones = new LinkedHashMap<>();
-        for (PricingZoneEntity zone : safeList(pricingZoneMapper.selectList(null))) {
-            zones.put(zone.getZoneCode(), zone);
-        }
-        Map<String, PricingCountryRouteEntity> routes = new LinkedHashMap<>();
-        for (PricingCountryRouteEntity route : safeList(routeMapper.selectList(null))) {
-            if (route.getCountryCode() != null) {
-                routes.put(route.getCountryCode().trim().toUpperCase(Locale.ROOT), route);
+        try {
+            Map<String, PricingZoneEntity> zones = new LinkedHashMap<>();
+            for (PricingZoneEntity zone : safeList(pricingZoneMapper.selectList(null))) {
+                zones.put(zone.getZoneCode(), zone);
             }
-        }
-        Map<String, Map<String, Map<String, PricingZonePriceEntity>>> bindings = new LinkedHashMap<>();
-        Map<String, PricingZonePriceEntity> byPriceId = new HashMap<>();
-        for (PricingZonePriceEntity row : safeList(priceMapper.selectList(null))) {
-            bindings
-                    .computeIfAbsent(nullSafe(row.getZoneCode()), z -> new LinkedHashMap<>())
-                    .computeIfAbsent(nullSafe(row.getPriceVersion()), v -> new LinkedHashMap<>())
-                    .put(nullSafe(row.getSkuCode()), row);
-            if (row.getStripePriceId() != null && !row.getStripePriceId().isBlank()) {
-                byPriceId.put(row.getStripePriceId().trim(), row);
+            Map<String, PricingCountryRouteEntity> routes = new LinkedHashMap<>();
+            for (PricingCountryRouteEntity route : safeList(routeMapper.selectList(null))) {
+                if (route.getCountryCode() != null) {
+                    routes.put(route.getCountryCode().trim().toUpperCase(Locale.ROOT), route);
+                }
             }
-        }
-        Map<String, StripePriceAliasEntity> aliases = new LinkedHashMap<>();
-        for (StripePriceAliasEntity alias : safeList(aliasMapper.selectList(null))) {
-            if (alias.getStripePriceId() != null) {
-                aliases.put(alias.getStripePriceId().trim(), alias);
+            Map<String, Map<String, Map<String, PricingZonePriceEntity>>> bindings = new LinkedHashMap<>();
+            Map<String, PricingZonePriceEntity> byPriceId = new HashMap<>();
+            for (PricingZonePriceEntity row : safeList(priceMapper.selectList(null))) {
+                bindings
+                        .computeIfAbsent(nullSafe(row.getZoneCode()), z -> new LinkedHashMap<>())
+                        .computeIfAbsent(nullSafe(row.getPriceVersion()), v -> new LinkedHashMap<>())
+                        .put(nullSafe(row.getSkuCode()), row);
+                if (row.getStripePriceId() != null && !row.getStripePriceId().isBlank()) {
+                    byPriceId.put(row.getStripePriceId().trim(), row);
+                }
             }
+            Map<String, StripePriceAliasEntity> aliases = new LinkedHashMap<>();
+            for (StripePriceAliasEntity alias : safeList(aliasMapper.selectList(null))) {
+                if (alias.getStripePriceId() != null) {
+                    aliases.put(alias.getStripePriceId().trim(), alias);
+                }
+            }
+            Snapshot snapshot = new Snapshot(zones, routes, bindings, byPriceId, aliases);
+            List<String> violations = structuralViolations(snapshot);
+            if (!violations.isEmpty()) {
+                log.warn("Zone pricing catalog structural violations ({}): {}",
+                        violations.size(), violations);
+            }
+            return snapshot;
+        } catch (org.springframework.dao.DataAccessException e) {
+            // 迁移未执行/表缺失时安全降级为 legacy，避免开关默认开启后计费接口整体 500。
+            log.error("Zone pricing catalog unavailable, falling back to legacy pricing: {}", e.getMessage());
+            return new Snapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
         }
-        Snapshot snapshot = new Snapshot(zones, routes, bindings, byPriceId, aliases);
-        List<String> violations = structuralViolations(snapshot);
-        if (!violations.isEmpty()) {
-            log.warn("Zone pricing catalog structural violations ({}): {}",
-                    violations.size(), violations);
-        }
-        return snapshot;
     }
 
     // ------------------------------------------------------------------

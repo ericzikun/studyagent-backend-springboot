@@ -13,3 +13,7 @@ Customer 使用已验证 JWT 邮箱或 Clerk Backend API 的已验证 primary_em
 本地 Maven tests 使用模拟 Stripe 对象，不产生付款。`billing-brazil-pricing-reconciliation.sql` 是可选的只读运维查询，不得直接用于正式环境；本地沙盒账号清理已在备份后另行执行。已有 webhook 重试流程继续处理 Schedule 失败，必须完成实际 Phase 更新才视为已配置转正；查询结果中的对象需分别核验后才能另行修复。
 
 国家→币种映射由 BillingRegionalPricingProperties 绑定并验证，格式为逗号分隔 COUNTRY=currency；当前仅 BR=brl，未匹配/unknown 或关闭时的新购均使用 USD。规则整体替换默认映射，空字符串移除所有地区规则；非法国家、币种、格式和重复国家在启动时被拒绝。旧 BILLING_BRAZIL_PRICING_ENABLED 不再生效，Server_Config 使用通用 docker-compose.regional-pricing.yml；生产配置没有增加其他国家或 SKU 金额；本地目标 Stripe 沙盒已单独配置 BRL 测试金额，也没有数据库结构变更。新购 metadata 记录实际可信 ISO 国家或 UNKNOWN，历史 OTHER 不重写。
+
+## 地区扩展方案（待实施）
+
+用户已确认方案 A：11 地区固定本币价格，适用存量订阅在下一个付费周期切换新版本，区和币种不变，旧独立额度包不动。参见 [后端交接入口](billing-regional-pricing/README.md)。上文记录当前巴西基础实现，不代表地区扩展已经完成。

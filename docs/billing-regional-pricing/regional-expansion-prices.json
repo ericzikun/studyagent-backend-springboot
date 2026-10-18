@@ -1,0 +1,1751 @@
+{
+  "documentType": "implementation-handoff-draft-not-runtime-config",
+  "schemaVersion": 1,
+  "approvedScope": "方案A扩展：第1组十地区+巴西，共11地区；会员/Trial/extra packs/Study Pass地区定价；新Pro；适用存量合同本期不变、下个付费周期同区同币种切新版本；旧独立额度包暂不重定价",
+  "zonePricingEnabled": false,
+  "enabledCountries": [],
+  "countryRoutes": {
+    "HK": {
+      "label": "中国香港",
+      "zone": "Z080",
+      "currency": "hkd"
+    },
+    "TW": {
+      "label": "中国台湾",
+      "zone": "Z065",
+      "currency": "twd"
+    },
+    "ID": {
+      "label": "印度尼西亚",
+      "zone": "Z025",
+      "currency": "idr"
+    },
+    "KR": {
+      "label": "韩国",
+      "zone": "Z065",
+      "currency": "krw"
+    },
+    "TR": {
+      "label": "土耳其",
+      "zone": "Z040",
+      "currency": "try"
+    },
+    "DE": {
+      "label": "德国",
+      "zone": "Z080",
+      "currency": "eur"
+    },
+    "IT": {
+      "label": "意大利",
+      "zone": "Z070",
+      "currency": "eur"
+    },
+    "SE": {
+      "label": "瑞典",
+      "zone": "Z085",
+      "currency": "sek"
+    },
+    "TH": {
+      "label": "泰国",
+      "zone": "Z030",
+      "currency": "thb"
+    },
+    "AT": {
+      "label": "奥地利",
+      "zone": "Z080",
+      "currency": "eur"
+    },
+    "BR": {
+      "label": "巴西",
+      "zone": "Z040",
+      "currency": "brl"
+    }
+  },
+  "activeVersions": {
+    "Z080": "regional-20261018-v1",
+    "Z065": "regional-20261018-v1",
+    "Z025": "regional-20261018-v1",
+    "Z040": "regional-20261018-v1",
+    "Z070": "regional-20261018-v1",
+    "Z085": "regional-20261018-v1",
+    "Z030": "regional-20261018-v1"
+  },
+  "usdDefaultAmounts": {
+    "pro_trial_to_monthly": {
+      "amountMajor": "2.99",
+      "amountMinor": 299
+    },
+    "basic_monthly": {
+      "amountMajor": "19.99",
+      "amountMinor": 1999
+    },
+    "plus_monthly": {
+      "amountMajor": "39.99",
+      "amountMinor": 3999
+    },
+    "pro_monthly": {
+      "amountMajor": "29.99",
+      "amountMinor": 2999
+    },
+    "basic_yearly": {
+      "amountMajor": "95.88",
+      "amountMinor": 9588
+    },
+    "plus_yearly": {
+      "amountMajor": "191.88",
+      "amountMinor": 19188
+    },
+    "pro_yearly": {
+      "amountMajor": "359.88",
+      "amountMinor": 35988
+    },
+    "addon_assignment_3": {
+      "amountMajor": "9.99",
+      "amountMinor": 999
+    },
+    "addon_detection_5": {
+      "amountMajor": "4.99",
+      "amountMinor": 499
+    },
+    "addon_humanizer_3": {
+      "amountMajor": "6.99",
+      "amountMinor": 699
+    },
+    "study_pass_subscription_30d": {
+      "amountMajor": "0.99",
+      "amountMinor": 99
+    }
+  },
+  "catalogs": {
+    "regional-20261018-v1": {
+      "zones": {
+        "Z080": {
+          "referenceFactor": "0.8",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "19",
+                  "amountMinor": 1900
+                },
+                "eur": {
+                  "amountMajor": "1.99",
+                  "amountMinor": 199
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "129",
+                  "amountMinor": 12900
+                },
+                "eur": {
+                  "amountMajor": "13.99",
+                  "amountMinor": 1399
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "249",
+                  "amountMinor": 24900
+                },
+                "eur": {
+                  "amountMajor": "27.99",
+                  "amountMinor": 2799
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "189",
+                  "amountMinor": 18900
+                },
+                "eur": {
+                  "amountMajor": "20.99",
+                  "amountMinor": 2099
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "619",
+                  "amountMinor": 61900
+                },
+                "eur": {
+                  "amountMajor": "67.99",
+                  "amountMinor": 6799
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "1199",
+                  "amountMinor": 119900
+                },
+                "eur": {
+                  "amountMajor": "136.99",
+                  "amountMinor": 13699
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "2268",
+                  "amountMinor": 226800
+                },
+                "eur": {
+                  "amountMajor": "251.88",
+                  "amountMinor": 25188
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "59",
+                  "amountMinor": 5900
+                },
+                "eur": {
+                  "amountMajor": "6.99",
+                  "amountMinor": 699
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "29",
+                  "amountMinor": 2900
+                },
+                "eur": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "45",
+                  "amountMinor": 4500
+                },
+                "eur": {
+                  "amountMajor": "4.99",
+                  "amountMinor": 499
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "hkd": {
+                  "amountMajor": "6.4",
+                  "amountMinor": 640
+                },
+                "eur": {
+                  "amountMajor": "0.70",
+                  "amountMinor": 70
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z065": {
+          "referenceFactor": "0.65",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "59",
+                  "amountMinor": 5900
+                },
+                "krw": {
+                  "amountMajor": "2490",
+                  "amountMinor": 2490
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "419",
+                  "amountMinor": 41900
+                },
+                "krw": {
+                  "amountMajor": "16900",
+                  "amountMinor": 16900
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "839",
+                  "amountMinor": 83900
+                },
+                "krw": {
+                  "amountMajor": "34900",
+                  "amountMinor": 34900
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "629",
+                  "amountMinor": 62900
+                },
+                "krw": {
+                  "amountMajor": "25900",
+                  "amountMinor": 25900
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "1999",
+                  "amountMinor": 199900
+                },
+                "krw": {
+                  "amountMajor": "80900",
+                  "amountMinor": 80900
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "3999",
+                  "amountMinor": 399900
+                },
+                "krw": {
+                  "amountMajor": "166900",
+                  "amountMinor": 166900
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "7548",
+                  "amountMinor": 754800
+                },
+                "krw": {
+                  "amountMajor": "310800",
+                  "amountMinor": 310800
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "209",
+                  "amountMinor": 20900
+                },
+                "krw": {
+                  "amountMajor": "8690",
+                  "amountMinor": 8690
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "109",
+                  "amountMinor": 10900
+                },
+                "krw": {
+                  "amountMajor": "4290",
+                  "amountMinor": 4290
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "149",
+                  "amountMinor": 14900
+                },
+                "krw": {
+                  "amountMajor": "5990",
+                  "amountMinor": 5990
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "twd": {
+                  "amountMajor": "21",
+                  "amountMinor": 2100
+                },
+                "krw": {
+                  "amountMajor": "840",
+                  "amountMinor": 840
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z025": {
+          "referenceFactor": "0.25",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "13900",
+                  "amountMinor": 1390000
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "89900",
+                  "amountMinor": 8990000
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "179000",
+                  "amountMinor": 17900000
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "139000",
+                  "amountMinor": 13900000
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "429000",
+                  "amountMinor": 42900000
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "869000",
+                  "amountMinor": 86900000
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "1668000",
+                  "amountMinor": 166800000
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "44900",
+                  "amountMinor": 4490000
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "22900",
+                  "amountMinor": 2290000
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "31900",
+                  "amountMinor": 3190000
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "idr": {
+                  "amountMajor": "10800",
+                  "amountMinor": 1080000
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z040": {
+          "referenceFactor": "0.4",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "59",
+                  "amountMinor": 5900
+                },
+                "brl": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "399",
+                  "amountMinor": 39900
+                },
+                "brl": {
+                  "amountMajor": "40.99",
+                  "amountMinor": 4099
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "789",
+                  "amountMinor": 78900
+                },
+                "brl": {
+                  "amountMajor": "80.99",
+                  "amountMinor": 8099
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "599",
+                  "amountMinor": 59900
+                },
+                "brl": {
+                  "amountMajor": "60.99",
+                  "amountMinor": 6099
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "1899",
+                  "amountMinor": 189900
+                },
+                "brl": {
+                  "amountMajor": "194.99",
+                  "amountMinor": 19499
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "3799",
+                  "amountMinor": 379900
+                },
+                "brl": {
+                  "amountMajor": "390.99",
+                  "amountMinor": 39099
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "7188",
+                  "amountMinor": 718800
+                },
+                "brl": {
+                  "amountMajor": "731.88",
+                  "amountMinor": 73188
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "199",
+                  "amountMinor": 19900
+                },
+                "brl": {
+                  "amountMajor": "19.99",
+                  "amountMinor": 1999
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "99",
+                  "amountMinor": 9900
+                },
+                "brl": {
+                  "amountMajor": "9.99",
+                  "amountMinor": 999
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "139",
+                  "amountMinor": 13900
+                },
+                "brl": {
+                  "amountMajor": "13.99",
+                  "amountMinor": 1399
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "try": {
+                  "amountMajor": "30",
+                  "amountMinor": 3000
+                },
+                "brl": {
+                  "amountMajor": "3.1",
+                  "amountMinor": 310
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z070": {
+          "referenceFactor": "0.7",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "1.99",
+                  "amountMinor": 199
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "11.99",
+                  "amountMinor": 1199
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "24.99",
+                  "amountMinor": 2499
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "18.99",
+                  "amountMinor": 1899
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "58.99",
+                  "amountMinor": 5899
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "118.99",
+                  "amountMinor": 11899
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "227.88",
+                  "amountMinor": 22788
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "2.99",
+                  "amountMinor": 299
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "4.49",
+                  "amountMinor": 449
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "eur": {
+                  "amountMajor": "0.61",
+                  "amountMinor": 61
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z085": {
+          "referenceFactor": "0.85",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "24.99",
+                  "amountMinor": 2499
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "167.99",
+                  "amountMinor": 16799
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "336.99",
+                  "amountMinor": 33699
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "252.99",
+                  "amountMinor": 25299
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "807.99",
+                  "amountMinor": 80799
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "1615.99",
+                  "amountMinor": 161599
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "3035.88",
+                  "amountMinor": 303588
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "83.99",
+                  "amountMinor": 8399
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "41.99",
+                  "amountMinor": 4199
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "58.99",
+                  "amountMinor": 5899
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "sek": {
+                  "amountMajor": "8.4",
+                  "amountMinor": 840
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z030": {
+          "referenceFactor": "0.3",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 299,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "29",
+                  "amountMinor": 2900
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "199",
+                  "amountMinor": 19900
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 3999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "399",
+                  "amountMinor": 39900
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 2999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "299",
+                  "amountMinor": 29900
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9588,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "959",
+                  "amountMinor": 95900
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 19188,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "1929",
+                  "amountMinor": 192900
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 35988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "3588",
+                  "amountMinor": 358800
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "99",
+                  "amountMinor": 9900
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "49",
+                  "amountMinor": 4900
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 699,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "69",
+                  "amountMinor": 6900
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": null,
+              "stripeProductId": null,
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 99,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "VERIFY_EXISTING_POLICY",
+              "currencyAmounts": {
+                "thb": {
+                  "amountMajor": "21",
+                  "amountMinor": 2100
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "legacyPriceAliases": {},
+  "legacyAliasStatus": "目标账户、模式、历史Price alias及legacy目标Price快照均待只读盘点；空值禁止启用新地区销售",
+  "sourceNotes": {
+    "original": "用户粘贴的112地区价格表，2026-10-18会话附件",
+    "TH": "倍率0.3；沿用已生成的地区价格补充与美元替代.xlsx固定价格",
+    "AT": "倍率0.8；与德国共用EUR价格",
+    "pro": "用户于本轮确认使用新Pro月/新Pro年；原Pro列不用于首批新合同",
+    "BR": "按用户新表0.4区，Pro用新Pro；不再沿用此前沙盒美元数值×5价格，新合同用新Price；旧合同本期及历史保留，归属明确且适用的合同下个付费周期同区同币种换新Price",
+    "studyPass": "按0.99美元×倍率×固定折算参考，低价使用0.60美元等值参考缓冲并按币种步长向上取整；所有候选价格仍须实测账户最低扣款"
+  },
+  "configurationCounts": {
+    "countries": 11,
+    "zones": 7,
+    "presentmentCurrencies": 9,
+    "zoneCurrencyPairs": 10,
+    "newStripePrices": 77,
+    "localCurrencyAmounts": 110,
+    "usdDefaultAmountsAcrossPrices": 77
+  },
+  "stripeAccountId": null,
+  "stripeLivemode": null,
+  "legacyTargetPrices": {},
+  "studyPassPricing": {
+    "baseUsd": "0.99",
+    "referenceUsdFloor": "0.60",
+    "policy": "用户确认：低于目标账户最低扣款则上调本币价格；0.60 USD仅为本次建议价的缓冲参考，不是Stripe统一门槛。正式启用前按实际结算币种/支付方式核验，不足时更新固定配置并重新确认报价。运行时不动态改价。",
+    "rates": {
+      "hkd": {
+        "anchorCountry": "HK",
+        "anchorBasicMonthly": "129",
+        "anchorFactor": "0.8",
+        "rateLocalPerUsd": "8.066533266633316658329164582",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "twd": {
+        "anchorCountry": "TW",
+        "anchorBasicMonthly": "419",
+        "anchorFactor": "0.65",
+        "rateLocalPerUsd": "32.24689267710778466156155001",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "idr": {
+        "anchorCountry": "ID",
+        "anchorBasicMonthly": "89900",
+        "anchorFactor": "0.25",
+        "rateLocalPerUsd": "17988.99449724862431215607804",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "krw": {
+        "anchorCountry": "KR",
+        "anchorBasicMonthly": "16900",
+        "anchorFactor": "0.65",
+        "rateLocalPerUsd": "1300.650325162581290645322661",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "try": {
+        "anchorCountry": "TR",
+        "anchorBasicMonthly": "399",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "49.89994997498749374687343672",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "eur": {
+        "anchorCountry": "DE",
+        "anchorBasicMonthly": "13.99",
+        "anchorFactor": "0.8",
+        "rateLocalPerUsd": "0.8748124062031015507753876938",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "sek": {
+        "anchorCountry": "SE",
+        "anchorBasicMonthly": "167.99",
+        "anchorFactor": "0.85",
+        "rateLocalPerUsd": "9.886708059912309095724332755",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "brl": {
+        "anchorCountry": "BR",
+        "anchorBasicMonthly": "40.99",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "5.126313156578289144572286143",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "thb": {
+        "rateLocalPerUsd": "33.5",
+        "method": "沿用此前泰国补价的固定折算参考，非实时或Stripe结算汇率"
+      }
+    },
+    "calculations": [
+      {
+        "zone": "Z080",
+        "currency": "hkd",
+        "factor": "0.8",
+        "formulaAmount": "6.388694347173586793396698349",
+        "referenceFloorAmount": "4.839919959979989994997498749",
+        "roundUpStep": "0.1",
+        "proposedAmount": "6.4",
+        "amountMinor": 640,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z080",
+        "currency": "eur",
+        "factor": "0.8",
+        "formulaAmount": "0.6928514257128564282141070535",
+        "referenceFloorAmount": "0.5248874437218609304652326163",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.70",
+        "amountMinor": 70,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z065",
+        "currency": "twd",
+        "factor": "0.65",
+        "formulaAmount": "20.75087543771885942971485743",
+        "referenceFloorAmount": "19.34813560626467079693693001",
+        "roundUpStep": "1",
+        "proposedAmount": "21",
+        "amountMinor": 2100,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z065",
+        "currency": "krw",
+        "factor": "0.65",
+        "formulaAmount": "836.9684842421210605302651324",
+        "referenceFloorAmount": "780.3901950975487743871935966",
+        "roundUpStep": "10",
+        "proposedAmount": "840",
+        "amountMinor": 840,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z025",
+        "currency": "idr",
+        "factor": "0.25",
+        "formulaAmount": "4452.276138069034517258629315",
+        "referenceFloorAmount": "10793.39669834917458729364682",
+        "roundUpStep": "100",
+        "proposedAmount": "10800",
+        "amountMinor": 1080000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z040",
+        "currency": "try",
+        "factor": "0.4",
+        "formulaAmount": "19.76038019009504752376188094",
+        "referenceFloorAmount": "29.93996998499249624812406203",
+        "roundUpStep": "1",
+        "proposedAmount": "30",
+        "amountMinor": 3000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z040",
+        "currency": "brl",
+        "factor": "0.4",
+        "formulaAmount": "2.030020010005002501250625313",
+        "referenceFloorAmount": "3.075787893946973486743371686",
+        "roundUpStep": "0.1",
+        "proposedAmount": "3.1",
+        "amountMinor": 310,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z070",
+        "currency": "eur",
+        "factor": "0.7",
+        "formulaAmount": "0.6062449974987493746873436718",
+        "referenceFloorAmount": "0.5248874437218609304652326163",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.61",
+        "amountMinor": 61,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z085",
+        "currency": "sek",
+        "factor": "0.85",
+        "formulaAmount": "8.319664832416208104052026013",
+        "referenceFloorAmount": "5.932024835947385457434599653",
+        "roundUpStep": "0.1",
+        "proposedAmount": "8.4",
+        "amountMinor": 840,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification"
+      },
+      {
+        "zone": "Z030",
+        "currency": "thb",
+        "factor": "0.3",
+        "formulaAmount": "9.9495",
+        "referenceFloorAmount": "20.100",
+        "roundUpStep": "1",
+        "proposedAmount": "21",
+        "amountMinor": 2100,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification"
+      }
+    ],
+    "verificationStatus": "pending_settlement_currency_and_real_checkout_verification"
+  },
+  "documentRevision": "2026-10-18-r3-next-cycle"
+}

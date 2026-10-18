@@ -35,6 +35,8 @@ public class SubscriptionResult {
     private LocalDateTime pendingEffectiveAt;
     /** Nested Basic paid-trial state for frontend {@code basicTrial}. */
     private BasicTrialAccount basicTrial;
+    /** 下周期换价预告（rollout 已安排未生效）；legacy 合同为 null。 */
+    private NextCyclePriceChange nextCyclePriceChange;
     /**
      * 学习内容库（题库与知识讲解）阅读放行判定：有效付费会员 **或** 未过期的题库通行证。
      * 与 {@link #canConsumePaidEntitlements} 语义分离——通行证不放行任何工具额度、

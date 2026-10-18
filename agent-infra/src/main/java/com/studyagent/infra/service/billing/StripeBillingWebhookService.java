@@ -137,6 +137,7 @@ public class StripeBillingWebhookService {
     private final ObjectProvider<BillingDomainService> billingDomainServiceProvider;
     private final PlatformTransactionManager transactionManager;
     private final BillingPricingService pricingService;
+    private final ZonePricingSelectionService zonePricing;
 
     @Value("${billing.payment-grace-days:3}")
     private int paymentGraceDays = 3;
@@ -941,11 +942,24 @@ public class StripeBillingWebhookService {
                 throw new IllegalStateException("Subscription must contain one item");
             }
             SubscriptionItem item = subscription.getItems().getData().get(0);
-            SubscriptionPlanEntity currentPlan = requirePlan(order.getPlanCode());
-            SubscriptionPlanEntity targetPlan = requirePlan(order.getTargetPlanCode());
-            String currency = BillingPricingService.subscriptionCurrency(subscription);
-            currentPlan = pricedWebhookPlan(currentPlan, currency);
-            targetPlan = pricedWebhookPlan(targetPlan, currency);
+            SubscriptionPlanEntity currentPlan;
+            SubscriptionPlanEntity targetPlan;
+            if (current != null && hasText(current.getPricingZone())) {
+                // 会员合同动作（路径②）：区价/币种取自合同三列，与下单时报价同源；
+                // 切换目标必须落在区价 Price 上，绝不静默换回目录价。
+                currentPlan = applyZoneMemberPlan(
+                        requirePlan(order.getPlanCode()),
+                        zonePricing.memberSelection(current, order.getPlanCode(),
+                                ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN));
+                targetPlan = applyZoneMemberPlan(
+                        requirePlan(order.getTargetPlanCode()),
+                        zonePricing.memberSelection(current, order.getTargetPlanCode(),
+                                ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN));
+            } else {
+                String currency = BillingPricingService.subscriptionCurrency(subscription);
+                currentPlan = pricedWebhookPlan(requirePlan(order.getPlanCode()), currency);
+                targetPlan = pricedWebhookPlan(requirePlan(order.getTargetPlanCode()), currency);
+            }
             if (current != null) {
                 clearPaidTrialPendingConversionTarget(current);
                 releasePendingScheduleIfPresent(current, subscription);
@@ -1072,8 +1086,9 @@ public class StripeBillingWebhookService {
                 || subscription.getItems().getData() == null
                 || subscription.getItems().getData().size() != 1
                 || subscription.getItems().getData().get(0).getPrice() == null
-                || !currentPlan.getStripePriceId().equals(
-                        subscription.getItems().getData().get(0).getPrice().getId())) {
+                || !subscriptionPriceStillMatchesPlan(
+                        subscription.getItems().getData().get(0).getPrice().getId(),
+                        order.getPlanCode())) {
             return "upgrade_source_price_changed";
         }
 
@@ -1692,7 +1707,8 @@ public class StripeBillingWebhookService {
         }
         String previousPlanCode = existing == null ? null : existing.getPlanCode();
 
-        SubscriptionPlanEntity plan = deleted ? null : requirePlanBySubscription(subscription);
+        ResolvedSubscriptionPlan resolved = deleted ? null : resolveSubscriptionPlan(subscription);
+        SubscriptionPlanEntity plan = resolved == null ? null : resolved.plan();
         LocalDateTime now = LocalDateTime.now();
         if (!deleted
                 && existing != null
@@ -1714,10 +1730,12 @@ public class StripeBillingWebhookService {
             existing.setUpdatedAt(now);
             applySubscription(existing, subscription, plan, deleted, activatePendingPlan,
                     periodStartOverride, periodEndOverride, now);
+            applyContractPricingColumns(existing, resolved);
             userSubscriptionMapper.insert(existing);
         } else {
             applySubscription(existing, subscription, plan, deleted, activatePendingPlan,
                     periodStartOverride, periodEndOverride, now);
+            applyContractPricingColumns(existing, resolved);
             updateSubscriptionEntity(existing, deleted);
         }
 
@@ -1862,6 +1880,19 @@ public class StripeBillingWebhookService {
         entity.setUpdatedAt(now);
     }
 
+    /** 合同三列镜像订阅当前 Price 的解析结果：区合同回填，legacy/删除清空（NULL zone=legacy 合同）。 */
+    private void applyContractPricingColumns(UserSubscriptionEntity entity, ResolvedSubscriptionPlan resolved) {
+        if (resolved == null) {
+            entity.setPricingZone(null);
+            entity.setPriceVersion(null);
+            entity.setCurrency(null);
+            return;
+        }
+        entity.setPricingZone(resolved.pricingZone());
+        entity.setPriceVersion(resolved.priceVersion());
+        entity.setCurrency(resolved.currency());
+    }
+
     void applyScheduleState(
             UserSubscriptionEntity entity,
             SubscriptionSchedule schedule,
@@ -1904,6 +1935,9 @@ public class StripeBillingWebhookService {
         entity.setPendingUpgradeOrderNo(null);
         entity.setPendingUpgradeExpiresAt(null);
         entity.setGraceEndAt(null);
+        entity.setPricingZone(null);
+        entity.setPriceVersion(null);
+        entity.setCurrency(null);
     }
 
     static LocalDateTime calculateGraceEnd(LocalDateTime failedAt, int graceDays) {
@@ -1944,6 +1978,9 @@ public class StripeBillingWebhookService {
                 .set(UserSubscriptionEntity::getIntroTrialUsedAt, entity.getIntroTrialUsedAt())
                 .set(UserSubscriptionEntity::getIntroTrialConvertedAt, entity.getIntroTrialConvertedAt())
                 .set(UserSubscriptionEntity::getSubscriptionPhase, entity.getSubscriptionPhase())
+                .set(UserSubscriptionEntity::getPricingZone, entity.getPricingZone())
+                .set(UserSubscriptionEntity::getPriceVersion, entity.getPriceVersion())
+                .set(UserSubscriptionEntity::getCurrency, entity.getCurrency())
                 .set(UserSubscriptionEntity::getLastSyncedAt, entity.getLastSyncedAt())
                 .set(UserSubscriptionEntity::getUpdatedAt, entity.getUpdatedAt());
         if (deleted) {
@@ -2434,6 +2471,25 @@ public class StripeBillingWebhookService {
         return copy;
     }
 
+    /** 区会员合同动作的 plan 副本：Price/金额/币种覆写为合同版本区价（与路径②同源）。 */
+    private SubscriptionPlanEntity applyZoneMemberPlan(
+            SubscriptionPlanEntity source,
+            java.util.Optional<ZonePricingSelectionService.PricingSelection> selection) {
+        ZonePricingSelectionService.PricingSelection zone = selection
+                .orElseThrow(() -> new IllegalStateException(
+                        "Zone member selection missing for " + source.getPlanCode()));
+        SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setStripePriceId(zone.stripePriceId());
+        copy.setStripeProductId(zone.stripeProductId());
+        copy.setPriceCents(zone.amountMinor());
+        copy.setCurrency(zone.currency());
+        if (hasText(zone.billingInterval())) {
+            copy.setBillingInterval(zone.billingInterval());
+        }
+        return copy;
+    }
+
     private SubscriptionPlanEntity requirePlan(String planCode) {
         // Webhooks reconcile subscriptions/orders created while a plan was sellable.
         // Retiring a plan must not make those historical Stripe events unresolvable.
@@ -2485,6 +2541,26 @@ public class StripeBillingWebhookService {
     }
 
     private SubscriptionPlanEntity requirePlanBySubscription(Subscription subscription) {
+        return resolveSubscriptionPlan(subscription).plan();
+    }
+
+    /** 三段反查结果：区命中时 plan 为区价副本（priceId/金额/币种已覆写），并携带合同三列。 */
+    record ResolvedSubscriptionPlan(
+            SubscriptionPlanEntity plan,
+            String pricingZone,
+            String priceVersion,
+            String currency) {
+        static ResolvedSubscriptionPlan legacy(SubscriptionPlanEntity plan) {
+            return new ResolvedSubscriptionPlan(plan, null, null, null);
+        }
+    }
+
+    /**
+     * webhook 解析订阅当前 Price：区注册表（不看任何开关与 is_active，已售合同
+     * 必须永远可解析）→ subscription_plans → stripe_price_aliases。三段全 miss
+     * 即拒绝，绝不猜测。
+     */
+    ResolvedSubscriptionPlan resolveSubscriptionPlan(Subscription subscription) {
         if (subscription.getItems() == null
                 || subscription.getItems().getData() == null
                 || subscription.getItems().getData().isEmpty()) {
@@ -2495,15 +2571,62 @@ public class StripeBillingWebhookService {
             throw new IllegalStateException("Subscription item has no Price: " + subscription.getId());
         }
         String priceId = item.getPrice().getId();
-        // A Stripe subscription can outlive the catalog sale window for its Price.
+        // 段一：区注册表反查。币种以订阅计费币种为准（Price 默认币种可能是 USD 基准）。
+        java.util.Optional<ZonePricingSelectionService.PricingSelection> zone =
+                zonePricing.contractSelectionByPriceId(priceId, subscription.getCurrency());
+        if (zone.isPresent() && ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN.equals(zone.get().skuKind())) {
+            ZonePricingSelectionService.PricingSelection selection = zone.get();
+            SubscriptionPlanEntity base = requirePlan(selection.skuCode());
+            SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+            org.springframework.beans.BeanUtils.copyProperties(base, copy);
+            copy.setStripePriceId(selection.stripePriceId());
+            copy.setStripeProductId(selection.stripeProductId());
+            copy.setPriceCents(selection.amountMinor());
+            copy.setCurrency(selection.currency());
+            if (hasText(selection.billingInterval())) {
+                copy.setBillingInterval(selection.billingInterval());
+            }
+            return new ResolvedSubscriptionPlan(
+                    copy, selection.zoneCode(), selection.priceVersion(), selection.currency());
+        }
+        // 段二：目录 Price。A Stripe subscription can outlive the catalog sale window for its Price.
         SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
                 new LambdaQueryWrapper<SubscriptionPlanEntity>()
                         .eq(SubscriptionPlanEntity::getStripePriceId, priceId)
                         .last("LIMIT 1"));
-        if (plan == null) {
-            throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);
+        if (plan != null) {
+            return ResolvedSubscriptionPlan.legacy(plan);
         }
-        return plan;
+        // 段三：legacy 别名（退役 Price → SKU）。
+        var alias = zonePricing.skuCodeForPriceId(priceId)
+                .filter(sku -> subscriptionPlanMapper.selectOne(
+                        new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                                .eq(SubscriptionPlanEntity::getPlanCode, sku)
+                                .last("LIMIT 1")) != null)
+                .orElse(null);
+        if (alias != null) {
+            return ResolvedSubscriptionPlan.legacy(requirePlan(alias));
+        }
+        log.error("Unresolvable Stripe subscription Price: price={}, subscription={}",
+                priceId, subscription.getId());
+        throw new IllegalStateException("Unknown Stripe subscription Price: " + priceId);
+    }
+
+    /** 漂移检测：live Price 仍指向同一 plan（目录等值，或区绑定/legacy 别名反查命中同 SKU）。 */
+    private boolean subscriptionPriceStillMatchesPlan(String livePriceId, String planCode) {
+        if (!hasText(livePriceId) || !hasText(planCode)) {
+            return false;
+        }
+        SubscriptionPlanEntity catalog = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, planCode)
+                        .last("LIMIT 1"));
+        if (catalog != null && livePriceId.equals(catalog.getStripePriceId())) {
+            return true;
+        }
+        return zonePricing.skuCodeForPriceId(livePriceId)
+                .map(planCode::equals)
+                .orElse(false);
     }
 
     /**

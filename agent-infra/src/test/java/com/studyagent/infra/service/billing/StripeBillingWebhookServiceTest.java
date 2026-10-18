@@ -96,6 +96,18 @@ class StripeBillingWebhookServiceTest {
     @Mock
     private TransactionStatus transactionStatus;
 
+    /** 空目录 fixture：区反查永远 miss，全部走 legacy 路径，基线用例不受影响。 */
+    private final ZonePricingSelectionService zonePricing = new ZonePricingSelectionService(
+            new ZonePricingCatalog(
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class),
+                    60),
+            new com.studyagent.infra.service.billing.BillingPricingService(
+                    org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class),
+                    new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()));
+
     @Test
     void unpaidStudyPassNeverGrantsEntitlement() throws Exception {
         Session session = new Session();
@@ -474,7 +486,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -546,7 +558,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
@@ -609,7 +621,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
@@ -773,7 +785,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -831,7 +843,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -881,7 +893,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -928,7 +940,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return authoritative;
@@ -981,7 +993,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 retrievedRemote.set(true);
@@ -1104,7 +1116,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
                 refunded.set(true);
             }
@@ -1143,7 +1155,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             void refundAddonCheckout(String paymentIntentId, String stripeSessionId, String reason) {
                 refunded.set(true);
@@ -1195,7 +1207,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
@@ -1256,7 +1268,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Long retrieveTestClockFrozenTime(String testClockId) {
                 return LocalDateTime.parse("2028-07-17T05:20:39")
@@ -1448,7 +1460,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1567,7 +1579,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return trialSubscription;
@@ -1689,7 +1701,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return trialSubscription;
@@ -1779,7 +1791,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1858,7 +1870,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -1940,7 +1952,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -2039,7 +2051,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 return subscription;
@@ -2382,7 +2394,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             void refundIneligibleAddon(String paymentIntentId, String stripeSessionId) {
                 assertEquals("pi_refund", paymentIntentId);
@@ -2487,7 +2499,7 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties())) {
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), zonePricing) {
             @Override
             Subscription retrieveStripeSubscription(String subscriptionId) {
                 Subscription subscription = new Subscription();
@@ -2889,7 +2901,8 @@ class StripeBillingWebhookServiceTest {
                 billingRobotNotifyGatewayProvider,
                 billingDomainServiceProvider,
                 transactionManager,
-                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()));
+                    new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()),
+                zonePricing);
     }
 
     private void invokeHandleCheckoutCompleted(StripeBillingWebhookService service, Session session) throws Exception {

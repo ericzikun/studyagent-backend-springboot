@@ -80,9 +80,11 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -125,6 +127,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final QuotaVipAccessService quotaVipAccessService;
     private final UserSubscriptionBootstrapService userSubscriptionBootstrapService;
     private final BillingPricingService pricingService;
+    private final ZonePricingSelectionService zonePricing;
+    private final SubscriptionPriceRolloutService rolloutService;
     private final ClerkClient clerkClient;
 
     @Value("${stripe.secret-key:}")
@@ -168,7 +172,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Override
     public BillingCatalogResult getCatalog() {
-        String currency = currencyForMember(BillingPricingContext.userId());
+        String userId = BillingPricingContext.userId();
+        String currency = currencyForMember(userId);
+        // 会员目录按合同区/币种展示（展示价=账单价）；匿名/无合同按可信国家走区价。
+        UserSubscriptionEntity current = hasText(userId) ? findByUser(userId) : null;
+        UserSubscriptionEntity contractContext = current != null
+                && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
+                && isRealStripeReference(current.getStripeSubscriptionId())
+                ? current
+                : null;
         List<BillingPlan> plans = subscriptionPlanMapper.selectList(
                         new LambdaQueryWrapper<SubscriptionPlanEntity>()
                                 .eq(SubscriptionPlanEntity::getIsActive, true)
@@ -176,7 +188,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stream()
                 .filter(plan -> !isIntroTrialPlan(plan)
                         || IntroTrialPlans.isSellableIntroTrialPlanCode(plan.getPlanCode()))
-                .map(plan -> catalogPlan(plan, currency))
+                .map(plan -> catalogPlan(plan, currency, contractContext))
                 .filter(java.util.Objects::nonNull)
                 .map(this::toPlan)
                 .toList();
@@ -185,7 +197,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                                 .eq(AddonPackageDefEntity::getIsActive, true)
                                 .orderByAsc(AddonPackageDefEntity::getDisplayOrder))
                 .stream()
-                .map(addon -> catalogAddon(addon, currency))
+                .map(addon -> catalogAddon(addon, currency, contractContext))
                 .filter(java.util.Objects::nonNull)
                 .map(this::toAddon)
                 .toList();
@@ -229,11 +241,153 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return copy;
     }
 
-    private SubscriptionPlanEntity catalogPlan(SubscriptionPlanEntity source, String currency) {
+    // ------------------------------------------------------------------
+    // Zone pricing：Selection 驱动的实体副本（①新购 / ②会员合同 / ③Study Pass）
+    // ------------------------------------------------------------------
+
+    private SubscriptionPlanEntity applyPlanSelection(
+            SubscriptionPlanEntity source, ZonePricingSelectionService.PricingSelection selection) {
+        SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setStripePriceId(selection.stripePriceId());
+        if (hasText(selection.stripeProductId())) {
+            copy.setStripeProductId(selection.stripeProductId());
+        }
+        copy.setPriceCents(selection.amountMinor());
+        copy.setCurrency(selection.currency());
+        if (selection.billingInterval() != null) {
+            copy.setBillingInterval(selection.billingInterval());
+        }
+        return copy;
+    }
+
+    private AddonPackageDefEntity applyAddonSelection(
+            AddonPackageDefEntity source, ZonePricingSelectionService.PricingSelection selection) {
+        AddonPackageDefEntity copy = new AddonPackageDefEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setStripePriceId(selection.stripePriceId());
+        if (hasText(selection.stripeProductId())) {
+            copy.setStripeProductId(selection.stripeProductId());
+        }
+        copy.setPriceCents(selection.amountMinor());
+        copy.setCurrency(selection.currency());
+        return copy;
+    }
+
+    private StudyPassProductEntity applyStudyPassSelection(
+            StudyPassProductEntity source, ZonePricingSelectionService.PricingSelection selection) {
+        StudyPassProductEntity copy = new StudyPassProductEntity();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        copy.setStripePriceId(selection.stripePriceId());
+        if (hasText(selection.stripeProductId())) {
+            copy.setStripeProductId(selection.stripeProductId());
+        }
+        copy.setPriceCents(selection.amountMinor());
+        copy.setCurrency(selection.currency());
+        return copy;
+    }
+
+    /** 路径①：独立新购（匿名目录 / 首购与试用结账）。 */
+    private SubscriptionPlanEntity pricedPlanForSale(SubscriptionPlanEntity source, boolean newSale) {
+        Optional<ZonePricingSelectionService.PricingSelection> selection = zonePricing.newPurchaseSelection(
+                source.getPlanCode(), ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN);
+        if (selection.isPresent()) {
+            return applyPlanSelection(source, selection.get());
+        }
+        return pricedPlan(source, pricingService.newPurchaseCurrency(), newSale);
+    }
+
+    /** 路径②：会员合同动作，按合同三列解析；legacy 合同保持既有币种行为。 */
+    private SubscriptionPlanEntity pricedPlanForContract(
+            UserSubscriptionEntity contract, SubscriptionPlanEntity target, boolean activeRequired, String fallbackCurrency) {
+        Optional<ZonePricingSelectionService.PricingSelection> selection = zonePricing.memberSelection(
+                contract, target.getPlanCode(), ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN);
+        if (selection.isPresent()) {
+            return applyPlanSelection(target, selection.get());
+        }
+        return pricedPlan(target, fallbackCurrency, activeRequired);
+    }
+
+    private AddonPackageDefEntity pricedAddonForContract(
+            UserSubscriptionEntity contract, AddonPackageDefEntity source, String fallbackCurrency) {
+        Optional<ZonePricingSelectionService.PricingSelection> selection = zonePricing.memberSelection(
+                contract, source.getAddonCode(), ZonePricingSelectionService.KIND_ADDON);
+        if (selection.isPresent()) {
+            return applyAddonSelection(source, selection.get());
+        }
+        return pricedAddon(source, fallbackCurrency);
+    }
+
+    private AddonPackageDefEntity pricedAddonForSale(AddonPackageDefEntity source, String fallbackCurrency) {
+        Optional<ZonePricingSelectionService.PricingSelection> selection = zonePricing.newPurchaseSelection(
+                source.getAddonCode(), ZonePricingSelectionService.KIND_ADDON);
+        if (selection.isPresent()) {
+            return applyAddonSelection(source, selection.get());
+        }
+        return pricedAddon(source, fallbackCurrency);
+    }
+
+    /** 路径③：Study Pass 新购走①；已有 Pass 的解析在 webhook 侧按自身 Price 反查。 */
+    private StudyPassProductEntity pricedStudyPassForSale(StudyPassProductEntity source, String fallbackCurrency) {
+        Optional<ZonePricingSelectionService.PricingSelection> selection = zonePricing.newPurchaseSelection(
+                source.getPassCode(), ZonePricingSelectionService.KIND_STUDY_PASS);
+        if (selection.isPresent()) {
+            return applyStudyPassSelection(source, selection.get());
+        }
+        return pricedProduct(source, fallbackCurrency);
+    }
+
+    /** Stripe 元数据：绑定区/版本/SKU（试用加转正价）。legacy 副本返回空 map。 */
+    private Map<String, String> zoneMetadata(String stripePriceId) {
+        Optional<ZonePricingSelectionService.RegistryBinding> binding =
+                zonePricing.registryBinding(stripePriceId);
+        if (binding.isEmpty()) {
+            return Map.of();
+        }
+        ZonePricingSelectionService.RegistryBinding registry = binding.get();
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("pricing_zone", registry.zoneCode());
+        metadata.put("pricing_version", registry.priceVersion());
+        metadata.put("sku_code", registry.skuCode());
+        if (registry.renewalPriceId() != null) {
+            metadata.put("renewal_price_id", registry.renewalPriceId());
+        }
+        return metadata;
+    }
+
+    private static void putAllMetadata(
+            SessionCreateParams.Builder builder, Map<String, String> metadata) {
+        for (Map.Entry<String, String> entry : metadata.entrySet()) {
+            builder.putMetadata(entry.getKey(), entry.getValue());
+        }
+    }
+
+    /** 指纹 context：zone 绑定加 区/版本/当前价；legacy 保持原拼接形态。 */
+    private String zoneQuoteContext(String stripePriceId, String legacyContext) {
+        Optional<ZonePricingSelectionService.RegistryBinding> binding =
+                zonePricing.registryBinding(stripePriceId);
+        if (binding.isEmpty()) {
+            return legacyContext;
+        }
+        return "zone=" + binding.get().zoneCode()
+                + ";version=" + binding.get().priceVersion()
+                + ";price=" + stripePriceId
+                + ";legacy=" + legacyContext;
+    }
+
+    private SubscriptionPlanEntity catalogPlan(
+            SubscriptionPlanEntity source, String currency, UserSubscriptionEntity contractContext) {
         try {
-            SubscriptionPlanEntity plan = pricedPlan(source, currency, true);
-            if (isIntroTrialPlan(plan) && (pricingService.isEnabled() || !currency.equals(source.getCurrency() == null ? "usd" : source.getCurrency())))
-                pricedPlan(requirePlan(resolveConversionPlanCode(plan), true), currency, true);
+            SubscriptionPlanEntity plan = contractContext != null
+                    ? pricedPlanForContract(contractContext, source, true, currency)
+                    : pricedPlanForSale(source, true);
+            // zone 试用的转正绑定已在 Selection 构建时校验；legacy 试用沿用转正目标探针。
+            if (isIntroTrialPlan(plan)
+                    && zonePricing.registryBinding(plan.getStripePriceId()).isEmpty()
+                    && (pricingService.isEnabled()
+                        || !plan.getCurrency().equals(source.getCurrency() == null ? "usd" : source.getCurrency()))) {
+                pricedPlan(requirePlan(resolveConversionPlanCode(plan), true), plan.getCurrency(), true);
+            }
             return plan;
         } catch (BillingDomainException e) {
             if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
@@ -242,8 +396,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
-    private AddonPackageDefEntity catalogAddon(AddonPackageDefEntity source, String currency) {
-        try { return pricedAddon(source, currency); }
+    private AddonPackageDefEntity catalogAddon(
+            AddonPackageDefEntity source, String currency, UserSubscriptionEntity contractContext) {
+        try {
+            return contractContext != null
+                    ? pricedAddonForContract(contractContext, source, currency)
+                    : pricedAddonForSale(source, currency);
+        }
         catch (BillingDomainException e) {
             if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
             return null;
@@ -254,6 +413,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity current = hasText(userId) ? findByUser(userId) : null;
         if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
                 && isRealStripeReference(current.getStripeSubscriptionId())) {
+            // 合同币种列（webhook 回填）：免一次 Stripe retrieve，也是 zone 合同的真值。
+            if (hasText(current.getCurrency())) {
+                return current.getCurrency();
+            }
             try { return BillingPricingService.subscriptionCurrency(retrieveStripeSubscription(current.getStripeSubscriptionId())); }
             catch (StripeException e) { throw stripeFailure("Read subscription currency failed", e); }
         }
@@ -273,11 +436,30 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private BillingQuote initialPurchaseQuote(String user, SubscriptionPlanEntity plan) {
-        SubscriptionPlanEntity renewal = isIntroTrialPlan(plan)
-                ? pricedPlan(requirePlan(resolveConversionPlanCode(plan)), plan.getCurrency(), true) : plan;
+        // zone 试用：转正价来自同区同版本 renewal 绑定（Selection 构建时已校验金额）。
+        Optional<ZonePricingSelectionService.PricingSelection> zoneTrial =
+                zonePricing.selectionByPriceId(plan.getStripePriceId(), plan.getCurrency());
+        String renewalPriceId;
+        Integer renewalAmount;
+        if (zoneTrial.isPresent()) {
+            renewalPriceId = zoneTrial.get().renewalPriceId() != null
+                    ? zoneTrial.get().renewalPriceId()
+                    : plan.getStripePriceId();
+            renewalAmount = zoneTrial.get().renewalAmountMinor() != null
+                    ? zoneTrial.get().renewalAmountMinor()
+                    : plan.getPriceCents();
+        } else if (isIntroTrialPlan(plan)) {
+            SubscriptionPlanEntity renewal = pricedPlan(requirePlan(resolveConversionPlanCode(plan)), plan.getCurrency(), true);
+            renewalPriceId = renewal.getStripePriceId();
+            renewalAmount = renewal.getPriceCents();
+        } else {
+            renewalPriceId = plan.getStripePriceId();
+            renewalAmount = plan.getPriceCents();
+        }
         return simpleQuote(user, "subscription", plan.getPlanCode(), plan.getCurrency(), plan.getPriceCents(),
-                isIntroTrialPlan(plan) ? "week" : plan.getBillingInterval(), plan.getTrialDays(), renewal.getPriceCents(),
-                plan.getStripePriceId() + ":" + renewal.getStripePriceId());
+                isIntroTrialPlan(plan) ? "week" : plan.getBillingInterval(), plan.getTrialDays(), renewalAmount,
+                zoneQuoteContext(plan.getStripePriceId(),
+                        plan.getStripePriceId() + ":" + renewalPriceId));
     }
 
     private void confirmInitialPurchase(String user, SubscriptionPlanEntity plan) {
@@ -286,13 +468,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private BillingQuote upgradePurchaseQuote(String user, SubscriptionPlanEntity target, UserSubscriptionEntity current, UpgradeChargeQuote quote) {
         return pricingService.quote(user, "subscription", target.getPlanCode(), "upgrade", target.getCurrency(), quote.getAmountCents(),
-                target.getBillingInterval(), null, target.getPriceCents(), current.getStripeSubscriptionId() + ":" + target.getStripePriceId()
-                        + ":" + current.getCurrentPeriodEnd(), null);
+                target.getBillingInterval(), null, target.getPriceCents(),
+                zoneQuoteContext(target.getStripePriceId(),
+                        current.getStripeSubscriptionId() + ":" + target.getStripePriceId()
+                                + ":" + current.getCurrentPeriodEnd()), null);
     }
 
     private BillingQuote deferredPurchaseQuote(String user, SubscriptionPlanEntity target, UserSubscriptionEntity current) {
         return pricingService.quote(user, "subscription", target.getPlanCode(), "downgrade", target.getCurrency(), 0,
-                target.getBillingInterval(), null, target.getPriceCents(), current.getStripeSubscriptionId() + ":" + target.getStripePriceId(),
+                target.getBillingInterval(), null, target.getPriceCents(),
+                zoneQuoteContext(target.getStripePriceId(),
+                        current.getStripeSubscriptionId() + ":" + target.getStripePriceId()),
                 current.getCurrentPeriodEnd());
     }
 
@@ -309,8 +495,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 if (BillingEntitlementPolicy.requiresPaymentResolution(current.getStatus()))
                     throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Resolve the current payment first");
                 String currency = currencyForMember(user);
-                SubscriptionPlanEntity source = pricedPlan(requireCurrentPlan(current), currency, false);
-                plan = pricedPlan(plan, currency, true);
+                SubscriptionPlanEntity source = pricedPlanForContract(current, requireCurrentPlan(current), false, currency);
+                plan = pricedPlanForContract(current, plan, true, currency);
                 PlanChangeAction action = classifyPlanChange(source.getPlanCode(), source.getTier(), source.getBillingInterval(),
                         plan.getPlanCode(), plan.getTier(), plan.getBillingInterval());
                 if (action == PlanChangeAction.DEFERRED_CHANGE) return deferredPurchaseQuote(user, plan, current);
@@ -323,12 +509,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 return upgradePurchaseQuote(user, plan, current, charge);
             }
             if (isIntroTrialPlan(plan) && current != null) assertIntroTrialEligible(current, current.getStripeCustomerId());
-            return initialPurchaseQuote(user, pricedPlan(plan, pricingService.newPurchaseCurrency(), true));
+            return initialPurchaseQuote(user, pricedPlanForSale(plan, true));
         }
         if ("addon".equals(kind)) {
             if (!isPaidMember(user)) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "A paid membership is required");
-            AddonPackageDefEntity addon = pricedAddon(requireAddon(sku), currencyForMember(user));
-            return simpleQuote(user, kind, sku, addon.getCurrency(), addon.getPriceCents(), null, null, null, addon.getStripePriceId());
+            AddonPackageDefEntity addon = pricedAddonForContract(findByUser(user), requireAddon(sku), currencyForMember(user));
+            return simpleQuote(user, kind, sku, addon.getCurrency(), addon.getPriceCents(), null, null, null,
+                    zoneQuoteContext(addon.getStripePriceId(), addon.getStripePriceId()));
         }
         if ("study_pass".equals(kind)) {
             if (hasStudyMembership(findByUser(user)) || findActiveStudyPass(user, LocalDateTime.now()) != null)
@@ -337,10 +524,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             if (latestPass != null && hasText(latestPass.getStripeSubscriptionId())
                     && !List.of("canceled", "superseded", "refunded").contains(latestPass.getStatus()))
                 throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Manage the existing Study Pass subscription first");
-            StudyPassProductEntity pass = pricedProduct(requireStudyPassProduct(sku), pricingService.newPurchaseCurrency());
+            StudyPassProductEntity pass = pricedStudyPassForSale(requireStudyPassProduct(sku), pricingService.newPurchaseCurrency());
             boolean recurring = "subscription".equals(pass.getBillingType());
             return simpleQuote(user, kind, sku, pass.getCurrency(), pass.getPriceCents(), recurring ? "month" : null,
-                    null, recurring ? pass.getPriceCents() : null, pass.getStripePriceId());
+                    null, recurring ? pass.getPriceCents() : null,
+                    zoneQuoteContext(pass.getStripePriceId(), pass.getStripePriceId()));
         }
         throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Unsupported purchase kind");
     }
@@ -418,7 +606,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         assertCurrentSubscriptionCannotBuyIntroTrial(userSubscription, plan);
         if (mockCheckout) {
-            plan = pricedPlan(plan, pricingService.newPurchaseCurrency(), true);
+            plan = pricedPlanForSale(plan, true);
             confirmInitialPurchase(clerkUserId, plan);
             return createMockSubscriptionCheckout(
                     clerkUserId,
@@ -453,7 +641,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         assertLapsedCheckoutAllowed(userSubscription, plan);
 
         boolean oneTimeProTrialCheckout = introTrialEnabled && isOneTimeProTrialPlan(plan);
-        plan = pricedPlan(plan, pricingService.newPurchaseCurrency(), true);
+        plan = pricedPlanForSale(plan, true);
         confirmInitialPurchase(clerkUserId, plan);
         if (oneTimeProTrialCheckout) {
             return createOneTimeProTrialCheckout(
@@ -494,6 +682,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .putMetadata("pricing_region", pricingService.pricingRegion())
                         .putMetadata("clerk_user_id", clerkUserId)
                         .putMetadata("plan_code", planCode);
+        for (Map.Entry<String, String> entry : zoneMetadata(plan.getStripePriceId()).entrySet()) {
+            subscriptionDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
         if (introTrialCheckout) {
             subscriptionDataBuilder
                     .putMetadata("conversion_plan_code", conversionPlanCode)
@@ -585,6 +776,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData);
+        putAllMetadata(builder, zoneMetadata(plan.getStripePriceId()));
         applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode(), plan.getCurrency());
         if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             builder.putMetadata("conversion_plan_code", conversionPlanCode)
@@ -807,9 +999,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
         }
         AddonPackageDefEntity addon = requireAddon(addonCode);
-        addon = pricedAddon(addon, currencyForMember(clerkUserId));
+        addon = pricedAddonForContract(findByUser(clerkUserId), addon, currencyForMember(clerkUserId));
         if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(simpleQuote(clerkUserId, "addon", addonCode,
-                addon.getCurrency(), addon.getPriceCents(), null, null, null, addon.getStripePriceId()));
+                addon.getCurrency(), addon.getPriceCents(), null, null, null,
+                zoneQuoteContext(addon.getStripePriceId(), addon.getStripePriceId())));
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
         String customerId = ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
 
@@ -880,13 +1073,27 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken,
             AddonPackageDefEntity addon,
             String customerId) {
-        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
-                .putMetadata("purchase_type", "addon")
-                .putMetadata("pricing_region", pricingService.pricingRegion())
-                .putMetadata("clerk_user_id", clerkUserId)
-                .putMetadata("addon_code", addonCode)
-                .build();
-        return SessionCreateParams.builder()
+        Map<String, String> zoneMetadata = zoneMetadata(addon.getStripePriceId());
+        SessionCreateParams.PaymentIntentData.Builder paymentIntentDataBuilder =
+                SessionCreateParams.PaymentIntentData.builder()
+                        .putMetadata("purchase_type", "addon")
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("addon_code", addonCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            paymentIntentDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
+        SessionCreateParams.InvoiceCreation.InvoiceData.Builder invoiceDataBuilder =
+                SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                        .setDescription("Add-on purchase: " + addonCode)
+                        .putMetadata("purchase_type", "addon")
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("addon_code", addonCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            invoiceDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCurrency(addon.getCurrency())
                 .setCustomer(customerId)
@@ -901,18 +1108,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("addon_code", addonCode)
-                .setPaymentIntentData(paymentIntentData)
+                .setPaymentIntentData(paymentIntentDataBuilder.build())
                 .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
                         .setEnabled(true)
-                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
-                                .setDescription("Add-on purchase: " + addonCode)
-                                .putMetadata("purchase_type", "addon")
-                                .putMetadata("pricing_region", pricingService.pricingRegion())
-                                .putMetadata("clerk_user_id", clerkUserId)
-                                .putMetadata("addon_code", addonCode)
-                                .build())
-                        .build())
-                .build();
+                        .setInvoiceData(invoiceDataBuilder.build())
+                        .build());
+        putAllMetadata(builder, zoneMetadata);
+        return builder.build();
     }
 
     // ---------------------------------------------------------------------
@@ -940,10 +1142,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         // Acquire the lock before any consistent read in this transaction.
         StudyPassProductEntity product = requireStudyPassProduct(passCode);
-        product = pricedProduct(product, pricingService.newPurchaseCurrency());
+        product = pricedStudyPassForSale(product, pricingService.newPurchaseCurrency());
         if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(simpleQuote(clerkUserId, "study_pass", passCode,
                 product.getCurrency(), product.getPriceCents(), "subscription".equals(product.getBillingType()) ? "month" : null,
-                null, "subscription".equals(product.getBillingType()) ? product.getPriceCents() : null, product.getStripePriceId()));
+                null, "subscription".equals(product.getBillingType()) ? product.getPriceCents() : null,
+                zoneQuoteContext(product.getStripePriceId(), product.getStripePriceId())));
         LocalDateTime now = LocalDateTime.now();
         if (findActiveStudyPass(clerkUserId, now) != null) {
             throw new BillingDomainException(
@@ -976,6 +1179,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             reservation.setStripePriceId(product.getStripePriceId());
             reservation.setRenewalPriceCents(product.getPriceCents());
             reservation.setRenewalCurrency(product.getCurrency());
+            var reservationZone = zonePricing.registryBinding(product.getStripePriceId()).orElse(null);
+            reservation.setPricingZone(reservationZone == null ? null : reservationZone.zoneCode());
+            reservation.setPriceVersion(reservationZone == null ? null : reservationZone.priceVersion());
             // Null identifies newly purchased monthly subscriptions; historical
             // 30-day subscriptions retain their saved billing_interval_days=30.
             reservation.setBillingIntervalDays(null);
@@ -1031,7 +1237,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     session.getId(),
                     session.getPaymentIntent(),
                     null);
-            order.setBizContext(GSON.toJson(Map.of("validityDays", product.getValidityDays())));
+            // biz_context 兼容旧解析：新增 zone 字段缺省不影响 validityDays 读取。
+            Map<String, Object> passContext = new LinkedHashMap<>();
+            passContext.put("validityDays", product.getValidityDays());
+            var orderZone = zonePricing.registryBinding(product.getStripePriceId()).orElse(null);
+            if (orderZone != null) {
+                passContext.put("pricing_zone", orderZone.zoneCode());
+                passContext.put("price_version", orderZone.priceVersion());
+            }
+            order.setBizContext(GSON.toJson(passContext));
             rechargeOrderMapper.updateById(order);
             if (reservation != null) {
                 reservation.setOrderId(order.getId());
@@ -1109,8 +1323,17 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken,
             StudyPassProductEntity product,
             String customerId, String purchaseKey) {
+        Map<String, String> zoneMetadata = zoneMetadata(product.getStripePriceId());
         if ("subscription".equals(product.getBillingType())) {
-            return SessionCreateParams.builder()
+            SessionCreateParams.SubscriptionData.Builder subscriptionDataBuilder =
+                    SessionCreateParams.SubscriptionData.builder()
+                            .putMetadata("purchase_type", "study_pass").putMetadata("pricing_region", pricingService.pricingRegion())
+                            .putMetadata("clerk_user_id", clerkUserId)
+                            .putMetadata("pass_code", passCode).putMetadata("purchase_key", purchaseKey);
+            for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+                subscriptionDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+            }
+            SessionCreateParams.Builder builder = SessionCreateParams.builder()
                     .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                     .setCurrency(product.getCurrency())
                     .setCustomer(customerId).setClientReferenceId(clerkUserId)
@@ -1118,21 +1341,32 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                     .setCancelUrl(resolveCheckoutCancelUrl(requestedCancelUrl))
                     .addLineItem(SessionCreateParams.LineItem.builder().setPrice(product.getStripePriceId()).setQuantity(1L).build())
                     .putMetadata("purchase_type", "study_pass").putMetadata("pricing_region", pricingService.pricingRegion())
-                .putMetadata("clerk_user_id", clerkUserId)
+                    .putMetadata("clerk_user_id", clerkUserId)
                     .putMetadata("pass_code", passCode)
-                    .setSubscriptionData(SessionCreateParams.SubscriptionData.builder()
-                            .putMetadata("purchase_type", "study_pass").putMetadata("pricing_region", pricingService.pricingRegion())
-                .putMetadata("clerk_user_id", clerkUserId)
-                            .putMetadata("pass_code", passCode).putMetadata("purchase_key", purchaseKey).build())
-                    .build();
+                    .setSubscriptionData(subscriptionDataBuilder.build());
+            putAllMetadata(builder, zoneMetadata);
+            return builder.build();
         }
-        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
-                .putMetadata("purchase_type", "study_pass")
-                .putMetadata("pricing_region", pricingService.pricingRegion())
-                .putMetadata("clerk_user_id", clerkUserId)
-                .putMetadata("pass_code", passCode)
-                .build();
-        return SessionCreateParams.builder()
+        SessionCreateParams.PaymentIntentData.Builder paymentIntentDataBuilder =
+                SessionCreateParams.PaymentIntentData.builder()
+                        .putMetadata("purchase_type", "study_pass")
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("pass_code", passCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            paymentIntentDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
+        SessionCreateParams.InvoiceCreation.InvoiceData.Builder invoiceDataBuilder =
+                SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                        .setDescription("Study Pass: " + passCode)
+                        .putMetadata("purchase_type", "study_pass")
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("pass_code", passCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            invoiceDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCurrency(product.getCurrency())
                 .setCustomer(customerId)
@@ -1147,18 +1381,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("pass_code", passCode)
-                .setPaymentIntentData(paymentIntentData)
+                .setPaymentIntentData(paymentIntentDataBuilder.build())
                 .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
                         .setEnabled(true)
-                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
-                                .setDescription("Study Pass: " + passCode)
-                                .putMetadata("purchase_type", "study_pass")
-                                .putMetadata("pricing_region", pricingService.pricingRegion())
-                                .putMetadata("clerk_user_id", clerkUserId)
-                                .putMetadata("pass_code", passCode)
-                                .build())
-                        .build())
-                .build();
+                        .setInvoiceData(invoiceDataBuilder.build())
+                        .build());
+        putAllMetadata(builder, zoneMetadata);
+        return builder.build();
     }
 
     /** Stripe Billing owns renewals. These helpers use an instance client while the
@@ -1460,7 +1689,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean recurring = hasText(pass.getPurchaseKey()) || hasText(pass.getStripeSubscriptionId());
         boolean managed = hasText(pass.getStripeSubscriptionId())
                 && !List.of("canceled", "superseded", "refunded").contains(pass.getStatus());
-        return StudyPassAccount.builder().active(active != null)
+        StudyPassAccount account = StudyPassAccount.builder().active(active != null)
                 .startedAt(pass.getStartedAt()).expiresAt(pass.getExpiresAt())
                 .upgradeCreditAvailable(false).purchasable(active == null && !managed)
                 .billingType(recurring ? "subscription" : "one_time")
@@ -1468,6 +1697,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .manageable(managed).renewalPriceCents(pass.getRenewalPriceCents())
                 .currency(pass.getRenewalCurrency()).billingIntervalDays(pass.getBillingIntervalDays())
                 .billingInterval(recurring && pass.getBillingIntervalDays() == null ? "month" : null).build();
+        if (hasText(pass.getPricingZone()) && hasText(pass.getStripeSubscriptionId())) {
+            rolloutService.scheduledChangeFor(clerkUserId, pass.getStripeSubscriptionId())
+                    .ifPresent(account::setNextCyclePriceChange);
+        }
+        return account;
     }
 
     @Override
@@ -1507,9 +1741,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         // New orders snapshot duration. Legacy orders may read the retained catalog row,
         // but fulfillment never depends on whether that row is still sellable.
         Integer validityDays = null;
+        String pricingZone = null;
+        String priceVersion = null;
         if (hasText(order.getBizContext())) {
-            validityDays = GSON.fromJson(order.getBizContext(), com.google.gson.JsonObject.class)
-                    .get("validityDays").getAsInt();
+            com.google.gson.JsonObject contextJson =
+                    GSON.fromJson(order.getBizContext(), com.google.gson.JsonObject.class);
+            validityDays = contextJson.get("validityDays").getAsInt();
+            // 旧订单 biz_context 无 zone 字段：保持 NULL = legacy 合同。
+            if (contextJson.has("pricing_zone") && !contextJson.get("pricing_zone").isJsonNull()) {
+                pricingZone = contextJson.get("pricing_zone").getAsString();
+            }
+            if (contextJson.has("price_version") && !contextJson.get("price_version").isJsonNull()) {
+                priceVersion = contextJson.get("price_version").getAsString();
+            }
         } else {
             StudyPassProductEntity product = studyPassProductMapper.selectOne(
                     new LambdaQueryWrapper<StudyPassProductEntity>()
@@ -1531,6 +1775,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         pass.setExpiresAt(now.plusDays(validityDays));
         pass.setStripeCheckoutSessionId(stripeSessionId);
         pass.setStripePaymentIntentId(stripePaymentIntentId);
+        pass.setPricingZone(pricingZone);
+        pass.setPriceVersion(priceVersion);
         pass.setCreatedAt(now);
         pass.setUpdatedAt(now);
         studyPassMapper.insert(pass);
@@ -1642,12 +1888,26 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedCancelUrl,
             String resumeToken,
             String customerId) {
-        SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
-                .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
-                .putMetadata("pricing_region", pricingService.pricingRegion())
-                .putMetadata("clerk_user_id", clerkUserId)
-                .putMetadata("plan_code", planCode)
-                .build();
+        Map<String, String> zoneMetadata = zoneMetadata(plan.getStripePriceId());
+        SessionCreateParams.PaymentIntentData.Builder paymentIntentDataBuilder =
+                SessionCreateParams.PaymentIntentData.builder()
+                        .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("plan_code", planCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            paymentIntentDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
+        SessionCreateParams.InvoiceCreation.InvoiceData.Builder invoiceDataBuilder =
+                SessionCreateParams.InvoiceCreation.InvoiceData.builder()
+                        .setDescription("Pro Trial: " + planCode)
+                        .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
+                        .putMetadata("pricing_region", pricingService.pricingRegion())
+                        .putMetadata("clerk_user_id", clerkUserId)
+                        .putMetadata("plan_code", planCode);
+        for (Map.Entry<String, String> entry : zoneMetadata.entrySet()) {
+            invoiceDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+        }
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCurrency(plan.getCurrency())
@@ -1663,17 +1923,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("pricing_region", pricingService.pricingRegion())
                 .putMetadata("clerk_user_id", clerkUserId)
                 .putMetadata("plan_code", planCode)
-                .setPaymentIntentData(paymentIntentData)
+                .setPaymentIntentData(paymentIntentDataBuilder.build())
                 .setInvoiceCreation(SessionCreateParams.InvoiceCreation.builder()
                         .setEnabled(true)
-                        .setInvoiceData(SessionCreateParams.InvoiceCreation.InvoiceData.builder()
-                                .setDescription("Pro Trial: " + planCode)
-                                .putMetadata("purchase_type", IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE)
-                                .putMetadata("pricing_region", pricingService.pricingRegion())
-                                .putMetadata("clerk_user_id", clerkUserId)
-                                .putMetadata("plan_code", planCode)
-                                .build())
+                        .setInvoiceData(invoiceDataBuilder.build())
                         .build());
+        putAllMetadata(builder, zoneMetadata);
         applyCheckoutProductDescription(builder, plan.getStripeProductId(), planCode, plan.getCurrency());
         return builder.build();
     }
@@ -1990,8 +2245,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String resumeToken) {
         SubscriptionPlanEntity currentPlan = requireCurrentPlan(current);
         String actualCurrency = currencyForMember(clerkUserId);
-        currentPlan = pricedPlan(currentPlan, actualCurrency, false);
-        targetPlan = pricedPlan(targetPlan, actualCurrency, true);
+        currentPlan = pricedPlanForContract(current, currentPlan, false, actualCurrency);
+        targetPlan = pricedPlanForContract(current, targetPlan, true, actualCurrency);
         PlanChangeAction action = classifyPlanChange(
                 currentPlan.getPlanCode(),
                 currentPlan.getTier(),
@@ -2024,15 +2279,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         try {
             releasePendingScheduleStateBeforeManualUpgradeCheckout(current);
-            SessionCreateParams.PaymentIntentData paymentIntentData = SessionCreateParams.PaymentIntentData.builder()
-                    .putMetadata("purchase_type", "subscription_upgrade_manual")
-                    .putMetadata("upgrade_order_no", orderNo)
-                    .putMetadata("pricing_region", pricingService.pricingRegion())
-                    .putMetadata("clerk_user_id", clerkUserId)
-                    .putMetadata("current_plan_code", currentPlan.getPlanCode())
-                    .putMetadata("target_plan_code", targetPlan.getPlanCode())
-                    .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
-                    .build();
+            SessionCreateParams.PaymentIntentData.Builder paymentIntentDataBuilder =
+                    SessionCreateParams.PaymentIntentData.builder()
+                            .putMetadata("purchase_type", "subscription_upgrade_manual")
+                            .putMetadata("upgrade_order_no", orderNo)
+                            .putMetadata("pricing_region", pricingService.pricingRegion())
+                            .putMetadata("clerk_user_id", clerkUserId)
+                            .putMetadata("current_plan_code", currentPlan.getPlanCode())
+                            .putMetadata("target_plan_code", targetPlan.getPlanCode())
+                            .putMetadata("current_subscription_id", current.getStripeSubscriptionId());
+            for (Map.Entry<String, String> entry : zoneMetadata(targetPlan.getStripePriceId()).entrySet()) {
+                paymentIntentDataBuilder.putMetadata(entry.getKey(), entry.getValue());
+            }
+            SessionCreateParams.PaymentIntentData paymentIntentData = paymentIntentDataBuilder.build();
             SessionCreateParams params = buildManualUpgradeCheckoutParams(
                     customerId,
                     clerkUserId,
@@ -2261,6 +2520,12 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean isQuotaVip = quotaVipAccessService.isQuotaVip(clerkUserId);
         boolean unlimited = isAdmin || isQuotaVip;
         SubscriptionResult result = entity == null ? freeSubscription() : toResult(entity);
+        // 区域合同且 rollout 已安排下周期换价：展示「下期将按新价续费」。
+        if (entity != null && hasText(entity.getPricingZone())
+                && hasText(entity.getStripeSubscriptionId())) {
+            rolloutService.scheduledChangeFor(clerkUserId, entity.getStripeSubscriptionId())
+                    .ifPresent(result::setNextCyclePriceChange);
+        }
         result.setIsAdmin(isAdmin);
         result.setIsQuotaVip(isQuotaVip);
         result.setEffectiveMaxFiles(unlimited ? null : effectivePlan.getMaxFiles());
@@ -2650,7 +2915,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SubscriptionPlanEntity conversionPlan = requirePlan(conversionPlanCode, true);
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(stripeSubscriptionId);
-            conversionPlan = pricedPlan(conversionPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), false);
+            conversionPlan = pricedConversionPlanForSchedule(
+                    conversionPlan,
+                    stripeSubscription,
+                    BillingPricingService.subscriptionCurrency(stripeSubscription));
             SubscriptionSchedule schedule;
             String existingScheduleId = firstNonBlank(
                     stripeSubscription.getSchedule(), current.getStripeScheduleId());
@@ -2699,6 +2967,30 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         } catch (StripeException e) {
             throw stripeFailure("Create intro trial conversion schedule failed", e);
         }
+    }
+
+    /**
+     * 转正段价格：优先注册表反查 trial Price → 同区同版本 renewal 绑定（spec 要求
+     * 转正段用区价 renewal_price_id）；legacy trial 走原目录价重定价。
+     */
+    private SubscriptionPlanEntity pricedConversionPlanForSchedule(
+            SubscriptionPlanEntity conversionPlan,
+            Subscription stripeSubscription,
+            String contractCurrency) {
+        SubscriptionItem item = requireSingleSubscriptionItem(stripeSubscription);
+        String trialPriceId = item.getPrice() == null ? null : item.getPrice().getId();
+        Optional<ZonePricingSelectionService.PricingSelection> trial =
+                zonePricing.selectionByPriceId(trialPriceId, contractCurrency);
+        if (trial.isPresent() && trial.get().renewalPriceId() != null) {
+            ZonePricingSelectionService.PricingSelection selection = trial.get();
+            SubscriptionPlanEntity copy = new SubscriptionPlanEntity();
+            org.springframework.beans.BeanUtils.copyProperties(conversionPlan, copy);
+            copy.setStripePriceId(selection.renewalPriceId());
+            copy.setPriceCents(selection.renewalAmountMinor());
+            copy.setCurrency(selection.currency());
+            return copy;
+        }
+        return pricedPlan(conversionPlan, contractCurrency, false);
     }
 
     private SubscriptionSchedule applyIntroTrialConversionPhases(
@@ -3543,18 +3835,24 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         order.setStripeSubscriptionId(current.getStripeSubscriptionId());
         order.setStatus("checkout_created");
         order.setSwitchAttempts(0);
-        order.setBizContext(GSON.toJson(Map.of(
-                "current_tier", currentPlan.getTier(),
-                "target_tier", targetPlan.getTier(),
-                "current_interval", currentPlan.getBillingInterval(),
-                "target_interval", targetPlan.getBillingInterval(),
-                "remaining_annual_months_excluding_current", quote.getRemainingAnnualMonthsExcludingCurrent(),
-                "pricing_formula", quote.getPricingFormula(),
-                "source_invoice_id", String.valueOf(quote.getSourceInvoiceId()),
-                "current_net_paid_cents", quote.getCurrentNetPaidCents(),
-                "old_period_start", String.valueOf(current.getCurrentPeriodStart()),
-                "old_period_end", String.valueOf(current.getCurrentPeriodEnd())
-        )));
+        // biz_context 兼容旧解析：snapshot 读取器只取已知键，新增 zone 字段对旧订单无影响。
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("current_tier", currentPlan.getTier());
+        snapshot.put("target_tier", targetPlan.getTier());
+        snapshot.put("current_interval", currentPlan.getBillingInterval());
+        snapshot.put("target_interval", targetPlan.getBillingInterval());
+        snapshot.put("remaining_annual_months_excluding_current", quote.getRemainingAnnualMonthsExcludingCurrent());
+        snapshot.put("pricing_formula", quote.getPricingFormula());
+        snapshot.put("source_invoice_id", String.valueOf(quote.getSourceInvoiceId()));
+        snapshot.put("current_net_paid_cents", quote.getCurrentNetPaidCents());
+        snapshot.put("old_period_start", String.valueOf(current.getCurrentPeriodStart()));
+        snapshot.put("old_period_end", String.valueOf(current.getCurrentPeriodEnd()));
+        var targetZone = zonePricing.registryBinding(targetPlan.getStripePriceId()).orElse(null);
+        if (targetZone != null) {
+            snapshot.put("pricing_zone", targetZone.zoneCode());
+            snapshot.put("price_version", targetZone.priceVersion());
+        }
+        order.setBizContext(GSON.toJson(snapshot));
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         rechargeOrderMapper.insert(order);
@@ -3628,6 +3926,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("target_plan_code", targetPlan.getPlanCode())
                 .putMetadata("current_subscription_id", current.getStripeSubscriptionId())
                 .setPaymentIntentData(paymentIntentData);
+        putAllMetadata(builder, zoneMetadata(targetPlan.getStripePriceId()));
         applyCheckoutProductDescription(builder, targetPlan.getStripeProductId(), targetPlan.getPlanCode(), targetPlan.getCurrency());
         return builder.build();
     }
@@ -3644,6 +3943,24 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String stripeProductId,
             String planCode, String currency) {
         if (IntroTrialPlans.isIntroTrialPlanCode(planCode)) {
+            // 区选价（请求作用域路由）优先：文案金额必须与 Checkout line item 同源；
+            // 转正价取同区同版本 renewal 绑定，与 initialPurchaseQuote 同链路。
+            // legacy 路径用目录 Price 按币种实读重定价，对区币种没有 currency_option，不可走。
+            var zoneTrial = zonePricing.newPurchaseSelection(
+                    planCode, ZonePricingSelectionService.KIND_SUBSCRIPTION_PLAN).orElse(null);
+            if (zoneTrial != null && zoneTrial.renewalPriceId() != null) {
+                SubscriptionPlanEntity catalogTrial = requirePlan(planCode);
+                SubscriptionPlanEntity renewalPlan = requirePlan(zoneTrial.renewalSkuCode());
+                String zoneMessage = "Get Verla Pro for " + catalogTrial.getTrialDays() + " days for "
+                        + formatBillingMoney(zoneTrial.amountMinor(), zoneTrial.currency())
+                        + ". After " + catalogTrial.getTrialDays() + " days, renews at "
+                        + formatBillingMoney(zoneTrial.renewalAmountMinor(), zoneTrial.currency())
+                        + " per " + renewalPlan.getBillingInterval()
+                        + " unless you cancel. Cancel anytime.";
+                builder.setCustomText(SessionCreateParams.CustomText.builder()
+                        .setSubmit(SessionCreateParams.CustomText.Submit.builder().setMessage(zoneMessage).build()).build());
+                return;
+            }
             SubscriptionPlanEntity trial = pricedPlan(requirePlan(planCode), currency, true);
             SubscriptionPlanEntity renewal = pricedPlan(requirePlan(resolveConversionPlanCode(trial)), currency, true);
             String message = "Get Verla Pro for " + trial.getTrialDays() + " days for " + formatBillingMoney(trial.getPriceCents(), currency)
@@ -3673,10 +3990,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private String formatBillingMoney(int amount, String currency) {
+        java.util.Currency currencyUnit = java.util.Currency.getInstance(currency.toUpperCase(Locale.ROOT));
+        // 零小数币种（krw 等）最小单位即主单位：2490 分不得先除以 100 显示成 ₩25。
+        int fractionDigits = Math.max(0, currencyUnit.getDefaultFractionDigits());
         java.text.NumberFormat format = java.text.NumberFormat.getCurrencyInstance(
                 "brl".equals(currency) ? Locale.forLanguageTag("pt-BR") : Locale.US);
-        format.setCurrency(java.util.Currency.getInstance(currency.toUpperCase(Locale.ROOT)));
-        return format.format(java.math.BigDecimal.valueOf(amount, 2));
+        format.setCurrency(currencyUnit);
+        // currency 实例默认两位小数模式，setCurrency 不会同步位数：零小数币种必须显式收零，否则 ₩2,490 会带出 .00。
+        format.setMinimumFractionDigits(fractionDigits);
+        format.setMaximumFractionDigits(fractionDigits);
+        return format.format(java.math.BigDecimal.valueOf(amount, fractionDigits));
     }
 
     private BillingPlan toPlan(SubscriptionPlanEntity entity) {

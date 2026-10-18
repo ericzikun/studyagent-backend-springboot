@@ -61,4 +61,4 @@
 
 原审阅工作簿SHA256：`30e45164acd7e839fab0d8555a1f64e5545547c739a2b4552f66f031df765062`。原审阅文件保留为决策依据，未回写或重新计算建议；本文44项与其建议列逐项核对。现有项目沙盒账户为`acct_1SrJ7Q7GRT6LLkI1`，所有配置须为livemode=false。旧Price保留，不转移旧lookup_key、不修改旧金额、Product默认价、订阅或生产。
 
-本轮先完成文档；40条沙盒替代Price的创建与全187条回读完成后，再回填当前绑定和配置记录。
+2026-10-18 r8。44项金额已按用户批准同步；现有项目沙盒`acct_1SrJ7Q7GRT6LLkI1`全部对象livemode=false。文档先以`480e3604`提交推送后，创建40条替代Price，复用147条，全187条当前目录/1133地区金额已回读一致。配置前已有414条Price完整不变，21个Product完整不变（包括default_price）；当前沙盒共454条Price。目录外既有对象仅保留，不纳入当前187条绑定。审计记录为`outputs/regional-pricing-approved-r8-01a14e97/stripe/verification.json`；本次配置只创建Price，未改业务代码或执行真实扣款。

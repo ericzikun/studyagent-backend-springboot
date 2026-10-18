@@ -1687,7 +1687,7 @@
           "referenceFactor": "0.25",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVZ7GRT6LLkI1ukNLCAHY",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 79,
@@ -1736,7 +1736,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVa7GRT6LLkI1cY6OB9kR",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -1928,7 +1928,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVb7GRT6LLkI1BRbf9Xjq",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 249,
@@ -1976,7 +1976,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVc7GRT6LLkI1ernnS2ZB",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 129,
@@ -2024,7 +2024,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVd7GRT6LLkI18rl41MaO",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 179,
@@ -3319,7 +3319,7 @@
           "referenceFactor": "0.4",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVe7GRT6LLkI1Hxvmq5OI",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -3376,7 +3376,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVf7GRT6LLkI1A21U94Y8",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -3432,7 +3432,7 @@
               }
             },
             "plus_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVg7GRT6LLkI10r8t0cNk",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -3488,7 +3488,7 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVh7GRT6LLkI1yO0RNor0",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -3544,7 +3544,7 @@
               }
             },
             "plus_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVi7GRT6LLkI1gegv9hqs",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -3600,7 +3600,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVj7GRT6LLkI1EsF2nGs3",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -3656,7 +3656,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVk7GRT6LLkI1Lw6WAtYL",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -3712,7 +3712,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVl7GRT6LLkI1OvvJp2sU",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -3768,7 +3768,7 @@
               }
             },
             "pro_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVn7GRT6LLkI1P69dKRSD",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -3824,7 +3824,7 @@
               }
             },
             "pro_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVo7GRT6LLkI1PLxl0Wkp",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -5454,7 +5454,7 @@
           "referenceFactor": "0.65",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVp7GRT6LLkI1nW6eTejg",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 195,
@@ -5551,7 +5551,7 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVq7GRT6LLkI19bBwblJ1",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 6230,
@@ -5583,7 +5583,7 @@
               }
             },
             "plus_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVr7GRT6LLkI1srKukIEA",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 12470,
@@ -5647,7 +5647,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVs7GRT6LLkI15fy1Wub7",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 325,
@@ -5679,7 +5679,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVt7GRT6LLkI1FW7Q01hP",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 455,
@@ -6505,7 +6505,7 @@
           "referenceFactor": "0.85",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVu7GRT6LLkI1v2dcFCMW",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -6538,7 +6538,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVv7GRT6LLkI1xcn7ZvMJ",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -6570,7 +6570,7 @@
               }
             },
             "plus_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVw7GRT6LLkI1gCrd6WBz",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -6602,7 +6602,7 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVx7GRT6LLkI1PmiEQYKd",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -6634,7 +6634,7 @@
               }
             },
             "plus_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVy7GRT6LLkI1pOy9n3BZ",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -6666,7 +6666,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtVz7GRT6LLkI1XxgkNEYd",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -6698,7 +6698,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW07GRT6LLkI1KXhSeSFw",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -6730,7 +6730,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW17GRT6LLkI1L54bUHC7",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -6762,7 +6762,7 @@
               }
             },
             "pro_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW27GRT6LLkI1h0DJAY8G",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -6794,7 +6794,7 @@
               }
             },
             "pro_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW37GRT6LLkI1Rumqp3BS",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -7327,7 +7327,7 @@
           "referenceFactor": "1",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW47GRT6LLkI1T2L7ElnN",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -7356,7 +7356,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW57GRT6LLkI1yQR8PElp",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -7384,7 +7384,7 @@
               }
             },
             "plus_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW77GRT6LLkI1dZERBRXT",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -7412,7 +7412,7 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW87GRT6LLkI1nSjixnt7",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -7440,7 +7440,7 @@
               }
             },
             "plus_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtW97GRT6LLkI1x7J7ine0",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -7468,7 +7468,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtWA7GRT6LLkI1z1ZH8kXu",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -7496,7 +7496,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtWB7GRT6LLkI14Vet3GgH",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -7524,7 +7524,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtWC7GRT6LLkI1r9zcZ1NF",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -7552,7 +7552,7 @@
               }
             },
             "pro_monthly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtWD7GRT6LLkI1y5N9CMgw",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -7580,7 +7580,7 @@
               }
             },
             "pro_yearly": {
-              "stripePriceId": null,
+              "stripePriceId": "price_1URtWF7GRT6LLkI12Xx5NRzO",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -9976,16 +9976,28 @@
       "explanation": "官方规则以银行账户结算币种为准，跨币种需满足折算后门槛；Account.default_currency及历史摘要不等于已核验全部银行结算设置。本次仅核对公开规则并计算固定建议价，没有发起扣款、写入Stripe或读取银行账号。"
     }
   },
-  "documentRevision": "2026-10-18-r8-approved-local-price-tails-sandbox-replacement-pending",
+  "documentRevision": "2026-10-18-r8-approved-local-price-tails-sandbox-bindings",
   "configurationVerification": {
-    "status": "approved_amounts_pending_sandbox_replacements",
-    "currentTargetBindingCount": 187,
-    "unchangedBindingCount": 147,
-    "pendingReplacementCount": 40,
+    "accountId": "acct_1SrJ7Q7GRT6LLkI1",
+    "livemode": false,
+    "verifiedPrices": 187,
+    "newPrices": 40,
+    "reusedCatalogPrices": 147,
     "changedRegionalAmounts": 44,
+    "regionalAmounts": 1133,
+    "countries": 114,
+    "oldPricesUnchanged": 414,
+    "productObjectsUnchanged": 21,
+    "totalSandboxPrices": 454,
+    "sourceCommit": "480e3604b3e6a9f04dbb9fc7ec37537fd8625dd8",
+    "approvedWorkbookSha256": "30e45164acd7e839fab0d8555a1f64e5545547c739a2b4552f66f031df765062",
     "realCheckoutTested": false,
     "renewalTested": false,
-    "businessCodeChangedByThisTask": false
+    "businessCodeChangedByThisTask": false,
+    "status": "configured_and_read_back",
+    "currentBindingCount": 187,
+    "supersededBindingCount": 62,
+    "sourceDraftSha256": "aaa598479ae5ca5802be2f68f5f6e6839fdab6a56b19d7dbd239b062811c7b9f"
   },
   "supersededSandboxPriceBindings": [
     {
@@ -10141,248 +10153,286 @@
       "oldPriceId": "price_1URrwo7GRT6LLkI1Daz1VW0L",
       "currentPriceId": "price_1URsL17GRT6LLkI1Km8DfzTG",
       "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
-    }
-  ],
-  "pendingPriceReplacements": [
-    {
-      "zone": "Z025",
-      "sku": "addon_assignment_3",
-      "priorPriceId": "price_1URrz67GRT6LLkI1XjdiqtqS",
-      "productId": "prod_V2XRyb7uDkhTVD"
-    },
-    {
-      "zone": "Z025",
-      "sku": "addon_detection_5",
-      "priorPriceId": "price_1URrz77GRT6LLkI1dH2tbgA9",
-      "productId": "prod_V2XRzr2BbiKqJA"
-    },
-    {
-      "zone": "Z025",
-      "sku": "addon_humanizer_3",
-      "priorPriceId": "price_1URrz87GRT6LLkI17fXYE7oL",
-      "productId": "prod_V2XRbewO3qfwsD"
-    },
-    {
-      "zone": "Z025",
-      "sku": "basic_monthly",
-      "priorPriceId": "price_1URrz37GRT6LLkI1lQ466lhO",
-      "productId": "prod_V2XQKO3FZiPKZI"
     },
     {
       "zone": "Z025",
       "sku": "pro_trial_to_monthly",
-      "priorPriceId": "price_1URrz27GRT6LLkI1BYoiUcnL",
-      "productId": "prod_V2yikGRbHLdZR6"
+      "oldPriceId": "price_1URrz27GRT6LLkI1BYoiUcnL",
+      "currentPriceId": "price_1URtVZ7GRT6LLkI1ukNLCAHY",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
-      "zone": "Z040",
+      "zone": "Z025",
+      "sku": "basic_monthly",
+      "oldPriceId": "price_1URrz37GRT6LLkI1lQ466lhO",
+      "currentPriceId": "price_1URtVa7GRT6LLkI1cY6OB9kR",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z025",
       "sku": "addon_assignment_3",
-      "priorPriceId": "price_1URrwA7GRT6LLkI1UmwIbgF2",
-      "productId": "prod_V2XRyb7uDkhTVD"
+      "oldPriceId": "price_1URrz67GRT6LLkI1XjdiqtqS",
+      "currentPriceId": "price_1URtVb7GRT6LLkI1BRbf9Xjq",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
-      "zone": "Z040",
+      "zone": "Z025",
       "sku": "addon_detection_5",
-      "priorPriceId": "price_1URrwB7GRT6LLkI1xIx2gAkW",
-      "productId": "prod_V2XRzr2BbiKqJA"
+      "oldPriceId": "price_1URrz77GRT6LLkI1dH2tbgA9",
+      "currentPriceId": "price_1URtVc7GRT6LLkI1ernnS2ZB",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z025",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrz87GRT6LLkI17fXYE7oL",
+      "currentPriceId": "price_1URtVd7GRT6LLkI18rl41MaO",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
-      "sku": "addon_humanizer_3",
-      "priorPriceId": "price_1URrwC7GRT6LLkI1V9vwHIjC",
-      "productId": "prod_V2XRbewO3qfwsD"
+      "sku": "pro_trial_to_monthly",
+      "oldPriceId": "price_1URrw67GRT6LLkI1rWPG6Knm",
+      "currentPriceId": "price_1URtVe7GRT6LLkI1Hxvmq5OI",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
       "sku": "basic_monthly",
-      "priorPriceId": "price_1URrw77GRT6LLkI1PUhg2WxO",
-      "productId": "prod_V2XQKO3FZiPKZI"
-    },
-    {
-      "zone": "Z040",
-      "sku": "basic_yearly",
-      "priorPriceId": "price_1URrw97GRT6LLkI16cEF3gWN",
-      "productId": "prod_V2XQKO3FZiPKZI"
+      "oldPriceId": "price_1URrw77GRT6LLkI1PUhg2WxO",
+      "currentPriceId": "price_1URtVf7GRT6LLkI1A21U94Y8",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
       "sku": "plus_monthly",
-      "priorPriceId": "price_1URrw87GRT6LLkI1a3Z0uE3u",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrw87GRT6LLkI1a3Z0uE3u",
+      "currentPriceId": "price_1URtVg7GRT6LLkI10r8t0cNk",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z040",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URrw97GRT6LLkI16cEF3gWN",
+      "currentPriceId": "price_1URtVh7GRT6LLkI1yO0RNor0",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
       "sku": "plus_yearly",
-      "priorPriceId": "price_1URrwA7GRT6LLkI1fgAOcstS",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrwA7GRT6LLkI1fgAOcstS",
+      "currentPriceId": "price_1URtVi7GRT6LLkI1gegv9hqs",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_assignment_3",
+      "oldPriceId": "price_1URrwA7GRT6LLkI1UmwIbgF2",
+      "currentPriceId": "price_1URtVj7GRT6LLkI1EsF2nGs3",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_detection_5",
+      "oldPriceId": "price_1URrwB7GRT6LLkI1xIx2gAkW",
+      "currentPriceId": "price_1URtVk7GRT6LLkI1Lw6WAtYL",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrwC7GRT6LLkI1V9vwHIjC",
+      "currentPriceId": "price_1URtVl7GRT6LLkI1OvvJp2sU",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
       "sku": "pro_monthly",
-      "priorPriceId": "price_1URrwD7GRT6LLkI1AMmtIIZq",
-      "productId": "prod_V2XRxk7tA14xQr"
-    },
-    {
-      "zone": "Z040",
-      "sku": "pro_trial_to_monthly",
-      "priorPriceId": "price_1URrw67GRT6LLkI1rWPG6Knm",
-      "productId": "prod_V2yikGRbHLdZR6"
+      "oldPriceId": "price_1URrwD7GRT6LLkI1AMmtIIZq",
+      "currentPriceId": "price_1URtVn7GRT6LLkI1P69dKRSD",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z040",
       "sku": "pro_yearly",
-      "priorPriceId": "price_1URrwD7GRT6LLkI14wXk5z26",
-      "productId": "prod_V2XRxk7tA14xQr"
-    },
-    {
-      "zone": "Z065",
-      "sku": "addon_detection_5",
-      "priorPriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
-      "productId": "prod_V2XRzr2BbiKqJA"
-    },
-    {
-      "zone": "Z065",
-      "sku": "addon_humanizer_3",
-      "priorPriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
-      "productId": "prod_V2XRbewO3qfwsD"
-    },
-    {
-      "zone": "Z065",
-      "sku": "basic_yearly",
-      "priorPriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
-      "productId": "prod_V2XQKO3FZiPKZI"
-    },
-    {
-      "zone": "Z065",
-      "sku": "plus_yearly",
-      "priorPriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrwD7GRT6LLkI14wXk5z26",
+      "currentPriceId": "price_1URtVo7GRT6LLkI1PLxl0Wkp",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z065",
       "sku": "pro_trial_to_monthly",
-      "priorPriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
-      "productId": "prod_V2yikGRbHLdZR6"
+      "oldPriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
+      "currentPriceId": "price_1URtVp7GRT6LLkI1nW6eTejg",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
-      "zone": "Z085",
-      "sku": "addon_assignment_3",
-      "priorPriceId": "price_1URrxJ7GRT6LLkI13xn18FmF",
-      "productId": "prod_V2XRyb7uDkhTVD"
+      "zone": "Z065",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
+      "currentPriceId": "price_1URtVq7GRT6LLkI19bBwblJ1",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
-      "zone": "Z085",
+      "zone": "Z065",
+      "sku": "plus_yearly",
+      "oldPriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
+      "currentPriceId": "price_1URtVr7GRT6LLkI1srKukIEA",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z065",
       "sku": "addon_detection_5",
-      "priorPriceId": "price_1URrxK7GRT6LLkI10LPECQ60",
-      "productId": "prod_V2XRzr2BbiKqJA"
+      "oldPriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
+      "currentPriceId": "price_1URtVs7GRT6LLkI15fy1Wub7",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
+      "currentPriceId": "price_1URtVt7GRT6LLkI1FW7Q01hP",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
-      "sku": "addon_humanizer_3",
-      "priorPriceId": "price_1URrxL7GRT6LLkI1GeCCkuz1",
-      "productId": "prod_V2XRbewO3qfwsD"
+      "sku": "pro_trial_to_monthly",
+      "oldPriceId": "price_1URrxF7GRT6LLkI1M06PQ0da",
+      "currentPriceId": "price_1URtVu7GRT6LLkI1v2dcFCMW",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
       "sku": "basic_monthly",
-      "priorPriceId": "price_1URrxG7GRT6LLkI17fqO4WGs",
-      "productId": "prod_V2XQKO3FZiPKZI"
-    },
-    {
-      "zone": "Z085",
-      "sku": "basic_yearly",
-      "priorPriceId": "price_1URrxH7GRT6LLkI1LKRrt9mo",
-      "productId": "prod_V2XQKO3FZiPKZI"
+      "oldPriceId": "price_1URrxG7GRT6LLkI17fqO4WGs",
+      "currentPriceId": "price_1URtVv7GRT6LLkI1xcn7ZvMJ",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
       "sku": "plus_monthly",
-      "priorPriceId": "price_1URrxH7GRT6LLkI18ADYfbud",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrxH7GRT6LLkI18ADYfbud",
+      "currentPriceId": "price_1URtVw7GRT6LLkI1gCrd6WBz",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z085",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URrxH7GRT6LLkI1LKRrt9mo",
+      "currentPriceId": "price_1URtVx7GRT6LLkI1PmiEQYKd",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
       "sku": "plus_yearly",
-      "priorPriceId": "price_1URrxI7GRT6LLkI1k0E1SPEh",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrxI7GRT6LLkI1k0E1SPEh",
+      "currentPriceId": "price_1URtVy7GRT6LLkI1pOy9n3BZ",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_assignment_3",
+      "oldPriceId": "price_1URrxJ7GRT6LLkI13xn18FmF",
+      "currentPriceId": "price_1URtVz7GRT6LLkI1XxgkNEYd",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_detection_5",
+      "oldPriceId": "price_1URrxK7GRT6LLkI10LPECQ60",
+      "currentPriceId": "price_1URtW07GRT6LLkI1KXhSeSFw",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrxL7GRT6LLkI1GeCCkuz1",
+      "currentPriceId": "price_1URtW17GRT6LLkI1L54bUHC7",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
       "sku": "pro_monthly",
-      "priorPriceId": "price_1URrxL7GRT6LLkI1fRbBkuFi",
-      "productId": "prod_V2XRxk7tA14xQr"
-    },
-    {
-      "zone": "Z085",
-      "sku": "pro_trial_to_monthly",
-      "priorPriceId": "price_1URrxF7GRT6LLkI1M06PQ0da",
-      "productId": "prod_V2yikGRbHLdZR6"
+      "oldPriceId": "price_1URrxL7GRT6LLkI1fRbBkuFi",
+      "currentPriceId": "price_1URtW27GRT6LLkI1h0DJAY8G",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z085",
       "sku": "pro_yearly",
-      "priorPriceId": "price_1URrxM7GRT6LLkI1Y3hfwyKe",
-      "productId": "prod_V2XRxk7tA14xQr"
+      "oldPriceId": "price_1URrxM7GRT6LLkI1Y3hfwyKe",
+      "currentPriceId": "price_1URtW37GRT6LLkI1Rumqp3BS",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
-      "sku": "addon_assignment_3",
-      "priorPriceId": "price_1URrxj7GRT6LLkI1orqZ2bIk",
-      "productId": "prod_V2XRyb7uDkhTVD"
-    },
-    {
-      "zone": "Z100",
-      "sku": "addon_detection_5",
-      "priorPriceId": "price_1URrxk7GRT6LLkI1TKq0anAE",
-      "productId": "prod_V2XRzr2BbiKqJA"
-    },
-    {
-      "zone": "Z100",
-      "sku": "addon_humanizer_3",
-      "priorPriceId": "price_1URrxl7GRT6LLkI1nKRo8ecV",
-      "productId": "prod_V2XRbewO3qfwsD"
+      "sku": "pro_trial_to_monthly",
+      "oldPriceId": "price_1URrxf7GRT6LLkI1h7y2ehzl",
+      "currentPriceId": "price_1URtW47GRT6LLkI1T2L7ElnN",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
       "sku": "basic_monthly",
-      "priorPriceId": "price_1URrxg7GRT6LLkI13axvSOdG",
-      "productId": "prod_V2XQKO3FZiPKZI"
-    },
-    {
-      "zone": "Z100",
-      "sku": "basic_yearly",
-      "priorPriceId": "price_1URrxi7GRT6LLkI1M4TGGISR",
-      "productId": "prod_V2XQKO3FZiPKZI"
+      "oldPriceId": "price_1URrxg7GRT6LLkI13axvSOdG",
+      "currentPriceId": "price_1URtW57GRT6LLkI1yQR8PElp",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
       "sku": "plus_monthly",
-      "priorPriceId": "price_1URrxh7GRT6LLkI1xpT3YQxg",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrxh7GRT6LLkI1xpT3YQxg",
+      "currentPriceId": "price_1URtW77GRT6LLkI1dZERBRXT",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z100",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URrxi7GRT6LLkI1M4TGGISR",
+      "currentPriceId": "price_1URtW87GRT6LLkI1nSjixnt7",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
       "sku": "plus_yearly",
-      "priorPriceId": "price_1URrxi7GRT6LLkI12kwh4f9g",
-      "productId": "prod_V2XQrWdt06ryxW"
+      "oldPriceId": "price_1URrxi7GRT6LLkI12kwh4f9g",
+      "currentPriceId": "price_1URtW97GRT6LLkI1x7J7ine0",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_assignment_3",
+      "oldPriceId": "price_1URrxj7GRT6LLkI1orqZ2bIk",
+      "currentPriceId": "price_1URtWA7GRT6LLkI1z1ZH8kXu",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_detection_5",
+      "oldPriceId": "price_1URrxk7GRT6LLkI1TKq0anAE",
+      "currentPriceId": "price_1URtWB7GRT6LLkI14Vet3GgH",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrxl7GRT6LLkI1nKRo8ecV",
+      "currentPriceId": "price_1URtWC7GRT6LLkI1r9zcZ1NF",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
       "sku": "pro_monthly",
-      "priorPriceId": "price_1URrxm7GRT6LLkI1PMLgb0EM",
-      "productId": "prod_V2XRxk7tA14xQr"
-    },
-    {
-      "zone": "Z100",
-      "sku": "pro_trial_to_monthly",
-      "priorPriceId": "price_1URrxf7GRT6LLkI1h7y2ehzl",
-      "productId": "prod_V2yikGRbHLdZR6"
+      "oldPriceId": "price_1URrxm7GRT6LLkI1PMLgb0EM",
+      "currentPriceId": "price_1URtWD7GRT6LLkI1y5N9CMgw",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     },
     {
       "zone": "Z100",
       "sku": "pro_yearly",
-      "priorPriceId": "price_1URrxn7GRT6LLkI1tny3NzO8",
-      "productId": "prod_V2XRxk7tA14xQr"
+      "oldPriceId": "price_1URrxn7GRT6LLkI1tny3NzO8",
+      "currentPriceId": "price_1URtWF7GRT6LLkI12Xx5NRzO",
+      "reason": "用户批准r8尾数微调；新建替代Price，旧Price及其lookup_key保留不改。"
     }
   ],
   "priorConfigurationVerification": {

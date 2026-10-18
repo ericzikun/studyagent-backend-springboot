@@ -1,10 +1,205 @@
-# r8批准尾数：沙盒更新待执行
+# r8批准尾数：沙盒已配置并回读
 
-2026-10-18。44项金额已按用户批准同步，涉及40条区/SKU Price，已在环境JSON列pendingPriceReplacements并清空这些条目的当前Price ID，避免把新金额误称为旧Price已回读。其余147条绑定复用。待文档提交推送后创建替代Price并回读全187条目录，再回填最终证据。旧Price、Product默认价、生产和订阅均未改动。
+2026-10-18 r8。44项金额已按用户批准同步；现有项目沙盒`acct_1SrJ7Q7GRT6LLkI1`全部对象livemode=false。文档先以`480e3604`提交推送后，创建40条替代Price，复用147条，全187条当前目录/1133地区金额已回读一致。配置前已有414条Price完整不变，21个Product完整不变（包括default_price）；当前沙盒共454条Price。目录外既有对象仅保留，不纳入当前187条绑定。
 
-下文r7为历史配置记录，当前批准金额以regional-price-matrix.md和approved-price-rounding.md为准。
+Study Pass全部103组合及参考保持；Pro年价继续等于月价×12。62条前版地区绑定（此前22＋本轮40）在环境JSON中保留替代链。税行为、周期和“1.00倍率区（美国、…）”形式的完整地区描述沿用。业务代码、生产、真实订阅及Schedule未由本任务修改；未做实际Checkout或续费验证。
 
-# 地区新价格沙盒配置记录
+审计目录：Verla根`outputs/regional-pricing-approved-r8-01a14e97/stripe/`，包含plan、results、verification、配置前后Price/Product快照与Country Spec，不含密钥。全量绑定见[环境JSON](regional-expansion-prices.sandbox.json)，金额与批准来源见[44项批准表](approved-price-rounding.md)。
+
+## r8当前Price绑定
+
+| 区 | SKU | Product ID | Price ID | 税行为 |
+| --- | --- | --- | --- | --- |
+| Z020 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrvg7GRT6LLkI1SNUJVu95 | unspecified |
+| Z020 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrvg7GRT6LLkI1WAN5piJL | inclusive |
+| Z020 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrvh7GRT6LLkI1AQU29tqy | inclusive |
+| Z020 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrvi7GRT6LLkI1Qnt7aRUr | inclusive |
+| Z020 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrvj7GRT6LLkI1E38NXC8g | inclusive |
+| Z020 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrvk7GRT6LLkI1uKA4TtpM | exclusive |
+| Z020 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrvk7GRT6LLkI1eleddwzo | exclusive |
+| Z020 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrvl7GRT6LLkI1g8wSmfnC | exclusive |
+| Z020 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrvm7GRT6LLkI1niFzNvIH | inclusive |
+| Z020 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrvn7GRT6LLkI1c4v281IA | inclusive |
+| Z020 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrvn7GRT6LLkI1mwFTDZoB | unspecified |
+| Z025 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URtVZ7GRT6LLkI1ukNLCAHY | unspecified |
+| Z025 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URtVa7GRT6LLkI1cY6OB9kR | inclusive |
+| Z025 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrz47GRT6LLkI1tQbgKzv4 | inclusive |
+| Z025 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrz47GRT6LLkI1nU5MghZR | inclusive |
+| Z025 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrz57GRT6LLkI14Mz7RW5Z | inclusive |
+| Z025 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URtVb7GRT6LLkI1BRbf9Xjq | exclusive |
+| Z025 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URtVc7GRT6LLkI1ernnS2ZB | exclusive |
+| Z025 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URtVd7GRT6LLkI18rl41MaO | exclusive |
+| Z025 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrz87GRT6LLkI1Z0psIJcB | inclusive |
+| Z025 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrz97GRT6LLkI1erq4YsQ7 | inclusive |
+| Z025 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrzA7GRT6LLkI1zvA84jph | unspecified |
+| Z030 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrvo7GRT6LLkI1wIzQtQ6p | unspecified |
+| Z030 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrvp7GRT6LLkI1dFau8mnq | inclusive |
+| Z030 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrvq7GRT6LLkI1KAoCwqTm | inclusive |
+| Z030 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrvr7GRT6LLkI1KbUePdov | inclusive |
+| Z030 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrvs7GRT6LLkI1zTeeYGHe | inclusive |
+| Z030 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrvs7GRT6LLkI183qwm237 | exclusive |
+| Z030 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrvt7GRT6LLkI1bKn5QaTV | exclusive |
+| Z030 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrvu7GRT6LLkI16gr5yJkk | exclusive |
+| Z030 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrvv7GRT6LLkI1aZeFjiih | inclusive |
+| Z030 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrvw7GRT6LLkI1gdtjghlG | inclusive |
+| Z030 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrvw7GRT6LLkI1LcXuJrZU | unspecified |
+| Z035 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrvx7GRT6LLkI1sm1znOvE | unspecified |
+| Z035 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrvy7GRT6LLkI1HBrUdByu | inclusive |
+| Z035 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrvz7GRT6LLkI1cVGH5bWk | inclusive |
+| Z035 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrw07GRT6LLkI14dCNzXkF | inclusive |
+| Z035 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrw17GRT6LLkI1k4dW83H3 | inclusive |
+| Z035 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrw17GRT6LLkI1eyTE1Gsc | exclusive |
+| Z035 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrw27GRT6LLkI14bZPFJBu | exclusive |
+| Z035 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrw37GRT6LLkI1rnX3diXu | exclusive |
+| Z035 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrw47GRT6LLkI10CnP0N7y | inclusive |
+| Z035 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrw57GRT6LLkI16eAqZ89n | inclusive |
+| Z035 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrw57GRT6LLkI1lyNekvzw | unspecified |
+| Z040 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URtVe7GRT6LLkI1Hxvmq5OI | unspecified |
+| Z040 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URtVf7GRT6LLkI1A21U94Y8 | inclusive |
+| Z040 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URtVg7GRT6LLkI10r8t0cNk | inclusive |
+| Z040 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URtVh7GRT6LLkI1yO0RNor0 | inclusive |
+| Z040 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URtVi7GRT6LLkI1gegv9hqs | inclusive |
+| Z040 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URtVj7GRT6LLkI1EsF2nGs3 | exclusive |
+| Z040 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URtVk7GRT6LLkI1Lw6WAtYL | exclusive |
+| Z040 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URtVl7GRT6LLkI1OvvJp2sU | exclusive |
+| Z040 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URtVn7GRT6LLkI1P69dKRSD | inclusive |
+| Z040 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URtVo7GRT6LLkI1PLxl0Wkp | inclusive |
+| Z040 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrwE7GRT6LLkI1heehqCaf | unspecified |
+| Z045 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrwF7GRT6LLkI1zniti7j7 | unspecified |
+| Z045 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrwG7GRT6LLkI17N1lP4hk | inclusive |
+| Z045 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrwH7GRT6LLkI1xinyBy0v | inclusive |
+| Z045 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrwH7GRT6LLkI1bJ82CGyF | inclusive |
+| Z045 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrwI7GRT6LLkI1iZE9n46F | inclusive |
+| Z045 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrwJ7GRT6LLkI1FFIPT3q2 | exclusive |
+| Z045 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrwK7GRT6LLkI1LQJ1gKUx | exclusive |
+| Z045 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrwL7GRT6LLkI1DatGrDf0 | exclusive |
+| Z045 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrwM7GRT6LLkI1Wt4KJ3MK | inclusive |
+| Z045 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrwN7GRT6LLkI17oC39eD6 | inclusive |
+| Z045 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrwN7GRT6LLkI1DHqFrf2T | unspecified |
+| Z050 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URsKX7GRT6LLkI11WI6r22n | unspecified |
+| Z050 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URsKY7GRT6LLkI1AJka3B5H | inclusive |
+| Z050 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URsKZ7GRT6LLkI1qjnFczml | inclusive |
+| Z050 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URsKa7GRT6LLkI15EQKyjSY | inclusive |
+| Z050 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URsKb7GRT6LLkI1xJkFHUj7 | inclusive |
+| Z050 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URsKb7GRT6LLkI1LltUASkL | exclusive |
+| Z050 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URsKc7GRT6LLkI1GtqawNoF | exclusive |
+| Z050 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URsKd7GRT6LLkI19AdL2PHz | exclusive |
+| Z050 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URsKe7GRT6LLkI1GM335bxO | inclusive |
+| Z050 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URsKf7GRT6LLkI12mPynyvD | inclusive |
+| Z050 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URsKf7GRT6LLkI1xqlbMZZN | unspecified |
+| Z055 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URsKg7GRT6LLkI1vPBL3VUg | unspecified |
+| Z055 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URsKh7GRT6LLkI1juSuTrnY | inclusive |
+| Z055 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URsKi7GRT6LLkI1QqkwZLQb | inclusive |
+| Z055 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URsKj7GRT6LLkI1pAKVfYnq | inclusive |
+| Z055 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URsKj7GRT6LLkI1397t566S | inclusive |
+| Z055 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URsKk7GRT6LLkI1n4cjnZ8q | exclusive |
+| Z055 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URsKl7GRT6LLkI1WnPsxDCA | exclusive |
+| Z055 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URsKm7GRT6LLkI1csLLRoV0 | exclusive |
+| Z055 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URsKn7GRT6LLkI14o3ccC2S | inclusive |
+| Z055 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URsKn7GRT6LLkI15XzmpbYm | inclusive |
+| Z055 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URsKo7GRT6LLkI13JjLuc2g | unspecified |
+| Z060 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrwX7GRT6LLkI17pon6WBl | unspecified |
+| Z060 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrwY7GRT6LLkI15RdVWR5Q | inclusive |
+| Z060 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrwZ7GRT6LLkI11tfCyoqM | inclusive |
+| Z060 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrwZ7GRT6LLkI1CUnllfC0 | inclusive |
+| Z060 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrwa7GRT6LLkI1PG3Lap7L | inclusive |
+| Z060 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrwb7GRT6LLkI1xaJ6TDiv | exclusive |
+| Z060 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrwc7GRT6LLkI1JEqMTYlB | exclusive |
+| Z060 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrwd7GRT6LLkI1twi0QrK4 | exclusive |
+| Z060 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrwd7GRT6LLkI1PzAAQgv0 | inclusive |
+| Z060 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrwe7GRT6LLkI1s560672r | inclusive |
+| Z060 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrwf7GRT6LLkI17voozvv7 | unspecified |
+| Z065 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URtVp7GRT6LLkI1nW6eTejg | unspecified |
+| Z065 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URsKu7GRT6LLkI1oaNsbVRW | inclusive |
+| Z065 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URsKv7GRT6LLkI1mkLMl242 | inclusive |
+| Z065 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URtVq7GRT6LLkI19bBwblJ1 | inclusive |
+| Z065 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URtVr7GRT6LLkI1srKukIEA | inclusive |
+| Z065 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URsKx7GRT6LLkI11BSEqe4n | exclusive |
+| Z065 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URtVs7GRT6LLkI15fy1Wub7 | exclusive |
+| Z065 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URtVt7GRT6LLkI1FW7Q01hP | exclusive |
+| Z065 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URsKz7GRT6LLkI1sEILJd6a | inclusive |
+| Z065 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URsL07GRT6LLkI1qU6NMcSm | inclusive |
+| Z065 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URsL17GRT6LLkI1Km8DfzTG | unspecified |
+| Z070 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrwp7GRT6LLkI19S5H10ZY | unspecified |
+| Z070 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrwp7GRT6LLkI1r676TLRJ | inclusive |
+| Z070 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrwq7GRT6LLkI1FZP82heW | inclusive |
+| Z070 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrwr7GRT6LLkI1rKTKBpiq | inclusive |
+| Z070 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrws7GRT6LLkI1R5IreqW5 | inclusive |
+| Z070 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrwt7GRT6LLkI1IwuxE3K3 | exclusive |
+| Z070 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrwt7GRT6LLkI18bBIbdgI | exclusive |
+| Z070 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrwu7GRT6LLkI1PqkWVWfs | exclusive |
+| Z070 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrwv7GRT6LLkI1AnI4kOf4 | inclusive |
+| Z070 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrww7GRT6LLkI18pYd8hUj | inclusive |
+| Z070 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrwx7GRT6LLkI1pS0E8O1K | unspecified |
+| Z075 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrwx7GRT6LLkI1A89n1ZK6 | unspecified |
+| Z075 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrwy7GRT6LLkI1W7fMPMIq | inclusive |
+| Z075 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrwz7GRT6LLkI1MVqkAsNB | inclusive |
+| Z075 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrx07GRT6LLkI1eOfkPVaI | inclusive |
+| Z075 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrx17GRT6LLkI1SXqm2Etw | inclusive |
+| Z075 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrx17GRT6LLkI1qGsoho4M | exclusive |
+| Z075 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrx27GRT6LLkI1UKo28k3Z | exclusive |
+| Z075 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrx37GRT6LLkI1qXxIcW6F | exclusive |
+| Z075 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrx47GRT6LLkI1rBHzQKGl | inclusive |
+| Z075 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrx57GRT6LLkI1caV5pDOc | inclusive |
+| Z075 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrx67GRT6LLkI10Kad8Vzz | unspecified |
+| Z080 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrx77GRT6LLkI1mafUApZJ | unspecified |
+| Z080 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrx77GRT6LLkI1NRRmlFNt | inclusive |
+| Z080 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrx87GRT6LLkI1Jla1Vouy | inclusive |
+| Z080 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrx97GRT6LLkI1NsPOo2v8 | inclusive |
+| Z080 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrxA7GRT6LLkI1SdUHuYPT | inclusive |
+| Z080 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrxA7GRT6LLkI1bx0O8Ek9 | exclusive |
+| Z080 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrxB7GRT6LLkI1dCI4aOGD | exclusive |
+| Z080 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrxC7GRT6LLkI19GbDgCFe | exclusive |
+| Z080 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrxD7GRT6LLkI1DmR7NpKm | inclusive |
+| Z080 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrxE7GRT6LLkI1vFIavRT0 | inclusive |
+| Z080 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrxE7GRT6LLkI1RyxG6n63 | unspecified |
+| Z085 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URtVu7GRT6LLkI1v2dcFCMW | unspecified |
+| Z085 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URtVv7GRT6LLkI1xcn7ZvMJ | inclusive |
+| Z085 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URtVw7GRT6LLkI1gCrd6WBz | inclusive |
+| Z085 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URtVx7GRT6LLkI1PmiEQYKd | inclusive |
+| Z085 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URtVy7GRT6LLkI1pOy9n3BZ | inclusive |
+| Z085 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URtVz7GRT6LLkI1XxgkNEYd | exclusive |
+| Z085 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URtW07GRT6LLkI1KXhSeSFw | exclusive |
+| Z085 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URtW17GRT6LLkI1L54bUHC7 | exclusive |
+| Z085 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URtW27GRT6LLkI1h0DJAY8G | inclusive |
+| Z085 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URtW37GRT6LLkI1Rumqp3BS | inclusive |
+| Z085 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrxN7GRT6LLkI1QYKbVFWT | unspecified |
+| Z090 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrxO7GRT6LLkI1WvBTkVYX | unspecified |
+| Z090 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrxP7GRT6LLkI1hVTHR9HS | inclusive |
+| Z090 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrxP7GRT6LLkI1sTAcfne2 | inclusive |
+| Z090 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrxQ7GRT6LLkI1lTQTgNlG | inclusive |
+| Z090 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrxR7GRT6LLkI1vQfmPkot | inclusive |
+| Z090 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrxS7GRT6LLkI1SObEYha0 | exclusive |
+| Z090 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrxS7GRT6LLkI1JNYuLJWq | exclusive |
+| Z090 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrxT7GRT6LLkI1qs9LhcnL | exclusive |
+| Z090 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrxU7GRT6LLkI1rZp9mzyv | inclusive |
+| Z090 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrxV7GRT6LLkI1rm59srS4 | inclusive |
+| Z090 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrxW7GRT6LLkI1eJpTawlV | unspecified |
+| Z095 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URrxW7GRT6LLkI1siP57nsF | unspecified |
+| Z095 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URrxY7GRT6LLkI1PEGvdg7b | inclusive |
+| Z095 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URrxY7GRT6LLkI1E4QBXglY | inclusive |
+| Z095 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URrxZ7GRT6LLkI1A4hV4YPe | inclusive |
+| Z095 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URrxa7GRT6LLkI1Q3Zm2eI9 | inclusive |
+| Z095 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URrxb7GRT6LLkI1jL4222FD | exclusive |
+| Z095 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URrxb7GRT6LLkI1Hi7uJytk | exclusive |
+| Z095 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URrxc7GRT6LLkI1zH2te5Zt | exclusive |
+| Z095 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URrxd7GRT6LLkI1e8nxttmE | inclusive |
+| Z095 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URrxe7GRT6LLkI1B8k1gbCS | inclusive |
+| Z095 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrxf7GRT6LLkI16qYqZ6uW | unspecified |
+| Z100 | pro_trial_to_monthly | prod_V2yikGRbHLdZR6 | price_1URtW47GRT6LLkI1T2L7ElnN | unspecified |
+| Z100 | basic_monthly | prod_V2XQKO3FZiPKZI | price_1URtW57GRT6LLkI1yQR8PElp | inclusive |
+| Z100 | plus_monthly | prod_V2XQrWdt06ryxW | price_1URtW77GRT6LLkI1dZERBRXT | inclusive |
+| Z100 | basic_yearly | prod_V2XQKO3FZiPKZI | price_1URtW87GRT6LLkI1nSjixnt7 | inclusive |
+| Z100 | plus_yearly | prod_V2XQrWdt06ryxW | price_1URtW97GRT6LLkI1x7J7ine0 | inclusive |
+| Z100 | addon_assignment_3 | prod_V2XRyb7uDkhTVD | price_1URtWA7GRT6LLkI1z1ZH8kXu | exclusive |
+| Z100 | addon_detection_5 | prod_V2XRzr2BbiKqJA | price_1URtWB7GRT6LLkI14Vet3GgH | exclusive |
+| Z100 | addon_humanizer_3 | prod_V2XRbewO3qfwsD | price_1URtWC7GRT6LLkI1r9zcZ1NF | exclusive |
+| Z100 | pro_monthly | prod_V2XRxk7tA14xQr | price_1URtWD7GRT6LLkI1y5N9CMgw | inclusive |
+| Z100 | pro_yearly | prod_V2XRxk7tA14xQr | price_1URtWF7GRT6LLkI12Xx5NRzO | inclusive |
+| Z100 | study_pass_subscription_30d | prod_VJqvMKubYOnfWS | price_1URrxn7GRT6LLkI1W3KctsDo | unspecified |
+
+# r7历史配置记录
+
 
 2026-10-18 r7。现有项目沙盒LASTMILE LIMITED，`acct_1SrJ7Q7GRT6LLkI1`，本次所有对象均为`livemode=false`。已按用户要求并入第三组51地区；第一10＋第二53＋第三51＝114地区，全部使用新金额，Pro只用新Pro列。五地USD替代获当前会话明确确认，完整金额见[currency-replacements.md](currency-replacements.md)。
 
@@ -35,7 +230,7 @@ Z055原Price默认USD按技术参考，现新增波多黎各实际USD销售金�
 - 业务目录读取与发布、生产历史alias／线上已购Pro资格盘点、下期Schedule换价与订阅迁移。
 - 生产Price创建、生产部署或任何生产订阅修改。
 
-## 当前Stripe价格描述
+## 沿用的Stripe价格描述
 
 同区11个SKU使用“固定两位倍率＋倍率区（完整国家／地区名单）”。例如0.90倍率区（加拿大、新加坡）。
 
@@ -59,7 +254,7 @@ Z055原Price默认USD按技术参考，现新增波多黎各实际USD销售金�
 | Z095 | 0.95倍率区（澳大利亚、卢森堡） |
 | Z100 | 1.00倍率区（美国、爱尔兰、百慕大、挪威） |
 
-## 当前Price绑定
+## r7历史Price绑定（已由上方r8表取代）
 
 | 区 | SKU | Product ID | Price ID | 税行为 |
 | --- | --- | --- | --- | --- |

@@ -1697,12 +1697,12 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "18900",
-                  "amountMinor": 18900
+                  "amountMajor": "19000",
+                  "amountMinor": 19000
                 },
                 "idr": {
-                  "amountMajor": "13900",
-                  "amountMinor": 1390000
+                  "amountMajor": "14000",
+                  "amountMinor": 1400000
                 },
                 "kes": {
                   "amountMajor": "99",
@@ -1750,8 +1750,8 @@
                   "amountMinor": 129000
                 },
                 "idr": {
-                  "amountMajor": "89900",
-                  "amountMinor": 8990000
+                  "amountMajor": "90000",
+                  "amountMinor": 9000000
                 },
                 "kes": {
                   "amountMajor": "649",
@@ -1938,12 +1938,12 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "64900",
-                  "amountMinor": 64900
+                  "amountMajor": "65000",
+                  "amountMinor": 65000
                 },
                 "idr": {
-                  "amountMajor": "44900",
-                  "amountMinor": 4490000
+                  "amountMajor": "45000",
+                  "amountMinor": 4500000
                 },
                 "kes": {
                   "amountMajor": "329",
@@ -1986,12 +1986,12 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "31900",
-                  "amountMinor": 31900
+                  "amountMajor": "32000",
+                  "amountMinor": 32000
                 },
                 "idr": {
-                  "amountMajor": "22900",
-                  "amountMinor": 2290000
+                  "amountMajor": "23000",
+                  "amountMinor": 2300000
                 },
                 "kes": {
                   "amountMajor": "159",
@@ -2034,12 +2034,12 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "44900",
-                  "amountMinor": 44900
+                  "amountMajor": "45000",
+                  "amountMinor": 45000
                 },
                 "idr": {
-                  "amountMajor": "31900",
-                  "amountMinor": 3190000
+                  "amountMajor": "32000",
+                  "amountMinor": 3200000
                 },
                 "kes": {
                   "amountMajor": "229",
@@ -3329,8 +3329,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "5.99",
-                  "amountMinor": 599
+                  "amountMajor": "5.90",
+                  "amountMinor": 590
                 },
                 "ars": {
                   "amountMajor": "1799",
@@ -3386,8 +3386,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "40.99",
-                  "amountMinor": 4099
+                  "amountMajor": "40.90",
+                  "amountMinor": 4090
                 },
                 "ars": {
                   "amountMajor": "11900",
@@ -3442,8 +3442,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "80.99",
-                  "amountMinor": 8099
+                  "amountMajor": "80.90",
+                  "amountMinor": 8090
                 },
                 "ars": {
                   "amountMajor": "23900",
@@ -3498,8 +3498,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "194.99",
-                  "amountMinor": 19499
+                  "amountMajor": "194.90",
+                  "amountMinor": 19490
                 },
                 "ars": {
                   "amountMajor": "57900",
@@ -3554,8 +3554,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "390.99",
-                  "amountMinor": 39099
+                  "amountMajor": "390.90",
+                  "amountMinor": 39090
                 },
                 "ars": {
                   "amountMajor": "115900",
@@ -3610,8 +3610,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "19.99",
-                  "amountMinor": 1999
+                  "amountMajor": "19.90",
+                  "amountMinor": 1990
                 },
                 "ars": {
                   "amountMajor": "6099",
@@ -3666,8 +3666,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "9.99",
-                  "amountMinor": 999
+                  "amountMajor": "9.90",
+                  "amountMinor": 990
                 },
                 "ars": {
                   "amountMajor": "2999",
@@ -3722,8 +3722,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "13.99",
-                  "amountMinor": 1399
+                  "amountMajor": "13.90",
+                  "amountMinor": 1390
                 },
                 "ars": {
                   "amountMajor": "4199",
@@ -3778,8 +3778,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "60.99",
-                  "amountMinor": 6099
+                  "amountMajor": "60.90",
+                  "amountMinor": 6090
                 },
                 "ars": {
                   "amountMajor": "17900",
@@ -3834,8 +3834,8 @@
               "taxBehavior": "VERIFY_EXISTING_POLICY",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "731.88",
-                  "amountMinor": 73188
+                  "amountMajor": "730.80",
+                  "amountMinor": 73080
                 },
                 "ars": {
                   "amountMajor": "214800",
@@ -5457,7 +5457,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 194,
+              "expectedDefaultAmountMinor": 195,
               "priceType": "recurring",
               "interval": "week",
               "intervalCount": 1,
@@ -5480,8 +5480,8 @@
                   "amountMinor": 169
                 },
                 "usd": {
-                  "amountMajor": "1.94",
-                  "amountMinor": 194
+                  "amountMajor": "1.95",
+                  "amountMinor": 195
                 }
               },
               "renewalSku": "pro_monthly"
@@ -5554,7 +5554,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 6232,
+              "expectedDefaultAmountMinor": 6230,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -5577,8 +5577,8 @@
                   "amountMinor": 5699
                 },
                 "usd": {
-                  "amountMajor": "62.32",
-                  "amountMinor": 6232
+                  "amountMajor": "62.3",
+                  "amountMinor": 6230
                 }
               }
             },
@@ -5586,7 +5586,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 12472,
+              "expectedDefaultAmountMinor": 12470,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -5609,8 +5609,8 @@
                   "amountMinor": 11099
                 },
                 "usd": {
-                  "amountMajor": "124.72",
-                  "amountMinor": 12472
+                  "amountMajor": "124.7",
+                  "amountMinor": 12470
                 }
               }
             },
@@ -5650,7 +5650,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 324,
+              "expectedDefaultAmountMinor": 325,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -5673,8 +5673,8 @@
                   "amountMinor": 299
                 },
                 "usd": {
-                  "amountMajor": "3.24",
-                  "amountMinor": 324
+                  "amountMajor": "3.25",
+                  "amountMinor": 325
                 }
               }
             },
@@ -5682,7 +5682,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 454,
+              "expectedDefaultAmountMinor": 455,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -5705,8 +5705,8 @@
                   "amountMinor": 399
                 },
                 "usd": {
-                  "amountMajor": "4.54",
-                  "amountMinor": 454
+                  "amountMajor": "4.55",
+                  "amountMinor": 455
                 }
               }
             },
@@ -6531,8 +6531,8 @@
                   "amountMinor": 249
                 },
                 "sek": {
-                  "amountMajor": "24.99",
-                  "amountMinor": 2499
+                  "amountMajor": "25",
+                  "amountMinor": 2500
                 }
               },
               "renewalSku": "pro_monthly"
@@ -6564,8 +6564,8 @@
                   "amountMinor": 1699
                 },
                 "sek": {
-                  "amountMajor": "167.99",
-                  "amountMinor": 16799
+                  "amountMajor": "168",
+                  "amountMinor": 16800
                 }
               }
             },
@@ -6596,8 +6596,8 @@
                   "amountMinor": 3399
                 },
                 "sek": {
-                  "amountMajor": "336.99",
-                  "amountMinor": 33699
+                  "amountMajor": "337",
+                  "amountMinor": 33700
                 }
               }
             },
@@ -6628,8 +6628,8 @@
                   "amountMinor": 8199
                 },
                 "sek": {
-                  "amountMajor": "807.99",
-                  "amountMinor": 80799
+                  "amountMajor": "808",
+                  "amountMinor": 80800
                 }
               }
             },
@@ -6660,8 +6660,8 @@
                   "amountMinor": 16299
                 },
                 "sek": {
-                  "amountMajor": "1615.99",
-                  "amountMinor": 161599
+                  "amountMajor": "1616",
+                  "amountMinor": 161600
                 }
               }
             },
@@ -6692,8 +6692,8 @@
                   "amountMinor": 849
                 },
                 "sek": {
-                  "amountMajor": "83.99",
-                  "amountMinor": 8399
+                  "amountMajor": "84",
+                  "amountMinor": 8400
                 }
               }
             },
@@ -6724,8 +6724,8 @@
                   "amountMinor": 399
                 },
                 "sek": {
-                  "amountMajor": "41.99",
-                  "amountMinor": 4199
+                  "amountMajor": "42",
+                  "amountMinor": 4200
                 }
               }
             },
@@ -6756,8 +6756,8 @@
                   "amountMinor": 599
                 },
                 "sek": {
-                  "amountMajor": "58.99",
-                  "amountMinor": 5899
+                  "amountMajor": "59",
+                  "amountMinor": 5900
                 }
               }
             },
@@ -6788,8 +6788,8 @@
                   "amountMinor": 2599
                 },
                 "sek": {
-                  "amountMajor": "252.99",
-                  "amountMinor": 25299
+                  "amountMajor": "253",
+                  "amountMinor": 25300
                 }
               }
             },
@@ -6820,8 +6820,8 @@
                   "amountMinor": 31188
                 },
                 "sek": {
-                  "amountMajor": "3035.88",
-                  "amountMinor": 303588
+                  "amountMajor": "3036",
+                  "amountMinor": 303600
                 }
               }
             },
@@ -7349,8 +7349,8 @@
                   "amountMinor": 299
                 },
                 "nok": {
-                  "amountMajor": "27.99",
-                  "amountMinor": 2799
+                  "amountMajor": "28",
+                  "amountMinor": 2800
                 }
               },
               "renewalSku": "pro_monthly"
@@ -7378,8 +7378,8 @@
                   "amountMinor": 1999
                 },
                 "nok": {
-                  "amountMajor": "188.99",
-                  "amountMinor": 18899
+                  "amountMajor": "189",
+                  "amountMinor": 18900
                 }
               }
             },
@@ -7406,8 +7406,8 @@
                   "amountMinor": 3999
                 },
                 "nok": {
-                  "amountMajor": "376.99",
-                  "amountMinor": 37699
+                  "amountMajor": "377",
+                  "amountMinor": 37700
                 }
               }
             },
@@ -7434,8 +7434,8 @@
                   "amountMinor": 9599
                 },
                 "nok": {
-                  "amountMajor": "904.99",
-                  "amountMinor": 90499
+                  "amountMajor": "905",
+                  "amountMinor": 90500
                 }
               }
             },
@@ -7462,8 +7462,8 @@
                   "amountMinor": 19199
                 },
                 "nok": {
-                  "amountMajor": "1810.99",
-                  "amountMinor": 181099
+                  "amountMajor": "1811",
+                  "amountMinor": 181100
                 }
               }
             },
@@ -7490,8 +7490,8 @@
                   "amountMinor": 999
                 },
                 "nok": {
-                  "amountMajor": "93.99",
-                  "amountMinor": 9399
+                  "amountMajor": "94",
+                  "amountMinor": 9400
                 }
               }
             },
@@ -7518,8 +7518,8 @@
                   "amountMinor": 499
                 },
                 "nok": {
-                  "amountMajor": "46.99",
-                  "amountMinor": 4699
+                  "amountMajor": "47",
+                  "amountMinor": 4700
                 }
               }
             },
@@ -7546,8 +7546,8 @@
                   "amountMinor": 699
                 },
                 "nok": {
-                  "amountMajor": "65.99",
-                  "amountMinor": 6599
+                  "amountMajor": "66",
+                  "amountMinor": 6600
                 }
               }
             },
@@ -7574,8 +7574,8 @@
                   "amountMinor": 2999
                 },
                 "nok": {
-                  "amountMajor": "282.99",
-                  "amountMinor": 28299
+                  "amountMajor": "283",
+                  "amountMinor": 28300
                 }
               }
             },
@@ -7602,8 +7602,8 @@
                   "amountMinor": 35988
                 },
                 "nok": {
-                  "amountMajor": "3395.88",
-                  "amountMinor": 339588
+                  "amountMajor": "3396",
+                  "amountMinor": 339600
                 }
               }
             },
@@ -7657,7 +7657,8 @@
     "studyPass": "全部114地区固定月价齐全；原63地区金额保持，第三批按相同规则补齐；所有金额仍须首付、优惠后非零最低扣款与自然月续费实测。",
     "creditPacks": "旧独立额度SKU与会员extra packs不同；新表未提供对应旧包金额，不将addon价格套用旧包，不以此新增保旧价例外。若仍销售，先核对对应新金额和映射，缺失项列待补。",
     "thirdGroup": "第三组51地区取用户原始《地区SKU价格与可行性.xlsx》分组价格第3组；Pro取新Pro列，Study Pass沿用既有倍率/固定参考/低额上调规则。伊拉克/约旦/委内瑞拉/科威特/阿曼原币种不受目标HK沙盒支持，当前会话用户明确批准改用所列USD新价。",
-    "stripeUnits": "新增CLP/XAF/XOF为零小数charge币种；UGX主单位整数但Stripe兼容API仍乘100且末两位为00；HUF charge仍按两位最小单位处理。"
+    "stripeUnits": "新增CLP/XAF/XOF为零小数charge币种；UGX主单位整数但Stripe兼容API仍乘100且末两位为00；HUF charge仍按两位最小单位处理。",
+    "approvedTailAdjustments": "用户于2026-10-18明确采纳《三组114地区价格写法与尾数建议.xlsx》全部44项建议：6地区、40个区/SKU价格对象；具体旧新金额、差额和依据见approved-price-rounding.md。其余1210项地区/SKU金额不变；Pro年价继续月价×12，全部Study Pass金额及固定参考保持。2%只是此前审阅筛选假设，不是新增运行时规则。地区显示示例见price-display-reference.md及Excel，业务格式化代码尚未修改。"
   },
   "configurationCounts": {
     "countries": 114,
@@ -9975,5 +9976,5 @@
       "explanation": "官方规则以银行账户结算币种为准，跨币种需满足折算后门槛；Account.default_currency及历史摘要不等于已核验全部银行结算设置。本次仅核对公开规则并计算固定建议价，没有发起扣款、写入Stripe或读取银行账号。"
     }
   },
-  "documentRevision": "2026-10-18-r7-all-three-groups"
+  "documentRevision": "2026-10-18-r8-approved-local-price-tails"
 }

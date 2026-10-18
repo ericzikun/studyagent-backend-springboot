@@ -1,3 +1,9 @@
+# r8批准尾数：沙盒更新待执行
+
+2026-10-18。44项金额已按用户批准同步，涉及40条区/SKU Price，已在环境JSON列pendingPriceReplacements并清空这些条目的当前Price ID，避免把新金额误称为旧Price已回读。其余147条绑定复用。待文档提交推送后创建替代Price并回读全187条目录，再回填最终证据。旧Price、Product默认价、生产和订阅均未改动。
+
+下文r7为历史配置记录，当前批准金额以regional-price-matrix.md和approved-price-rounding.md为准。
+
 # 地区新价格沙盒配置记录
 
 2026-10-18 r7。现有项目沙盒LASTMILE LIMITED，`acct_1SrJ7Q7GRT6LLkI1`，本次所有对象均为`livemode=false`。已按用户要求并入第三组51地区；第一10＋第二53＋第三51＝114地区，全部使用新金额，Pro只用新Pro列。五地USD替代获当前会话明确确认，完整金额见[currency-replacements.md](currency-replacements.md)。

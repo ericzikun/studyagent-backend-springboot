@@ -1,3 +1,5 @@
+> 2026-10-18 r8：用户已采纳三组审阅表全部44项尾数建议（6地区、40条Price），当前金额以完整价格表和approved-price-rounding.md为准；Pro年价仍为月价×12，Study Pass金额及冻结参考不变。本轮先同步文档，再更新沙盒；不改业务代码。
+
 ## ADDED Requirements
 
 ### Requirement: 仅线上已购Pro享有当前周期旧价并在下期换价

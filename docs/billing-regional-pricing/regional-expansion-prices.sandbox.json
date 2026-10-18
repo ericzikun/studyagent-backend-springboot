@@ -1687,7 +1687,7 @@
           "referenceFactor": "0.25",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrz27GRT6LLkI1BYoiUcnL",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 79,
@@ -1697,12 +1697,12 @@
               "taxBehavior": "unspecified",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "18900",
-                  "amountMinor": 18900
+                  "amountMajor": "19000",
+                  "amountMinor": 19000
                 },
                 "idr": {
-                  "amountMajor": "13900",
-                  "amountMinor": 1390000
+                  "amountMajor": "14000",
+                  "amountMinor": 1400000
                 },
                 "kes": {
                   "amountMajor": "99",
@@ -1736,7 +1736,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrz37GRT6LLkI1lQ466lhO",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -1750,8 +1750,8 @@
                   "amountMinor": 129000
                 },
                 "idr": {
-                  "amountMajor": "89900",
-                  "amountMinor": 8990000
+                  "amountMajor": "90000",
+                  "amountMinor": 9000000
                 },
                 "kes": {
                   "amountMajor": "649",
@@ -1928,7 +1928,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrz67GRT6LLkI1XjdiqtqS",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 249,
@@ -1938,12 +1938,12 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "64900",
-                  "amountMinor": 64900
+                  "amountMajor": "65000",
+                  "amountMinor": 65000
                 },
                 "idr": {
-                  "amountMajor": "44900",
-                  "amountMinor": 4490000
+                  "amountMajor": "45000",
+                  "amountMinor": 4500000
                 },
                 "kes": {
                   "amountMajor": "329",
@@ -1976,7 +1976,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrz77GRT6LLkI1dH2tbgA9",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 129,
@@ -1986,12 +1986,12 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "31900",
-                  "amountMinor": 31900
+                  "amountMajor": "32000",
+                  "amountMinor": 32000
                 },
                 "idr": {
-                  "amountMajor": "22900",
-                  "amountMinor": 2290000
+                  "amountMajor": "23000",
+                  "amountMinor": 2300000
                 },
                 "kes": {
                   "amountMajor": "159",
@@ -2024,7 +2024,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrz87GRT6LLkI17fXYE7oL",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 179,
@@ -2034,12 +2034,12 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "vnd": {
-                  "amountMajor": "44900",
-                  "amountMinor": 44900
+                  "amountMajor": "45000",
+                  "amountMinor": 45000
                 },
                 "idr": {
-                  "amountMajor": "31900",
-                  "amountMinor": 3190000
+                  "amountMajor": "32000",
+                  "amountMinor": 3200000
                 },
                 "kes": {
                   "amountMajor": "229",
@@ -3319,7 +3319,7 @@
           "referenceFactor": "0.4",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrw67GRT6LLkI1rWPG6Knm",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -3329,8 +3329,8 @@
               "taxBehavior": "unspecified",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "5.99",
-                  "amountMinor": 599
+                  "amountMajor": "5.90",
+                  "amountMinor": 590
                 },
                 "ars": {
                   "amountMajor": "1799",
@@ -3376,7 +3376,7 @@
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrw77GRT6LLkI1PUhg2WxO",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -3386,8 +3386,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "40.99",
-                  "amountMinor": 4099
+                  "amountMajor": "40.90",
+                  "amountMinor": 4090
                 },
                 "ars": {
                   "amountMajor": "11900",
@@ -3432,7 +3432,7 @@
               }
             },
             "plus_monthly": {
-              "stripePriceId": "price_1URrw87GRT6LLkI1a3Z0uE3u",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -3442,8 +3442,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "80.99",
-                  "amountMinor": 8099
+                  "amountMajor": "80.90",
+                  "amountMinor": 8090
                 },
                 "ars": {
                   "amountMajor": "23900",
@@ -3488,7 +3488,7 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URrw97GRT6LLkI16cEF3gWN",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -3498,8 +3498,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "194.99",
-                  "amountMinor": 19499
+                  "amountMajor": "194.90",
+                  "amountMinor": 19490
                 },
                 "ars": {
                   "amountMajor": "57900",
@@ -3544,7 +3544,7 @@
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URrwA7GRT6LLkI1fgAOcstS",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -3554,8 +3554,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "390.99",
-                  "amountMinor": 39099
+                  "amountMajor": "390.90",
+                  "amountMinor": 39090
                 },
                 "ars": {
                   "amountMajor": "115900",
@@ -3600,7 +3600,7 @@
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrwA7GRT6LLkI1UmwIbgF2",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -3610,8 +3610,8 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "19.99",
-                  "amountMinor": 1999
+                  "amountMajor": "19.90",
+                  "amountMinor": 1990
                 },
                 "ars": {
                   "amountMajor": "6099",
@@ -3656,7 +3656,7 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrwB7GRT6LLkI1xIx2gAkW",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -3666,8 +3666,8 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "9.99",
-                  "amountMinor": 999
+                  "amountMajor": "9.90",
+                  "amountMinor": 990
                 },
                 "ars": {
                   "amountMajor": "2999",
@@ -3712,7 +3712,7 @@
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrwC7GRT6LLkI1V9vwHIjC",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -3722,8 +3722,8 @@
               "taxBehavior": "exclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "13.99",
-                  "amountMinor": 1399
+                  "amountMajor": "13.90",
+                  "amountMinor": 1390
                 },
                 "ars": {
                   "amountMajor": "4199",
@@ -3768,7 +3768,7 @@
               }
             },
             "pro_monthly": {
-              "stripePriceId": "price_1URrwD7GRT6LLkI1AMmtIIZq",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -3778,8 +3778,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "60.99",
-                  "amountMinor": 6099
+                  "amountMajor": "60.90",
+                  "amountMinor": 6090
                 },
                 "ars": {
                   "amountMajor": "17900",
@@ -3824,7 +3824,7 @@
               }
             },
             "pro_yearly": {
-              "stripePriceId": "price_1URrwD7GRT6LLkI14wXk5z26",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -3834,8 +3834,8 @@
               "taxBehavior": "inclusive",
               "currencyAmounts": {
                 "brl": {
-                  "amountMajor": "731.88",
-                  "amountMinor": 73188
+                  "amountMajor": "730.80",
+                  "amountMinor": 73080
                 },
                 "ars": {
                   "amountMajor": "214800",
@@ -5454,10 +5454,10 @@
           "referenceFactor": "0.65",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 194,
+              "expectedDefaultAmountMinor": 195,
               "priceType": "recurring",
               "interval": "week",
               "intervalCount": 1,
@@ -5480,8 +5480,8 @@
                   "amountMinor": 169
                 },
                 "usd": {
-                  "amountMajor": "1.94",
-                  "amountMinor": 194
+                  "amountMajor": "1.95",
+                  "amountMinor": 195
                 }
               },
               "renewalSku": "pro_monthly"
@@ -5551,10 +5551,10 @@
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 6232,
+              "expectedDefaultAmountMinor": 6230,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -5577,16 +5577,16 @@
                   "amountMinor": 5699
                 },
                 "usd": {
-                  "amountMajor": "62.32",
-                  "amountMinor": 6232
+                  "amountMajor": "62.3",
+                  "amountMinor": 6230
                 }
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 12472,
+              "expectedDefaultAmountMinor": 12470,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -5609,8 +5609,8 @@
                   "amountMinor": 11099
                 },
                 "usd": {
-                  "amountMajor": "124.72",
-                  "amountMinor": 12472
+                  "amountMajor": "124.7",
+                  "amountMinor": 12470
                 }
               }
             },
@@ -5647,10 +5647,10 @@
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 324,
+              "expectedDefaultAmountMinor": 325,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -5673,16 +5673,16 @@
                   "amountMinor": 299
                 },
                 "usd": {
-                  "amountMajor": "3.24",
-                  "amountMinor": 324
+                  "amountMajor": "3.25",
+                  "amountMinor": 325
                 }
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 454,
+              "expectedDefaultAmountMinor": 455,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -5705,8 +5705,8 @@
                   "amountMinor": 399
                 },
                 "usd": {
-                  "amountMajor": "4.54",
-                  "amountMinor": 454
+                  "amountMajor": "4.55",
+                  "amountMinor": 455
                 }
               }
             },
@@ -6505,7 +6505,7 @@
           "referenceFactor": "0.85",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrxF7GRT6LLkI1M06PQ0da",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -6531,14 +6531,14 @@
                   "amountMinor": 249
                 },
                 "sek": {
-                  "amountMajor": "24.99",
-                  "amountMinor": 2499
+                  "amountMajor": "25",
+                  "amountMinor": 2500
                 }
               },
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrxG7GRT6LLkI17fqO4WGs",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -6564,13 +6564,13 @@
                   "amountMinor": 1699
                 },
                 "sek": {
-                  "amountMajor": "167.99",
-                  "amountMinor": 16799
+                  "amountMajor": "168",
+                  "amountMinor": 16800
                 }
               }
             },
             "plus_monthly": {
-              "stripePriceId": "price_1URrxH7GRT6LLkI18ADYfbud",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -6596,13 +6596,13 @@
                   "amountMinor": 3399
                 },
                 "sek": {
-                  "amountMajor": "336.99",
-                  "amountMinor": 33699
+                  "amountMajor": "337",
+                  "amountMinor": 33700
                 }
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URrxH7GRT6LLkI1LKRrt9mo",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -6628,13 +6628,13 @@
                   "amountMinor": 8199
                 },
                 "sek": {
-                  "amountMajor": "807.99",
-                  "amountMinor": 80799
+                  "amountMajor": "808",
+                  "amountMinor": 80800
                 }
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URrxI7GRT6LLkI1k0E1SPEh",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -6660,13 +6660,13 @@
                   "amountMinor": 16299
                 },
                 "sek": {
-                  "amountMajor": "1615.99",
-                  "amountMinor": 161599
+                  "amountMajor": "1616",
+                  "amountMinor": 161600
                 }
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrxJ7GRT6LLkI13xn18FmF",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -6692,13 +6692,13 @@
                   "amountMinor": 849
                 },
                 "sek": {
-                  "amountMajor": "83.99",
-                  "amountMinor": 8399
+                  "amountMajor": "84",
+                  "amountMinor": 8400
                 }
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrxK7GRT6LLkI10LPECQ60",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -6724,13 +6724,13 @@
                   "amountMinor": 399
                 },
                 "sek": {
-                  "amountMajor": "41.99",
-                  "amountMinor": 4199
+                  "amountMajor": "42",
+                  "amountMinor": 4200
                 }
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrxL7GRT6LLkI1GeCCkuz1",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -6756,13 +6756,13 @@
                   "amountMinor": 599
                 },
                 "sek": {
-                  "amountMajor": "58.99",
-                  "amountMinor": 5899
+                  "amountMajor": "59",
+                  "amountMinor": 5900
                 }
               }
             },
             "pro_monthly": {
-              "stripePriceId": "price_1URrxL7GRT6LLkI1fRbBkuFi",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -6788,13 +6788,13 @@
                   "amountMinor": 2599
                 },
                 "sek": {
-                  "amountMajor": "252.99",
-                  "amountMinor": 25299
+                  "amountMajor": "253",
+                  "amountMinor": 25300
                 }
               }
             },
             "pro_yearly": {
-              "stripePriceId": "price_1URrxM7GRT6LLkI1Y3hfwyKe",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -6820,8 +6820,8 @@
                   "amountMinor": 31188
                 },
                 "sek": {
-                  "amountMajor": "3035.88",
-                  "amountMinor": 303588
+                  "amountMajor": "3036",
+                  "amountMinor": 303600
                 }
               }
             },
@@ -7327,7 +7327,7 @@
           "referenceFactor": "1",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrxf7GRT6LLkI1h7y2ehzl",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 299,
@@ -7349,14 +7349,14 @@
                   "amountMinor": 299
                 },
                 "nok": {
-                  "amountMajor": "27.99",
-                  "amountMinor": 2799
+                  "amountMajor": "28",
+                  "amountMinor": 2800
                 }
               },
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrxg7GRT6LLkI13axvSOdG",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 1999,
@@ -7378,13 +7378,13 @@
                   "amountMinor": 1999
                 },
                 "nok": {
-                  "amountMajor": "188.99",
-                  "amountMinor": 18899
+                  "amountMajor": "189",
+                  "amountMinor": 18900
                 }
               }
             },
             "plus_monthly": {
-              "stripePriceId": "price_1URrxh7GRT6LLkI1xpT3YQxg",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 3999,
@@ -7406,13 +7406,13 @@
                   "amountMinor": 3999
                 },
                 "nok": {
-                  "amountMajor": "376.99",
-                  "amountMinor": 37699
+                  "amountMajor": "377",
+                  "amountMinor": 37700
                 }
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URrxi7GRT6LLkI1M4TGGISR",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 9588,
@@ -7434,13 +7434,13 @@
                   "amountMinor": 9599
                 },
                 "nok": {
-                  "amountMajor": "904.99",
-                  "amountMinor": 90499
+                  "amountMajor": "905",
+                  "amountMinor": 90500
                 }
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URrxi7GRT6LLkI12kwh4f9g",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 19188,
@@ -7462,13 +7462,13 @@
                   "amountMinor": 19199
                 },
                 "nok": {
-                  "amountMajor": "1810.99",
-                  "amountMinor": 181099
+                  "amountMajor": "1811",
+                  "amountMinor": 181100
                 }
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrxj7GRT6LLkI1orqZ2bIk",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 999,
@@ -7490,13 +7490,13 @@
                   "amountMinor": 999
                 },
                 "nok": {
-                  "amountMajor": "93.99",
-                  "amountMinor": 9399
+                  "amountMajor": "94",
+                  "amountMinor": 9400
                 }
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrxk7GRT6LLkI1TKq0anAE",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 499,
@@ -7518,13 +7518,13 @@
                   "amountMinor": 499
                 },
                 "nok": {
-                  "amountMajor": "46.99",
-                  "amountMinor": 4699
+                  "amountMajor": "47",
+                  "amountMinor": 4700
                 }
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrxl7GRT6LLkI1nKRo8ecV",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 699,
@@ -7546,13 +7546,13 @@
                   "amountMinor": 699
                 },
                 "nok": {
-                  "amountMajor": "65.99",
-                  "amountMinor": 6599
+                  "amountMajor": "66",
+                  "amountMinor": 6600
                 }
               }
             },
             "pro_monthly": {
-              "stripePriceId": "price_1URrxm7GRT6LLkI1PMLgb0EM",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 2999,
@@ -7574,13 +7574,13 @@
                   "amountMinor": 2999
                 },
                 "nok": {
-                  "amountMajor": "282.99",
-                  "amountMinor": 28299
+                  "amountMajor": "283",
+                  "amountMinor": 28300
                 }
               }
             },
             "pro_yearly": {
-              "stripePriceId": "price_1URrxn7GRT6LLkI1tny3NzO8",
+              "stripePriceId": null,
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
               "expectedDefaultAmountMinor": 35988,
@@ -7602,8 +7602,8 @@
                   "amountMinor": 35988
                 },
                 "nok": {
-                  "amountMajor": "3395.88",
-                  "amountMinor": 339588
+                  "amountMajor": "3396",
+                  "amountMinor": 339600
                 }
               }
             },
@@ -7657,7 +7657,8 @@
     "studyPass": "全部114地区固定月价齐全；原63地区金额保持，第三批按相同规则补齐；所有金额仍须首付、优惠后非零最低扣款与自然月续费实测。",
     "creditPacks": "旧独立额度SKU与会员extra packs不同；新表未提供对应旧包金额，不将addon价格套用旧包，不以此新增保旧价例外。若仍销售，先核对对应新金额和映射，缺失项列待补。",
     "thirdGroup": "第三组51地区取用户原始《地区SKU价格与可行性.xlsx》分组价格第3组；Pro取新Pro列，Study Pass沿用既有倍率/固定参考/低额上调规则。伊拉克/约旦/委内瑞拉/科威特/阿曼原币种不受目标HK沙盒支持，当前会话用户明确批准改用所列USD新价。",
-    "stripeUnits": "新增CLP/XAF/XOF为零小数charge币种；UGX主单位整数但Stripe兼容API仍乘100且末两位为00；HUF charge仍按两位最小单位处理。"
+    "stripeUnits": "新增CLP/XAF/XOF为零小数charge币种；UGX主单位整数但Stripe兼容API仍乘100且末两位为00；HUF charge仍按两位最小单位处理。",
+    "approvedTailAdjustments": "用户于2026-10-18明确采纳《三组114地区价格写法与尾数建议.xlsx》全部44项建议：6地区、40个区/SKU价格对象；具体旧新金额、差额和依据见approved-price-rounding.md。其余1210项地区/SKU金额不变；Pro年价继续月价×12，全部Study Pass金额及固定参考保持。2%只是此前审阅筛选假设，不是新增运行时规则。地区显示示例见price-display-reference.md及Excel，业务格式化代码尚未修改。"
   },
   "configurationCounts": {
     "countries": 114,
@@ -9975,24 +9976,16 @@
       "explanation": "官方规则以银行账户结算币种为准，跨币种需满足折算后门槛；Account.default_currency及历史摘要不等于已核验全部银行结算设置。本次仅核对公开规则并计算固定建议价，没有发起扣款、写入Stripe或读取银行账号。"
     }
   },
-  "documentRevision": "2026-10-18-r7-all-three-groups-sandbox-bindings",
+  "documentRevision": "2026-10-18-r8-approved-local-price-tails-sandbox-replacement-pending",
   "configurationVerification": {
-    "verifiedPrices": 187,
-    "newPrices": 33,
-    "priorPricesPreserved": 205,
-    "oldOriginalPricesUnchanged": 29,
-    "productDefaultsUnchanged": 21,
-    "configuredCountries": 114,
-    "regionalAmounts": 1133,
+    "status": "approved_amounts_pending_sandbox_replacements",
+    "currentTargetBindingCount": 187,
+    "unchangedBindingCount": 147,
+    "pendingReplacementCount": 40,
+    "changedRegionalAmounts": 44,
     "realCheckoutTested": false,
     "renewalTested": false,
-    "businessCodeChanged": false,
-    "sourceCommit": "cec83e69",
-    "sourceDraftSha256": "e77f89f978004effcb1e95f46cfedf60d7c2f2f0b058f8d53ea1c9c15034a539",
-    "applicationSalesEnabled": false,
-    "currentBindingCount": 187,
-    "supersededBindingCount": 22,
-    "totalSandboxPrices": 238
+    "businessCodeChangedByThisTask": false
   },
   "supersededSandboxPriceBindings": [
     {
@@ -10149,5 +10142,265 @@
       "currentPriceId": "price_1URsL17GRT6LLkI1Km8DfzTG",
       "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
     }
-  ]
+  ],
+  "pendingPriceReplacements": [
+    {
+      "zone": "Z025",
+      "sku": "addon_assignment_3",
+      "priorPriceId": "price_1URrz67GRT6LLkI1XjdiqtqS",
+      "productId": "prod_V2XRyb7uDkhTVD"
+    },
+    {
+      "zone": "Z025",
+      "sku": "addon_detection_5",
+      "priorPriceId": "price_1URrz77GRT6LLkI1dH2tbgA9",
+      "productId": "prod_V2XRzr2BbiKqJA"
+    },
+    {
+      "zone": "Z025",
+      "sku": "addon_humanizer_3",
+      "priorPriceId": "price_1URrz87GRT6LLkI17fXYE7oL",
+      "productId": "prod_V2XRbewO3qfwsD"
+    },
+    {
+      "zone": "Z025",
+      "sku": "basic_monthly",
+      "priorPriceId": "price_1URrz37GRT6LLkI1lQ466lhO",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z025",
+      "sku": "pro_trial_to_monthly",
+      "priorPriceId": "price_1URrz27GRT6LLkI1BYoiUcnL",
+      "productId": "prod_V2yikGRbHLdZR6"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_assignment_3",
+      "priorPriceId": "price_1URrwA7GRT6LLkI1UmwIbgF2",
+      "productId": "prod_V2XRyb7uDkhTVD"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_detection_5",
+      "priorPriceId": "price_1URrwB7GRT6LLkI1xIx2gAkW",
+      "productId": "prod_V2XRzr2BbiKqJA"
+    },
+    {
+      "zone": "Z040",
+      "sku": "addon_humanizer_3",
+      "priorPriceId": "price_1URrwC7GRT6LLkI1V9vwHIjC",
+      "productId": "prod_V2XRbewO3qfwsD"
+    },
+    {
+      "zone": "Z040",
+      "sku": "basic_monthly",
+      "priorPriceId": "price_1URrw77GRT6LLkI1PUhg2WxO",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z040",
+      "sku": "basic_yearly",
+      "priorPriceId": "price_1URrw97GRT6LLkI16cEF3gWN",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z040",
+      "sku": "plus_monthly",
+      "priorPriceId": "price_1URrw87GRT6LLkI1a3Z0uE3u",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z040",
+      "sku": "plus_yearly",
+      "priorPriceId": "price_1URrwA7GRT6LLkI1fgAOcstS",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z040",
+      "sku": "pro_monthly",
+      "priorPriceId": "price_1URrwD7GRT6LLkI1AMmtIIZq",
+      "productId": "prod_V2XRxk7tA14xQr"
+    },
+    {
+      "zone": "Z040",
+      "sku": "pro_trial_to_monthly",
+      "priorPriceId": "price_1URrw67GRT6LLkI1rWPG6Knm",
+      "productId": "prod_V2yikGRbHLdZR6"
+    },
+    {
+      "zone": "Z040",
+      "sku": "pro_yearly",
+      "priorPriceId": "price_1URrwD7GRT6LLkI14wXk5z26",
+      "productId": "prod_V2XRxk7tA14xQr"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_detection_5",
+      "priorPriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
+      "productId": "prod_V2XRzr2BbiKqJA"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_humanizer_3",
+      "priorPriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
+      "productId": "prod_V2XRbewO3qfwsD"
+    },
+    {
+      "zone": "Z065",
+      "sku": "basic_yearly",
+      "priorPriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z065",
+      "sku": "plus_yearly",
+      "priorPriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z065",
+      "sku": "pro_trial_to_monthly",
+      "priorPriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
+      "productId": "prod_V2yikGRbHLdZR6"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_assignment_3",
+      "priorPriceId": "price_1URrxJ7GRT6LLkI13xn18FmF",
+      "productId": "prod_V2XRyb7uDkhTVD"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_detection_5",
+      "priorPriceId": "price_1URrxK7GRT6LLkI10LPECQ60",
+      "productId": "prod_V2XRzr2BbiKqJA"
+    },
+    {
+      "zone": "Z085",
+      "sku": "addon_humanizer_3",
+      "priorPriceId": "price_1URrxL7GRT6LLkI1GeCCkuz1",
+      "productId": "prod_V2XRbewO3qfwsD"
+    },
+    {
+      "zone": "Z085",
+      "sku": "basic_monthly",
+      "priorPriceId": "price_1URrxG7GRT6LLkI17fqO4WGs",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z085",
+      "sku": "basic_yearly",
+      "priorPriceId": "price_1URrxH7GRT6LLkI1LKRrt9mo",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z085",
+      "sku": "plus_monthly",
+      "priorPriceId": "price_1URrxH7GRT6LLkI18ADYfbud",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z085",
+      "sku": "plus_yearly",
+      "priorPriceId": "price_1URrxI7GRT6LLkI1k0E1SPEh",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z085",
+      "sku": "pro_monthly",
+      "priorPriceId": "price_1URrxL7GRT6LLkI1fRbBkuFi",
+      "productId": "prod_V2XRxk7tA14xQr"
+    },
+    {
+      "zone": "Z085",
+      "sku": "pro_trial_to_monthly",
+      "priorPriceId": "price_1URrxF7GRT6LLkI1M06PQ0da",
+      "productId": "prod_V2yikGRbHLdZR6"
+    },
+    {
+      "zone": "Z085",
+      "sku": "pro_yearly",
+      "priorPriceId": "price_1URrxM7GRT6LLkI1Y3hfwyKe",
+      "productId": "prod_V2XRxk7tA14xQr"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_assignment_3",
+      "priorPriceId": "price_1URrxj7GRT6LLkI1orqZ2bIk",
+      "productId": "prod_V2XRyb7uDkhTVD"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_detection_5",
+      "priorPriceId": "price_1URrxk7GRT6LLkI1TKq0anAE",
+      "productId": "prod_V2XRzr2BbiKqJA"
+    },
+    {
+      "zone": "Z100",
+      "sku": "addon_humanizer_3",
+      "priorPriceId": "price_1URrxl7GRT6LLkI1nKRo8ecV",
+      "productId": "prod_V2XRbewO3qfwsD"
+    },
+    {
+      "zone": "Z100",
+      "sku": "basic_monthly",
+      "priorPriceId": "price_1URrxg7GRT6LLkI13axvSOdG",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z100",
+      "sku": "basic_yearly",
+      "priorPriceId": "price_1URrxi7GRT6LLkI1M4TGGISR",
+      "productId": "prod_V2XQKO3FZiPKZI"
+    },
+    {
+      "zone": "Z100",
+      "sku": "plus_monthly",
+      "priorPriceId": "price_1URrxh7GRT6LLkI1xpT3YQxg",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z100",
+      "sku": "plus_yearly",
+      "priorPriceId": "price_1URrxi7GRT6LLkI12kwh4f9g",
+      "productId": "prod_V2XQrWdt06ryxW"
+    },
+    {
+      "zone": "Z100",
+      "sku": "pro_monthly",
+      "priorPriceId": "price_1URrxm7GRT6LLkI1PMLgb0EM",
+      "productId": "prod_V2XRxk7tA14xQr"
+    },
+    {
+      "zone": "Z100",
+      "sku": "pro_trial_to_monthly",
+      "priorPriceId": "price_1URrxf7GRT6LLkI1h7y2ehzl",
+      "productId": "prod_V2yikGRbHLdZR6"
+    },
+    {
+      "zone": "Z100",
+      "sku": "pro_yearly",
+      "priorPriceId": "price_1URrxn7GRT6LLkI1tny3NzO8",
+      "productId": "prod_V2XRxk7tA14xQr"
+    }
+  ],
+  "priorConfigurationVerification": {
+    "verifiedPrices": 187,
+    "newPrices": 33,
+    "priorPricesPreserved": 205,
+    "oldOriginalPricesUnchanged": 29,
+    "productDefaultsUnchanged": 21,
+    "configuredCountries": 114,
+    "regionalAmounts": 1133,
+    "realCheckoutTested": false,
+    "renewalTested": false,
+    "businessCodeChanged": false,
+    "sourceCommit": "cec83e69",
+    "sourceDraftSha256": "e77f89f978004effcb1e95f46cfedf60d7c2f2f0b058f8d53ea1c9c15034a539",
+    "applicationSalesEnabled": false,
+    "currentBindingCount": 187,
+    "supersededBindingCount": 22,
+    "totalSandboxPrices": 238
+  }
 }

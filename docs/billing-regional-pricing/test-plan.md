@@ -1,3 +1,5 @@
+> 2026-10-18 r8：用户已采纳三组审阅表全部44项尾数建议（6地区、40条Price），当前金额以完整价格表和approved-price-rounding.md为准；Pro年价仍为月价×12，Study Pass金额及冻结参考不变。本轮先同步文档，再更新沙盒；不改业务代码。
+
 # 本地与 Stripe 沙盒验收
 
 > 2026-10-18 r4需求口径：第一组10地区、第二组53地区、第三组51地区全部使用新金额，共114地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。 以下巴西基础阶段的金额、范围与执行记录仅用于历史追溯；当前需求以[简版方案](regional-expansion-brief.md)、[三组新价格表](regional-price-matrix.md)及[换价规格](specs/subscription-price-rollout/spec.md)为准，不代表新需求已实现或已上线。
@@ -78,7 +80,7 @@ Run simulation 的资格受 Customer 复杂度、订阅数量及账号 Automatio
 
 本节为当前需求验收，上文BRL490／39990等属于巴西基础阶段回归数据。以三组新价矩阵、价格JSON及subscription-price-rollout为准；文档与沙盒Price配置不代表以下支付／续费测试已通过；Price回读证据见[sandbox-configuration](sandbox-configuration.md)。
 
-- 全部114地区逐SKU核对新表金额，Pro只用新Pro列；第二组美国USD29.99/月、印度INR569/月、巴西BRL60.99/月均纳入。
+- 全部114地区逐SKU核对新表金额，Pro只用新Pro列；第二组美国USD29.99/月、印度INR569/月、巴西BRL60.90/月均纳入。
 - 验证德国／意大利EUR及美国／厄瓜多尔／津巴布韦USD不同价格，实际USD销售区默认金额不误用技术美国价。
 - 固化本次需求确认时生产已购Pro资格名单、时间和证据；排除沙盒、Trial、未付款、Basic／Plus／Pass及后来新购。
 - 线上已购Pro本期金额／日期不变，下个付费周期切新价；月付按月，年付按年，不按额度刷新。

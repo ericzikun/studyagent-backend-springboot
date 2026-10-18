@@ -1,3 +1,5 @@
+> 2026-10-18 r8：用户已采纳三组审阅表全部44项尾数建议（6地区、40条Price），当前金额以完整价格表和approved-price-rounding.md为准；Pro年价仍为月价×12，Study Pass金额及冻结参考不变。本轮先同步文档，再更新沙盒；不改业务代码。
+
 ## ADDED Requirements
 
 2026-10-18 r7（Pass全量固定金额已齐）：第一、第二、第三组全部新价，仅本次需求确认时线上已购Pro当前已付周期保旧价、下个付费周期切新价。下文早期BR-only场景用于legacy功能关闭／旧事件回归；扩展启用后以“三组定价区选择新金额”和线上Pro换价规格为准。
@@ -231,7 +233,7 @@
 系统 SHALL 按subscription-price-rollout固化线上已购Pro资格并保留其当前已付事实，下个付费周期采用同区同币种新金额。新购Pro、Basic、Plus、Trial、Pass、额外包及新变更目标 SHALL 使用新表；合同当前旧Price仅解释已有付款和权益，不作为其他商品新报价依据。
 
 #### Scenario: 旧Pro合同购买新额外包
-- **GIVEN** 线上已购巴西Pro当前已付BRL399.90，下期安排BRL60.99
+- **GIVEN** 线上已购巴西Pro当前已付BRL399.90，下期安排BRL60.90
 - **WHEN** 用户购买会员作业额外包
 - **THEN** 本次 SHALL 为新表BRL19.99，本期Pro原已付金额保持，不沿用旧版本额外包价
 

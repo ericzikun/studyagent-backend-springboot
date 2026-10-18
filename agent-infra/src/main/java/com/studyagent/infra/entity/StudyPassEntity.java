@@ -52,4 +52,10 @@ public class StudyPassEntity extends BaseEntity {
     /** 为该通行证抵扣创建的 Stripe 优惠券，复用以避免重复创建。 */
     @TableField("upgrade_credit_coupon_id")
     private String upgradeCreditCouponId;
+    /** 合同定价区；NULL=legacy 合同（webhook 反查成功后渐进回填） */
+    @TableField("pricing_zone")
+    private String pricingZone;
+    /** 当前生效价格版本 */
+    @TableField("price_version")
+    private String priceVersion;
 }

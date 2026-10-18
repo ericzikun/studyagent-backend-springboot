@@ -56,6 +56,15 @@ public class UserSubscriptionEntity extends BaseEntity {
     private Long lastStripeEventCreatedAt;
     @TableField("last_stripe_event_id")
     private String lastStripeEventId;
+    /** 合同定价区；NULL=legacy 合同（webhook 反查成功后渐进回填） */
+    @TableField("pricing_zone")
+    private String pricingZone;
+    /** 当前生效价格版本 */
+    @TableField("price_version")
+    private String priceVersion;
+    /** 实际扣款币种=Subscription.currency，小写 */
+    @TableField("currency")
+    private String currency;
     @Version
     private Integer version;
 }

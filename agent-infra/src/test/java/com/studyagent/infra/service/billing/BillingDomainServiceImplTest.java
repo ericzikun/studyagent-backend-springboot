@@ -2,6 +2,9 @@ package com.studyagent.infra.service.billing;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
+import com.studyagent.infra.entity.PricingCountryRouteEntity;
+import com.studyagent.infra.entity.PricingZoneEntity;
+import com.studyagent.infra.entity.PricingZonePriceEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
@@ -51,6 +54,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -97,6 +101,19 @@ class BillingDomainServiceImplTest {
     private final StripePriceGateway regionalPrices = org.mockito.Mockito.mock(StripePriceGateway.class);
     private final BillingRegionalPricingProperties regionalConfiguration = new BillingRegionalPricingProperties();
     private final BillingPricingService regionalPricing = new BillingPricingService(regionalPrices, regionalConfiguration);
+
+    /** 空目录的 zone 选价：全部反查为空，测试走 legacy 路径（区价测试另建 fixture）。 */
+    private final ZonePricingSelectionService zonePricing = new ZonePricingSelectionService(
+            new ZonePricingCatalog(
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class),
+                    org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class),
+                    60),
+            regionalPricing);
+
+    /** account 下周期换价预告默认无安排；区价测试按需 stub。 */
+    private final SubscriptionPriceRolloutService rolloutService = org.mockito.Mockito.mock(SubscriptionPriceRolloutService.class);
 
     @Test
     void getCatalogMapsActivePlansAndAddons() {
@@ -1388,7 +1405,7 @@ class BillingDomainServiceImplTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService,
-                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
             @Override Customer retrieveStripeCustomer(String id) {
                 var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
                 customer.setMetadata(java.util.Map.of()); return customer;
@@ -1488,7 +1505,7 @@ class BillingDomainServiceImplTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService,
-                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
             @Override Customer retrieveStripeCustomer(String id) {
                 var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
                 customer.setMetadata(java.util.Map.of()); return customer;
@@ -1544,7 +1561,7 @@ class BillingDomainServiceImplTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService,
-                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
             @Override Customer retrieveStripeCustomer(String id) {
                 var customer = new Customer(); customer.setId(id); customer.setEmail("user@example.com");
                 customer.setMetadata(java.util.Map.of()); return customer;
@@ -2541,11 +2558,151 @@ class BillingDomainServiceImplTest {
         verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
     }
 
+    @Test
+    void krwAmountsFormatAsMainUnitsWithoutHundredDivision() {
+        // A02：KRW 等零小数币种最小单位即主单位，2490 必须展示为 ₩2,490 而非先除以 100。
+        var service = service();
+        String krw = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "formatBillingMoney", 2490, "krw");
+        assertEquals("₩2,490", krw);
+        // 两位小数币种维持旧契约：分→元除以 100。
+        String usd = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "formatBillingMoney", 7999, "usd");
+        assertEquals("$79.99", usd);
+    }
+
+    @Test
+    void sameAmountTrialsInDifferentZonesCarryDistinctQuoteFingerprints() throws Exception {
+        // A03：DE/IT 试用同额同币种，指纹 v2 的 zone context 必须把两区分开。
+        regionalConfiguration.setEnabled(true);
+        var zoneMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class);
+        var routeMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class);
+        var priceMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class);
+        var aliasMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class);
+        when(zoneMapper.selectList(any())).thenReturn(List.of(
+                zoneRow("Z060", "Europe DE"), zoneRow("Z061", "Europe IT")));
+        when(routeMapper.selectList(any())).thenReturn(List.of(
+                routeRow("DE", "Z060"), routeRow("IT", "Z061")));
+        when(priceMapper.selectList(any())).thenReturn(List.of(
+                trialBinding("Z060", "price_de_trial"),
+                monthlyBinding("Z060", "price_de_monthly"),
+                trialBinding("Z061", "price_it_trial"),
+                monthlyBinding("Z061", "price_it_monthly")));
+        when(aliasMapper.selectList(any())).thenReturn(List.of());
+        var zonePricing = new ZonePricingSelectionService(
+                new ZonePricingCatalog(zoneMapper, routeMapper, priceMapper, aliasMapper, 60), regionalPricing);
+        var service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper, addonPackageDefMapper, studyPassProductMapper, studyPassMapper,
+                userSubscriptionMapper, rechargeOrderMapper, planQuotaService, userRepository,
+                quotaVipAccessService, userSubscriptionBootstrapService,
+                regionalPricing, zonePricing, rolloutService,
+                org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+        var trial = plan("pro_trial_to_monthly", "pro", "month", 299);
+        trial.setStripePriceId("price_trial_usd"); trial.setCurrency("usd"); trial.setIsActive(true);
+        trial.setOfferKind("pro_paid_trial"); trial.setTrialDays(7); trial.setConvertsToPlanCode("pro_monthly");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(trial);
+        when(regionalPrices.retrieve("price_de_trial", false)).thenReturn(eurPrice("price_de_trial", "week", 99L));
+        when(regionalPrices.retrieve("price_it_trial", false)).thenReturn(eurPrice("price_it_trial", "week", 99L));
+        when(regionalPrices.retrieve("price_de_monthly", false)).thenReturn(eurPrice("price_de_monthly", "month", 1499L));
+        when(regionalPrices.retrieve("price_it_monthly", false)).thenReturn(eurPrice("price_it_monthly", "month", 1499L));
+
+        String deVersion;
+        String itVersion;
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("DE")) {
+            var deQuote = service.getPurchaseQuote("user_zone", "subscription", "pro_trial_to_monthly");
+            assertEquals("eur", deQuote.getCurrency());
+            assertEquals(99, deQuote.getAmountCents());
+            assertEquals(1499, deQuote.getRenewalAmountCents());
+            deVersion = deQuote.getQuoteVersion();
+        }
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("IT")) {
+            var itQuote = service.getPurchaseQuote("user_zone", "subscription", "pro_trial_to_monthly");
+            assertEquals(99, itQuote.getAmountCents());
+            itVersion = itQuote.getQuoteVersion();
+        }
+        assertNotEquals(deVersion, itVersion);
+    }
+
+    @Test
+    void cheaperMonthlyTargetChargesFullMonthlyAmountDespiteAnnualCredit() {
+        // A08：年付 Plus 转（更便宜的）月付 Pro，按目标周期全额计价，不进年付折抵分支。
+        var plusYearly = plan("plus_yearly", "plus", "year", 11999);
+        var proMonthly = plan("pro_monthly", "pro", "month", 799);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        UpgradeChargeQuote charge = UpgradeChargeCalculator.quote(plusYearly, proMonthly,
+                now.minusDays(10), now.plusMonths(11), now, 11999, "in_annual");
+        assertEquals(799, charge.getAmountCents());
+        assertEquals("monthly_full", charge.getChargeType());
+        assertEquals("target_monthly_full", charge.getPricingFormula());
+        assertEquals(0, charge.getRemainingAnnualMonthsExcludingCurrent());
+    }
+
     private com.stripe.model.Price regionalPrice(String id, String interval, long usd, long brl) {
         var price = new com.stripe.model.Price(); price.setId(id); price.setCurrency("usd"); price.setUnitAmount(usd);
         price.setActive(true); price.setLivemode(false);
         var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval(interval); recurring.setIntervalCount(1L); price.setRecurring(recurring);
         var option = new com.stripe.model.Price.CurrencyOption(); option.setUnitAmount(brl); price.setCurrencyOptions(Map.of("brl", option)); return price;
+    }
+
+    /** A03 用：DE/IT 两区各自独立的绑定集，金额完全相同（trial 99 / monthly 1499 EUR）。 */
+    private static PricingZoneEntity zoneRow(String zoneCode, String label) {
+        PricingZoneEntity zone = new PricingZoneEntity();
+        zone.setZoneCode(zoneCode);
+        zone.setLabel(label);
+        zone.setActiveVersion("regional-20261018-v1");
+        zone.setIsActive(true);
+        return zone;
+    }
+
+    private static PricingCountryRouteEntity routeRow(String country, String zoneCode) {
+        PricingCountryRouteEntity route = new PricingCountryRouteEntity();
+        route.setCountryCode(country);
+        route.setZoneCode(zoneCode);
+        route.setCurrency("eur");
+        route.setLabel(country);
+        route.setIsEnabled(true);
+        return route;
+    }
+
+    private static PricingZonePriceEntity trialBinding(String zoneCode, String trialPriceId) {
+        PricingZonePriceEntity binding = new PricingZonePriceEntity();
+        binding.setZoneCode(zoneCode);
+        binding.setPriceVersion("regional-20261018-v1");
+        binding.setSkuCode("pro_trial_to_monthly");
+        binding.setSkuKind("subscription_plan");
+        binding.setStripePriceId(trialPriceId);
+        binding.setPriceType("recurring");
+        binding.setBillingInterval("week");
+        binding.setIntervalCount(1);
+        binding.setUsdDefaultAmountMinor(299);
+        binding.setCurrencyAmounts("{\"eur\":{\"amountMinor\":99}}");
+        binding.setRenewalSkuCode("pro_monthly");
+        binding.setIsActive(true);
+        return binding;
+    }
+
+    private static PricingZonePriceEntity monthlyBinding(String zoneCode, String monthlyPriceId) {
+        PricingZonePriceEntity binding = new PricingZonePriceEntity();
+        binding.setZoneCode(zoneCode);
+        binding.setPriceVersion("regional-20261018-v1");
+        binding.setSkuCode("pro_monthly");
+        binding.setSkuKind("subscription_plan");
+        binding.setStripePriceId(monthlyPriceId);
+        binding.setPriceType("recurring");
+        binding.setBillingInterval("month");
+        binding.setIntervalCount(1);
+        binding.setUsdDefaultAmountMinor(7999);
+        binding.setCurrencyAmounts("{\"eur\":{\"amountMinor\":1499}}");
+        binding.setIsActive(true);
+        return binding;
+    }
+
+    private static com.stripe.model.Price eurPrice(String id, String interval, long eur) {
+        var price = new com.stripe.model.Price();
+        price.setId(id); price.setCurrency("eur"); price.setUnitAmount(eur);
+        price.setActive(true); price.setLivemode(false);
+        var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval(interval); recurring.setIntervalCount(1L); price.setRecurring(recurring);
+        return price;
     }
 
     private BillingDomainServiceImpl service() {
@@ -2560,7 +2717,7 @@ class BillingDomainServiceImplTest {
                 userRepository,
                 quotaVipAccessService,
                 userSubscriptionBootstrapService,
-                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
     }
 
     private void setStripeSecretKey(BillingDomainServiceImpl service, String value) throws Exception {
@@ -2632,7 +2789,7 @@ class BillingDomainServiceImplTest {
                     userRepository,
                     quotaVipAccessService,
                     userSubscriptionBootstrapService,
-                    regionalPricing, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
         }
 
         @Override

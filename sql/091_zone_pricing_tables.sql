@@ -91,9 +91,15 @@ CREATE TABLE IF NOT EXISTS stripe_price_aliases (
     sku_kind VARCHAR(32) NOT NULL,
     note VARCHAR(255) NULL COMMENT '来源：盘点批次等',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_spa_price (stripe_price_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='历史 Price 别名：三大商品表之外的旧 Price 反查兜底';
+
+-- BaseEntity always selects updated_at; add it for tables created by the earlier draft.
+SET @zp_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='stripe_price_aliases' AND column_name='updated_at')=0,
+  'ALTER TABLE stripe_price_aliases ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP', 'SELECT 1');
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
 
 -- Earlier drafts used VARCHAR(16); 'subscription_plan' needs 17 chars.
 SET @zp_ddl = 'ALTER TABLE pricing_zone_prices MODIFY COLUMN sku_kind VARCHAR(32) NOT NULL COMMENT ''subscription_plan | addon | study_pass''';

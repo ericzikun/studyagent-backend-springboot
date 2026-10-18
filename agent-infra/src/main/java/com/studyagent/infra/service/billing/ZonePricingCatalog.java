@@ -125,8 +125,8 @@ public class ZonePricingCatalog {
             }
             return snapshot;
         } catch (org.springframework.dao.DataAccessException e) {
-            // 迁移未执行/表缺失时安全降级为 legacy，避免开关默认开启后计费接口整体 500。
-            log.error("Zone pricing catalog unavailable, falling back to legacy pricing: {}", e.getMessage());
+            // 迁移未执行/表结构不符时安全降级为 legacy，避免开关默认开启后计费接口整体 500。
+            log.error("Zone pricing catalog unavailable, falling back to legacy pricing: {}", e.toString());
             return new Snapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
         }
     }

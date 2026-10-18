@@ -1731,11 +1731,13 @@ public class StripeBillingWebhookService {
             applySubscription(existing, subscription, plan, deleted, activatePendingPlan,
                     periodStartOverride, periodEndOverride, now);
             applyContractPricingColumns(existing, resolved);
+            applyPricingCountry(existing, subscription);
             userSubscriptionMapper.insert(existing);
         } else {
             applySubscription(existing, subscription, plan, deleted, activatePendingPlan,
                     periodStartOverride, periodEndOverride, now);
             applyContractPricingColumns(existing, resolved);
+            applyPricingCountry(existing, subscription);
             updateSubscriptionEntity(existing, deleted);
         }
 
@@ -1891,6 +1893,21 @@ public class StripeBillingWebhookService {
         entity.setPricingZone(resolved.pricingZone());
         entity.setPriceVersion(resolved.priceVersion());
         entity.setCurrency(resolved.currency());
+    }
+
+    /** 购买国家来自 checkout 写入的订阅 metadata；旧订阅/无国家头保持原值（NULL）。 */
+    private void applyPricingCountry(UserSubscriptionEntity entity, Subscription subscription) {
+        if (subscription == null || subscription.getMetadata() == null) {
+            return;
+        }
+        String country = subscription.getMetadata().get("pricing_country");
+        if (!hasText(country)) {
+            String region = subscription.getMetadata().get("pricing_region");
+            country = region == null || "unknown".equalsIgnoreCase(region.trim()) ? null : region;
+        }
+        if (country != null && country.trim().length() == 2) {
+            entity.setPricingCountry(country.trim().toUpperCase(java.util.Locale.ROOT));
+        }
     }
 
     void applyScheduleState(

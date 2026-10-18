@@ -1002,7 +1002,7 @@ class StripeBillingWebhookServiceTest {
                 remote.setId(subscriptionId);
                 remote.setCustomer("cus_123");
                 remote.setStatus("canceled");
-                remote.setMetadata(Map.of("clerk_user_id", "user_1"));
+                remote.setMetadata(Map.of("clerk_user_id", "user_1", "pricing_country", "DE"));
                 return remote;
             }
         };
@@ -1024,6 +1024,8 @@ class StripeBillingWebhookServiceTest {
         assertTrue(retrievedRemote.get());
         assertTrue(updateValues.contains("canceled"));
         assertFalse(updateValues.contains("active"));
+        // 购买国家从订阅 metadata 回填到合同列，后续换 IP 不影响定档。
+        assertEquals("DE", existing.getPricingCountry());
         verify(billingQuotaGateway).clearPlanQuota(
                 "user_1", "sub_active", "plus_monthly", "subscription:sub_active:deleted");
     }

@@ -5,6 +5,8 @@
 -- All switches ship OFF; run 093_enable_zone_pricing.sql after preflight is green.
 
 USE studyagent;
+-- Force utf8mb4: the mysql CLI may default to latin1 and double-encode labels.
+SET NAMES utf8mb4;
 
 -- Zones (is_active=0 until preflight passes)
 INSERT INTO pricing_zones (zone_code, label, reference_factor, active_version, is_active) VALUES

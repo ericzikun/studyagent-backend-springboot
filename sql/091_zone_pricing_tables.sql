@@ -9,6 +9,9 @@
 
 USE studyagent;
 
+-- Force utf8mb4: the mysql CLI may default to latin1 and double-encode Chinese comments.
+SET NAMES utf8mb4;
+
 -- ---------------------------------------------------------------------------
 -- 1. pricing_zones: zone definition + current sale version pointer
 -- ---------------------------------------------------------------------------

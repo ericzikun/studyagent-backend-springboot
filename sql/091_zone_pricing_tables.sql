@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS pricing_zone_prices (
     zone_code VARCHAR(8) NOT NULL,
     price_version VARCHAR(32) NOT NULL,
     sku_code VARCHAR(64) NOT NULL COMMENT 'plan_code / addon_code / study_pass SKU',
-    sku_kind VARCHAR(16) NOT NULL COMMENT 'subscription_plan | addon | study_pass',
+    sku_kind VARCHAR(32) NOT NULL COMMENT 'subscription_plan | addon | study_pass',
     stripe_price_id VARCHAR(128) NULL COMMENT 'NULL=未配置不可售；回填后永不改指向',
     stripe_product_id VARCHAR(128) NULL COMMENT '必须等于该 SKU 现有 Product',
     price_type VARCHAR(16) NOT NULL COMMENT 'recurring | one_time',
@@ -85,12 +85,19 @@ CREATE TABLE IF NOT EXISTS stripe_price_aliases (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     stripe_price_id VARCHAR(128) NOT NULL,
     sku_code VARCHAR(64) NOT NULL,
-    sku_kind VARCHAR(16) NOT NULL,
+    sku_kind VARCHAR(32) NOT NULL,
     note VARCHAR(255) NULL COMMENT '来源：盘点批次等',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_spa_price (stripe_price_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='历史 Price 别名：三大商品表之外的旧 Price 反查兜底';
+
+-- Earlier drafts used VARCHAR(16); 'subscription_plan' needs 17 chars.
+SET @zp_ddl = 'ALTER TABLE pricing_zone_prices MODIFY COLUMN sku_kind VARCHAR(32) NOT NULL COMMENT ''subscription_plan | addon | study_pass''';
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
+
+SET @zp_ddl = 'ALTER TABLE stripe_price_aliases MODIFY COLUMN sku_kind VARCHAR(32) NOT NULL';
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
 
 -- ---------------------------------------------------------------------------
 -- 5. subscription_price_rollouts: next-cycle price-change execution ledger

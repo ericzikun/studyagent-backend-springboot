@@ -2,6 +2,7 @@
 --   1) 092 seed applied, 2) zone pricing preflight green, 3) storefront smoke passed.
 -- Flip every zone and country route on (new purchases use the band matrix).
 USE studyagent;
+SET NAMES utf8mb4;
 UPDATE pricing_zones SET is_active=1 WHERE active_version='regional-20261018-v1';
 UPDATE pricing_country_routes SET is_enabled=1;
 

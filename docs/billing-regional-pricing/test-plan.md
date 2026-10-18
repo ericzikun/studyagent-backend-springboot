@@ -76,7 +76,7 @@ Run simulation 的资格受 Customer 复杂度、订阅数量及账号 Automatio
 
 ## 方案A第一、第二组新价及线上Pro验收
 
-本节为当前需求验收，上文BRL490／39990等属于巴西基础阶段回归数据。以两组新价矩阵、价格JSON及subscription-price-rollout为准；仅文档同步，不代表以下测试已通过。
+本节为当前需求验收，上文BRL490／39990等属于巴西基础阶段回归数据。以两组新价矩阵、价格JSON及subscription-price-rollout为准；文档与沙盒Price配置不代表以下支付／续费测试已通过；Price回读证据见[sandbox-configuration](sandbox-configuration.md)。
 
 - 全部63地区逐SKU核对新表金额，Pro只用新Pro列；第二组美国USD29.99/月、印度INR569/月、巴西BRL60.99/月均纳入。
 - 验证德国／意大利EUR及美国／厄瓜多尔／津巴布韦USD不同价格，实际USD销售区默认金额不误用技术美国价。

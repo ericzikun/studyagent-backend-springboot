@@ -18,4 +18,4 @@ Customer 使用已验证 JWT 邮箱或 Clerk Backend API 的已验证 primary_em
 
 第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。
 
-上文为当前巴西基础实现记录，不能作为新价格范围或已上线证据。完整新金额、线上Pro资格及任务见[后端交接入口](billing-regional-pricing/README.md)。Study Pass全部62个区币种组合建议月价已补齐，见[测算明细](billing-regional-pricing/study-pass-pricing.md)，目标账户最低扣款及真实续费仍待验证。本轮未改代码或Stripe。
+上文为当前巴西基础实现记录，不能作为新价格范围或已上线证据。完整新金额、线上Pro资格及任务见[后端交接入口](billing-regional-pricing/README.md)。Study Pass全部62个区币种组合建议月价已补齐，见[测算明细](billing-regional-pricing/study-pass-pricing.md)，目标账户最低扣款及真实续费仍待验证。本轮已配置现有项目沙盒176条新Price并回读，见[配置记录](billing-regional-pricing/sandbox-configuration.md)；业务代码、生产、订阅迁移和真实付款未改动。

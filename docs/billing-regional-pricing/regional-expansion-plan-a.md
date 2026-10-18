@@ -1,6 +1,6 @@
 # 地区差异化定价：方案 A 后端交接文档
 
-版本：2026-10-18 r6（两组新价与Study Pass全量补价，仅线上已购Pro当期保旧价）。本次用户明确要求修正文档；扩展代码、Stripe配置、真实订阅变更及部署尚未执行。
+版本：2026-10-18 r6（两组新价与Study Pass全量补价，仅线上已购Pro当期保旧价）。本次用户已授权并完成现有项目沙盒176条新Price配置；[配置记录](sandbox-configuration.md)及[环境绑定](regional-expansion-prices.sandbox.json)可复核。扩展业务代码、真实支付、订阅迁移及生产部署尚未执行。
 
 本版覆盖r3中“仅第一组加巴西”“其余第二组不开放”以及“所有存量订阅本期保旧价”的范围和价格规则。旧设计、历史沙盒价格及实施记录仅供追溯，不覆盖本文。跨工程权威来源仍为Verla根`openspec/changes/add-brazil-regional-pricing/`。
 
@@ -66,7 +66,7 @@
 | `addon_humanizer_3` | one_time | Humanizer包 |
 | `study_pass_subscription_30d` | month×1，自然月 | 按既有补价政策生成并确认的固定月价 |
 
-目标176条候选Price、671个区币种金额。表内10个会员／Trial／额外包SKU的610个金额已录入，Pass的61组合固定建议金额已齐（本轮新增52，原10保持），共671个主单位金额；数值齐全不等于配置／支付验收完成。所有Price/Product/account ID为空，销售关闭；JSON仍是交接草案，应用尚不会自动读取。
+目标176条候选Price、671个区币种金额。表内10个会员／Trial／额外包SKU的610个金额已录入，Pass的61组合固定建议金额已齐（本轮新增52，原10保持），共671个主单位金额；数值齐全不等于配置／支付验收完成。通用JSON保持账户无关草案；沙盒全部Price/Product/account绑定已写入独立环境JSON并回读验证。销售开关关闭，应用尚不会自动读取新增目录。
 
 ### 3.3 USD实际销售与技术默认金额
 
@@ -178,7 +178,7 @@ Trial保持原7天首段及已支付事实，转正必须使用本区新Pro月�
 | A15 | 执行状态及回滚 | 区分配置、安排、生效、付款；停止销售不撤销已安排目标 |
 | A16 | 基础遗留验收 | 原可信来源链路及真实付款回归仍需证据，不以文档校验替代 |
 
-Spring按仓库策略执行`mvn test`，前端按本分支verification strategy执行；真实Stripe支付和账期推进另留证据。本次只运行文档／JSON一致性检查及OpenSpec校验，不声称应用测试或真实扣款通过。
+Spring按仓库策略执行`mvn test`，前端按本分支verification strategy执行；真实Stripe支付和账期推进另留证据。本次通过文档／JSON一致性、OpenSpec与176条沙盒Price回读校验；应用测试和真实扣款未执行。
 
 ## 8. 配置与实施顺序
 

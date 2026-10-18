@@ -1,6 +1,6 @@
 # 地区差异化定价：简版技术方案
 
-版本：2026-10-18 r6（Study Pass全量固定金额已补齐）。基于前后端 `feat/billing-brazil-pricing`；本次仅修正文档和交接价格草案，尚未实施扩展代码、写入Stripe或部署。
+版本：2026-10-18 r6（Study Pass全量固定金额已补齐）。基于前后端 `feat/billing-brazil-pricing`；沙盒176条新Price已配置并逐条回读；见[配置记录](sandbox-configuration.md)与[环境绑定](regional-expansion-prices.sandbox.json)。业务代码扩展、真实支付、订阅迁移及生产部署未执行。
 
 ## 1. 已确认需求
 

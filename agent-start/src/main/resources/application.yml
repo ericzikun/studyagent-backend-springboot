@@ -246,7 +246,7 @@ billing:
   portal:
     configuration-id: ${BILLING_PORTAL_CONFIGURATION_ID:}
   regional-pricing:
-    enabled: ${BILLING_REGIONAL_PRICING_ENABLED:false}
+    enabled: ${BILLING_REGIONAL_PRICING_ENABLED:true}
     country-currencies: ${BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES:BR=brl}
     test-override: ${BILLING_REGION_TEST_OVERRIDE:}
     proxy-secret: ${BILLING_REGION_PROXY_SECRET:}

@@ -1,6 +1,6 @@
 # 地区差异化定价：简版技术方案
 
-版本：2026-10-18 r7（Study Pass全量固定金额已补齐）。基于前后端 `feat/billing-brazil-pricing`；此前沙盒176条Price已配置；当前三组187条目标Price正在扩充和回读；见[配置记录](sandbox-configuration.md)与[环境绑定](regional-expansion-prices.sandbox.json)。业务代码扩展、真实支付、订阅迁移及生产部署未执行。
+版本：2026-10-18 r7（Study Pass全量固定金额已补齐）。基于前后端 `feat/billing-brazil-pricing`；三组187条当前绑定Price已全部配置并逐条回读（本轮新建33条）；见[配置记录](sandbox-configuration.md)与[环境绑定](regional-expansion-prices.sandbox.json)。业务代码扩展、真实支付、订阅迁移及生产部署未执行。
 
 ## 1. 已确认需求
 
@@ -61,7 +61,7 @@ Trial不是“已购买Pro”的例外；首段已支付事实不改，7天结�
 
 ## 4. 实现与配置边界
 
-复用既有Product，按“区＋SKU”配置Price；11个SKU对应187条候选Price，会员／Trial／额外包的1030个固定金额已从表中录入。Study Pass已覆盖全部114地区、103个区币种组合，原63地区的61组合保持，本轮新增42组合；全量1133个主单位金额已齐。Pass按USD0.99×倍率×固定参考，低额取USD0.60缓冲、HKD4参考折算及已公布同币种结算最低金额的最大参考值后向上取整，计算依据见[Pass测算](study-pass-pricing.md)。所有金额仍需账户配置与真实扣款验证；加纳／突尼斯按已批准的Z025/USD替代价配置。
+复用既有Product，按“区＋SKU”配置Price；11个SKU对应187条候选Price，会员／Trial／额外包的1030个固定金额已从表中录入。Study Pass已覆盖全部114地区、103个区币种组合，原63地区的61组合保持，本轮新增42组合；全量1133个主单位金额已齐。Pass按USD0.99×倍率×固定参考，低额取USD0.60缓冲、HKD4参考折算及已公布同币种结算最低金额的最大参考值后向上取整，计算依据见[Pass测算](study-pass-pricing.md)。所有金额已完成沙盒配置回读，仍需真实扣款验证；加纳／突尼斯按已批准的Z025/USD替代价配置。
 
 USD也是美国、厄瓜多尔、津巴布韦的实际销售币种，必须使用各自定价区的新表USD金额；其余区的技术性USD默认金额不得作为销售回退。加纳／突尼斯已获用户确认改用Z025/USD；Pass实际扣款列为验证待办，不能因此将地区移出本次范围。
 

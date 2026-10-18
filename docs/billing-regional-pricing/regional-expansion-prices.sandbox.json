@@ -1,7 +1,7 @@
 {
   "documentType": "sandbox-price-bindings-not-deployed-runtime-config",
   "schemaVersion": 1,
-  "approvedScope": "第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用新Pro月/年价格；仅本次需求确认时线上已购买Pro的用户当前已付周期保留旧金额，下个付费周期切新价；其他套餐、Trial、Study Pass和额外包不获得当期保旧价资格。",
+  "approvedScope": "第一组10地区、第二组53地区、第三组51地区全部使用新金额，共114地区；Pro统一使用新Pro月/年价格；仅本次需求确认时线上已购买Pro的用户当前已付周期保留旧金额，下个付费周期切新价；其他套餐、Trial、Study Pass和额外包不获得当期保旧价资格。",
   "zonePricingEnabled": false,
   "enabledCountries": [],
   "countryRoutes": {
@@ -319,6 +319,261 @@
       "label": "奥地利",
       "zone": "Z080",
       "currency": "eur"
+    },
+    "IQ": {
+      "label": "伊拉克",
+      "zone": "Z035",
+      "currency": "usd"
+    },
+    "JO": {
+      "label": "约旦",
+      "zone": "Z035",
+      "currency": "usd"
+    },
+    "PA": {
+      "label": "巴拿马",
+      "zone": "Z050",
+      "currency": "usd"
+    },
+    "LC": {
+      "label": "圣卢西亚",
+      "zone": "Z045",
+      "currency": "xcd"
+    },
+    "ES": {
+      "label": "西班牙",
+      "zone": "Z065",
+      "currency": "eur"
+    },
+    "LK": {
+      "label": "斯里兰卡",
+      "zone": "Z025",
+      "currency": "lkr"
+    },
+    "TZ": {
+      "label": "坦桑尼亚",
+      "zone": "Z020",
+      "currency": "tzs"
+    },
+    "UG": {
+      "label": "乌干达",
+      "zone": "Z020",
+      "currency": "ugx"
+    },
+    "VE": {
+      "label": "委内瑞拉",
+      "zone": "Z020",
+      "currency": "usd"
+    },
+    "ZM": {
+      "label": "赞比亚",
+      "zone": "Z020",
+      "currency": "zmw"
+    },
+    "AF": {
+      "label": "阿富汗",
+      "zone": "Z020",
+      "currency": "afn"
+    },
+    "AL": {
+      "label": "阿尔巴尼亚",
+      "zone": "Z040",
+      "currency": "all"
+    },
+    "BB": {
+      "label": "巴巴多斯",
+      "zone": "Z055",
+      "currency": "bbd"
+    },
+    "BE": {
+      "label": "比利时",
+      "zone": "Z080",
+      "currency": "eur"
+    },
+    "BM": {
+      "label": "百慕大",
+      "zone": "Z100",
+      "currency": "bmd"
+    },
+    "BN": {
+      "label": "文莱",
+      "zone": "Z055",
+      "currency": "bnd"
+    },
+    "KH": {
+      "label": "柬埔寨",
+      "zone": "Z025",
+      "currency": "khr"
+    },
+    "CM": {
+      "label": "喀麦隆",
+      "zone": "Z020",
+      "currency": "xaf"
+    },
+    "CL": {
+      "label": "智利",
+      "zone": "Z045",
+      "currency": "clp"
+    },
+    "CR": {
+      "label": "哥斯达黎加",
+      "zone": "Z050",
+      "currency": "crc"
+    },
+    "HR": {
+      "label": "克罗地亚",
+      "zone": "Z050",
+      "currency": "eur"
+    },
+    "SV": {
+      "label": "萨尔瓦多",
+      "zone": "Z035",
+      "currency": "usd"
+    },
+    "FI": {
+      "label": "芬兰",
+      "zone": "Z080",
+      "currency": "eur"
+    },
+    "GA": {
+      "label": "加蓬",
+      "zone": "Z035",
+      "currency": "xaf"
+    },
+    "GE": {
+      "label": "格鲁吉亚",
+      "zone": "Z035",
+      "currency": "gel"
+    },
+    "HN": {
+      "label": "洪都拉斯",
+      "zone": "Z030",
+      "currency": "hnl"
+    },
+    "HU": {
+      "label": "匈牙利",
+      "zone": "Z050",
+      "currency": "huf"
+    },
+    "CI": {
+      "label": "科特迪瓦",
+      "zone": "Z025",
+      "currency": "xof"
+    },
+    "KZ": {
+      "label": "哈萨克斯坦",
+      "zone": "Z040",
+      "currency": "kzt"
+    },
+    "KW": {
+      "label": "科威特",
+      "zone": "Z065",
+      "currency": "usd"
+    },
+    "LA": {
+      "label": "老挝",
+      "zone": "Z020",
+      "currency": "lak"
+    },
+    "LV": {
+      "label": "拉脱维亚",
+      "zone": "Z055",
+      "currency": "eur"
+    },
+    "LB": {
+      "label": "黎巴嫩",
+      "zone": "Z035",
+      "currency": "lbp"
+    },
+    "LR": {
+      "label": "利比里亚",
+      "zone": "Z020",
+      "currency": "lrd"
+    },
+    "LU": {
+      "label": "卢森堡",
+      "zone": "Z095",
+      "currency": "eur"
+    },
+    "MV": {
+      "label": "马尔代夫",
+      "zone": "Z045",
+      "currency": "mvr"
+    },
+    "MD": {
+      "label": "摩尔多瓦",
+      "zone": "Z035",
+      "currency": "mdl"
+    },
+    "MN": {
+      "label": "蒙古",
+      "zone": "Z030",
+      "currency": "mnt"
+    },
+    "ME": {
+      "label": "黑山",
+      "zone": "Z040",
+      "currency": "eur"
+    },
+    "MM": {
+      "label": "缅甸",
+      "zone": "Z020",
+      "currency": "mmk"
+    },
+    "NP": {
+      "label": "尼泊尔",
+      "zone": "Z020",
+      "currency": "npr"
+    },
+    "NO": {
+      "label": "挪威",
+      "zone": "Z100",
+      "currency": "nok"
+    },
+    "OM": {
+      "label": "阿曼",
+      "zone": "Z050",
+      "currency": "usd"
+    },
+    "PG": {
+      "label": "巴布亚新几内亚",
+      "zone": "Z040",
+      "currency": "pgk"
+    },
+    "PL": {
+      "label": "波兰",
+      "zone": "Z050",
+      "currency": "pln"
+    },
+    "PR": {
+      "label": "波多黎各",
+      "zone": "Z055",
+      "currency": "usd"
+    },
+    "RS": {
+      "label": "塞尔维亚",
+      "zone": "Z040",
+      "currency": "rsd"
+    },
+    "SC": {
+      "label": "塞舌尔",
+      "zone": "Z050",
+      "currency": "scr"
+    },
+    "SK": {
+      "label": "斯洛伐克",
+      "zone": "Z055",
+      "currency": "eur"
+    },
+    "TT": {
+      "label": "特立尼达和多巴哥",
+      "zone": "Z050",
+      "currency": "ttd"
+    },
+    "UZ": {
+      "label": "乌兹别克斯坦",
+      "zone": "Z020",
+      "currency": "uzs"
     }
   },
   "activeVersions": {
@@ -328,6 +583,7 @@
     "Z035": "regional-20261018-v1",
     "Z040": "regional-20261018-v1",
     "Z045": "regional-20261018-v1",
+    "Z050": "regional-20261018-v1",
     "Z055": "regional-20261018-v1",
     "Z060": "regional-20261018-v1",
     "Z065": "regional-20261018-v1",
@@ -440,6 +696,46 @@
                 "rwf": {
                   "amountMajor": "889",
                   "amountMinor": 889
+                },
+                "tzs": {
+                  "amountMajor": "1599",
+                  "amountMinor": 159900
+                },
+                "ugx": {
+                  "amountMajor": "2399",
+                  "amountMinor": 239900
+                },
+                "zmw": {
+                  "amountMajor": "12",
+                  "amountMinor": 1200
+                },
+                "afn": {
+                  "amountMajor": "39",
+                  "amountMinor": 3900
+                },
+                "xaf": {
+                  "amountMajor": "349",
+                  "amountMinor": 349
+                },
+                "lak": {
+                  "amountMajor": "12900",
+                  "amountMinor": 1290000
+                },
+                "lrd": {
+                  "amountMajor": "99",
+                  "amountMinor": 9900
+                },
+                "mmk": {
+                  "amountMajor": "1299",
+                  "amountMinor": 129900
+                },
+                "npr": {
+                  "amountMajor": "89",
+                  "amountMinor": 8900
+                },
+                "uzs": {
+                  "amountMajor": "7199",
+                  "amountMinor": 719900
                 }
               },
               "renewalSku": "pro_monthly"
@@ -493,6 +789,46 @@
                 "rwf": {
                   "amountMajor": "5899",
                   "amountMinor": 5899
+                },
+                "tzs": {
+                  "amountMajor": "10900",
+                  "amountMinor": 1090000
+                },
+                "ugx": {
+                  "amountMajor": "15900",
+                  "amountMinor": 1590000
+                },
+                "zmw": {
+                  "amountMajor": "79",
+                  "amountMinor": 7900
+                },
+                "afn": {
+                  "amountMajor": "259",
+                  "amountMinor": 25900
+                },
+                "xaf": {
+                  "amountMajor": "2299",
+                  "amountMinor": 2299
+                },
+                "lak": {
+                  "amountMajor": "88900",
+                  "amountMinor": 8890000
+                },
+                "lrd": {
+                  "amountMajor": "679",
+                  "amountMinor": 67900
+                },
+                "mmk": {
+                  "amountMajor": "8399",
+                  "amountMinor": 839900
+                },
+                "npr": {
+                  "amountMajor": "609",
+                  "amountMinor": 60900
+                },
+                "uzs": {
+                  "amountMajor": "47900",
+                  "amountMinor": 4790000
                 }
               }
             },
@@ -545,6 +881,46 @@
                 "rwf": {
                   "amountMajor": "11900",
                   "amountMinor": 11900
+                },
+                "tzs": {
+                  "amountMajor": "20900",
+                  "amountMinor": 2090000
+                },
+                "ugx": {
+                  "amountMajor": "31900",
+                  "amountMinor": 3190000
+                },
+                "zmw": {
+                  "amountMajor": "159",
+                  "amountMinor": 15900
+                },
+                "afn": {
+                  "amountMajor": "519",
+                  "amountMinor": 51900
+                },
+                "xaf": {
+                  "amountMajor": "4699",
+                  "amountMinor": 4699
+                },
+                "lak": {
+                  "amountMajor": "179000",
+                  "amountMinor": 17900000
+                },
+                "lrd": {
+                  "amountMajor": "1399",
+                  "amountMinor": 139900
+                },
+                "mmk": {
+                  "amountMajor": "16900",
+                  "amountMinor": 1690000
+                },
+                "npr": {
+                  "amountMajor": "1199",
+                  "amountMinor": 119900
+                },
+                "uzs": {
+                  "amountMajor": "95900",
+                  "amountMinor": 9590000
                 }
               }
             },
@@ -597,6 +973,46 @@
                 "rwf": {
                   "amountMajor": "27900",
                   "amountMinor": 27900
+                },
+                "tzs": {
+                  "amountMajor": "51900",
+                  "amountMinor": 5190000
+                },
+                "ugx": {
+                  "amountMajor": "76900",
+                  "amountMinor": 7690000
+                },
+                "zmw": {
+                  "amountMajor": "379",
+                  "amountMinor": 37900
+                },
+                "afn": {
+                  "amountMajor": "1249",
+                  "amountMinor": 124900
+                },
+                "xaf": {
+                  "amountMajor": "10900",
+                  "amountMinor": 10900
+                },
+                "lak": {
+                  "amountMajor": "429000",
+                  "amountMinor": 42900000
+                },
+                "lrd": {
+                  "amountMajor": "3299",
+                  "amountMinor": 329900
+                },
+                "mmk": {
+                  "amountMajor": "39900",
+                  "amountMinor": 3990000
+                },
+                "npr": {
+                  "amountMajor": "2899",
+                  "amountMinor": 289900
+                },
+                "uzs": {
+                  "amountMajor": "229000",
+                  "amountMinor": 22900000
                 }
               }
             },
@@ -649,6 +1065,46 @@
                 "rwf": {
                   "amountMajor": "56900",
                   "amountMinor": 56900
+                },
+                "tzs": {
+                  "amountMajor": "99000",
+                  "amountMinor": 9900000
+                },
+                "ugx": {
+                  "amountMajor": "152900",
+                  "amountMinor": 15290000
+                },
+                "zmw": {
+                  "amountMajor": "769",
+                  "amountMinor": 76900
+                },
+                "afn": {
+                  "amountMajor": "2499",
+                  "amountMinor": 249900
+                },
+                "xaf": {
+                  "amountMajor": "22900",
+                  "amountMinor": 22900
+                },
+                "lak": {
+                  "amountMajor": "859000",
+                  "amountMinor": 85900000
+                },
+                "lrd": {
+                  "amountMajor": "6599",
+                  "amountMinor": 659900
+                },
+                "mmk": {
+                  "amountMajor": "80900",
+                  "amountMinor": 8090000
+                },
+                "npr": {
+                  "amountMajor": "5799",
+                  "amountMinor": 579900
+                },
+                "uzs": {
+                  "amountMajor": "459000",
+                  "amountMinor": 45900000
                 }
               }
             },
@@ -701,6 +1157,46 @@
                 "rwf": {
                   "amountMajor": "2999",
                   "amountMinor": 2999
+                },
+                "tzs": {
+                  "amountMajor": "5299",
+                  "amountMinor": 529900
+                },
+                "ugx": {
+                  "amountMajor": "7999",
+                  "amountMinor": 799900
+                },
+                "zmw": {
+                  "amountMajor": "39",
+                  "amountMinor": 3900
+                },
+                "afn": {
+                  "amountMajor": "129",
+                  "amountMinor": 12900
+                },
+                "xaf": {
+                  "amountMajor": "1199",
+                  "amountMinor": 1199
+                },
+                "lak": {
+                  "amountMajor": "44900",
+                  "amountMinor": 4490000
+                },
+                "lrd": {
+                  "amountMajor": "339",
+                  "amountMinor": 33900
+                },
+                "mmk": {
+                  "amountMajor": "4199",
+                  "amountMinor": 419900
+                },
+                "npr": {
+                  "amountMajor": "309",
+                  "amountMinor": 30900
+                },
+                "uzs": {
+                  "amountMajor": "23900",
+                  "amountMinor": 2390000
                 }
               }
             },
@@ -753,6 +1249,46 @@
                 "rwf": {
                   "amountMajor": "1499",
                   "amountMinor": 1499
+                },
+                "tzs": {
+                  "amountMajor": "2599",
+                  "amountMinor": 259900
+                },
+                "ugx": {
+                  "amountMajor": "3999",
+                  "amountMinor": 399900
+                },
+                "zmw": {
+                  "amountMajor": "19",
+                  "amountMinor": 1900
+                },
+                "afn": {
+                  "amountMajor": "69",
+                  "amountMinor": 6900
+                },
+                "xaf": {
+                  "amountMajor": "579",
+                  "amountMinor": 579
+                },
+                "lak": {
+                  "amountMajor": "21900",
+                  "amountMinor": 2190000
+                },
+                "lrd": {
+                  "amountMajor": "169",
+                  "amountMinor": 16900
+                },
+                "mmk": {
+                  "amountMajor": "2099",
+                  "amountMinor": 209900
+                },
+                "npr": {
+                  "amountMajor": "149",
+                  "amountMinor": 14900
+                },
+                "uzs": {
+                  "amountMajor": "11900",
+                  "amountMinor": 1190000
                 }
               }
             },
@@ -805,6 +1341,46 @@
                 "rwf": {
                   "amountMajor": "2099",
                   "amountMinor": 2099
+                },
+                "tzs": {
+                  "amountMajor": "3699",
+                  "amountMinor": 369900
+                },
+                "ugx": {
+                  "amountMajor": "5599",
+                  "amountMinor": 559900
+                },
+                "zmw": {
+                  "amountMajor": "29",
+                  "amountMinor": 2900
+                },
+                "afn": {
+                  "amountMajor": "89",
+                  "amountMinor": 8900
+                },
+                "xaf": {
+                  "amountMajor": "819",
+                  "amountMinor": 819
+                },
+                "lak": {
+                  "amountMajor": "30900",
+                  "amountMinor": 3090000
+                },
+                "lrd": {
+                  "amountMajor": "239",
+                  "amountMinor": 23900
+                },
+                "mmk": {
+                  "amountMajor": "2899",
+                  "amountMinor": 289900
+                },
+                "npr": {
+                  "amountMajor": "209",
+                  "amountMinor": 20900
+                },
+                "uzs": {
+                  "amountMajor": "16900",
+                  "amountMinor": 1690000
                 }
               }
             },
@@ -857,6 +1433,46 @@
                 "rwf": {
                   "amountMajor": "8899",
                   "amountMinor": 8899
+                },
+                "tzs": {
+                  "amountMajor": "15900",
+                  "amountMinor": 1590000
+                },
+                "ugx": {
+                  "amountMajor": "23900",
+                  "amountMinor": 2390000
+                },
+                "zmw": {
+                  "amountMajor": "119",
+                  "amountMinor": 11900
+                },
+                "afn": {
+                  "amountMajor": "389",
+                  "amountMinor": 38900
+                },
+                "xaf": {
+                  "amountMajor": "3499",
+                  "amountMinor": 3499
+                },
+                "lak": {
+                  "amountMajor": "129000",
+                  "amountMinor": 12900000
+                },
+                "lrd": {
+                  "amountMajor": "999",
+                  "amountMinor": 99900
+                },
+                "mmk": {
+                  "amountMajor": "12900",
+                  "amountMinor": 1290000
+                },
+                "npr": {
+                  "amountMajor": "909",
+                  "amountMinor": 90900
+                },
+                "uzs": {
+                  "amountMajor": "71900",
+                  "amountMinor": 7190000
                 }
               }
             },
@@ -909,6 +1525,46 @@
                 "rwf": {
                   "amountMajor": "106788",
                   "amountMinor": 106788
+                },
+                "tzs": {
+                  "amountMajor": "190800",
+                  "amountMinor": 19080000
+                },
+                "ugx": {
+                  "amountMajor": "286800",
+                  "amountMinor": 28680000
+                },
+                "zmw": {
+                  "amountMajor": "1428",
+                  "amountMinor": 142800
+                },
+                "afn": {
+                  "amountMajor": "4668",
+                  "amountMinor": 466800
+                },
+                "xaf": {
+                  "amountMajor": "41988",
+                  "amountMinor": 41988
+                },
+                "lak": {
+                  "amountMajor": "1548000",
+                  "amountMinor": 154800000
+                },
+                "lrd": {
+                  "amountMajor": "11988",
+                  "amountMinor": 1198800
+                },
+                "mmk": {
+                  "amountMajor": "154800",
+                  "amountMinor": 15480000
+                },
+                "npr": {
+                  "amountMajor": "10908",
+                  "amountMinor": 1090800
+                },
+                "uzs": {
+                  "amountMajor": "862800",
+                  "amountMinor": 86280000
                 }
               }
             },
@@ -971,6 +1627,56 @@
                   "amountMajor": "890",
                   "amountMinor": 890,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "tzs": {
+                  "amountMajor": "1700",
+                  "amountMinor": 170000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "ugx": {
+                  "amountMajor": "2400",
+                  "amountMinor": 240000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "zmw": {
+                  "amountMajor": "12",
+                  "amountMinor": 1200,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "afn": {
+                  "amountMajor": "39",
+                  "amountMinor": 3900,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "xaf": {
+                  "amountMajor": "350",
+                  "amountMinor": 350,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "lak": {
+                  "amountMajor": "13400",
+                  "amountMinor": 1340000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "lrd": {
+                  "amountMajor": "110",
+                  "amountMinor": 11000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "mmk": {
+                  "amountMajor": "1300",
+                  "amountMinor": 130000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "npr": {
+                  "amountMajor": "92",
+                  "amountMinor": 9200,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "uzs": {
+                  "amountMajor": "7200",
+                  "amountMinor": 720000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
               "requiresMinimumChargeVerification": true
@@ -1013,6 +1719,18 @@
                 "usd": {
                   "amountMajor": "0.79",
                   "amountMinor": 79
+                },
+                "lkr": {
+                  "amountMajor": "249",
+                  "amountMinor": 24900
+                },
+                "khr": {
+                  "amountMajor": "2999",
+                  "amountMinor": 299900
+                },
+                "xof": {
+                  "amountMajor": "439",
+                  "amountMinor": 439
                 }
               },
               "renewalSku": "pro_monthly"
@@ -1050,6 +1768,18 @@
                 "usd": {
                   "amountMajor": "4.99",
                   "amountMinor": 499
+                },
+                "lkr": {
+                  "amountMajor": "1699",
+                  "amountMinor": 169900
+                },
+                "khr": {
+                  "amountMajor": "19900",
+                  "amountMinor": 1990000
+                },
+                "xof": {
+                  "amountMajor": "2899",
+                  "amountMinor": 2899
                 }
               }
             },
@@ -1086,6 +1816,18 @@
                 "usd": {
                   "amountMajor": "9.99",
                   "amountMinor": 999
+                },
+                "lkr": {
+                  "amountMajor": "3299",
+                  "amountMinor": 329900
+                },
+                "khr": {
+                  "amountMajor": "40900",
+                  "amountMinor": 4090000
+                },
+                "xof": {
+                  "amountMajor": "5799",
+                  "amountMinor": 5799
                 }
               }
             },
@@ -1122,6 +1864,18 @@
                 "usd": {
                   "amountMajor": "23.99",
                   "amountMinor": 2399
+                },
+                "lkr": {
+                  "amountMajor": "7999",
+                  "amountMinor": 799900
+                },
+                "khr": {
+                  "amountMajor": "96900",
+                  "amountMinor": 9690000
+                },
+                "xof": {
+                  "amountMajor": "13900",
+                  "amountMinor": 13900
                 }
               }
             },
@@ -1158,6 +1912,18 @@
                 "usd": {
                   "amountMajor": "47.99",
                   "amountMinor": 4799
+                },
+                "lkr": {
+                  "amountMajor": "15900",
+                  "amountMinor": 1590000
+                },
+                "khr": {
+                  "amountMajor": "199000",
+                  "amountMinor": 19900000
+                },
+                "xof": {
+                  "amountMajor": "27900",
+                  "amountMinor": 27900
                 }
               }
             },
@@ -1194,6 +1960,18 @@
                 "usd": {
                   "amountMajor": "2.49",
                   "amountMinor": 249
+                },
+                "lkr": {
+                  "amountMajor": "829",
+                  "amountMinor": 82900
+                },
+                "khr": {
+                  "amountMajor": "9900",
+                  "amountMinor": 990000
+                },
+                "xof": {
+                  "amountMajor": "1499",
+                  "amountMinor": 1499
                 }
               }
             },
@@ -1230,6 +2008,18 @@
                 "usd": {
                   "amountMajor": "1.29",
                   "amountMinor": 129
+                },
+                "lkr": {
+                  "amountMajor": "409",
+                  "amountMinor": 40900
+                },
+                "khr": {
+                  "amountMajor": "5099",
+                  "amountMinor": 509900
+                },
+                "xof": {
+                  "amountMajor": "729",
+                  "amountMinor": 729
                 }
               }
             },
@@ -1266,6 +2056,18 @@
                 "usd": {
                   "amountMajor": "1.79",
                   "amountMinor": 179
+                },
+                "lkr": {
+                  "amountMajor": "579",
+                  "amountMinor": 57900
+                },
+                "khr": {
+                  "amountMajor": "7099",
+                  "amountMinor": 709900
+                },
+                "xof": {
+                  "amountMajor": "999",
+                  "amountMinor": 999
                 }
               }
             },
@@ -1302,6 +2104,18 @@
                 "usd": {
                   "amountMajor": "7.49",
                   "amountMinor": 749
+                },
+                "lkr": {
+                  "amountMajor": "2499",
+                  "amountMinor": 249900
+                },
+                "khr": {
+                  "amountMajor": "30900",
+                  "amountMinor": 3090000
+                },
+                "xof": {
+                  "amountMajor": "4399",
+                  "amountMinor": 4399
                 }
               }
             },
@@ -1338,6 +2152,18 @@
                 "usd": {
                   "amountMajor": "89.88",
                   "amountMinor": 8988
+                },
+                "lkr": {
+                  "amountMajor": "29988",
+                  "amountMinor": 2998800
+                },
+                "khr": {
+                  "amountMajor": "370800",
+                  "amountMinor": 37080000
+                },
+                "xof": {
+                  "amountMajor": "52788",
+                  "amountMinor": 52788
                 }
               }
             },
@@ -1379,6 +2205,21 @@
                 "usd": {
                   "amountMajor": "0.60",
                   "amountMinor": 60,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "lkr": {
+                  "amountMajor": "210",
+                  "amountMinor": 21000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "khr": {
+                  "amountMajor": "2400",
+                  "amountMinor": 240000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "xof": {
+                  "amountMajor": "350",
+                  "amountMinor": 350,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -1422,6 +2263,14 @@
                 "thb": {
                   "amountMajor": "29",
                   "amountMinor": 2900
+                },
+                "hnl": {
+                  "amountMajor": "24",
+                  "amountMinor": 2400
+                },
+                "mnt": {
+                  "amountMajor": "3199",
+                  "amountMinor": 319900
                 }
               },
               "renewalSku": "pro_monthly"
@@ -1459,6 +2308,14 @@
                 "thb": {
                   "amountMajor": "199",
                   "amountMinor": 19900
+                },
+                "hnl": {
+                  "amountMajor": "159",
+                  "amountMinor": 15900
+                },
+                "mnt": {
+                  "amountMajor": "21900",
+                  "amountMinor": 2190000
                 }
               }
             },
@@ -1495,6 +2352,14 @@
                 "thb": {
                   "amountMajor": "399",
                   "amountMinor": 39900
+                },
+                "hnl": {
+                  "amountMajor": "319",
+                  "amountMinor": 31900
+                },
+                "mnt": {
+                  "amountMajor": "42900",
+                  "amountMinor": 4290000
                 }
               }
             },
@@ -1531,6 +2396,14 @@
                 "thb": {
                   "amountMajor": "959",
                   "amountMinor": 95900
+                },
+                "hnl": {
+                  "amountMajor": "769",
+                  "amountMinor": 76900
+                },
+                "mnt": {
+                  "amountMajor": "103900",
+                  "amountMinor": 10390000
                 }
               }
             },
@@ -1567,6 +2440,14 @@
                 "thb": {
                   "amountMajor": "1929",
                   "amountMinor": 192900
+                },
+                "hnl": {
+                  "amountMajor": "1499",
+                  "amountMinor": 149900
+                },
+                "mnt": {
+                  "amountMajor": "209000",
+                  "amountMinor": 20900000
                 }
               }
             },
@@ -1603,6 +2484,14 @@
                 "thb": {
                   "amountMajor": "99",
                   "amountMinor": 9900
+                },
+                "hnl": {
+                  "amountMajor": "79",
+                  "amountMinor": 7900
+                },
+                "mnt": {
+                  "amountMajor": "10900",
+                  "amountMinor": 1090000
                 }
               }
             },
@@ -1639,6 +2528,14 @@
                 "thb": {
                   "amountMajor": "49",
                   "amountMinor": 4900
+                },
+                "hnl": {
+                  "amountMajor": "39",
+                  "amountMinor": 3900
+                },
+                "mnt": {
+                  "amountMajor": "5399",
+                  "amountMinor": 539900
                 }
               }
             },
@@ -1675,6 +2572,14 @@
                 "thb": {
                   "amountMajor": "69",
                   "amountMinor": 6900
+                },
+                "hnl": {
+                  "amountMajor": "59",
+                  "amountMinor": 5900
+                },
+                "mnt": {
+                  "amountMajor": "7599",
+                  "amountMinor": 759900
                 }
               }
             },
@@ -1711,6 +2616,14 @@
                 "thb": {
                   "amountMajor": "299",
                   "amountMinor": 29900
+                },
+                "hnl": {
+                  "amountMajor": "239",
+                  "amountMinor": 23900
+                },
+                "mnt": {
+                  "amountMajor": "32900",
+                  "amountMinor": 3290000
                 }
               }
             },
@@ -1747,6 +2660,14 @@
                 "thb": {
                   "amountMajor": "3588",
                   "amountMinor": 358800
+                },
+                "hnl": {
+                  "amountMajor": "2868",
+                  "amountMinor": 286800
+                },
+                "mnt": {
+                  "amountMajor": "394800",
+                  "amountMinor": 39480000
                 }
               }
             },
@@ -1788,6 +2709,16 @@
                 "thb": {
                   "amountMajor": "21",
                   "amountMinor": 2100,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "hnl": {
+                  "amountMajor": "16",
+                  "amountMinor": 1600,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "mnt": {
+                  "amountMajor": "2200",
+                  "amountMinor": 220000,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -1831,6 +2762,22 @@
                 "gtq": {
                   "amountMajor": "7.99",
                   "amountMinor": 799
+                },
+                "xaf": {
+                  "amountMajor": "609",
+                  "amountMinor": 609
+                },
+                "gel": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
+                },
+                "lbp": {
+                  "amountMajor": "93900",
+                  "amountMinor": 9390000
+                },
+                "mdl": {
+                  "amountMajor": "18.99",
+                  "amountMinor": 1899
                 }
               },
               "renewalSku": "pro_monthly"
@@ -1868,6 +2815,22 @@
                 "gtq": {
                   "amountMajor": "52.99",
                   "amountMinor": 5299
+                },
+                "xaf": {
+                  "amountMajor": "4099",
+                  "amountMinor": 4099
+                },
+                "gel": {
+                  "amountMajor": "17.99",
+                  "amountMinor": 1799
+                },
+                "lbp": {
+                  "amountMajor": "629000",
+                  "amountMinor": 62900000
+                },
+                "mdl": {
+                  "amountMajor": "124.99",
+                  "amountMinor": 12499
                 }
               }
             },
@@ -1904,6 +2867,22 @@
                 "gtq": {
                   "amountMajor": "106.99",
                   "amountMinor": 10699
+                },
+                "xaf": {
+                  "amountMajor": "8199",
+                  "amountMinor": 8199
+                },
+                "gel": {
+                  "amountMajor": "35.99",
+                  "amountMinor": 3599
+                },
+                "lbp": {
+                  "amountMajor": "1290000",
+                  "amountMinor": 129000000
+                },
+                "mdl": {
+                  "amountMajor": "250.99",
+                  "amountMinor": 25099
                 }
               }
             },
@@ -1940,6 +2919,22 @@
                 "gtq": {
                   "amountMajor": "255.99",
                   "amountMinor": 25599
+                },
+                "xaf": {
+                  "amountMajor": "19900",
+                  "amountMinor": 19900
+                },
+                "gel": {
+                  "amountMajor": "86.99",
+                  "amountMinor": 8699
+                },
+                "lbp": {
+                  "amountMajor": "2990000",
+                  "amountMinor": 299000000
+                },
+                "mdl": {
+                  "amountMajor": "600.99",
+                  "amountMinor": 60099
                 }
               }
             },
@@ -1976,6 +2971,22 @@
                 "gtq": {
                   "amountMajor": "512.99",
                   "amountMinor": 51299
+                },
+                "xaf": {
+                  "amountMajor": "38900",
+                  "amountMinor": 38900
+                },
+                "gel": {
+                  "amountMajor": "173.99",
+                  "amountMinor": 17399
+                },
+                "lbp": {
+                  "amountMajor": "6090000",
+                  "amountMinor": 609000000
+                },
+                "mdl": {
+                  "amountMajor": "1202.99",
+                  "amountMinor": 120299
                 }
               }
             },
@@ -2012,6 +3023,22 @@
                 "gtq": {
                   "amountMajor": "26.99",
                   "amountMinor": 2699
+                },
+                "xaf": {
+                  "amountMajor": "1999",
+                  "amountMinor": 1999
+                },
+                "gel": {
+                  "amountMajor": "8.99",
+                  "amountMinor": 899
+                },
+                "lbp": {
+                  "amountMajor": "309000",
+                  "amountMinor": 30900000
+                },
+                "mdl": {
+                  "amountMajor": "62.99",
+                  "amountMinor": 6299
                 }
               }
             },
@@ -2048,6 +3075,22 @@
                 "gtq": {
                   "amountMajor": "12.99",
                   "amountMinor": 1299
+                },
+                "xaf": {
+                  "amountMajor": "999",
+                  "amountMinor": 999
+                },
+                "gel": {
+                  "amountMajor": "4.49",
+                  "amountMinor": 449
+                },
+                "lbp": {
+                  "amountMajor": "159000",
+                  "amountMinor": 15900000
+                },
+                "mdl": {
+                  "amountMajor": "30.99",
+                  "amountMinor": 3099
                 }
               }
             },
@@ -2084,6 +3127,22 @@
                 "gtq": {
                   "amountMajor": "18.99",
                   "amountMinor": 1899
+                },
+                "xaf": {
+                  "amountMajor": "1399",
+                  "amountMinor": 1399
+                },
+                "gel": {
+                  "amountMajor": "6.49",
+                  "amountMinor": 649
+                },
+                "lbp": {
+                  "amountMajor": "219000",
+                  "amountMinor": 21900000
+                },
+                "mdl": {
+                  "amountMajor": "43.99",
+                  "amountMinor": 4399
                 }
               }
             },
@@ -2120,6 +3179,22 @@
                 "gtq": {
                   "amountMajor": "79.99",
                   "amountMinor": 7999
+                },
+                "xaf": {
+                  "amountMajor": "6099",
+                  "amountMinor": 6099
+                },
+                "gel": {
+                  "amountMajor": "26.99",
+                  "amountMinor": 2699
+                },
+                "lbp": {
+                  "amountMajor": "939000",
+                  "amountMinor": 93900000
+                },
+                "mdl": {
+                  "amountMajor": "187.99",
+                  "amountMinor": 18799
                 }
               }
             },
@@ -2156,6 +3231,22 @@
                 "gtq": {
                   "amountMajor": "959.88",
                   "amountMinor": 95988
+                },
+                "xaf": {
+                  "amountMajor": "73188",
+                  "amountMinor": 73188
+                },
+                "gel": {
+                  "amountMajor": "323.88",
+                  "amountMinor": 32388
+                },
+                "lbp": {
+                  "amountMajor": "11268000",
+                  "amountMinor": 1126800000
+                },
+                "mdl": {
+                  "amountMajor": "2255.88",
+                  "amountMinor": 225588
                 }
               }
             },
@@ -2197,6 +3288,26 @@
                 "gtq": {
                   "amountMajor": "4.6",
                   "amountMinor": 460,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "xaf": {
+                  "amountMajor": "350",
+                  "amountMinor": 350,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "gel": {
+                  "amountMajor": "1.6",
+                  "amountMinor": 160,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "lbp": {
+                  "amountMajor": "54000",
+                  "amountMinor": 5400000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "mdl": {
+                  "amountMajor": "11",
+                  "amountMinor": 1100,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -2240,6 +3351,26 @@
                 "bzd": {
                   "amountMajor": "2.49",
                   "amountMinor": 249
+                },
+                "all": {
+                  "amountMajor": "99",
+                  "amountMinor": 9900
+                },
+                "kzt": {
+                  "amountMajor": "539",
+                  "amountMinor": 53900
+                },
+                "eur": {
+                  "amountMajor": "0.99",
+                  "amountMinor": 99
+                },
+                "pgk": {
+                  "amountMajor": "5.49",
+                  "amountMinor": 549
+                },
+                "rsd": {
+                  "amountMajor": "129",
+                  "amountMinor": 12900
                 }
               },
               "renewalSku": "pro_monthly"
@@ -2277,6 +3408,26 @@
                 "bzd": {
                   "amountMajor": "15.99",
                   "amountMinor": 1599
+                },
+                "all": {
+                  "amountMajor": "649",
+                  "amountMinor": 64900
+                },
+                "kzt": {
+                  "amountMajor": "3599",
+                  "amountMinor": 359900
+                },
+                "eur": {
+                  "amountMajor": "6.99",
+                  "amountMinor": 699
+                },
+                "pgk": {
+                  "amountMajor": "35.99",
+                  "amountMinor": 3599
+                },
+                "rsd": {
+                  "amountMajor": "839",
+                  "amountMinor": 83900
                 }
               }
             },
@@ -2313,6 +3464,26 @@
                 "bzd": {
                   "amountMajor": "31.99",
                   "amountMinor": 3199
+                },
+                "all": {
+                  "amountMajor": "1299",
+                  "amountMinor": 129900
+                },
+                "kzt": {
+                  "amountMajor": "7199",
+                  "amountMinor": 719900
+                },
+                "eur": {
+                  "amountMajor": "13.99",
+                  "amountMinor": 1399
+                },
+                "pgk": {
+                  "amountMajor": "71.99",
+                  "amountMinor": 7199
+                },
+                "rsd": {
+                  "amountMajor": "1699",
+                  "amountMinor": 169900
                 }
               }
             },
@@ -2349,6 +3520,26 @@
                 "bzd": {
                   "amountMajor": "76.99",
                   "amountMinor": 7699
+                },
+                "all": {
+                  "amountMajor": "3099",
+                  "amountMinor": 309900
+                },
+                "kzt": {
+                  "amountMajor": "16900",
+                  "amountMinor": 1690000
+                },
+                "eur": {
+                  "amountMajor": "33.99",
+                  "amountMinor": 3399
+                },
+                "pgk": {
+                  "amountMajor": "172.99",
+                  "amountMinor": 17299
+                },
+                "rsd": {
+                  "amountMajor": "3999",
+                  "amountMinor": 399900
                 }
               }
             },
@@ -2385,6 +3576,26 @@
                 "bzd": {
                   "amountMajor": "153.99",
                   "amountMinor": 15399
+                },
+                "all": {
+                  "amountMajor": "6299",
+                  "amountMinor": 629900
+                },
+                "kzt": {
+                  "amountMajor": "34900",
+                  "amountMinor": 3490000
+                },
+                "eur": {
+                  "amountMajor": "67.99",
+                  "amountMinor": 6799
+                },
+                "pgk": {
+                  "amountMajor": "346.99",
+                  "amountMinor": 34699
+                },
+                "rsd": {
+                  "amountMajor": "7999",
+                  "amountMinor": 799900
                 }
               }
             },
@@ -2421,6 +3632,26 @@
                 "bzd": {
                   "amountMajor": "7.99",
                   "amountMinor": 799
+                },
+                "all": {
+                  "amountMajor": "329",
+                  "amountMinor": 32900
+                },
+                "kzt": {
+                  "amountMajor": "1799",
+                  "amountMinor": 179900
+                },
+                "eur": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                },
+                "pgk": {
+                  "amountMajor": "17.99",
+                  "amountMinor": 1799
+                },
+                "rsd": {
+                  "amountMajor": "419",
+                  "amountMinor": 41900
                 }
               }
             },
@@ -2457,6 +3688,26 @@
                 "bzd": {
                   "amountMajor": "3.99",
                   "amountMinor": 399
+                },
+                "all": {
+                  "amountMajor": "159",
+                  "amountMinor": 15900
+                },
+                "kzt": {
+                  "amountMajor": "899",
+                  "amountMinor": 89900
+                },
+                "eur": {
+                  "amountMajor": "1.79",
+                  "amountMinor": 179
+                },
+                "pgk": {
+                  "amountMajor": "8.99",
+                  "amountMinor": 899
+                },
+                "rsd": {
+                  "amountMajor": "209",
+                  "amountMinor": 20900
                 }
               }
             },
@@ -2493,6 +3744,26 @@
                 "bzd": {
                   "amountMajor": "5.49",
                   "amountMinor": 549
+                },
+                "all": {
+                  "amountMajor": "229",
+                  "amountMinor": 22900
+                },
+                "kzt": {
+                  "amountMajor": "1299",
+                  "amountMinor": 129900
+                },
+                "eur": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
+                },
+                "pgk": {
+                  "amountMajor": "12.99",
+                  "amountMinor": 1299
+                },
+                "rsd": {
+                  "amountMajor": "289",
+                  "amountMinor": 28900
                 }
               }
             },
@@ -2529,6 +3800,26 @@
                 "bzd": {
                   "amountMajor": "23.99",
                   "amountMinor": 2399
+                },
+                "all": {
+                  "amountMajor": "979",
+                  "amountMinor": 97900
+                },
+                "kzt": {
+                  "amountMajor": "5399",
+                  "amountMinor": 539900
+                },
+                "eur": {
+                  "amountMajor": "10.99",
+                  "amountMinor": 1099
+                },
+                "pgk": {
+                  "amountMajor": "53.99",
+                  "amountMinor": 5399
+                },
+                "rsd": {
+                  "amountMajor": "1299",
+                  "amountMinor": 129900
                 }
               }
             },
@@ -2565,6 +3856,26 @@
                 "bzd": {
                   "amountMajor": "287.88",
                   "amountMinor": 28788
+                },
+                "all": {
+                  "amountMajor": "11748",
+                  "amountMinor": 1174800
+                },
+                "kzt": {
+                  "amountMajor": "64788",
+                  "amountMinor": 6478800
+                },
+                "eur": {
+                  "amountMajor": "131.88",
+                  "amountMinor": 13188
+                },
+                "pgk": {
+                  "amountMajor": "647.88",
+                  "amountMinor": 64788
+                },
+                "rsd": {
+                  "amountMajor": "15588",
+                  "amountMinor": 1558800
                 }
               }
             },
@@ -2607,6 +3918,31 @@
                   "amountMajor": "1.2",
                   "amountMinor": 120,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "all": {
+                  "amountMajor": "49",
+                  "amountMinor": 4900,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "kzt": {
+                  "amountMajor": "280",
+                  "amountMinor": 28000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "eur": {
+                  "amountMajor": "0.53",
+                  "amountMinor": 53,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "pgk": {
+                  "amountMajor": "2.8",
+                  "amountMinor": 280,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "rsd": {
+                  "amountMajor": "63",
+                  "amountMinor": 6300,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
               "requiresMinimumChargeVerification": true
@@ -2637,6 +3973,18 @@
                 "ron": {
                   "amountMajor": "6.49",
                   "amountMinor": 649
+                },
+                "xcd": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                },
+                "clp": {
+                  "amountMajor": "1299",
+                  "amountMinor": 1299
+                },
+                "mvr": {
+                  "amountMajor": "20.99",
+                  "amountMinor": 2099
                 }
               },
               "renewalSku": "pro_monthly"
@@ -2662,6 +4010,18 @@
                 "ron": {
                   "amountMajor": "42.99",
                   "amountMinor": 4299
+                },
+                "xcd": {
+                  "amountMajor": "23.99",
+                  "amountMinor": 2399
+                },
+                "clp": {
+                  "amountMajor": "8799",
+                  "amountMinor": 8799
+                },
+                "mvr": {
+                  "amountMajor": "138.99",
+                  "amountMinor": 13899
                 }
               }
             },
@@ -2686,6 +4046,18 @@
                 "ron": {
                   "amountMajor": "84.99",
                   "amountMinor": 8499
+                },
+                "xcd": {
+                  "amountMajor": "48.99",
+                  "amountMinor": 4899
+                },
+                "clp": {
+                  "amountMajor": "17900",
+                  "amountMinor": 17900
+                },
+                "mvr": {
+                  "amountMajor": "277.99",
+                  "amountMinor": 27799
                 }
               }
             },
@@ -2710,6 +4082,18 @@
                 "ron": {
                   "amountMajor": "204.99",
                   "amountMinor": 20499
+                },
+                "xcd": {
+                  "amountMajor": "115.99",
+                  "amountMinor": 11599
+                },
+                "clp": {
+                  "amountMajor": "41900",
+                  "amountMinor": 41900
+                },
+                "mvr": {
+                  "amountMajor": "666.99",
+                  "amountMinor": 66699
                 }
               }
             },
@@ -2734,6 +4118,18 @@
                 "ron": {
                   "amountMajor": "408.99",
                   "amountMinor": 40899
+                },
+                "xcd": {
+                  "amountMajor": "232.99",
+                  "amountMinor": 23299
+                },
+                "clp": {
+                  "amountMajor": "84900",
+                  "amountMinor": 84900
+                },
+                "mvr": {
+                  "amountMajor": "1333.99",
+                  "amountMinor": 133399
                 }
               }
             },
@@ -2758,6 +4154,18 @@
                 "ron": {
                   "amountMajor": "20.99",
                   "amountMinor": 2099
+                },
+                "xcd": {
+                  "amountMajor": "11.99",
+                  "amountMinor": 1199
+                },
+                "clp": {
+                  "amountMajor": "4399",
+                  "amountMinor": 4399
+                },
+                "mvr": {
+                  "amountMajor": "68.99",
+                  "amountMinor": 6899
                 }
               }
             },
@@ -2782,6 +4190,18 @@
                 "ron": {
                   "amountMajor": "10.99",
                   "amountMinor": 1099
+                },
+                "xcd": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
+                },
+                "clp": {
+                  "amountMajor": "2199",
+                  "amountMinor": 2199
+                },
+                "mvr": {
+                  "amountMajor": "34.99",
+                  "amountMinor": 3499
                 }
               }
             },
@@ -2806,6 +4226,18 @@
                 "ron": {
                   "amountMajor": "14.99",
                   "amountMinor": 1499
+                },
+                "xcd": {
+                  "amountMajor": "8.49",
+                  "amountMinor": 849
+                },
+                "clp": {
+                  "amountMajor": "3099",
+                  "amountMinor": 3099
+                },
+                "mvr": {
+                  "amountMajor": "48.99",
+                  "amountMinor": 4899
                 }
               }
             },
@@ -2830,6 +4262,18 @@
                 "ron": {
                   "amountMajor": "63.99",
                   "amountMinor": 6399
+                },
+                "xcd": {
+                  "amountMajor": "35.99",
+                  "amountMinor": 3599
+                },
+                "clp": {
+                  "amountMajor": "12900",
+                  "amountMinor": 12900
+                },
+                "mvr": {
+                  "amountMajor": "208.99",
+                  "amountMinor": 20899
                 }
               }
             },
@@ -2854,6 +4298,18 @@
                 "ron": {
                   "amountMajor": "767.88",
                   "amountMinor": 76788
+                },
+                "xcd": {
+                  "amountMajor": "431.88",
+                  "amountMinor": 43188
+                },
+                "clp": {
+                  "amountMajor": "154800",
+                  "amountMinor": 154800
+                },
+                "mvr": {
+                  "amountMajor": "2507.88",
+                  "amountMinor": 250788
                 }
               }
             },
@@ -2881,6 +4337,475 @@
                   "amountMajor": "2.9",
                   "amountMinor": 290,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "xcd": {
+                  "amountMajor": "1.7",
+                  "amountMinor": 170,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "clp": {
+                  "amountMajor": "590",
+                  "amountMinor": 590,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "mvr": {
+                  "amountMajor": "9.3",
+                  "amountMinor": 930,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                }
+              },
+              "requiresMinimumChargeVerification": true
+            }
+          }
+        },
+        "Z050": {
+          "referenceFactor": "0.5",
+          "prices": {
+            "pro_trial_to_monthly": {
+              "stripePriceId": "price_1URsKX7GRT6LLkI11WI6r22n",
+              "stripeProductId": "prod_V2yikGRbHLdZR6",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 149,
+              "priceType": "recurring",
+              "interval": "week",
+              "intervalCount": 1,
+              "taxBehavior": "unspecified",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "1.49",
+                  "amountMinor": 149
+                },
+                "crc": {
+                  "amountMajor": "679",
+                  "amountMinor": 67900
+                },
+                "eur": {
+                  "amountMajor": "1.29",
+                  "amountMinor": 129
+                },
+                "huf": {
+                  "amountMajor": "479",
+                  "amountMinor": 47900
+                },
+                "pln": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
+                },
+                "scr": {
+                  "amountMajor": "21.99",
+                  "amountMinor": 2199
+                },
+                "ttd": {
+                  "amountMajor": "9.99",
+                  "amountMinor": 999
+                }
+              },
+              "renewalSku": "pro_monthly"
+            },
+            "basic_monthly": {
+              "stripePriceId": "price_1URsKY7GRT6LLkI1AJka3B5H",
+              "stripeProductId": "prod_V2XQKO3FZiPKZI",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "9.99",
+                  "amountMinor": 999
+                },
+                "crc": {
+                  "amountMajor": "4599",
+                  "amountMinor": 459900
+                },
+                "eur": {
+                  "amountMajor": "8.99",
+                  "amountMinor": 899
+                },
+                "huf": {
+                  "amountMajor": "3199",
+                  "amountMinor": 319900
+                },
+                "pln": {
+                  "amountMajor": "38.99",
+                  "amountMinor": 3899
+                },
+                "scr": {
+                  "amountMajor": "145.99",
+                  "amountMinor": 14599
+                },
+                "ttd": {
+                  "amountMajor": "67.99",
+                  "amountMinor": 6799
+                }
+              }
+            },
+            "plus_monthly": {
+              "stripePriceId": "price_1URsKZ7GRT6LLkI1qjnFczml",
+              "stripeProductId": "prod_V2XQrWdt06ryxW",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1999,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "19.99",
+                  "amountMinor": 1999
+                },
+                "crc": {
+                  "amountMajor": "9099",
+                  "amountMinor": 909900
+                },
+                "eur": {
+                  "amountMajor": "17.99",
+                  "amountMinor": 1799
+                },
+                "huf": {
+                  "amountMajor": "6499",
+                  "amountMinor": 649900
+                },
+                "pln": {
+                  "amountMajor": "77.99",
+                  "amountMinor": 7799
+                },
+                "scr": {
+                  "amountMajor": "290.99",
+                  "amountMinor": 29099
+                },
+                "ttd": {
+                  "amountMajor": "134.99",
+                  "amountMinor": 13499
+                }
+              }
+            },
+            "basic_yearly": {
+              "stripePriceId": "price_1URsKa7GRT6LLkI15EQKyjSY",
+              "stripeProductId": "prod_V2XQKO3FZiPKZI",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 4799,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "47.99",
+                  "amountMinor": 4799
+                },
+                "crc": {
+                  "amountMajor": "21900",
+                  "amountMinor": 2190000
+                },
+                "eur": {
+                  "amountMajor": "42.99",
+                  "amountMinor": 4299
+                },
+                "huf": {
+                  "amountMajor": "15499",
+                  "amountMinor": 1549900
+                },
+                "pln": {
+                  "amountMajor": "185.99",
+                  "amountMinor": 18599
+                },
+                "scr": {
+                  "amountMajor": "697.99",
+                  "amountMinor": 69799
+                },
+                "ttd": {
+                  "amountMajor": "323.99",
+                  "amountMinor": 32399
+                }
+              }
+            },
+            "plus_yearly": {
+              "stripePriceId": "price_1URsKb7GRT6LLkI1xJkFHUj7",
+              "stripeProductId": "prod_V2XQrWdt06ryxW",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 9599,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "95.99",
+                  "amountMinor": 9599
+                },
+                "crc": {
+                  "amountMajor": "43900",
+                  "amountMinor": 4390000
+                },
+                "eur": {
+                  "amountMajor": "84.99",
+                  "amountMinor": 8499
+                },
+                "huf": {
+                  "amountMajor": "30900",
+                  "amountMinor": 3090000
+                },
+                "pln": {
+                  "amountMajor": "372.99",
+                  "amountMinor": 37299
+                },
+                "scr": {
+                  "amountMajor": "1397.99",
+                  "amountMinor": 139799
+                },
+                "ttd": {
+                  "amountMajor": "647.99",
+                  "amountMinor": 64799
+                }
+              }
+            },
+            "addon_assignment_3": {
+              "stripePriceId": "price_1URsKb7GRT6LLkI1LltUASkL",
+              "stripeProductId": "prod_V2XRyb7uDkhTVD",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 499,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "exclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "4.99",
+                  "amountMinor": 499
+                },
+                "crc": {
+                  "amountMajor": "2299",
+                  "amountMinor": 229900
+                },
+                "eur": {
+                  "amountMajor": "4.49",
+                  "amountMinor": 449
+                },
+                "huf": {
+                  "amountMajor": "1599",
+                  "amountMinor": 159900
+                },
+                "pln": {
+                  "amountMajor": "18.99",
+                  "amountMinor": 1899
+                },
+                "scr": {
+                  "amountMajor": "72.99",
+                  "amountMinor": 7299
+                },
+                "ttd": {
+                  "amountMajor": "33.99",
+                  "amountMinor": 3399
+                }
+              }
+            },
+            "addon_detection_5": {
+              "stripePriceId": "price_1URsKc7GRT6LLkI1GtqawNoF",
+              "stripeProductId": "prod_V2XRzr2BbiKqJA",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 249,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "exclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
+                },
+                "crc": {
+                  "amountMajor": "1099",
+                  "amountMinor": 109900
+                },
+                "eur": {
+                  "amountMajor": "2.19",
+                  "amountMinor": 219
+                },
+                "huf": {
+                  "amountMajor": "809",
+                  "amountMinor": 80900
+                },
+                "pln": {
+                  "amountMajor": "9.49",
+                  "amountMinor": 949
+                },
+                "scr": {
+                  "amountMajor": "35.99",
+                  "amountMinor": 3599
+                },
+                "ttd": {
+                  "amountMajor": "16.99",
+                  "amountMinor": 1699
+                }
+              }
+            },
+            "addon_humanizer_3": {
+              "stripePriceId": "price_1URsKd7GRT6LLkI19AdL2PHz",
+              "stripeProductId": "prod_V2XRbewO3qfwsD",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 349,
+              "priceType": "one_time",
+              "interval": null,
+              "intervalCount": null,
+              "taxBehavior": "exclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                },
+                "crc": {
+                  "amountMajor": "1599",
+                  "amountMinor": 159900
+                },
+                "eur": {
+                  "amountMajor": "2.99",
+                  "amountMinor": 299
+                },
+                "huf": {
+                  "amountMajor": "1099",
+                  "amountMinor": 109900
+                },
+                "pln": {
+                  "amountMajor": "13.99",
+                  "amountMinor": 1399
+                },
+                "scr": {
+                  "amountMajor": "50.99",
+                  "amountMinor": 5099
+                },
+                "ttd": {
+                  "amountMajor": "23.99",
+                  "amountMinor": 2399
+                }
+              }
+            },
+            "pro_monthly": {
+              "stripePriceId": "price_1URsKe7GRT6LLkI1GM335bxO",
+              "stripeProductId": "prod_V2XRxk7tA14xQr",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 1499,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "14.99",
+                  "amountMinor": 1499
+                },
+                "crc": {
+                  "amountMajor": "6799",
+                  "amountMinor": 679900
+                },
+                "eur": {
+                  "amountMajor": "12.99",
+                  "amountMinor": 1299
+                },
+                "huf": {
+                  "amountMajor": "4799",
+                  "amountMinor": 479900
+                },
+                "pln": {
+                  "amountMajor": "57.99",
+                  "amountMinor": 5799
+                },
+                "scr": {
+                  "amountMajor": "217.99",
+                  "amountMinor": 21799
+                },
+                "ttd": {
+                  "amountMajor": "100.99",
+                  "amountMinor": 10099
+                }
+              }
+            },
+            "pro_yearly": {
+              "stripePriceId": "price_1URsKf7GRT6LLkI12mPynyvD",
+              "stripeProductId": "prod_V2XRxk7tA14xQr",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 17988,
+              "priceType": "recurring",
+              "interval": "year",
+              "intervalCount": 1,
+              "taxBehavior": "inclusive",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "179.88",
+                  "amountMinor": 17988
+                },
+                "crc": {
+                  "amountMajor": "81588",
+                  "amountMinor": 8158800
+                },
+                "eur": {
+                  "amountMajor": "155.88",
+                  "amountMinor": 15588
+                },
+                "huf": {
+                  "amountMajor": "57588",
+                  "amountMinor": 5758800
+                },
+                "pln": {
+                  "amountMajor": "695.88",
+                  "amountMinor": 69588
+                },
+                "scr": {
+                  "amountMajor": "2615.88",
+                  "amountMinor": 261588
+                },
+                "ttd": {
+                  "amountMajor": "1211.88",
+                  "amountMinor": 121188
+                }
+              }
+            },
+            "study_pass_subscription_30d": {
+              "stripePriceId": "price_1URsKf7GRT6LLkI1xqlbMZZN",
+              "stripeProductId": "prod_VJqvMKubYOnfWS",
+              "defaultCurrency": "usd",
+              "expectedDefaultAmountMinor": 60,
+              "priceType": "recurring",
+              "interval": "month",
+              "intervalCount": 1,
+              "taxBehavior": "unspecified",
+              "currencyAmounts": {
+                "usd": {
+                  "amountMajor": "0.6",
+                  "amountMinor": 60,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "crc": {
+                  "amountMajor": "280",
+                  "amountMinor": 28000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "eur": {
+                  "amountMajor": "0.53",
+                  "amountMinor": 53,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "huf": {
+                  "amountMajor": "200",
+                  "amountMinor": 20000,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "pln": {
+                  "amountMajor": "2.4",
+                  "amountMinor": 240,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "scr": {
+                  "amountMajor": "8.8",
+                  "amountMinor": 880,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "ttd": {
+                  "amountMajor": "4.1",
+                  "amountMinor": 410,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
               "requiresMinimumChargeVerification": true
@@ -2891,10 +4816,10 @@
           "referenceFactor": "0.55",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrwO7GRT6LLkI1CQThdOWu",
+              "stripePriceId": "price_1URsKg7GRT6LLkI1vPBL3VUg",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 299,
+              "expectedDefaultAmountMinor": 149,
               "priceType": "recurring",
               "interval": "week",
               "intervalCount": 1,
@@ -2907,15 +4832,27 @@
                 "eur": {
                   "amountMajor": "1.49",
                   "amountMinor": 149
+                },
+                "bbd": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                },
+                "bnd": {
+                  "amountMajor": "1.99",
+                  "amountMinor": 199
+                },
+                "usd": {
+                  "amountMajor": "1.49",
+                  "amountMinor": 149
                 }
               },
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrwP7GRT6LLkI1Ts5CCxFc",
+              "stripePriceId": "price_1URsKh7GRT6LLkI1juSuTrnY",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 1999,
+              "expectedDefaultAmountMinor": 1099,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -2928,14 +4865,26 @@
                 "eur": {
                   "amountMajor": "9.99",
                   "amountMinor": 999
+                },
+                "bbd": {
+                  "amountMajor": "21.99",
+                  "amountMinor": 2199
+                },
+                "bnd": {
+                  "amountMajor": "13.99",
+                  "amountMinor": 1399
+                },
+                "usd": {
+                  "amountMajor": "10.99",
+                  "amountMinor": 1099
                 }
               }
             },
             "plus_monthly": {
-              "stripePriceId": "price_1URrwQ7GRT6LLkI1wJ0XNXp9",
+              "stripePriceId": "price_1URsKi7GRT6LLkI1QqkwZLQb",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 3999,
+              "expectedDefaultAmountMinor": 2199,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -2948,14 +4897,26 @@
                 "eur": {
                   "amountMajor": "19.99",
                   "amountMinor": 1999
+                },
+                "bbd": {
+                  "amountMajor": "43.99",
+                  "amountMinor": 4399
+                },
+                "bnd": {
+                  "amountMajor": "27.99",
+                  "amountMinor": 2799
+                },
+                "usd": {
+                  "amountMajor": "21.99",
+                  "amountMinor": 2199
                 }
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URrwR7GRT6LLkI1Bj2VRlGK",
+              "stripePriceId": "price_1URsKj7GRT6LLkI1pAKVfYnq",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 9588,
+              "expectedDefaultAmountMinor": 5299,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -2968,14 +4929,26 @@
                 "eur": {
                   "amountMajor": "46.99",
                   "amountMinor": 4699
+                },
+                "bbd": {
+                  "amountMajor": "104.99",
+                  "amountMinor": 10499
+                },
+                "bnd": {
+                  "amountMajor": "67.99",
+                  "amountMinor": 6799
+                },
+                "usd": {
+                  "amountMajor": "52.99",
+                  "amountMinor": 5299
                 }
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URrwR7GRT6LLkI16dKq7ap1",
+              "stripePriceId": "price_1URsKj7GRT6LLkI1397t566S",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 19188,
+              "expectedDefaultAmountMinor": 10599,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -2988,14 +4961,26 @@
                 "eur": {
                   "amountMajor": "93.99",
                   "amountMinor": 9399
+                },
+                "bbd": {
+                  "amountMajor": "210.99",
+                  "amountMinor": 21099
+                },
+                "bnd": {
+                  "amountMajor": "134.99",
+                  "amountMinor": 13499
+                },
+                "usd": {
+                  "amountMajor": "105.99",
+                  "amountMinor": 10599
                 }
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrwS7GRT6LLkI1cETPTsiG",
+              "stripePriceId": "price_1URsKk7GRT6LLkI1n4cjnZ8q",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 999,
+              "expectedDefaultAmountMinor": 549,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3008,14 +4993,26 @@
                 "eur": {
                   "amountMajor": "4.99",
                   "amountMinor": 499
+                },
+                "bbd": {
+                  "amountMajor": "10.99",
+                  "amountMinor": 1099
+                },
+                "bnd": {
+                  "amountMajor": "6.99",
+                  "amountMinor": 699
+                },
+                "usd": {
+                  "amountMajor": "5.49",
+                  "amountMinor": 549
                 }
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrwT7GRT6LLkI1fR2Cdg7Z",
+              "stripePriceId": "price_1URsKl7GRT6LLkI1WnPsxDCA",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 499,
+              "expectedDefaultAmountMinor": 249,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3028,14 +5025,26 @@
                 "eur": {
                   "amountMajor": "2.49",
                   "amountMinor": 249
+                },
+                "bbd": {
+                  "amountMajor": "5.49",
+                  "amountMinor": 549
+                },
+                "bnd": {
+                  "amountMajor": "3.49",
+                  "amountMinor": 349
+                },
+                "usd": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
                 }
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrwU7GRT6LLkI1whAh5d4Z",
+              "stripePriceId": "price_1URsKm7GRT6LLkI1csLLRoV0",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 699,
+              "expectedDefaultAmountMinor": 399,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3048,14 +5057,26 @@
                 "eur": {
                   "amountMajor": "3.49",
                   "amountMinor": 349
+                },
+                "bbd": {
+                  "amountMajor": "7.49",
+                  "amountMinor": 749
+                },
+                "bnd": {
+                  "amountMajor": "4.99",
+                  "amountMinor": 499
+                },
+                "usd": {
+                  "amountMajor": "3.99",
+                  "amountMinor": 399
                 }
               }
             },
             "pro_monthly": {
-              "stripePriceId": "price_1URrwV7GRT6LLkI1kPCSY8Is",
+              "stripePriceId": "price_1URsKn7GRT6LLkI14o3ccC2S",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 2999,
+              "expectedDefaultAmountMinor": 1699,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3068,14 +5089,26 @@
                 "eur": {
                   "amountMajor": "14.99",
                   "amountMinor": 1499
+                },
+                "bbd": {
+                  "amountMajor": "32.99",
+                  "amountMinor": 3299
+                },
+                "bnd": {
+                  "amountMajor": "20.99",
+                  "amountMinor": 2099
+                },
+                "usd": {
+                  "amountMajor": "16.99",
+                  "amountMinor": 1699
                 }
               }
             },
             "pro_yearly": {
-              "stripePriceId": "price_1URrwV7GRT6LLkI1KRu0kOxO",
+              "stripePriceId": "price_1URsKn7GRT6LLkI15XzmpbYm",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 35988,
+              "expectedDefaultAmountMinor": 20388,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -3088,14 +5121,26 @@
                 "eur": {
                   "amountMajor": "179.88",
                   "amountMinor": 17988
+                },
+                "bbd": {
+                  "amountMajor": "395.88",
+                  "amountMinor": 39588
+                },
+                "bnd": {
+                  "amountMajor": "251.88",
+                  "amountMinor": 25188
+                },
+                "usd": {
+                  "amountMajor": "203.88",
+                  "amountMinor": 20388
                 }
               }
             },
             "study_pass_subscription_30d": {
-              "stripePriceId": "price_1URrwW7GRT6LLkI1AgEGzELI",
+              "stripePriceId": "price_1URsKo7GRT6LLkI13JjLuc2g",
               "stripeProductId": "prod_VJqvMKubYOnfWS",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 99,
+              "expectedDefaultAmountMinor": 60,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3109,6 +5154,21 @@
                 "eur": {
                   "amountMajor": "0.53",
                   "amountMinor": 53,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "bbd": {
+                  "amountMajor": "1.3",
+                  "amountMinor": 130,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "bnd": {
+                  "amountMajor": "0.77",
+                  "amountMinor": 77,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "usd": {
+                  "amountMajor": "0.6",
+                  "amountMinor": 60,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -3394,10 +5454,10 @@
           "referenceFactor": "0.65",
           "prices": {
             "pro_trial_to_monthly": {
-              "stripePriceId": "price_1URrwg7GRT6LLkI1ELzEzSB9",
+              "stripePriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
               "stripeProductId": "prod_V2yikGRbHLdZR6",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 299,
+              "expectedDefaultAmountMinor": 194,
               "priceType": "recurring",
               "interval": "week",
               "intervalCount": 1,
@@ -3414,15 +5474,23 @@
                 "jpy": {
                   "amountMajor": "298",
                   "amountMinor": 298
+                },
+                "eur": {
+                  "amountMajor": "1.69",
+                  "amountMinor": 169
+                },
+                "usd": {
+                  "amountMajor": "1.94",
+                  "amountMinor": 194
                 }
               },
               "renewalSku": "pro_monthly"
             },
             "basic_monthly": {
-              "stripePriceId": "price_1URrwh7GRT6LLkI14W3gVPZQ",
+              "stripePriceId": "price_1URsKu7GRT6LLkI1oaNsbVRW",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 1999,
+              "expectedDefaultAmountMinor": 1299,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3439,14 +5507,22 @@
                 "jpy": {
                   "amountMajor": "1980",
                   "amountMinor": 1980
+                },
+                "eur": {
+                  "amountMajor": "11.99",
+                  "amountMinor": 1199
+                },
+                "usd": {
+                  "amountMajor": "12.99",
+                  "amountMinor": 1299
                 }
               }
             },
             "plus_monthly": {
-              "stripePriceId": "price_1URrwh7GRT6LLkI12MIKM1q8",
+              "stripePriceId": "price_1URsKv7GRT6LLkI1mkLMl242",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 3999,
+              "expectedDefaultAmountMinor": 2599,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3463,14 +5539,22 @@
                 "jpy": {
                   "amountMajor": "3980",
                   "amountMinor": 3980
+                },
+                "eur": {
+                  "amountMajor": "22.99",
+                  "amountMinor": 2299
+                },
+                "usd": {
+                  "amountMajor": "25.99",
+                  "amountMinor": 2599
                 }
               }
             },
             "basic_yearly": {
-              "stripePriceId": "price_1URrwi7GRT6LLkI1GWjaUcy6",
+              "stripePriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
               "stripeProductId": "prod_V2XQKO3FZiPKZI",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 9588,
+              "expectedDefaultAmountMinor": 6232,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -3487,14 +5571,22 @@
                 "jpy": {
                   "amountMajor": "9480",
                   "amountMinor": 9480
+                },
+                "eur": {
+                  "amountMajor": "56.99",
+                  "amountMinor": 5699
+                },
+                "usd": {
+                  "amountMajor": "62.32",
+                  "amountMinor": 6232
                 }
               }
             },
             "plus_yearly": {
-              "stripePriceId": "price_1URrwj7GRT6LLkI1QQ04iryg",
+              "stripePriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
               "stripeProductId": "prod_V2XQrWdt06ryxW",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 19188,
+              "expectedDefaultAmountMinor": 12472,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -3511,14 +5603,22 @@
                 "jpy": {
                   "amountMajor": "18980",
                   "amountMinor": 18980
+                },
+                "eur": {
+                  "amountMajor": "110.99",
+                  "amountMinor": 11099
+                },
+                "usd": {
+                  "amountMajor": "124.72",
+                  "amountMinor": 12472
                 }
               }
             },
             "addon_assignment_3": {
-              "stripePriceId": "price_1URrwk7GRT6LLkI1G70D918s",
+              "stripePriceId": "price_1URsKx7GRT6LLkI11BSEqe4n",
               "stripeProductId": "prod_V2XRyb7uDkhTVD",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 999,
+              "expectedDefaultAmountMinor": 649,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3535,14 +5635,22 @@
                 "jpy": {
                   "amountMajor": "980",
                   "amountMinor": 980
+                },
+                "eur": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
+                },
+                "usd": {
+                  "amountMajor": "6.49",
+                  "amountMinor": 649
                 }
               }
             },
             "addon_detection_5": {
-              "stripePriceId": "price_1URrwk7GRT6LLkI14Rcou1pn",
+              "stripePriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
               "stripeProductId": "prod_V2XRzr2BbiKqJA",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 499,
+              "expectedDefaultAmountMinor": 324,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3559,14 +5667,22 @@
                 "jpy": {
                   "amountMajor": "498",
                   "amountMinor": 498
+                },
+                "eur": {
+                  "amountMajor": "2.99",
+                  "amountMinor": 299
+                },
+                "usd": {
+                  "amountMajor": "3.24",
+                  "amountMinor": 324
                 }
               }
             },
             "addon_humanizer_3": {
-              "stripePriceId": "price_1URrwl7GRT6LLkI1SY0XYbe7",
+              "stripePriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
               "stripeProductId": "prod_V2XRbewO3qfwsD",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 699,
+              "expectedDefaultAmountMinor": 454,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -3583,14 +5699,22 @@
                 "jpy": {
                   "amountMajor": "698",
                   "amountMinor": 698
+                },
+                "eur": {
+                  "amountMajor": "3.99",
+                  "amountMinor": 399
+                },
+                "usd": {
+                  "amountMajor": "4.54",
+                  "amountMinor": 454
                 }
               }
             },
             "pro_monthly": {
-              "stripePriceId": "price_1URrwm7GRT6LLkI1YlO1Os7P",
+              "stripePriceId": "price_1URsKz7GRT6LLkI1sEILJd6a",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 2999,
+              "expectedDefaultAmountMinor": 1949,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3607,14 +5731,22 @@
                 "jpy": {
                   "amountMajor": "2980",
                   "amountMinor": 2980
+                },
+                "eur": {
+                  "amountMajor": "16.99",
+                  "amountMinor": 1699
+                },
+                "usd": {
+                  "amountMajor": "19.49",
+                  "amountMinor": 1949
                 }
               }
             },
             "pro_yearly": {
-              "stripePriceId": "price_1URrwn7GRT6LLkI1UmGOnUg2",
+              "stripePriceId": "price_1URsL07GRT6LLkI1qU6NMcSm",
               "stripeProductId": "prod_V2XRxk7tA14xQr",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 35988,
+              "expectedDefaultAmountMinor": 23388,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -3631,14 +5763,22 @@
                 "jpy": {
                   "amountMajor": "35760",
                   "amountMinor": 35760
+                },
+                "eur": {
+                  "amountMajor": "203.88",
+                  "amountMinor": 20388
+                },
+                "usd": {
+                  "amountMajor": "233.88",
+                  "amountMinor": 23388
                 }
               }
             },
             "study_pass_subscription_30d": {
-              "stripePriceId": "price_1URrwo7GRT6LLkI1Daz1VW0L",
+              "stripePriceId": "price_1URsL17GRT6LLkI1Km8DfzTG",
               "stripeProductId": "prod_VJqvMKubYOnfWS",
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 99,
+              "expectedDefaultAmountMinor": 65,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -3657,6 +5797,16 @@
                 "jpy": {
                   "amountMajor": "99",
                   "amountMinor": 99,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "eur": {
+                  "amountMajor": "0.57",
+                  "amountMinor": 57,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "usd": {
+                  "amountMajor": "0.65",
+                  "amountMinor": 65,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -4960,6 +7110,10 @@
                 "aud": {
                   "amountMajor": "3.99",
                   "amountMinor": 399
+                },
+                "eur": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
                 }
               },
               "renewalSku": "pro_monthly"
@@ -4977,6 +7131,10 @@
                 "aud": {
                   "amountMajor": "26.99",
                   "amountMinor": 2699
+                },
+                "eur": {
+                  "amountMajor": "16.99",
+                  "amountMinor": 1699
                 }
               }
             },
@@ -4993,6 +7151,10 @@
                 "aud": {
                   "amountMajor": "54.99",
                   "amountMinor": 5499
+                },
+                "eur": {
+                  "amountMajor": "33.99",
+                  "amountMinor": 3399
                 }
               }
             },
@@ -5009,6 +7171,10 @@
                 "aud": {
                   "amountMajor": "130.99",
                   "amountMinor": 13099
+                },
+                "eur": {
+                  "amountMajor": "80.99",
+                  "amountMinor": 8099
                 }
               }
             },
@@ -5025,6 +7191,10 @@
                 "aud": {
                   "amountMajor": "261.99",
                   "amountMinor": 26199
+                },
+                "eur": {
+                  "amountMajor": "161.99",
+                  "amountMinor": 16199
                 }
               }
             },
@@ -5041,6 +7211,10 @@
                 "aud": {
                   "amountMajor": "13.99",
                   "amountMinor": 1399
+                },
+                "eur": {
+                  "amountMajor": "8.49",
+                  "amountMinor": 849
                 }
               }
             },
@@ -5057,6 +7231,10 @@
                 "aud": {
                   "amountMajor": "6.99",
                   "amountMinor": 699
+                },
+                "eur": {
+                  "amountMajor": "3.99",
+                  "amountMinor": 399
                 }
               }
             },
@@ -5073,6 +7251,10 @@
                 "aud": {
                   "amountMajor": "9.49",
                   "amountMinor": 949
+                },
+                "eur": {
+                  "amountMajor": "5.99",
+                  "amountMinor": 599
                 }
               }
             },
@@ -5089,6 +7271,10 @@
                 "aud": {
                   "amountMajor": "40.99",
                   "amountMinor": 4099
+                },
+                "eur": {
+                  "amountMajor": "24.99",
+                  "amountMinor": 2499
                 }
               }
             },
@@ -5105,6 +7291,10 @@
                 "aud": {
                   "amountMajor": "491.88",
                   "amountMinor": 49188
+                },
+                "eur": {
+                  "amountMajor": "299.88",
+                  "amountMinor": 29988
                 }
               }
             },
@@ -5121,6 +7311,11 @@
                 "aud": {
                   "amountMajor": "1.4",
                   "amountMinor": 140,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "eur": {
+                  "amountMajor": "0.83",
+                  "amountMinor": 83,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -5148,6 +7343,14 @@
                 "eur": {
                   "amountMajor": "2.49",
                   "amountMinor": 249
+                },
+                "bmd": {
+                  "amountMajor": "2.99",
+                  "amountMinor": 299
+                },
+                "nok": {
+                  "amountMajor": "27.99",
+                  "amountMinor": 2799
                 }
               },
               "renewalSku": "pro_monthly"
@@ -5169,6 +7372,14 @@
                 "eur": {
                   "amountMajor": "17.99",
                   "amountMinor": 1799
+                },
+                "bmd": {
+                  "amountMajor": "19.99",
+                  "amountMinor": 1999
+                },
+                "nok": {
+                  "amountMajor": "188.99",
+                  "amountMinor": 18899
                 }
               }
             },
@@ -5189,6 +7400,14 @@
                 "eur": {
                   "amountMajor": "35.99",
                   "amountMinor": 3599
+                },
+                "bmd": {
+                  "amountMajor": "39.99",
+                  "amountMinor": 3999
+                },
+                "nok": {
+                  "amountMajor": "376.99",
+                  "amountMinor": 37699
                 }
               }
             },
@@ -5209,6 +7428,14 @@
                 "eur": {
                   "amountMajor": "84.99",
                   "amountMinor": 8499
+                },
+                "bmd": {
+                  "amountMajor": "95.99",
+                  "amountMinor": 9599
+                },
+                "nok": {
+                  "amountMajor": "904.99",
+                  "amountMinor": 90499
                 }
               }
             },
@@ -5229,6 +7456,14 @@
                 "eur": {
                   "amountMajor": "170.99",
                   "amountMinor": 17099
+                },
+                "bmd": {
+                  "amountMajor": "191.99",
+                  "amountMinor": 19199
+                },
+                "nok": {
+                  "amountMajor": "1810.99",
+                  "amountMinor": 181099
                 }
               }
             },
@@ -5249,6 +7484,14 @@
                 "eur": {
                   "amountMajor": "8.99",
                   "amountMinor": 899
+                },
+                "bmd": {
+                  "amountMajor": "9.99",
+                  "amountMinor": 999
+                },
+                "nok": {
+                  "amountMajor": "93.99",
+                  "amountMinor": 9399
                 }
               }
             },
@@ -5269,6 +7512,14 @@
                 "eur": {
                   "amountMajor": "4.49",
                   "amountMinor": 449
+                },
+                "bmd": {
+                  "amountMajor": "4.99",
+                  "amountMinor": 499
+                },
+                "nok": {
+                  "amountMajor": "46.99",
+                  "amountMinor": 4699
                 }
               }
             },
@@ -5289,6 +7540,14 @@
                 "eur": {
                   "amountMajor": "5.99",
                   "amountMinor": 599
+                },
+                "bmd": {
+                  "amountMajor": "6.99",
+                  "amountMinor": 699
+                },
+                "nok": {
+                  "amountMajor": "65.99",
+                  "amountMinor": 6599
                 }
               }
             },
@@ -5309,6 +7568,14 @@
                 "eur": {
                   "amountMajor": "26.99",
                   "amountMinor": 2699
+                },
+                "bmd": {
+                  "amountMajor": "29.99",
+                  "amountMinor": 2999
+                },
+                "nok": {
+                  "amountMajor": "282.99",
+                  "amountMinor": 28299
                 }
               }
             },
@@ -5329,6 +7596,14 @@
                 "eur": {
                   "amountMajor": "323.88",
                   "amountMinor": 32388
+                },
+                "bmd": {
+                  "amountMajor": "359.88",
+                  "amountMinor": 35988
+                },
+                "nok": {
+                  "amountMajor": "3395.88",
+                  "amountMinor": 339588
                 }
               }
             },
@@ -5351,6 +7626,16 @@
                   "amountMajor": "0.87",
                   "amountMinor": 87,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "bmd": {
+                  "amountMajor": "0.99",
+                  "amountMinor": 99,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "nok": {
+                  "amountMajor": "9.4",
+                  "amountMinor": 940,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
               "requiresMinimumChargeVerification": true
@@ -5361,28 +7646,30 @@
     }
   },
   "legacyPriceAliases": {},
-  "legacyAliasStatus": "仅沙盒Price绑定已完成；完整legacy alias、历史恢复和线上Pro资格仍需单独盘点，不能据本文件开启销售或执行迁移。",
+  "legacyAliasStatus": "仅当前沙盒绑定及保留Price记录完成；生产legacy alias、合同归属及线上已购Pro资格仍待独立盘点，不能据此启用销售或迁移。",
   "sourceNotes": {
-    "original": "用户原始112地区表；本次仅第1组10地区与第2组53地区。完整固定销售金额见regional-price-matrix.md；原Pro列只作历史核对，不作销售或续费目标。",
-    "groups": "原始分组保留：巴西仍属于第2组；两组全部在本次需求范围内，分组不决定是否采用新价。",
+    "original": "用户原始112地区表及泰国／奥地利补充，共114地区：第一组10、第二组53、第三组51全部纳入。固定销售金额见regional-price-matrix.md；原Pro列只作历史核对。",
+    "groups": "保留原始分组，第一、第二、第三组全部使用新金额；巴西仍为第2组，分组不决定是否使用新价。",
     "TH": "倍率0.3，使用此前价格补充表固定金额；AT倍率0.8，复用德国EUR整套价格。",
-    "pro": "第一、第二组全部使用新Pro月/新Pro年；仅本次需求确认时线上已购买Pro的合同当前已付周期保留旧金额，下个付费周期切新价。沙盒、仅有旧Price、Basic/Plus/Trial/Pass均不能获得该资格。",
-    "USD": "US/Z100、EC/Z035、ZW/Z020使用各自表内USD新金额作为对应Price默认值；其他区无USD销售路由时，usdDefaultAmounts仅为技术默认参考，不能作为销售回退。",
+    "pro": "第一、第二、第三组全部使用新Pro月/新Pro年；仅本次需求确认时线上已购买Pro的合同当前已付周期保留旧金额，下个付费周期切新价。沙盒、仅有旧Price、Basic/Plus/Trial/Pass均不能获得该资格。",
+    "USD": "实际USD路由为Z020／Z025／Z035／Z050／Z055／Z065／Z100，分别使用对应地区固定新金额作为Price默认值；其余区无USD销售路由时，usdDefaultAmounts仅作技术默认，不作销售回退。已批准替代见currency-replacements.md。",
     "GH_TN": "目标HK沙盒Country Spec不支持GHS/TND；用户于2026-10-18当前会话明确确认两地采用此前补充表Z025/USD新金额：Trial0.79，Basic4.99/23.99，Plus9.99/47.99，Pro7.49/89.88，额外包2.49/1.29/1.79，Pass0.60/月。原GHS/TND金额仅留原始表作历史参考，不作为销售回退。",
-    "studyPass": "63地区全部已有固定建议价；现为61个区币种组合、52币种。原10组合保持，GHTN从原GHS/TND建议合并为经用户确认的Z025/USD0.60。全部金额仍须首付、优惠后最低扣款及次月续费实测。",
-    "creditPacks": "旧独立额度SKU与会员extra packs不同；新表未提供对应旧包金额，不将addon价格套用旧包，不以此新增保旧价例外。若仍销售，先核对对应新金额和映射，缺失项列待补。"
+    "studyPass": "全部114地区固定月价齐全；原63地区金额保持，第三批按相同规则补齐；所有金额仍须首付、优惠后非零最低扣款与自然月续费实测。",
+    "creditPacks": "旧独立额度SKU与会员extra packs不同；新表未提供对应旧包金额，不将addon价格套用旧包，不以此新增保旧价例外。若仍销售，先核对对应新金额和映射，缺失项列待补。",
+    "thirdGroup": "第三组51地区取用户原始《地区SKU价格与可行性.xlsx》分组价格第3组；Pro取新Pro列，Study Pass沿用既有倍率/固定参考/低额上调规则。伊拉克/约旦/委内瑞拉/科威特/阿曼原币种不受目标HK沙盒支持，当前会话用户明确批准改用所列USD新价。",
+    "stripeUnits": "新增CLP/XAF/XOF为零小数charge币种；UGX主单位整数但Stripe兼容API仍乘100且末两位为00；HUF charge仍按两位最小单位处理。"
   },
   "configurationCounts": {
-    "countries": 63,
-    "zones": 16,
-    "presentmentCurrencies": 52,
-    "zoneCurrencyPairs": 61,
-    "newStripePrices": 176,
-    "fixedPlanTrialAddonAmounts": 610,
-    "proposedStudyPassAmounts": 61,
+    "countries": 114,
+    "zones": 17,
+    "presentmentCurrencies": 86,
+    "zoneCurrencyPairs": 103,
+    "newStripePrices": 187,
+    "fixedPlanTrialAddonAmounts": 1030,
+    "proposedStudyPassAmounts": 103,
     "pendingStudyPassAmounts": 0,
-    "targetAmountsIncludingStudyPass": 671,
-    "usdDefaultAmountsAcrossPrices": 176
+    "targetAmountsIncludingStudyPass": 1133,
+    "usdDefaultAmountsAcrossPrices": 187
   },
   "stripeAccountId": "acct_1SrJ7Q7GRT6LLkI1",
   "stripeLivemode": false,
@@ -5390,7 +7677,7 @@
   "studyPassPricing": {
     "baseUsd": "0.99",
     "referenceUsdFloor": "0.60",
-    "policy": "所有63地区已按USD0.99×地区倍率×固定折算参考补齐；低额按USD0.60等值缓冲、HKD4固定参考折算和已公布同币种结算最低金额中的最大参考值上调，再按记录步长向上取整。原10组合建议金额不变。最低金额依赖实际结算币种及支付方式，上述参考不是已验证的目标账户门槛；启用前实测首付、优惠后非零金额及次月扣款，不足时配置阶段上调并重新确认报价，运行时不临时加价。 加纳和突尼斯按2026-10-18当前会话用户明确确认改用Z025/USD固定新金额，Pass均USD0.60；不再销售本次原GHS/TND候选金额。",
+    "policy": "所有114地区已按USD0.99×地区倍率×固定折算参考补齐；低额按USD0.60等值缓冲、HKD4固定参考折算和已公布同币种结算最低金额中的最大参考值上调，再按记录步长向上取整。原10组合建议金额不变。最低金额依赖实际结算币种及支付方式，上述参考不是已验证的目标账户门槛；启用前实测首付、优惠后非零金额及次月扣款，不足时配置阶段上调并重新确认报价，运行时不临时加价。 加纳和突尼斯按2026-10-18当前会话用户明确确认改用Z025/USD固定新金额，Pass均USD0.60；不再销售本次原GHS/TND候选金额。 第三批51地区按相同规则补齐；原63地区金额保持。第三批五地USD替代已经当前会话用户明确批准。",
     "rates": {
       "hkd": {
         "anchorCountry": "HK",
@@ -5752,6 +8039,244 @@
         "anchorFactor": "0.35",
         "rateLocalPerUsd": "7.57378689344672336168084042021010505252626313156578289144572",
         "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "xcd": {
+        "anchorCountry": "LC",
+        "anchorBasicMonthly": "23.99",
+        "anchorFactor": "0.45",
+        "rateLocalPerUsd": "2.66688900005558334722917014062586848980045578344727919515313",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "lkr": {
+        "anchorCountry": "LK",
+        "anchorBasicMonthly": "1699",
+        "anchorFactor": "0.25",
+        "rateLocalPerUsd": "339.969984992496248124062031015507753876938469234617308654327",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "tzs": {
+        "anchorCountry": "TZ",
+        "anchorBasicMonthly": "10900",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "2726.36318159079539769884942471235617808904452226113056528264",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "ugx": {
+        "anchorCountry": "UG",
+        "anchorBasicMonthly": "15900",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "3976.98849424712356178089044522261130565282641320660330165083",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "zmw": {
+        "anchorCountry": "ZM",
+        "anchorBasicMonthly": "79",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "19.7598799399699849924962481240620310155077538769384692346173",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "afn": {
+        "anchorCountry": "AF",
+        "anchorBasicMonthly": "259",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "64.7823911955977988994497248624312156078039019509754877438719",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "all": {
+        "anchorCountry": "AL",
+        "anchorBasicMonthly": "649",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "81.1655827913956978489244622311155577788894447223611805902951",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "bbd": {
+        "anchorCountry": "BB",
+        "anchorBasicMonthly": "21.99",
+        "anchorFactor": "0.55",
+        "rateLocalPerUsd": "2.00009095456819318750284233025603710946382282050115967074446",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "bmd": {
+        "anchorCountry": "BM",
+        "anchorBasicMonthly": "19.99",
+        "anchorFactor": "1",
+        "rateLocalPerUsd": "1",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "bnd": {
+        "anchorCountry": "BN",
+        "anchorBasicMonthly": "13.99",
+        "anchorFactor": "0.55",
+        "rateLocalPerUsd": "1.27245440902269316476420028195916139888125881122379371503934",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "khr": {
+        "anchorCountry": "KH",
+        "anchorBasicMonthly": "19900",
+        "anchorFactor": "0.25",
+        "rateLocalPerUsd": "3981.9909954977488744372186093046523261630815407703851925963",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "xaf": {
+        "anchorCountry": "CM",
+        "anchorBasicMonthly": "2299",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "575.037518759379689844922461230615307653826913456728364182091",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "clp": {
+        "anchorCountry": "CL",
+        "anchorBasicMonthly": "8799",
+        "anchorFactor": "0.45",
+        "rateLocalPerUsd": "978.155744538936134734033683508420877105219276304819076204769",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "crc": {
+        "anchorCountry": "CR",
+        "anchorBasicMonthly": "4599",
+        "anchorFactor": "0.5",
+        "rateLocalPerUsd": "460.130065032516258129064532266133066533266633316658329164582",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "gel": {
+        "anchorCountry": "GE",
+        "anchorBasicMonthly": "17.99",
+        "anchorFactor": "0.35",
+        "rateLocalPerUsd": "2.57128564282141070535267633816908454227113556778389194597299",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "hnl": {
+        "anchorCountry": "HN",
+        "anchorBasicMonthly": "159",
+        "anchorFactor": "0.3",
+        "rateLocalPerUsd": "26.5132566283141570785392696348174087043521760880440220110055",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "huf": {
+        "anchorCountry": "HU",
+        "anchorBasicMonthly": "3199",
+        "anchorFactor": "0.5",
+        "rateLocalPerUsd": "320.060030015007503751875937968984492246123061530765382691346",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "xof": {
+        "anchorCountry": "CI",
+        "anchorBasicMonthly": "2899",
+        "anchorFactor": "0.25",
+        "rateLocalPerUsd": "580.090045022511255627813906953476738369184592296148074037019",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "kzt": {
+        "anchorCountry": "KZ",
+        "anchorBasicMonthly": "3599",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "450.100050025012506253126563281640820410205102551275637818909",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "lak": {
+        "anchorCountry": "LA",
+        "anchorBasicMonthly": "88900",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "22236.1180590295147573786893446723361680840420210105052526263",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "lbp": {
+        "anchorCountry": "LB",
+        "anchorBasicMonthly": "629000",
+        "anchorFactor": "0.35",
+        "rateLocalPerUsd": "89902.0939040949045951547202172514828842992925033945544200672",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "lrd": {
+        "anchorCountry": "LR",
+        "anchorBasicMonthly": "679",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "169.834917458729364682341170585292646323161580790395197598799",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "mvr": {
+        "anchorCountry": "MV",
+        "anchorBasicMonthly": "138.99",
+        "anchorFactor": "0.45",
+        "rateLocalPerUsd": "15.4510588627647156911789227947306986826746706686676671669168",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "mdl": {
+        "anchorCountry": "MD",
+        "anchorBasicMonthly": "124.99",
+        "anchorFactor": "0.35",
+        "rateLocalPerUsd": "17.8646466090187951118416351032659186736225255484885299792754",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "mnt": {
+        "anchorCountry": "MN",
+        "anchorBasicMonthly": "21900",
+        "anchorFactor": "0.3",
+        "rateLocalPerUsd": "3651.8259129564782391195597798899449724862431215607803901951",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "mmk": {
+        "anchorCountry": "MM",
+        "anchorBasicMonthly": "8399",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "2100.80040020010005002501250625312656328164082041020510255128",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "npr": {
+        "anchorCountry": "NP",
+        "anchorBasicMonthly": "609",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "152.326163081540770385192596298149074537268634317158579289645",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "nok": {
+        "anchorCountry": "NO",
+        "anchorBasicMonthly": "188.99",
+        "anchorFactor": "1",
+        "rateLocalPerUsd": "9.45422711355677838919459729864932466233116558279139569784892",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "pgk": {
+        "anchorCountry": "PG",
+        "anchorBasicMonthly": "35.99",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "4.50100050025012506253126563281640820410205102551275637818909",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "pln": {
+        "anchorCountry": "PL",
+        "anchorBasicMonthly": "38.99",
+        "anchorFactor": "0.5",
+        "rateLocalPerUsd": "3.90095047523761880940470235117558779389694847423711855927964",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "rsd": {
+        "anchorCountry": "RS",
+        "anchorBasicMonthly": "839",
+        "anchorFactor": "0.4",
+        "rateLocalPerUsd": "104.927463731865932966483241620810405202601300650325162581291",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "scr": {
+        "anchorCountry": "SC",
+        "anchorBasicMonthly": "145.99",
+        "anchorFactor": "0.5",
+        "rateLocalPerUsd": "14.6063031515757878939469734867433716858429214607303651825913",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "ttd": {
+        "anchorCountry": "TT",
+        "anchorBasicMonthly": "67.99",
+        "anchorFactor": "0.5",
+        "rateLocalPerUsd": "6.80240120060030015007503751875937968984492246123061530765383",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
+      },
+      "uzs": {
+        "anchorCountry": "UZ",
+        "anchorBasicMonthly": "47900",
+        "anchorFactor": "0.2",
+        "rateLocalPerUsd": "11980.9904952476238119059529764882441220610305152576288144072",
+        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
       }
     },
     "calculations": [
@@ -5916,6 +8441,166 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
+        "zone": "Z020",
+        "currency": "tzs",
+        "factor": "0.2",
+        "formulaAmount": "539.819909954977488744372186093046523261630815407703851925963",
+        "referenceFloorAmount": "1635.81790895447723861930965482741370685342671335667833916958",
+        "roundUpStep": "100",
+        "proposedAmount": "1700",
+        "amountMinor": 170000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1351.93798449612403100775193803329165314584460068505498467816",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "1635.81790895447723861930965482741370685342671335667833916958",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "ugx",
+        "factor": "0.2",
+        "formulaAmount": "787.443721860930465232616308154077038519259629814907453726864",
+        "referenceFloorAmount": "2386.1930965482741370685342671335667833916958479239619809905",
+        "roundUpStep": "100",
+        "proposedAmount": "2400",
+        "amountMinor": 240000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1972.09302325581395348837209309443461330448891292590589508099",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "2386.1930965482741370685342671335667833916958479239619809905",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "zmw",
+        "factor": "0.2",
+        "formulaAmount": "3.91245622811405702851425712856428214107053526763381690845423",
+        "referenceFloorAmount": "11.8559279639819909954977488744372186093046523261630815407704",
+        "roundUpStep": "1",
+        "proposedAmount": "12",
+        "amountMinor": 1200,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "9.79844961240310077519379844996605877050658013340544438436465",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "11.8559279639819909954977488744372186093046523261630815407704",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "afn",
+        "factor": "0.2",
+        "formulaAmount": "12.8269134567283641820910455227613806903451725862931465732866",
+        "referenceFloorAmount": "38.8694347173586793396698349174587293646823411705852926463231",
+        "roundUpStep": "1",
+        "proposedAmount": "39",
+        "amountMinor": 3900,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "32.1240310077519379844961240321672053362177753740760771588664",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "38.8694347173586793396698349174587293646823411705852926463231",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "xaf",
+        "factor": "0.2",
+        "formulaAmount": "113.857428714357178589294647323661830915457728864432216108054",
+        "referenceFloorAmount": "345.022511255627813906953476738369184592296148074037018509255",
+        "roundUpStep": "10",
+        "proposedAmount": "350",
+        "amountMinor": 350,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "285.14728682170542635658914729711353308094465476834324860322",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "345.022511255627813906953476738369184592296148074037018509255",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "lak",
+        "factor": "0.2",
+        "formulaAmount": "4402.75137568784392196098049024512256128064032016008004002001",
+        "referenceFloorAmount": "13341.6708354177088544272136068034017008504252126063031515758",
+        "roundUpStep": "100",
+        "proposedAmount": "13400",
+        "amountMinor": 1340000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "11026.3565891472868217054263569871218316206958716423291869622",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "13341.6708354177088544272136068034017008504252126063031515758",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "lrd",
+        "factor": "0.2",
+        "formulaAmount": "33.6273136568284142071035517758879439719859929964982491245622",
+        "referenceFloorAmount": "101.900950475237618809404702351175587793896948474237118559279",
+        "roundUpStep": "10",
+        "proposedAmount": "110",
+        "amountMinor": 11000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "84.2170542635658914728682170573032139895438976023075536327036",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "101.900950475237618809404702351175587793896948474237118559279",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "mmk",
+        "factor": "0.2",
+        "formulaAmount": "415.958479239619809904952476238119059529764882441220610305153",
+        "referenceFloorAmount": "1260.48024012006003001500750375187593796898449224612306153077",
+        "roundUpStep": "100",
+        "proposedAmount": "1300",
+        "amountMinor": 130000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1041.73643410852713178294573647170794447449071570218135929467",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "1260.48024012006003001500750375187593796898449224612306153077",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "npr",
+        "factor": "0.2",
+        "formulaAmount": "30.1605802901450725362681340670335167583791895947973986993497",
+        "referenceFloorAmount": "91.395697848924462231115557778889444722361180590295147573787",
+        "roundUpStep": "1",
+        "proposedAmount": "92",
+        "amountMinor": 9200,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "75.5348837209302325581395348864472125473228772309356408870643",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "91.395697848924462231115557778889444722361180590295147573787",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z020",
+        "currency": "uzs",
+        "factor": "0.2",
+        "formulaAmount": "2372.23611805902951475737868934467233616808404202101050525263",
+        "referenceFloorAmount": "7188.59429714857428714357178589294647323661830915457728864432",
+        "roundUpStep": "100",
+        "proposedAmount": "7200",
+        "amountMinor": 720000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "5941.08527131782945736434108548574955831981251126735172165908",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "7188.59429714857428714357178589294647323661830915457728864432",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
         "zone": "Z025",
         "currency": "vnd",
         "factor": "0.25",
@@ -5994,6 +8679,70 @@
         "publishedSameCurrencySettlementMinimum": null,
         "appliedMinimumReferenceAmount": "7.0823411705852926463231615807903951975987993996998499249625",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z025",
+        "currency": "usd",
+        "factor": "0.25",
+        "formulaAmount": "0.2475",
+        "referenceFloorAmount": "0.60",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.60",
+        "amountMinor": 60,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.495875968992248062015503875986889910942851992067784387958100",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.60",
+        "minimumBasis": "用户确认GHTN使用Z025/USD新价；max(USD0.60固定缓冲,HKD4固定参考折算,USD0.50同币种结算最低金额)；未实测"
+      },
+      {
+        "zone": "Z025",
+        "currency": "lkr",
+        "factor": "0.25",
+        "formulaAmount": "84.1425712856428214107053526763381690845422711355677838919459",
+        "referenceFloorAmount": "203.981990995497748874437218609304652326163081540770385192596",
+        "roundUpStep": "10",
+        "proposedAmount": "210",
+        "amountMinor": 21000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "168.582945736434108527131782951821102289525869839552911483904",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "203.981990995497748874437218609304652326163081540770385192596",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z025",
+        "currency": "khr",
+        "factor": "0.25",
+        "formulaAmount": "985.542771385692846423211605802901450725362681340670335167584",
+        "referenceFloorAmount": "2389.19459729864932466233116558279139569784892446223111555778",
+        "roundUpStep": "100",
+        "proposedAmount": "2400",
+        "amountMinor": 240000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1974.5736434108527131782945737146791851451234901748692987226",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "2389.19459729864932466233116558279139569784892446223111555778",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z025",
+        "currency": "xof",
+        "factor": "0.25",
+        "formulaAmount": "143.572286143071535767883941970985492746373186593296648324162",
+        "referenceFloorAmount": "348.054027013506753376688344172086043021510755377688844422211",
+        "roundUpStep": "10",
+        "proposedAmount": "350",
+        "amountMinor": 350,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "287.652713178294573643410852723560550639985577789796286281247",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "348.054027013506753376688344172086043021510755377688844422211",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
         "zone": "Z030",
@@ -6092,6 +8841,38 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
+        "zone": "Z030",
+        "currency": "hnl",
+        "factor": "0.3",
+        "formulaAmount": "7.87443721860930465232616308154077038519259629814907453726863",
+        "referenceFloorAmount": "15.9079539769884942471235617808904452226113056528264132066033",
+        "roundUpStep": "1",
+        "proposedAmount": "16",
+        "amountMinor": 1600,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "13.1472868217054263565891472872962307553632594195060393005399",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "15.9079539769884942471235617808904452226113056528264132066033",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z030",
+        "currency": "mnt",
+        "factor": "0.3",
+        "formulaAmount": "1084.59229614807403701850925462731365682841420710355177588794",
+        "referenceFloorAmount": "2191.09554777388694347173586793396698349174587293646823411706",
+        "roundUpStep": "100",
+        "proposedAmount": "2200",
+        "amountMinor": 220000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1810.85271317829457364341085277853744366324139174328465837625",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "2191.09554777388694347173586793396698349174587293646823411706",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
         "zone": "Z035",
         "currency": "myr",
         "factor": "0.35",
@@ -6186,6 +8967,70 @@
         "publishedSameCurrencySettlementMinimum": null,
         "appliedMinimumReferenceAmount": "4.54427213606803401700850425212606303151575787893946973486743",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z035",
+        "currency": "xaf",
+        "factor": "0.35",
+        "formulaAmount": "199.250500250125062531265632816408204102051025512756378189095",
+        "referenceFloorAmount": "345.022511255627813906953476738369184592296148074037018509255",
+        "roundUpStep": "10",
+        "proposedAmount": "350",
+        "amountMinor": 350,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "285.14728682170542635658914729711353308094465476834324860322",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "345.022511255627813906953476738369184592296148074037018509255",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z035",
+        "currency": "gel",
+        "factor": "0.35",
+        "formulaAmount": "0.890950475237618809404702351175587793896948474237118559279641",
+        "referenceFloorAmount": "1.54277138569284642321160580290145072536268134067033516758379",
+        "roundUpStep": "0.1",
+        "proposedAmount": "1.6",
+        "amountMinor": 160,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1.27503875968992248062015503880570992608617270596718947178821",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "1.54277138569284642321160580290145072536268134067033516758379",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z035",
+        "currency": "lbp",
+        "factor": "0.35",
+        "formulaAmount": "31151.0755377688844422211105552776388194097048524262131065533",
+        "referenceFloorAmount": "53941.2563424569427570928321303508897305795755020367326520403",
+        "roundUpStep": "100",
+        "proposedAmount": "54000",
+        "amountMinor": 5400000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "44580.2879291251384274640088609667339359756882742280254449575",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "53941.2563424569427570928321303508897305795755020367326520403",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z035",
+        "currency": "mdl",
+        "factor": "0.35",
+        "formulaAmount": "6.19010005002501250625312656328164082041020510255127563781893",
+        "referenceFloorAmount": "10.7187879654112770671049810619595512041735153290931179875652",
+        "roundUpStep": "1",
+        "proposedAmount": "11",
+        "amountMinor": 1100,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "8.85864894795127353266888150641054383888330886708388060471423",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "10.7187879654112770671049810619595512041735153290931179875652",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
         "zone": "Z040",
@@ -6284,6 +9129,86 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
+        "zone": "Z040",
+        "currency": "all",
+        "factor": "0.4",
+        "formulaAmount": "32.1415707853926963481740870435217608804402201100550275137569",
+        "referenceFloorAmount": "48.6993496748374187093546773386693346673336668334167083541771",
+        "roundUpStep": "1",
+        "proposedAmount": "49",
+        "amountMinor": 4900,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "40.2480620155038759689922480634681781142960158644312240851434",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "48.6993496748374187093546773386693346673336668334167083541771",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z040",
+        "currency": "kzt",
+        "factor": "0.4",
+        "formulaAmount": "178.239619809904952476238119059529764882441220610305152576288",
+        "referenceFloorAmount": "270.060030015007503751875937968984492246123061530765382691345",
+        "roundUpStep": "10",
+        "proposedAmount": "280",
+        "amountMinor": 28000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "223.193798449612403100775193806505351361096087975482242653977",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "270.060030015007503751875937968984492246123061530765382691345",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z040",
+        "currency": "eur",
+        "factor": "0.4",
+        "formulaAmount": "0.3464257128564282141070535267448",
+        "referenceFloorAmount": "0.52488744372186093046523261628",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.53",
+        "amountMinor": 53,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.433798449612403100775193798442001283576708130521002343608883",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z040",
+        "currency": "pgk",
+        "factor": "0.4",
+        "formulaAmount": "1.78239619809904952476238119059529764882441220610305152576288",
+        "referenceFloorAmount": "2.70060030015007503751875937968984492246123061530765382691345",
+        "roundUpStep": "0.1",
+        "proposedAmount": "2.8",
+        "amountMinor": 280,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "2.23193798449612403100775193806505351361096087975482242653977",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "2.70060030015007503751875937968984492246123061530765382691345",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z040",
+        "currency": "rsd",
+        "factor": "0.4",
+        "formulaAmount": "41.5512756378189094547273636818409204602301150575287643821912",
+        "referenceFloorAmount": "62.9564782391195597798899449724862431215607803901950975487746",
+        "roundUpStep": "1",
+        "proposedAmount": "63",
+        "amountMinor": 6300,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "52.0310077519379844961240310096298943573102577970073913827973",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "62.9564782391195597798899449724862431215607803901950975487746",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
         "zone": "Z045",
         "currency": "mxn",
         "factor": "0.45",
@@ -6332,6 +9257,166 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
+        "zone": "Z045",
+        "currency": "xcd",
+        "factor": "0.45",
+        "formulaAmount": "1.18809904952476238119059529764882441220610305152576288144072",
+        "referenceFloorAmount": "1.60013340003335000833750208437552109388027347006836751709188",
+        "roundUpStep": "0.1",
+        "proposedAmount": "1.7",
+        "amountMinor": 170,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1.32244616709732988802756244621482841015163351561404563027234",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "1.60013340003335000833750208437552109388027347006836751709188",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z045",
+        "currency": "clp",
+        "factor": "0.45",
+        "formulaAmount": "435.768384192096048024012006003001500750375187593796898449225",
+        "referenceFloorAmount": "586.893446723361680840420210105052526263131565782891445722861",
+        "roundUpStep": "10",
+        "proposedAmount": "590",
+        "amountMinor": 590,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "485.043927648578811369509043945155280572081004747310858723064",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "586.893446723361680840420210105052526263131565782891445722861",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z045",
+        "currency": "mvr",
+        "factor": "0.45",
+        "formulaAmount": "6.88344672336168084042021010505252626313156578289144572286143",
+        "referenceFloorAmount": "9.27063531765882941470735367683841920960480240120060030015008",
+        "roundUpStep": "0.1",
+        "proposedAmount": "9.3",
+        "amountMinor": 930,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "7.66180878552971576227390180906206755843999759629829938105679",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "9.27063531765882941470735367683841920960480240120060030015008",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "usd",
+        "factor": "0.5",
+        "formulaAmount": "0.495",
+        "referenceFloorAmount": "0.6",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.6",
+        "amountMinor": 60,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.4958759689922480620155038759868899109428519920677843879581",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.6",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "crc",
+        "factor": "0.5",
+        "formulaAmount": "227.764382191095547773886943471735867933966983491745872936468",
+        "referenceFloorAmount": "276.078039019509754877438719359679839919959979989994997498749",
+        "roundUpStep": "10",
+        "proposedAmount": "280",
+        "amountMinor": 28000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "228.167441860465116279069767450095717901568415359653866955408",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "276.078039019509754877438719359679839919959979989994997498749",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "eur",
+        "factor": "0.5",
+        "formulaAmount": "0.433032141070535267633816908431",
+        "referenceFloorAmount": "0.52488744372186093046523261628",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.53",
+        "amountMinor": 53,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.433798449612403100775193798442001283576708130521002343608883",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "huf",
+        "factor": "0.5",
+        "formulaAmount": "158.429714857428714357178589294647323661830915457728864432216",
+        "referenceFloorAmount": "192.036018009004502251125562781390695347673836918459229614808",
+        "roundUpStep": "10",
+        "proposedAmount": "200",
+        "amountMinor": 20000,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "158.710077519379844961240310083247706363800252388678564990291",
+        "publishedSameCurrencySettlementMinimum": "175",
+        "appliedMinimumReferenceAmount": "192.036018009004502251125562781390695347673836918459229614808",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "pln",
+        "factor": "0.5",
+        "formulaAmount": "1.93097048524262131065532766383191595797898949474737368684342",
+        "referenceFloorAmount": "2.34057028514257128564282141070535267633816908454227113556778",
+        "roundUpStep": "0.1",
+        "proposedAmount": "2.4",
+        "amountMinor": 240,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "1.9343875968992248062015503876667171213268433387416621597285",
+        "publishedSameCurrencySettlementMinimum": "2",
+        "appliedMinimumReferenceAmount": "2.34057028514257128564282141070535267633816908454227113556778",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "scr",
+        "factor": "0.5",
+        "formulaAmount": "7.23012006003001500750375187593796898449224612306153076538269",
+        "referenceFloorAmount": "8.76378189094547273636818409204602301150575287643821910955478",
+        "roundUpStep": "0.1",
+        "proposedAmount": "8.8",
+        "amountMinor": 880,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "7.24291472868217054263565891499010086028483865152334595277669",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "8.76378189094547273636818409204602301150575287643821910955478",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z050",
+        "currency": "ttd",
+        "factor": "0.5",
+        "formulaAmount": "3.36718859429714857428714357178589294647323661830915457728865",
+        "referenceFloorAmount": "4.0814407203601800900450225112556278139069534767383691845923",
+        "roundUpStep": "0.1",
+        "proposedAmount": "4.1",
+        "amountMinor": 410,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "3.37314728682170542635658914740856878889489814314043627186305",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "4.0814407203601800900450225112556278139069534767383691845923",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
         "zone": "Z055",
         "currency": "gyd",
         "factor": "0.55",
@@ -6362,6 +9447,54 @@
         "publishedSameCurrencySettlementMinimum": ".50",
         "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z055",
+        "currency": "bbd",
+        "factor": "0.55",
+        "formulaAmount": "1.08904952476238119059529764882441220610305152576288144072036",
+        "referenceFloorAmount": "1.20005457274091591250170539815362226567829369230069580244668",
+        "roundUpStep": "0.1",
+        "proposedAmount": "1.3",
+        "amountMinor": 130,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.9917970401691331923890063425305115413737155219037317468915",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "1.20005457274091591250170539815362226567829369230069580244668",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z055",
+        "currency": "bnd",
+        "factor": "0.55",
+        "formulaAmount": "0.692851425712856428214107053526763381690845422711355677838921",
+        "referenceFloorAmount": "0.763472645413615898858520169175496839328755286734276229023604",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.77",
+        "amountMinor": 77,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.630979563072586328400281888676755637281413376599963944475313",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "0.763472645413615898858520169175496839328755286734276229023604",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z055",
+        "currency": "usd",
+        "factor": "0.55",
+        "formulaAmount": "0.5445",
+        "referenceFloorAmount": "0.6",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.6",
+        "amountMinor": 60,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.4958759689922480620155038759868899109428519920677843879581",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.6",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
         "zone": "Z060",
@@ -6458,6 +9591,38 @@
         "publishedSameCurrencySettlementMinimum": "50",
         "appliedMinimumReferenceAmount": "91.4303305498903297802747527609958825566629468580444068187938",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z065",
+        "currency": "eur",
+        "factor": "0.65",
+        "formulaAmount": "0.5629417833916958479239619809603",
+        "referenceFloorAmount": "0.52488744372186093046523261628",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.57",
+        "amountMinor": 57,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.433798449612403100775193798442001283576708130521002343608883",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z065",
+        "currency": "usd",
+        "factor": "0.65",
+        "formulaAmount": "0.6435",
+        "referenceFloorAmount": "0.6",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.65",
+        "amountMinor": 65,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.4958759689922480620155038759868899109428519920677843879581",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.6",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
         "zone": "Z070",
@@ -6684,6 +9849,22 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
+        "zone": "Z095",
+        "currency": "eur",
+        "factor": "0.95",
+        "formulaAmount": "0.8227610680340170085042521260189",
+        "referenceFloorAmount": "0.52488744372186093046523261628",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.83",
+        "amountMinor": 83,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.433798449612403100775193798442001283576708130521002343608883",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
         "zone": "Z100",
         "currency": "usd",
         "factor": "1",
@@ -6716,23 +9897,39 @@
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
-        "zone": "Z025",
-        "currency": "usd",
-        "factor": "0.25",
-        "formulaAmount": "0.2475",
-        "referenceFloorAmount": "0.60",
+        "zone": "Z100",
+        "currency": "bmd",
+        "factor": "1",
+        "formulaAmount": "0.99",
+        "referenceFloorAmount": "0.6",
         "roundUpStep": "0.01",
-        "proposedAmount": "0.60",
-        "amountMinor": 60,
-        "floorApplied": true,
+        "proposedAmount": "0.99",
+        "amountMinor": 99,
+        "floorApplied": false,
         "status": "pending_target_account_minimum_charge_verification",
-        "hkdSettlementMinimumReferenceAmount": "0.495875968992248062015503875986889910942851992067784387958100",
-        "publishedSameCurrencySettlementMinimum": ".50",
-        "appliedMinimumReferenceAmount": "0.60",
-        "minimumBasis": "用户确认GHTN使用Z025/USD新价；max(USD0.60固定缓冲,HKD4固定参考折算,USD0.50同币种结算最低金额)；未实测"
+        "hkdSettlementMinimumReferenceAmount": "0.4958759689922480620155038759868899109428519920677843879581",
+        "publishedSameCurrencySettlementMinimum": null,
+        "appliedMinimumReferenceAmount": "0.6",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z100",
+        "currency": "nok",
+        "factor": "1",
+        "formulaAmount": "9.35968484242121060530265132566283141570785392696348174087043",
+        "referenceFloorAmount": "5.67253626813406703351675837918959479739869934967483741870935",
+        "roundUpStep": "0.1",
+        "proposedAmount": "9.4",
+        "amountMinor": 940,
+        "floorApplied": false,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "4.6881240310077519379844961242002163216152875428159365422812",
+        "publishedSameCurrencySettlementMinimum": "3",
+        "appliedMinimumReferenceAmount": "5.67253626813406703351675837918959479739869934967483741870935",
+        "minimumBasis": "max(USD0.60固定缓冲,HKD4固定参考折算,官方同币种结算最低金额如有)；非目标账户实测门槛"
       }
     ],
-    "verificationStatus": "all_61_zone_currency_amounts_filled_pending_real_checkout_verification",
+    "verificationStatus": "all_zone_currency_amounts_filled_pending_real_checkout_verification",
     "pendingZoneCurrencies": [],
     "roundingPolicy": "沿用已有币种步长；新增币种按max(原始月价,低额参考)选择固定步长：<1用0.01，1至<10用0.1，10至<100用1，100至<1000用10，>=1000用100；零小数币种步长至少1。同币种各区复用该步长。全部向上取整，不降低金额。",
     "minimumChargeReference": {
@@ -6770,23 +9967,187 @@
         "sek": "3",
         "sgd": ".50",
         "thb": "10",
-        "zar": ".50"
+        "zar": ".50",
+        "huf": "175",
+        "nok": "3",
+        "pln": "2"
       },
       "explanation": "官方规则以银行账户结算币种为准，跨币种需满足折算后门槛；Account.default_currency及历史摘要不等于已核验全部银行结算设置。本次仅核对公开规则并计算固定建议价，没有发起扣款、写入Stripe或读取银行账号。"
     }
   },
-  "documentRevision": "2026-10-18-r6-sandbox-price-bindings",
+  "documentRevision": "2026-10-18-r7-all-three-groups-sandbox-bindings",
   "configurationVerification": {
-    "date": "2026-10-18",
-    "verifiedPriceCount": 176,
-    "verifiedRegionalAmountCount": 671,
-    "oldPricesUnchanged": 29,
+    "verifiedPrices": 187,
+    "newPrices": 33,
+    "priorPricesPreserved": 205,
+    "oldOriginalPricesUnchanged": 29,
     "productDefaultsUnchanged": 21,
-    "sourceCommit": "f8f0fc8062cdd7a32082d98e80cc8c58bf6e43ce",
-    "sourceFileSha256": "14967af55df90fe1635b7850c1040fb6b7b11c71f77120f94495c048d88c8877",
+    "configuredCountries": 114,
+    "regionalAmounts": 1133,
     "realCheckoutTested": false,
     "renewalTested": false,
-    "applicationCodeImplemented": false,
-    "applicationSalesEnabled": false
-  }
+    "businessCodeChanged": false,
+    "sourceCommit": "cec83e69",
+    "sourceDraftSha256": "e77f89f978004effcb1e95f46cfedf60d7c2f2f0b058f8d53ea1c9c15034a539",
+    "applicationSalesEnabled": false,
+    "currentBindingCount": 187,
+    "supersededBindingCount": 22,
+    "totalSandboxPrices": 238
+  },
+  "supersededSandboxPriceBindings": [
+    {
+      "zone": "Z055",
+      "sku": "pro_trial_to_monthly",
+      "oldPriceId": "price_1URrwO7GRT6LLkI1CQThdOWu",
+      "currentPriceId": "price_1URsKg7GRT6LLkI1vPBL3VUg",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "basic_monthly",
+      "oldPriceId": "price_1URrwP7GRT6LLkI1Ts5CCxFc",
+      "currentPriceId": "price_1URsKh7GRT6LLkI1juSuTrnY",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "plus_monthly",
+      "oldPriceId": "price_1URrwQ7GRT6LLkI1wJ0XNXp9",
+      "currentPriceId": "price_1URsKi7GRT6LLkI1QqkwZLQb",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URrwR7GRT6LLkI1Bj2VRlGK",
+      "currentPriceId": "price_1URsKj7GRT6LLkI1pAKVfYnq",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "plus_yearly",
+      "oldPriceId": "price_1URrwR7GRT6LLkI16dKq7ap1",
+      "currentPriceId": "price_1URsKj7GRT6LLkI1397t566S",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "addon_assignment_3",
+      "oldPriceId": "price_1URrwS7GRT6LLkI1cETPTsiG",
+      "currentPriceId": "price_1URsKk7GRT6LLkI1n4cjnZ8q",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "addon_detection_5",
+      "oldPriceId": "price_1URrwT7GRT6LLkI1fR2Cdg7Z",
+      "currentPriceId": "price_1URsKl7GRT6LLkI1WnPsxDCA",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrwU7GRT6LLkI1whAh5d4Z",
+      "currentPriceId": "price_1URsKm7GRT6LLkI1csLLRoV0",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "pro_monthly",
+      "oldPriceId": "price_1URrwV7GRT6LLkI1kPCSY8Is",
+      "currentPriceId": "price_1URsKn7GRT6LLkI14o3ccC2S",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "pro_yearly",
+      "oldPriceId": "price_1URrwV7GRT6LLkI1KRu0kOxO",
+      "currentPriceId": "price_1URsKn7GRT6LLkI15XzmpbYm",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z055",
+      "sku": "study_pass_subscription_30d",
+      "oldPriceId": "price_1URrwW7GRT6LLkI1AgEGzELI",
+      "currentPriceId": "price_1URsKo7GRT6LLkI13JjLuc2g",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "pro_trial_to_monthly",
+      "oldPriceId": "price_1URrwg7GRT6LLkI1ELzEzSB9",
+      "currentPriceId": "price_1URsKt7GRT6LLkI13obBZ7Ae",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "basic_monthly",
+      "oldPriceId": "price_1URrwh7GRT6LLkI14W3gVPZQ",
+      "currentPriceId": "price_1URsKu7GRT6LLkI1oaNsbVRW",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "plus_monthly",
+      "oldPriceId": "price_1URrwh7GRT6LLkI12MIKM1q8",
+      "currentPriceId": "price_1URsKv7GRT6LLkI1mkLMl242",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "basic_yearly",
+      "oldPriceId": "price_1URrwi7GRT6LLkI1GWjaUcy6",
+      "currentPriceId": "price_1URsKv7GRT6LLkI1vEe3ft5i",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "plus_yearly",
+      "oldPriceId": "price_1URrwj7GRT6LLkI1QQ04iryg",
+      "currentPriceId": "price_1URsKw7GRT6LLkI1RUHGXv83",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_assignment_3",
+      "oldPriceId": "price_1URrwk7GRT6LLkI1G70D918s",
+      "currentPriceId": "price_1URsKx7GRT6LLkI11BSEqe4n",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_detection_5",
+      "oldPriceId": "price_1URrwk7GRT6LLkI14Rcou1pn",
+      "currentPriceId": "price_1URsKy7GRT6LLkI1S4nM1SFn",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "addon_humanizer_3",
+      "oldPriceId": "price_1URrwl7GRT6LLkI1SY0XYbe7",
+      "currentPriceId": "price_1URsKz7GRT6LLkI1oGo4rD6J",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "pro_monthly",
+      "oldPriceId": "price_1URrwm7GRT6LLkI1YlO1Os7P",
+      "currentPriceId": "price_1URsKz7GRT6LLkI1sEILJd6a",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "pro_yearly",
+      "oldPriceId": "price_1URrwn7GRT6LLkI1UmGOnUg2",
+      "currentPriceId": "price_1URsL07GRT6LLkI1qU6NMcSm",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    },
+    {
+      "zone": "Z065",
+      "sku": "study_pass_subscription_30d",
+      "oldPriceId": "price_1URrwo7GRT6LLkI1Daz1VW0L",
+      "currentPriceId": "price_1URsL17GRT6LLkI1Km8DfzTG",
+      "reason": "新增USD实际销售价不同于旧Price不可变默认USD金额；旧Price保留active且不修改，当前映射切至新Price"
+    }
+  ]
 }

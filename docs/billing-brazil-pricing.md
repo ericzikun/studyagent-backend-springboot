@@ -16,8 +16,8 @@ Customer 使用已验证 JWT 邮箱或 Clerk Backend API 的已验证 primary_em
 
 国家→币种映射由 BillingRegionalPricingProperties 绑定并验证，格式为逗号分隔 COUNTRY=currency；当前仅 BR=brl，未匹配/unknown 或关闭时的新购均使用 USD。规则整体替换默认映射，空字符串移除所有地区规则；非法国家、币种、格式和重复国家在启动时被拒绝。旧 BILLING_BRAZIL_PRICING_ENABLED 不再生效，Server_Config 使用通用 docker-compose.regional-pricing.yml；生产配置没有增加其他国家或 SKU 金额；本地目标 Stripe 沙盒已单独配置 BRL 测试金额，也没有数据库结构变更。新购 metadata 记录实际可信 ISO 国家或 UNKNOWN，历史 OTHER 不重写。
 
-## 地区扩展方案（待实施，2026-10-18 r5）
+## 三组地区扩展（价格与沙盒已配置，业务待实施，2026-10-18 r7）
 
-第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。
+第一组10地区、第二组53地区、第三组51地区，共114地区全部使用新金额；Pro统一用新Pro月／年。仅需求确认时线上已购买Pro的当前已付周期保留旧金额，下个付费周期切新价。
 
-上文为当前巴西基础实现记录，不能作为新价格范围或已上线证据。完整新金额、线上Pro资格及任务见[后端交接入口](billing-regional-pricing/README.md)。Study Pass全部62个区币种组合建议月价已补齐，见[测算明细](billing-regional-pricing/study-pass-pricing.md)，目标账户最低扣款及真实续费仍待验证。本轮已配置现有项目沙盒176条新Price并回读，见[配置记录](billing-regional-pricing/sandbox-configuration.md)；业务代码、生产、订阅迁移和真实付款未改动。
+上文为当前巴西基础业务实现记录。三组价格、唯一Pro例外及待办见[后端交接入口](billing-regional-pricing/README.md)。沙盒当前187条Price绑定及1133个地区金额回读通过，本轮新建33条；[配置记录](billing-regional-pricing/sandbox-configuration.md)和[完整Excel](billing-regional-pricing/三组地区最终新价格表.xlsx)可核对。Study Pass全部103组合已补齐，见[测算](billing-regional-pricing/study-pass-pricing.md)，实际最低扣款与续费仍待测试。业务代码、生产、真实订阅和迁移未改动。

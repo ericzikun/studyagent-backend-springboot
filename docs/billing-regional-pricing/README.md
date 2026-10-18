@@ -1,16 +1,12 @@
-> 2026-10-18 r7：已按用户要求纳入第三组51地区，全部114地区／17区使用新金额，新Pro与Pass金额见完整价格矩阵。五地USD替代已确认；当前沙盒配置状态以sandbox-configuration.md及环境JSON为准，业务代码和生产未改动。
-
 # 地区定价方案A后端交接
 
-2026-10-18 r6。跨工程来源：Verla根`openspec/changes/add-brazil-regional-pricing/`；调整同时同步来源与此交接目录。本轮文档及现有项目沙盒176条新Price配置已完成，详见[配置记录](sandbox-configuration.md)与[环境绑定](regional-expansion-prices.sandbox.json)；业务代码、真实付款／续费、订阅迁移及生产部署尚未执行。
+2026-10-18 r7。来源为Verla根`openspec/changes/add-brazil-regional-pricing/`。第一组10、第二组53、第三组51，共114地区／17区全部使用新金额；Pro统一使用新Pro月／年。仅需求确认时线上已购买Pro的当前已付周期保留旧金额，下个付费周期切新价。
 
-第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。
+本轮在现有项目沙盒新建33条Price，当前187条绑定、1133个地区金额全部回读一致；前205条既有金额及21个Product默认价保持。应用销售关闭；业务代码、生产、真实付款／续费及订阅迁移未实施。
 
-阅读顺序：
+1. [三组完整新价格表](regional-price-matrix.md)与[Excel](三组地区最终新价格表.xlsx)：全部114地区，实际销售币种、新Pro与Study Pass金额。
+2. [简版方案](regional-expansion-brief.md)、[详细方案](regional-expansion-plan-a.md)和[线上Pro换价规格](specs/subscription-price-rollout/spec.md)。
+3. [价格JSON](regional-expansion-prices.json)、[沙盒绑定](regional-expansion-prices.sandbox.json)、[配置证据与Price ID](sandbox-configuration.md)。
+4. [USD替代授权与价格](currency-replacements.md)、[Pass计算及低额上调](study-pass-pricing.md)、[任务](tasks.md)。
 
-1. [简版方案](regional-expansion-brief.md)：范围、唯一例外及例子。
-2. [两组完整新价格表](regional-price-matrix.md)：63地区固定金额及来源。
-3. [线上Pro换价规格](specs/subscription-price-rollout/spec.md)：资格、当期保护、下期换价与验收。
-4. [详细方案](regional-expansion-plan-a.md)、[价格JSON](regional-expansion-prices.json)和[任务](tasks.md)。
-
-原“仅第一组加巴西”及“所有存量订阅本期保旧价”的口径已被替代。JSON已包含63地区；通用草案保持账户无关，沙盒ID已在环境JSON完整记录；销售开关关闭，不代表第二组不在需求范围。Study Pass已补齐原缺失52组合，当前61组合固定建议金额已齐（GHTN合并为经用户批准的Z025/USD），原10组合保持；[测算与低额上调](study-pass-pricing.md)可复核。GHTN的USD替代价已获用户确认；实际最低扣款／续费仍待核验。配置缺口不能成为继续旧价的业务例外。`price-matrix.md`只记录历史巴西沙盒价格。
+GH／TN／IQ／JO／VE／KW／OM使用用户明确确认的USD新价；原63地区金额保持，本轮新增42个区币种组合后共103组合、86销售币种。分组不决定采用新价资格。原Pro只用于历史核对；旧独立额度包不套用会员addon价。`price-matrix.md`是早期巴西沙盒历史。

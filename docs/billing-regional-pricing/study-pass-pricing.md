@@ -2,7 +2,7 @@
 
 2026-10-18 r7。原63地区金额保持；本轮加入第三组51地区后，共114地区、103个区币种组合均有固定月价，低额继续按既有参考上调。会员／Trial／额外包采用原表新金额及用户明确确认的USD替代；Pro唯一当期保护规则不变。
 
-沙盒全部176条Price已经创建并回读，ID见[环境绑定](regional-expansion-prices.sandbox.json)及[配置记录](sandbox-configuration.md)。应用销售仍关闭，真实首付、最低扣款及续费尚未验证。
+沙盒187条当前Price绑定已配置并回读（本轮新建33条），ID见[环境绑定](regional-expansion-prices.sandbox.json)及[配置记录](sandbox-configuration.md)。应用销售仍关闭，真实首付、最低扣款及续费尚未验证。
 
 ## 计算与低额上调
 

@@ -1,3 +1,5 @@
+> 2026-10-18 r7当前范围：第一10＋第二53＋第三51＝114地区、17区全部使用新金额；Pro使用新Pro列，仅确认时线上已购Pro当期保旧、下期切新价。当前价格／USD替代／沙盒完成状态以regional-price-matrix.md、currency-replacements.md、sandbox-configuration.md为准。下文早期阶段记录保留用于追溯。
+
 # BRL 价格矩阵与配置边界
 
 > 2026-10-18 r4需求口径：第一组10地区、第二组53地区全部使用新金额，共63地区；Pro统一使用“新 Pro”月付／年付价格。唯一当期保旧价例外：本次需求确认时线上已购买Pro的用户，当前已付周期保留旧金额，下个付费周期切新价。 以下巴西基础阶段的金额、范围与执行记录仅用于历史追溯；当前需求以[简版方案](regional-expansion-brief.md)、[两组新价格表](regional-price-matrix.md)及[换价规格](specs/subscription-price-rollout/spec.md)为准，不代表新需求已实现或已上线。

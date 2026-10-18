@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
-2026-10-18 r6（Pass全量固定金额已齐）：第一、第二组全部新价，仅本次需求确认时线上已购Pro当前已付周期保旧价、下个付费周期切新价。下文早期BR-only场景用于legacy功能关闭／旧事件回归；扩展启用后以“两组定价区选择新金额”和线上Pro换价规格为准。
+2026-10-18 r7（Pass全量固定金额已齐）：第一、第二、第三组全部新价，仅本次需求确认时线上已购Pro当前已付周期保旧价、下个付费周期切新价。下文早期BR-only场景用于legacy功能关闭／旧事件回归；扩展启用后以“三组定价区选择新金额”和线上Pro换价规格为准。
 
 ### Requirement: 可信地区决定独立新购资格
 
-系统 SHALL 仅使用通过自有代理链路认证的国家信号和服务端配置决定独立新购币种。方案A SHALL 对第一组10地区、第二组53地区全部使用地区新目录，覆盖会员、Trial、extra packs与Study Pass；Pro只用新Pro价格，不按组别排除国家。只有本次需求确认时线上已购买Pro的当前已付周期按subscription-price-rollout保留旧金额，下个付费周期切新价；其他商品和新收费动作不得继承此例外。两组范围外、unknown及总开关关闭时保留既有销售路由供兼容；范围内尚未完成配置须明确列待办，不能以旧价销售声称完成新需求。旧独立额度SKU缺少对应新金额时先核对，不套用会员addon金额或新增保旧价资格。系统 MUST NOT 根据客户端currency/region/Price ID、界面语言、时区、邮箱location标记或未认证转发头授予地区优惠资格。可信国家信号表示网络地区，不证明居住地。
+系统 SHALL 仅使用通过自有代理链路认证的国家信号和服务端配置决定独立新购币种。方案A SHALL 对第一组10地区、第二组53地区、第三组51地区全部使用地区新目录，覆盖会员、Trial、extra packs与Study Pass；Pro只用新Pro价格，不按组别排除国家。只有本次需求确认时线上已购买Pro的当前已付周期按subscription-price-rollout保留旧金额，下个付费周期切新价；其他商品和新收费动作不得继承此例外。三组范围外、unknown及总开关关闭时保留既有销售路由供兼容；范围内尚未完成配置须明确列待办，不能以旧价销售声称完成新需求。旧独立额度SKU缺少对应新金额时先核对，不套用会员addon金额或新增保旧价资格。系统 MUST NOT 根据客户端currency/region/Price ID、界面语言、时区、邮箱location标记或未认证转发头授予地区优惠资格。可信国家信号表示网络地区，不证明居住地。
 
 #### Scenario: 巴西用户首次购买
 - **GIVEN** 用户通过可信链路访问，国家为 BR，且不存在需恢复的有效同类订阅
@@ -186,7 +186,7 @@
 
 ### Requirement: 通用地区定价配置
 
-系统 SHALL 保留通用总开关BILLING_REGIONAL_PRICING_ENABLED（默认false）及legacy国家币种配置BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES（默认BR=brl）的兼容语义。legacy空规则移除映射、整体替换默认规则、规范化大小写及拒绝非法或重复配置的行为不变。方案A SHALL 通过独立定价区目录覆盖第一、第二组全部63地区；legacy的BR-only回归场景不限定扩展范围。开关和国家名单记录实际发布状态，配置未齐不构成第二组继续旧价的规则。实际Stripe写入按对应执行授权处理，旧BILLING_BRAZIL_PRICING_ENABLED不再生效，报价确认及合同币种权威保持。
+系统 SHALL 保留通用总开关BILLING_REGIONAL_PRICING_ENABLED（默认false）及legacy国家币种配置BILLING_REGIONAL_PRICING_COUNTRY_CURRENCIES（默认BR=brl）的兼容语义。legacy空规则移除映射、整体替换默认规则、规范化大小写及拒绝非法或重复配置的行为不变。方案A SHALL 通过独立定价区目录覆盖第一、第二、第三组全部114地区；legacy的BR-only回归场景不限定扩展范围。开关和国家名单记录实际发布状态，配置未齐不构成第二组继续旧价的规则。实际Stripe写入按对应执行授权处理，旧BILLING_BRAZIL_PRICING_ENABLED不再生效，报价确认及合同币种权威保持。
 
 #### Scenario: legacy默认规则与unknown回归
 - **GIVEN** 未启用方案A扩展目录，通用开关开启且legacy规则为BR=brl
@@ -212,9 +212,9 @@
 - **THEN** Spring 容器 SHALL 收到通用开关和完整国家规则，默认 false 与 BR=brl
 - **AND** 显式空规则 SHALL 保持为空，不重新插入默认 BR
 
-### Requirement: 两组定价区选择新金额
+### Requirement: 三组定价区选择新金额
 
-系统 SHALL 对第一组10地区、第二组53地区全部选择对应新价格，Pro SHALL 只使用新Pro月／年列，Trial转正 SHALL 使用新Pro月价。分组不是销售资格条件，巴西无单独准入特例。固定金额以regional-price-matrix.md及regional-expansion-prices.json核对；共63地区、16区、61个区币种组合。系统 MUST NOT 运行时按倍率／汇率计算，缺配置 MUST NOT 回退旧销售价或技术USD默认金额。
+系统 SHALL 对第一组10地区、第二组53地区、第三组51地区全部选择对应新价格，Pro SHALL 只使用新Pro月／年列，Trial转正 SHALL 使用新Pro月价。分组不是销售资格条件，巴西无单独准入特例。固定金额以regional-price-matrix.md及regional-expansion-prices.json核对；共114地区、17区、103个区币种组合。系统 MUST NOT 运行时按倍率／汇率计算，缺配置 MUST NOT 回退旧销售价或技术USD默认金额。
 
 #### Scenario: 第二组美国印度使用新金额
 - **WHEN** 美国或印度用户新购Pro
@@ -273,7 +273,7 @@
 
 ### Requirement: 全部地区配置待办不能变成旧价特例
 
-两组63地区 SHALL 全部纳入新价交付。金额未齐、Stripe币种支持未验证、Price未创建等 SHALL 显式列为配置／验证待办，不能排除国家或继续以旧价声称需求完成。11个SKU目标176条Price／671个金额；现有610个会员／Trial／额外包金额和61个Pass建议金额已补齐主单位值，但不等于全部配置通过；加纳／突尼斯USD替代价已明确确认。目标沙盒不支持GHS/TND，用户已确认两地使用Z025/USD新金额，详见currency-replacements.md。旧独立额度SKU未有新金额时列待核对，不套用会员addon金额、不新增保旧价资格。
+三组114地区 SHALL 全部纳入新价交付。金额未齐、Stripe币种支持未验证、Price未创建等 SHALL 显式列为配置／验证待办，不能排除国家或继续以旧价声称需求完成。11个SKU目标187条Price／1133个金额；现有1030个会员／Trial／额外包金额和103个Pass建议金额已补齐主单位值，但不等于全部配置通过；加纳／突尼斯USD替代价已明确确认。目标沙盒不支持GHS/TND，用户已确认两地使用Z025/USD新金额，详见currency-replacements.md。旧独立额度SKU未有新金额时列待核对，不套用会员addon金额、不新增保旧价资格。
 
 #### Scenario: 第二组Pass金额缺失
 - **WHEN** 某地区Study Pass尚无确认固定金额或最低扣款证据
@@ -281,7 +281,7 @@
 
 ### Requirement: StudyPass独立合同使用新应付金额
 
-Study Pass SHALL 按自身区、币种、自然月合同使用确认的新金额，不继承Pro保旧价资格。固定月价按既有USD0.99基价、倍率与固定折算参考补齐，全部61组合以JSON及study-pass-pricing.md为准。建议低额下限 SHALL 取USD0.60固定参考缓冲、HKD4按固定参考折算及已公布同币种结算最低金额中的最大值，金额 SHALL 不低于原始倍率价和该下限，按记录步长向上取整。实际最低扣款仍取决于目标账户结算设置；未实测不得声称已通过，低于实测下限时上线配置阶段再上调，不得付款时动态加价。首付、优惠后金额和次月扣款均需目标账户验证。
+Study Pass SHALL 按自身区、币种、自然月合同使用确认的新金额，不继承Pro保旧价资格。固定月价按既有USD0.99基价、倍率与固定折算参考补齐，全部103组合以JSON及study-pass-pricing.md为准。建议低额下限 SHALL 取USD0.60固定参考缓冲、HKD4按固定参考折算及已公布同币种结算最低金额中的最大值，金额 SHALL 不低于原始倍率价和该下限，按记录步长向上取整。实际最低扣款仍取决于目标账户结算设置；未实测不得声称已通过，低于实测下限时上线配置阶段再上调，不得付款时动态加价。首付、优惠后金额和次月扣款均需目标账户验证。
 
 #### Scenario: 会员与Pass分开处理
 - **GIVEN** 用户有Study Pass或以后购买会员
@@ -292,7 +292,7 @@ Study Pass SHALL 按自身区、币种、自然月合同使用确认的新金额
 #### Scenario: 第二组倍率低额价上调并全部补齐
 - **WHEN** 计算美国、印度、厄瓜多尔、津巴布韦的Study Pass月价
 - **THEN** 固定建议金额 SHALL 分别为USD0.99、INR57、USD0.60、USD0.60，且印度及两个低倍率USD区 SHALL 记录低额上调依据
-- **AND** 全部63地区的61个区币种主单位金额 SHALL 非空，原有10组合保持；计算与最低参考通过不代表实际账户扣款已通过
+- **AND** 全部114地区的103个区币种主单位金额 SHALL 非空，原63地区的61组合保持；计算与最低参考通过不代表实际账户扣款已通过
 
 ### Requirement: 发布状态与历史履约独立
 
@@ -302,3 +302,5 @@ Study Pass SHALL 按自身区、币种、自然月合同使用确认的新金额
 - **GIVEN** 已为线上Pro安排下期新Price
 - **WHEN** 关闭新购开关
 - **THEN** 该安排 SHALL 保持；撤销必须另行核对并保留用户取消／降级等设置
+
+本轮第三组补充：51地区全部纳入，当前共114地区、17区、86币种、103个区币种组合、1133个金额。原63地区金额保持；五地USD替代经用户明确确认，见currency-replacements.md。沙盒当前绑定以sandbox-configuration.md为准，业务代码、真实付款及生产订阅均未修改。

@@ -1,3 +1,5 @@
+> 2026-10-18 r7：已按用户要求纳入第三组51地区，全部114地区／17区使用新金额，新Pro与Pass金额见完整价格矩阵。五地USD替代已确认；当前沙盒配置状态以sandbox-configuration.md及环境JSON为准，业务代码和生产未改动。
+
 # 地区定价方案A后端交接
 
 2026-10-18 r6。跨工程来源：Verla根`openspec/changes/add-brazil-regional-pricing/`；调整同时同步来源与此交接目录。本轮文档及现有项目沙盒176条新Price配置已完成，详见[配置记录](sandbox-configuration.md)与[环境绑定](regional-expansion-prices.sandbox.json)；业务代码、真实付款／续费、订阅迁移及生产部署尚未执行。

@@ -1,3 +1,5 @@
+> 2026-10-18 r7当前范围：第一10＋第二53＋第三51＝114地区、17区全部使用新金额；Pro使用新Pro列，仅确认时线上已购Pro当期保旧、下期切新价。当前价格／USD替代／沙盒完成状态以regional-price-matrix.md、currency-replacements.md、sandbox-configuration.md为准。下文早期阶段记录保留用于追溯。
+
 ## ADDED Requirements
 
 ### Requirement: Pricing 与账单消费适用地区报价

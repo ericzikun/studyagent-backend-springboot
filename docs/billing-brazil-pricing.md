@@ -1,3 +1,5 @@
+> 2026-10-18 r7：已按用户要求纳入第三组51地区，全部114地区／17区使用新金额，新Pro与Pass金额见完整价格矩阵。五地USD替代已确认；当前沙盒配置状态以sandbox-configuration.md及环境JSON为准，业务代码和生产未改动。
+
 # 通用地区计费实现（当前仅巴西）
 
 跨工程需求与可售 SKU 以 Verla 根 OpenSpec `add-brazil-regional-pricing` 为准。没有数据库 schema 或 migration 变更；基准 USD catalog 保留，新订单与既有字段记录选币后的真实金额。

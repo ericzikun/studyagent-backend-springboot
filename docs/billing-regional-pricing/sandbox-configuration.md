@@ -1,3 +1,9 @@
+# 早期地区版本已归档
+
+2026-10-18，按用户“只保留最终版本”的要求，现有项目沙盒已归档238条早期地区Price：G1+G2 v1共176条，已被替换的地区绑定62条。清理前未发现这些Price被订阅引用。最终187条地区Price全部保持active=true且内容不变；29条原有非本批地区版本Price和21个Product完整不变。金额、业务代码、生产和订阅未修改。Stripe API不支持永久删除Price，本次采用active=false归档，历史记录仍可查询。
+
+审计目录：`outputs/regional-pricing-approved-r8-01a14e97/archive-old-versions/`，包含保留/归档清单、前后快照和verification.json。下方r8创建阶段“旧Price完整不变”是当时的历史事实；本次仅将旧版本active改为false，不改变金额、币种、周期、lookup_key及metadata。
+
 # r8批准尾数：沙盒已配置并回读
 
 2026-10-18 r8。44项金额已按用户批准同步；现有项目沙盒`acct_1SrJ7Q7GRT6LLkI1`全部对象livemode=false。文档先以`480e3604`提交推送后，创建40条替代Price，复用147条，全187条当前目录/1133地区金额已回读一致。配置前已有414条Price完整不变，21个Product完整不变（包括default_price）；当前沙盒共454条Price。目录外既有对象仅保留，不纳入当前187条绑定。

@@ -67,9 +67,15 @@ public class ZonePricingSelectionService {
     private final ZonePricingCatalog catalog;
     private final BillingPricingService pricingService;
 
+    /** 区外国家/无可信国家头的默认档（1.00 倍率）；仅在 env 开关开启时生效。 */
+    @org.springframework.beans.factory.annotation.Value(
+            "${billing.regional-pricing.zone-pricing.default-zone:Z100}")
+    private String defaultZoneCode;
+
     /**
      * 路径①：独立新购（未登录/无有效合同）。可信国家来自请求作用域。
-     * 返回 empty = 走 legacy（USD 目录 / legacy country-currencies）。
+     * 国家未路由（区外/无头）→ 默认 1.00 档（USD），保证新购永远不走 legacy $79.99；
+     * 仅当默认区自身未启用时返回 empty（回滚逃生门）。
      */
     public Optional<PricingSelection> newPurchaseSelection(String skuCode, String expectedKind) {
         if (!pricingService.isEnabled()) {
@@ -77,21 +83,32 @@ public class ZonePricingSelectionService {
         }
         String country = BillingPricingContext.country();
         Optional<PricingCountryRouteEntity> routeOpt = catalog.enabledRoute(country);
-        if (routeOpt.isEmpty()) {
-            return Optional.empty();
+        String zoneCode;
+        String currency;
+        if (routeOpt.isPresent()) {
+            zoneCode = routeOpt.get().getZoneCode();
+            currency = normalizeCurrency(routeOpt.get().getCurrency());
+        } else {
+            String fallbackZone = defaultZoneCode == null || defaultZoneCode.isBlank()
+                    ? "Z100" : defaultZoneCode.trim();
+            PricingZoneEntity zone = catalog.zone(fallbackZone).orElse(null);
+            if (zone == null || !Boolean.TRUE.equals(zone.getIsActive())) {
+                return Optional.empty();
+            }
+            zoneCode = fallbackZone;
+            currency = "usd";
         }
-        PricingCountryRouteEntity route = routeOpt.get();
-        // 国家已启用 = 已承诺按区价卖：此后任何缺口 fail-closed，不回退 USD。
-        PricingZoneEntity zone = catalog.zone(route.getZoneCode()).orElse(null);
+        // 国家已启用 / 默认档已启用 = 已承诺按区价卖：此后任何缺口 fail-closed，不回退 USD。
+        PricingZoneEntity zone = catalog.zone(zoneCode).orElse(null);
         if (zone == null || !Boolean.TRUE.equals(zone.getIsActive())) {
-            log.warn("zone pricing: country {} routed to inactive zone {}", country, route.getZoneCode());
+            log.warn("zone pricing: country {} routed to inactive zone {}", country, zoneCode);
             throw BillingPricingService.unavailable("Pricing zone is not active for this country");
         }
         PricingZonePriceEntity binding = catalog.activeBinding(zone.getZoneCode(), skuCode)
                 .orElseThrow(() -> BillingPricingService.unavailable(
                         "No active zone price binding for " + skuCode));
         requireKind(binding, expectedKind);
-        return Optional.of(build(binding, normalizeCurrency(route.getCurrency())));
+        return Optional.of(build(binding, currency));
     }
 
     /**

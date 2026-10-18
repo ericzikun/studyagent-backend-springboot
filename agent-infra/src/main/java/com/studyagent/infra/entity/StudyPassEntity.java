@@ -58,4 +58,7 @@ public class StudyPassEntity extends BaseEntity {
     /** 当前生效价格版本 */
     @TableField("price_version")
     private String priceVersion;
+    /** 购买时可信国家（ISO alpha-2）；续费与合同动作只看区/版本，换 IP 不影响价格 */
+    @TableField("pricing_country")
+    private String pricingCountry;
 }

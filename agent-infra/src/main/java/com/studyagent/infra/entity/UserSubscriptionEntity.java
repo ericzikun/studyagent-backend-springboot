@@ -65,6 +65,9 @@ public class UserSubscriptionEntity extends BaseEntity {
     /** 实际扣款币种=Subscription.currency，小写 */
     @TableField("currency")
     private String currency;
+    /** 购买时可信国家（ISO alpha-2）；合同动作只认区/版本/币种，换 IP 不影响价格 */
+    @TableField("pricing_country")
+    private String pricingCountry;
     @Version
     private Integer version;
 }

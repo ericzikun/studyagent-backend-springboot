@@ -2533,6 +2533,9 @@ class BillingDomainServiceImplTest {
             assertEquals("price_monthly", service.lastCheckoutParams.getLineItems().get(0).getPrice());
             assertEquals(1L, service.lastCheckoutParams.getLineItems().get(0).getQuantity());
             assertEquals("verified+location_BR@example.com", service.lastCustomerUpdateParams.getEmail());
+            // 购买国家随 checkout 落到 session 与 subscription metadata，webhook 回填合同。
+            assertEquals("BR", service.lastCheckoutParams.getMetadata().get("pricing_country"));
+            assertEquals("BR", service.lastCheckoutParams.getSubscriptionData().getMetadata().get("pricing_country"));
             var saved = ArgumentCaptor.forClass(RechargeOrderEntity.class); verify(rechargeOrderMapper).insert(saved.capture());
             assertEquals("brl", saved.getValue().getCurrency()); assertEquals(39999, saved.getValue().getPriceCents());
         }
@@ -2580,7 +2583,7 @@ class BillingDomainServiceImplTest {
         var priceMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class);
         var aliasMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class);
         when(zoneMapper.selectList(any())).thenReturn(List.of(
-                zoneRow("Z060", "Europe DE"), zoneRow("Z061", "Europe IT")));
+                zoneRow("Z060", "Europe DE", true), zoneRow("Z061", "Europe IT", true)));
         when(routeMapper.selectList(any())).thenReturn(List.of(
                 routeRow("DE", "Z060"), routeRow("IT", "Z061")));
         when(priceMapper.selectList(any())).thenReturn(List.of(
@@ -2624,6 +2627,41 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void countriesOutsideBandsPriceFromDefaultOnePointZeroBand() throws Exception {
+        // 区外/无可信国家：默认 Z100（1.00 档）$29.99，新用户永远看不到 legacy $79.99。
+        regionalConfiguration.setEnabled(true);
+        var zoneMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class);
+        var routeMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class);
+        var priceMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class);
+        var aliasMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class);
+        when(zoneMapper.selectList(any())).thenReturn(List.of(zoneRow("Z100", "默认 1.00 档", true)));
+        when(routeMapper.selectList(any())).thenReturn(List.of());
+        var defaultBinding = monthlyBinding("Z100", "price_pro_2999");
+        defaultBinding.setUsdDefaultAmountMinor(2999);
+        defaultBinding.setCurrencyAmounts("{\"usd\":{\"amountMinor\":2999}}");
+        when(priceMapper.selectList(any())).thenReturn(List.of(defaultBinding));
+        when(aliasMapper.selectList(any())).thenReturn(List.of());
+        var zonePricing = new ZonePricingSelectionService(
+                new ZonePricingCatalog(zoneMapper, routeMapper, priceMapper, aliasMapper, 60), regionalPricing);
+        var service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper, addonPackageDefMapper, studyPassProductMapper, studyPassMapper,
+                userSubscriptionMapper, rechargeOrderMapper, planQuotaService, userRepository,
+                quotaVipAccessService, userSubscriptionBootstrapService,
+                regionalPricing, zonePricing, rolloutService,
+                org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+        var plan = plan("pro_monthly", "pro", "month", 7999);
+        plan.setStripePriceId("price_pro_legacy"); plan.setCurrency("usd"); plan.setIsActive(true);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(regionalPrices.retrieve("price_pro_2999", false)).thenReturn(usdPrice("price_pro_2999", "month", 2999L));
+
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("ZZ")) {
+            var quote = service.getPurchaseQuote("user_outside", "subscription", "pro_monthly");
+            assertEquals("usd", quote.getCurrency());
+            assertEquals(2999, quote.getAmountCents());
+        }
+    }
+
+    @Test
     void cheaperMonthlyTargetChargesFullMonthlyAmountDespiteAnnualCredit() {
         // A08：年付 Plus 转（更便宜的）月付 Pro，按目标周期全额计价，不进年付折抵分支。
         var plusYearly = plan("plus_yearly", "plus", "year", 11999);
@@ -2644,13 +2682,13 @@ class BillingDomainServiceImplTest {
         var option = new com.stripe.model.Price.CurrencyOption(); option.setUnitAmount(brl); price.setCurrencyOptions(Map.of("brl", option)); return price;
     }
 
-    /** A03 用：DE/IT 两区各自独立的绑定集，金额完全相同（trial 99 / monthly 1499 EUR）。 */
-    private static PricingZoneEntity zoneRow(String zoneCode, String label) {
+    /** A03/默认档用：独立区绑定集。 */
+    private static PricingZoneEntity zoneRow(String zoneCode, String label, boolean active) {
         PricingZoneEntity zone = new PricingZoneEntity();
         zone.setZoneCode(zoneCode);
         zone.setLabel(label);
         zone.setActiveVersion("regional-20261018-v1");
-        zone.setIsActive(true);
+        zone.setIsActive(active);
         return zone;
     }
 
@@ -2700,6 +2738,14 @@ class BillingDomainServiceImplTest {
     private static com.stripe.model.Price eurPrice(String id, String interval, long eur) {
         var price = new com.stripe.model.Price();
         price.setId(id); price.setCurrency("eur"); price.setUnitAmount(eur);
+        price.setActive(true); price.setLivemode(false);
+        var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval(interval); recurring.setIntervalCount(1L); price.setRecurring(recurring);
+        return price;
+    }
+
+    private static com.stripe.model.Price usdPrice(String id, String interval, long amount) {
+        var price = new com.stripe.model.Price();
+        price.setId(id); price.setCurrency("usd"); price.setUnitAmount(amount);
         price.setActive(true); price.setLivemode(false);
         var recurring = new com.stripe.model.Price.Recurring(); recurring.setInterval(interval); recurring.setIntervalCount(1L); price.setRecurring(recurring);
         return price;

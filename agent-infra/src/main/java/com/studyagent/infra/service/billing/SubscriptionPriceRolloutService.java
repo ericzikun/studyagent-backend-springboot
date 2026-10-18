@@ -84,6 +84,10 @@ public class SubscriptionPriceRolloutService {
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
 
+    /** 区外/无国家的默认档；旧合同按币种归属也以它为准（USD 旧合同 → 1.00 档）。 */
+    @Value("${billing.regional-pricing.zone-pricing.default-zone:Z100}")
+    private String defaultZoneCode;
+
     public record DryRunSummary(String batchId, String zoneCode, String targetVersion,
                                 int scanned, int preview, int conflict, int skipped,
                                 int backfilled, int noop) {
@@ -217,8 +221,10 @@ public class SubscriptionPriceRolloutService {
             return classificationForState(subscription, ref, STATUS_CONFLICT, "already_invoiced_next_period", currency);
         }
         Map<String, String> backfill = null;
-        if (!ref.zoneColumnBacked() || isBlank(ref.sourceVersion())) {
-            // 订单证据归属、或版本列缺失的老合同：dry-run 顺带回填三列，版本未知记 legacy。
+        if (ref.zoneColumnBacked() && isBlank(ref.sourceVersion())) {
+            // 已属区但版本列缺失的合同：dry-run 顺带回填版本列。
+            // 旧价合同不回填 zone/版本——合同三列一旦有值，会员目录会立刻按新价展示，
+            // 违反「到期前仍显示旧价」；由换价生效后的 webhook 反查再回填。
             backfill = Map.of("zoneCode", zoneCode, "priceVersion", "legacy", "currency", currency);
         }
         Map<String, Object> snapshot = new LinkedHashMap<>();
@@ -758,17 +764,21 @@ public class SubscriptionPriceRolloutService {
         return refs;
     }
 
-    /** 只有非 USD 的本区路由币种才有「老合同按订单证据归属」语义；USD 是全局 legacy 币种。 */
+    /** 旧合同按订单证据归属的币种：本区路由币种 + 默认区（Z100）的 USD。 */
     private List<String> legacyEvidenceCurrencies(String zoneCode) {
-        List<String> currencies = new ArrayList<>();
+        java.util.LinkedHashSet<String> currencies = new java.util.LinkedHashSet<>();
         for (PricingCountryRouteEntity route : catalog.snapshot().routes().values()) {
-            if (zoneCode.equals(route.getZoneCode())
-                    && hasText(route.getCurrency())
-                    && !"usd".equals(route.getCurrency().toLowerCase())) {
+            if (zoneCode.equals(route.getZoneCode()) && hasText(route.getCurrency())) {
                 currencies.add(route.getCurrency().toLowerCase());
             }
         }
-        return currencies;
+        String fallbackZone = defaultZoneCode == null || defaultZoneCode.isBlank()
+                ? "Z100" : defaultZoneCode.trim();
+        if (fallbackZone.equals(zoneCode)) {
+            // 旧 $79.99 合同绝大多数是 USD：默认区按 USD 订单证据归属。
+            currencies.add("usd");
+        }
+        return new ArrayList<>(currencies);
     }
 
     private String resolveSku(String priceId, ContractRef ref) {

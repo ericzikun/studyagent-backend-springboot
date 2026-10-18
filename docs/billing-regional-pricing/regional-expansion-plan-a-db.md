@@ -294,3 +294,19 @@ POST /v1/internal/billing/zone-pricing/rollout/cancel   {batchId}  # 撤销未�
 | 7 | 本地自动化测试补齐（A01–A16 可本地化部分） | 1.5–2 d | 7.8/8.6 |
 
 开发分支：`feat/billing-zone-pricing`（基于 `feat/billing-brazil-pricing` 0adf475b，worktree `worktrees/be-zone-pricing`）。
+
+## 13. 2026-10-18 实盘对齐（覆盖 §11.1 与 7 区假设）
+
+测试 Stripe 主账号（`51SrJ7Q7GRT6LLkI1`）已按 **17 个倍率档 × 全 SKU** 建好价格，共 187 条倍率价（Basic/Plus/Pro 各 34 条月+年、Trial 17、Study Pass 17、3 个加装包各 17），另有 15 条批次前旧价仍 active。完整只读盘点见
+`stripe-price-inventory-20261018.json`；档位 → 国家清单以 Price nickname 为唯一真值（114 国/地区，互不重叠），仓库内没有其它源文件。
+
+用户拍板的执行口径：
+
+1. **新购全部按倍率矩阵**：国家 → `pricing_country_routes` → 档位 → 该档 SKU 的 `stripe_price_id`。名单外国以及无可信国家头一律走默认 1.00 档（`Z100`，USD $29.99），新用户永远不再看到 $79.99。
+2. **本币缺口**：TND/GHS/IQD/JOD/OMR/KWD/VES 不在对应档的 `currency_options` 里，这 7 国路由币种用 USD（所有档位都有 usd 选项）。
+3. **存量合同到期换价**：旧 $79.99 合同按币种归属目标档（**usd→Z100、brl→Z040、krw→Z065**），由 rollout 在周期结束合并 Schedule；dry-run **不再回填** `pricing_zone/price_version`，保证到期前会员目录仍显示旧价，新价生效后由 webhook 反查回填、展示自动切换。
+4. **旧价不下线**：15 条 legacy 价保持 active 服务存量续费，并登记进 `stripe_price_aliases` 保证反查永久可解析；区外/未知国家的兜底改由默认档承担，不再依赖 legacy 目录。
+5. **购买地区落库**：`user_subscriptions` / `study_passes` 增加 `pricing_country`，checkout 的 session 与 subscription metadata 同时写入；合同动作只认 `pricing_zone/price_version/currency`，换 IP 不会改价。
+6. 迁移序号：**091** 建表+加列、**092** 种子（17 区/187 绑定/249 路由/15 别名，全部开关 OFF）、**093** 启用脚本（preflight 绿后执行）。
+
+> 注：旧 trial 转正合同（Schedule 里已有 intro_conversion 未来段）会被 rollout 判为 `user_future_change_pending` 冲突，留人工处理；Study Pass 旧价 $0.99 与 1.00 档同额，本期不做换价。

@@ -1,0 +1,7781 @@
+{
+ "source": "Stripe test mode read-only inventory (account 51SrJ7Q7GRT6LLkI1)",
+ "fetched_at": "2026-10-18",
+ "products": {
+  "prod_VJqvMKubYOnfWS": {
+   "name": "Study Pass",
+   "prices": [
+    {
+     "id": "price_1URtKn7GRT6LLkI1uKy96R3X",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z100 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792327025,
+     "currency_options": {
+      "eur": 87,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtKg7GRT6LLkI1soBzmj8b",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z095 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792327018,
+     "currency_options": {
+      "aud": 140,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtKY7GRT6LLkI19N2SoHyA",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z090 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792327010,
+     "currency_options": {
+      "cad": 130,
+      "sgd": 120,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtKP7GRT6LLkI1ydZR0Tk0",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z085 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792327001,
+     "currency_options": {
+      "bsd": 85,
+      "eur": 74,
+      "gbp": 65,
+      "nzd": 150,
+      "sek": 840,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtKG7GRT6LLkI1h6HnkpyN",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z080 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326992,
+     "currency_options": {
+      "eur": 70,
+      "hkd": 640,
+      "mop": 640,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtK67GRT6LLkI1S30A65g2",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z075 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326982,
+     "currency_options": {
+      "aed": 280,
+      "eur": 65,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJx7GRT6LLkI1Ufu2Jfj7",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z070 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326973,
+     "currency_options": {
+      "eur": 61,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJo7GRT6LLkI1NdbqDhPs",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z065 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326964,
+     "currency_options": {
+      "jpy": 99,
+      "krw": 840,
+      "twd": 2100,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJf7GRT6LLkI1HVqKCVa2",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z060 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326955,
+     "currency_options": {
+      "eur": 53,
+      "sar": 230,
+      "usd": 99,
+      "uyu": 2400
+     }
+    },
+    {
+     "id": "price_1URtJX7GRT6LLkI108PI5n5K",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z055 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326947,
+     "currency_options": {
+      "eur": 53,
+      "gyd": 13000,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJN7GRT6LLkI1tlaz48M9",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z045 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326937,
+     "currency_options": {
+      "cny": 410,
+      "mxn": 1200,
+      "ron": 290,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJG7GRT6LLkI1vAWkRnGt",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z040 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326930,
+     "currency_options": {
+      "ars": 90000,
+      "brl": 310,
+      "bzd": 120,
+      "jmd": 9800,
+      "pen": 210,
+      "try": 3000,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtJ87GRT6LLkI1oxAE7N4T",
+     "active": false,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z035 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326922,
+     "currency_options": {
+      "bwp": 850,
+      "cop": 190000,
+      "gtq": 460,
+      "myr": 250,
+      "usd": 60,
+      "zar": 990
+     }
+    },
+    {
+     "id": "price_1URtJ07GRT6LLkI1ZE96XPPJ",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z030 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326914,
+     "currency_options": {
+      "azn": 100,
+      "dzd": 8100,
+      "mad": 600,
+      "nad": 1000,
+      "php": 3800,
+      "thb": 2100,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URtIq7GRT6LLkI1pP1OoMNJ",
+     "active": false,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z025 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326904,
+     "currency_options": {
+      "bob": 710,
+      "idr": 1080000,
+      "kes": 7800,
+      "uah": 2800,
+      "usd": 60,
+      "vnd": 15500
+     }
+    },
+    {
+     "id": "price_1URtIf7GRT6LLkI14JLVv72p",
+     "active": false,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z020 | study_pass_subscription_30d | G1+G2 v1",
+     "created": 1792326893,
+     "currency_options": {
+      "bdt": 7400,
+      "egp": 3200,
+      "etb": 9800,
+      "ils": 180,
+      "inr": 5700,
+      "mwk": 110000,
+      "ngn": 80000,
+      "pkr": 17000,
+      "rwf": 890,
+      "usd": 60
+     }
+    },
+    {
+     "id": "price_1URsL17GRT6LLkI1Km8DfzTG",
+     "active": true,
+     "unit_amount": 65,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323195,
+     "currency_options": {
+      "eur": 57,
+      "jpy": 99,
+      "krw": 840,
+      "twd": 2100,
+      "usd": 65
+     }
+    },
+    {
+     "id": "price_1URsKo7GRT6LLkI13JjLuc2g",
+     "active": true,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323182,
+     "currency_options": {
+      "bbd": 130,
+      "bnd": 77,
+      "eur": 53,
+      "gyd": 13000,
+      "usd": 60
+     }
+    },
+    {
+     "id": "price_1URsKf7GRT6LLkI1xqlbMZZN",
+     "active": true,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323173,
+     "currency_options": {
+      "crc": 28000,
+      "eur": 53,
+      "huf": 20000,
+      "pln": 240,
+      "scr": 880,
+      "ttd": 410,
+      "usd": 60
+     }
+    },
+    {
+     "id": "price_1URrzA7GRT6LLkI1zvA84jph",
+     "active": true,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321840,
+     "currency_options": {
+      "bob": 710,
+      "idr": 1080000,
+      "kes": 7800,
+      "khr": 240000,
+      "lkr": 21000,
+      "uah": 2800,
+      "usd": 60,
+      "vnd": 15500,
+      "xof": 350
+     }
+    },
+    {
+     "id": "price_1URrxn7GRT6LLkI1W3KctsDo",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321755,
+     "currency_options": {
+      "bmd": 99,
+      "eur": 87,
+      "nok": 940,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrxf7GRT6LLkI16qYqZ6uW",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321747,
+     "currency_options": {
+      "aud": 140,
+      "eur": 83,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrxW7GRT6LLkI1eJpTawlV",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321738,
+     "currency_options": {
+      "cad": 130,
+      "sgd": 120,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrxN7GRT6LLkI1QYKbVFWT",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321729,
+     "currency_options": {
+      "bsd": 85,
+      "eur": 74,
+      "gbp": 65,
+      "nzd": 150,
+      "sek": 840,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrxE7GRT6LLkI1RyxG6n63",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321720,
+     "currency_options": {
+      "eur": 70,
+      "hkd": 640,
+      "mop": 640,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrx67GRT6LLkI10Kad8Vzz",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321712,
+     "currency_options": {
+      "aed": 280,
+      "eur": 65,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrwx7GRT6LLkI1pS0E8O1K",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321703,
+     "currency_options": {
+      "eur": 61,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrwo7GRT6LLkI1Daz1VW0L",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321694,
+     "currency_options": {
+      "jpy": 99,
+      "krw": 840,
+      "twd": 2100,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrwf7GRT6LLkI17voozvv7",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321685,
+     "currency_options": {
+      "eur": 53,
+      "sar": 230,
+      "usd": 99,
+      "uyu": 2400
+     }
+    },
+    {
+     "id": "price_1URrwW7GRT6LLkI1AgEGzELI",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321676,
+     "currency_options": {
+      "eur": 53,
+      "gyd": 13000,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrwN7GRT6LLkI1DHqFrf2T",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321667,
+     "currency_options": {
+      "clp": 590,
+      "cny": 410,
+      "mvr": 930,
+      "mxn": 1200,
+      "ron": 290,
+      "usd": 99,
+      "xcd": 170
+     }
+    },
+    {
+     "id": "price_1URrwE7GRT6LLkI1heehqCaf",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321658,
+     "currency_options": {
+      "all": 4900,
+      "ars": 90000,
+      "brl": 310,
+      "bzd": 120,
+      "eur": 53,
+      "jmd": 9800,
+      "kzt": 28000,
+      "pen": 210,
+      "pgk": 280,
+      "rsd": 6300,
+      "try": 3000,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrw57GRT6LLkI1lyNekvzw",
+     "active": true,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321649,
+     "currency_options": {
+      "bwp": 850,
+      "cop": 190000,
+      "gel": 160,
+      "gtq": 460,
+      "lbp": 5400000,
+      "mdl": 1100,
+      "myr": 250,
+      "usd": 60,
+      "xaf": 350,
+      "zar": 990
+     }
+    },
+    {
+     "id": "price_1URrvw7GRT6LLkI1LcXuJrZU",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321640,
+     "currency_options": {
+      "azn": 100,
+      "dzd": 8100,
+      "hnl": 1600,
+      "mad": 600,
+      "mnt": 220000,
+      "nad": 1000,
+      "php": 3800,
+      "thb": 2100,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URrvn7GRT6LLkI1mwFTDZoB",
+     "active": true,
+     "unit_amount": 60,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321631,
+     "currency_options": {
+      "afn": 3900,
+      "bdt": 7400,
+      "egp": 3200,
+      "etb": 9800,
+      "ils": 180,
+      "inr": 5700,
+      "lak": 1340000,
+      "lrd": 11000,
+      "mmk": 130000,
+      "mwk": 110000,
+      "ngn": 80000,
+      "npr": 9200,
+      "pkr": 17000,
+      "rwf": 890,
+      "tzs": 170000,
+      "ugx": 240000,
+      "usd": 60,
+      "uzs": 720000,
+      "xaf": 350,
+      "zmw": 1200
+     }
+    },
+    {
+     "id": "price_1UQ0Uy7GRT6LLkI1bDLfKmZy",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1791877908,
+     "currency_options": {
+      "brl": 490,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1UJDDg7GRT6LLkI1vb2FvjYt",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "day",
+     "interval_count": 30,
+     "nickname": "Study Pass USD 0.99 every month",
+     "created": 1790258512,
+     "currency_options": {
+      "usd": 99
+     }
+    }
+   ]
+  },
+  "prod_V2yikGRbHLdZR6": {
+   "name": "Pro Trial",
+   "prices": [
+    {
+     "id": "price_1URtW47GRT6LLkI1T2L7ElnN",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327724,
+     "currency_options": {
+      "bmd": 299,
+      "eur": 249,
+      "nok": 2800,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtVu7GRT6LLkI1v2dcFCMW",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327714,
+     "currency_options": {
+      "bsd": 249,
+      "eur": 229,
+      "gbp": 199,
+      "nzd": 449,
+      "sek": 2500,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtVp7GRT6LLkI1nW6eTejg",
+     "active": true,
+     "unit_amount": 195,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792327709,
+     "currency_options": {
+      "eur": 169,
+      "jpy": 298,
+      "krw": 2490,
+      "twd": 5900,
+      "usd": 195
+     }
+    },
+    {
+     "id": "price_1URtVe7GRT6LLkI1Hxvmq5OI",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327698,
+     "currency_options": {
+      "all": 9900,
+      "ars": 179900,
+      "brl": 590,
+      "bzd": 249,
+      "eur": 99,
+      "jmd": 18900,
+      "kzt": 53900,
+      "pen": 399,
+      "pgk": 549,
+      "rsd": 12900,
+      "try": 5900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtVZ7GRT6LLkI1ukNLCAHY",
+     "active": true,
+     "unit_amount": 79,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792327693,
+     "currency_options": {
+      "bob": 899,
+      "idr": 1400000,
+      "kes": 9900,
+      "khr": 299900,
+      "lkr": 24900,
+      "uah": 3400,
+      "usd": 79,
+      "vnd": 19000,
+      "xof": 439
+     }
+    },
+    {
+     "id": "price_1URtKh7GRT6LLkI1CeYcwmXy",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z100 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792327019,
+     "currency_options": {
+      "eur": 249,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtKY7GRT6LLkI12u7vAhAe",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z095 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792327010,
+     "currency_options": {
+      "aud": 399,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtKQ7GRT6LLkI1Dzb2cGRU",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z090 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792327002,
+     "currency_options": {
+      "cad": 399,
+      "sgd": 349,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtKH7GRT6LLkI1ArG91TpK",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z085 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326993,
+     "currency_options": {
+      "bsd": 249,
+      "eur": 229,
+      "gbp": 199,
+      "nzd": 449,
+      "sek": 2499,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtK87GRT6LLkI1DBYJJjih",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z080 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326984,
+     "currency_options": {
+      "eur": 199,
+      "hkd": 1900,
+      "mop": 1900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJy7GRT6LLkI1zXSMZnVk",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z075 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326974,
+     "currency_options": {
+      "aed": 799,
+      "eur": 199,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJp7GRT6LLkI1LcHeeCJa",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z070 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326965,
+     "currency_options": {
+      "eur": 199,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJh7GRT6LLkI1eydAT2rX",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z065 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326957,
+     "currency_options": {
+      "jpy": 298,
+      "krw": 2490,
+      "twd": 5900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJX7GRT6LLkI1IKwB432y",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z060 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326947,
+     "currency_options": {
+      "eur": 149,
+      "sar": 649,
+      "usd": 299,
+      "uyu": 6900
+     }
+    },
+    {
+     "id": "price_1URtJO7GRT6LLkI1YoacRZ3H",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z055 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326938,
+     "currency_options": {
+      "eur": 149,
+      "gyd": 34900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJH7GRT6LLkI10Ts8qDNS",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z045 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326931,
+     "currency_options": {
+      "cny": 899,
+      "mxn": 2499,
+      "ron": 649,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJ97GRT6LLkI1hvoaeQ0l",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z040 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326923,
+     "currency_options": {
+      "ars": 179900,
+      "brl": 599,
+      "bzd": 249,
+      "jmd": 18900,
+      "pen": 399,
+      "try": 5900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtJ17GRT6LLkI1ahfTq0ED",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z035 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326915,
+     "currency_options": {
+      "bwp": 1499,
+      "cop": 329900,
+      "gtq": 799,
+      "myr": 449,
+      "usd": 99,
+      "zar": 1699
+     }
+    },
+    {
+     "id": "price_1URtIr7GRT6LLkI1u5BEBvjv",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z030 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326905,
+     "currency_options": {
+      "azn": 149,
+      "dzd": 11900,
+      "mad": 899,
+      "nad": 1499,
+      "php": 5900,
+      "thb": 2900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URtIg7GRT6LLkI1AXDiflrQ",
+     "active": false,
+     "unit_amount": 79,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z025 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326894,
+     "currency_options": {
+      "bob": 899,
+      "idr": 1390000,
+      "kes": 9900,
+      "uah": 3400,
+      "usd": 79,
+      "vnd": 18900
+     }
+    },
+    {
+     "id": "price_1URtIW7GRT6LLkI1mOP5uor7",
+     "active": false,
+     "unit_amount": 59,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "Z020 | pro_trial_to_monthly | G1+G2 v1",
+     "created": 1792326884,
+     "currency_options": {
+      "bdt": 6900,
+      "egp": 2900,
+      "etb": 9900,
+      "ils": 199,
+      "inr": 5900,
+      "mwk": 99900,
+      "ngn": 79900,
+      "pkr": 16900,
+      "rwf": 889,
+      "usd": 59
+     }
+    },
+    {
+     "id": "price_1URsKt7GRT6LLkI13obBZ7Ae",
+     "active": false,
+     "unit_amount": 194,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323187,
+     "currency_options": {
+      "eur": 169,
+      "jpy": 298,
+      "krw": 2490,
+      "twd": 5900,
+      "usd": 194
+     }
+    },
+    {
+     "id": "price_1URsKg7GRT6LLkI1vPBL3VUg",
+     "active": true,
+     "unit_amount": 149,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323174,
+     "currency_options": {
+      "bbd": 349,
+      "bnd": 199,
+      "eur": 149,
+      "gyd": 34900,
+      "usd": 149
+     }
+    },
+    {
+     "id": "price_1URsKX7GRT6LLkI11WI6r22n",
+     "active": true,
+     "unit_amount": 149,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323165,
+     "currency_options": {
+      "crc": 67900,
+      "eur": 129,
+      "huf": 47900,
+      "pln": 599,
+      "scr": 2199,
+      "ttd": 999,
+      "usd": 149
+     }
+    },
+    {
+     "id": "price_1URrz27GRT6LLkI1BYoiUcnL",
+     "active": false,
+     "unit_amount": 79,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321832,
+     "currency_options": {
+      "bob": 899,
+      "idr": 1390000,
+      "kes": 9900,
+      "khr": 299900,
+      "lkr": 24900,
+      "uah": 3400,
+      "usd": 79,
+      "vnd": 18900,
+      "xof": 439
+     }
+    },
+    {
+     "id": "price_1URrxf7GRT6LLkI1h7y2ehzl",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321747,
+     "currency_options": {
+      "bmd": 299,
+      "eur": 249,
+      "nok": 2799,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrxW7GRT6LLkI1siP57nsF",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321738,
+     "currency_options": {
+      "aud": 399,
+      "eur": 249,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrxO7GRT6LLkI1WvBTkVYX",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321730,
+     "currency_options": {
+      "cad": 399,
+      "sgd": 349,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrxF7GRT6LLkI1M06PQ0da",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321721,
+     "currency_options": {
+      "bsd": 249,
+      "eur": 229,
+      "gbp": 199,
+      "nzd": 449,
+      "sek": 2499,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrx77GRT6LLkI1mafUApZJ",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321713,
+     "currency_options": {
+      "eur": 199,
+      "hkd": 1900,
+      "mop": 1900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrwx7GRT6LLkI1A89n1ZK6",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321703,
+     "currency_options": {
+      "aed": 799,
+      "eur": 199,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrwp7GRT6LLkI19S5H10ZY",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321695,
+     "currency_options": {
+      "eur": 199,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrwg7GRT6LLkI1ELzEzSB9",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321686,
+     "currency_options": {
+      "jpy": 298,
+      "krw": 2490,
+      "twd": 5900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrwX7GRT6LLkI17pon6WBl",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321677,
+     "currency_options": {
+      "eur": 149,
+      "sar": 649,
+      "usd": 299,
+      "uyu": 6900
+     }
+    },
+    {
+     "id": "price_1URrwO7GRT6LLkI1CQThdOWu",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321668,
+     "currency_options": {
+      "eur": 149,
+      "gyd": 34900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrwF7GRT6LLkI1zniti7j7",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321659,
+     "currency_options": {
+      "clp": 1299,
+      "cny": 899,
+      "mvr": 2099,
+      "mxn": 2499,
+      "ron": 649,
+      "usd": 299,
+      "xcd": 349
+     }
+    },
+    {
+     "id": "price_1URrw67GRT6LLkI1rWPG6Knm",
+     "active": false,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321650,
+     "currency_options": {
+      "all": 9900,
+      "ars": 179900,
+      "brl": 599,
+      "bzd": 249,
+      "eur": 99,
+      "jmd": 18900,
+      "kzt": 53900,
+      "pen": 399,
+      "pgk": 549,
+      "rsd": 12900,
+      "try": 5900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrvx7GRT6LLkI1sm1znOvE",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321641,
+     "currency_options": {
+      "bwp": 1499,
+      "cop": 329900,
+      "gel": 249,
+      "gtq": 799,
+      "lbp": 9390000,
+      "mdl": 1899,
+      "myr": 449,
+      "usd": 99,
+      "xaf": 609,
+      "zar": 1699
+     }
+    },
+    {
+     "id": "price_1URrvo7GRT6LLkI1wIzQtQ6p",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321632,
+     "currency_options": {
+      "azn": 149,
+      "dzd": 11900,
+      "hnl": 2400,
+      "mad": 899,
+      "mnt": 319900,
+      "nad": 1499,
+      "php": 5900,
+      "thb": 2900,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1URrvg7GRT6LLkI1SNUJVu95",
+     "active": true,
+     "unit_amount": 59,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321624,
+     "currency_options": {
+      "afn": 3900,
+      "bdt": 6900,
+      "egp": 2900,
+      "etb": 9900,
+      "ils": 199,
+      "inr": 5900,
+      "lak": 1290000,
+      "lrd": 9900,
+      "mmk": 129900,
+      "mwk": 99900,
+      "ngn": 79900,
+      "npr": 8900,
+      "pkr": 16900,
+      "rwf": 889,
+      "tzs": 159900,
+      "ugx": 239900,
+      "usd": 59,
+      "uzs": 719900,
+      "xaf": 349,
+      "zmw": 1200
+     }
+    },
+    {
+     "id": "price_1UQ1Sf7GRT6LLkI1bHoRULQr",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1791881609,
+     "currency_options": {
+      "brl": 490,
+      "krw": 4100,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1U2sli7GRT6LLkI13rZpSxDG",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786366650,
+     "currency_options": {
+      "brl": 499,
+      "krw": 4100,
+      "usd": 299
+     }
+    },
+    {
+     "id": "price_1U2slM7GRT6LLkI1RYM0atFA",
+     "active": true,
+     "unit_amount": 299,
+     "currency": "usd",
+     "interval": "week",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786366628,
+     "currency_options": {
+      "brl": 499,
+      "krw": 4100,
+      "usd": 299
+     }
+    }
+   ]
+  },
+  "prod_V2XRbewO3qfwsD": {
+   "name": "Extra Humanizer Pack",
+   "prices": [
+    {
+     "id": "price_1URtWC7GRT6LLkI1r9zcZ1NF",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327732,
+     "currency_options": {
+      "bmd": 699,
+      "eur": 599,
+      "nok": 6600,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtW17GRT6LLkI1L54bUHC7",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327721,
+     "currency_options": {
+      "bsd": 599,
+      "eur": 549,
+      "gbp": 449,
+      "nzd": 1099,
+      "sek": 5900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtVt7GRT6LLkI1FW7Q01hP",
+     "active": true,
+     "unit_amount": 455,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792327713,
+     "currency_options": {
+      "eur": 399,
+      "jpy": 698,
+      "krw": 5990,
+      "twd": 14900,
+      "usd": 455
+     }
+    },
+    {
+     "id": "price_1URtVl7GRT6LLkI1OvvJp2sU",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327705,
+     "currency_options": {
+      "all": 22900,
+      "ars": 419900,
+      "brl": 1390,
+      "bzd": 549,
+      "eur": 249,
+      "jmd": 43900,
+      "kzt": 129900,
+      "pen": 949,
+      "pgk": 1299,
+      "rsd": 28900,
+      "try": 13900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtVd7GRT6LLkI18rl41MaO",
+     "active": true,
+     "unit_amount": 179,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792327697,
+     "currency_options": {
+      "bob": 1999,
+      "idr": 3200000,
+      "kes": 22900,
+      "khr": 709900,
+      "lkr": 57900,
+      "uah": 7900,
+      "usd": 179,
+      "vnd": 45000,
+      "xof": 999
+     }
+    },
+    {
+     "id": "price_1URtKn7GRT6LLkI1iIPPnGKP",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z100 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792327025,
+     "currency_options": {
+      "eur": 599,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtKf7GRT6LLkI1UcF34ICc",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z095 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792327017,
+     "currency_options": {
+      "aud": 949,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtKX7GRT6LLkI1i5hUE0i0",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z090 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792327009,
+     "currency_options": {
+      "cad": 899,
+      "sgd": 799,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtKO7GRT6LLkI1PZ7tCtzw",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z085 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792327000,
+     "currency_options": {
+      "bsd": 599,
+      "eur": 549,
+      "gbp": 449,
+      "nzd": 1099,
+      "sek": 5899,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtKF7GRT6LLkI17E9ncWvY",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z080 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326991,
+     "currency_options": {
+      "eur": 499,
+      "hkd": 4500,
+      "mop": 4500,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtK67GRT6LLkI1daitladl",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z075 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326982,
+     "currency_options": {
+      "aed": 1899,
+      "eur": 449,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJw7GRT6LLkI1k3TtQo72",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z070 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326972,
+     "currency_options": {
+      "eur": 449,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJn7GRT6LLkI1QhW05zJr",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z065 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326963,
+     "currency_options": {
+      "jpy": 698,
+      "krw": 5990,
+      "twd": 14900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJd7GRT6LLkI1QiAFVHI4",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z060 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326953,
+     "currency_options": {
+      "eur": 349,
+      "sar": 1599,
+      "usd": 699,
+      "uyu": 16900
+     }
+    },
+    {
+     "id": "price_1URtJW7GRT6LLkI1LvlZ4fFz",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z055 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326946,
+     "currency_options": {
+      "eur": 349,
+      "gyd": 80900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJN7GRT6LLkI1D6yElAuI",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z045 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326937,
+     "currency_options": {
+      "cny": 2099,
+      "mxn": 5799,
+      "ron": 1499,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJF7GRT6LLkI1QpYPI5Ya",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z040 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326929,
+     "currency_options": {
+      "ars": 419900,
+      "brl": 1399,
+      "bzd": 549,
+      "jmd": 43900,
+      "pen": 949,
+      "try": 13900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtJ87GRT6LLkI1TzIwwrSv",
+     "active": false,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z035 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326922,
+     "currency_options": {
+      "bwp": 3399,
+      "cop": 779900,
+      "gtq": 1899,
+      "myr": 999,
+      "usd": 249,
+      "zar": 3999
+     }
+    },
+    {
+     "id": "price_1URtIy7GRT6LLkI1Dn22VtC2",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z030 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326912,
+     "currency_options": {
+      "azn": 349,
+      "dzd": 27900,
+      "mad": 2099,
+      "nad": 3499,
+      "php": 12900,
+      "thb": 6900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URtIp7GRT6LLkI1WjdMz4ep",
+     "active": false,
+     "unit_amount": 179,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z025 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326903,
+     "currency_options": {
+      "bob": 1999,
+      "idr": 3190000,
+      "kes": 22900,
+      "uah": 7900,
+      "usd": 179,
+      "vnd": 44900
+     }
+    },
+    {
+     "id": "price_1URtIe7GRT6LLkI1fDB0pWoj",
+     "active": false,
+     "unit_amount": 149,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z020 | addon_humanizer_3 | G1+G2 v1",
+     "created": 1792326892,
+     "currency_options": {
+      "bdt": 16900,
+      "egp": 7900,
+      "etb": 22900,
+      "ils": 449,
+      "inr": 12900,
+      "mwk": 239900,
+      "ngn": 189900,
+      "pkr": 38900,
+      "rwf": 2099,
+      "usd": 149
+     }
+    },
+    {
+     "id": "price_1URsKz7GRT6LLkI1oGo4rD6J",
+     "active": false,
+     "unit_amount": 454,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323193,
+     "currency_options": {
+      "eur": 399,
+      "jpy": 698,
+      "krw": 5990,
+      "twd": 14900,
+      "usd": 454
+     }
+    },
+    {
+     "id": "price_1URsKm7GRT6LLkI1csLLRoV0",
+     "active": true,
+     "unit_amount": 399,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323180,
+     "currency_options": {
+      "bbd": 749,
+      "bnd": 499,
+      "eur": 349,
+      "gyd": 80900,
+      "usd": 399
+     }
+    },
+    {
+     "id": "price_1URsKd7GRT6LLkI19AdL2PHz",
+     "active": true,
+     "unit_amount": 349,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323171,
+     "currency_options": {
+      "crc": 159900,
+      "eur": 299,
+      "huf": 109900,
+      "pln": 1399,
+      "scr": 5099,
+      "ttd": 2399,
+      "usd": 349
+     }
+    },
+    {
+     "id": "price_1URrz87GRT6LLkI17fXYE7oL",
+     "active": false,
+     "unit_amount": 179,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321838,
+     "currency_options": {
+      "bob": 1999,
+      "idr": 3190000,
+      "kes": 22900,
+      "khr": 709900,
+      "lkr": 57900,
+      "uah": 7900,
+      "usd": 179,
+      "vnd": 44900,
+      "xof": 999
+     }
+    },
+    {
+     "id": "price_1URrxl7GRT6LLkI1nKRo8ecV",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321753,
+     "currency_options": {
+      "bmd": 699,
+      "eur": 599,
+      "nok": 6599,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrxc7GRT6LLkI1zH2te5Zt",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321744,
+     "currency_options": {
+      "aud": 949,
+      "eur": 599,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrxT7GRT6LLkI1qs9LhcnL",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321735,
+     "currency_options": {
+      "cad": 899,
+      "sgd": 799,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrxL7GRT6LLkI1GeCCkuz1",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321727,
+     "currency_options": {
+      "bsd": 599,
+      "eur": 549,
+      "gbp": 449,
+      "nzd": 1099,
+      "sek": 5899,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrxC7GRT6LLkI19GbDgCFe",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321718,
+     "currency_options": {
+      "eur": 499,
+      "hkd": 4500,
+      "mop": 4500,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrx37GRT6LLkI1qXxIcW6F",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321709,
+     "currency_options": {
+      "aed": 1899,
+      "eur": 449,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrwu7GRT6LLkI1PqkWVWfs",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321700,
+     "currency_options": {
+      "eur": 449,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrwl7GRT6LLkI1SY0XYbe7",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321691,
+     "currency_options": {
+      "jpy": 698,
+      "krw": 5990,
+      "twd": 14900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrwd7GRT6LLkI1twi0QrK4",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321683,
+     "currency_options": {
+      "eur": 349,
+      "sar": 1599,
+      "usd": 699,
+      "uyu": 16900
+     }
+    },
+    {
+     "id": "price_1URrwU7GRT6LLkI1whAh5d4Z",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321674,
+     "currency_options": {
+      "eur": 349,
+      "gyd": 80900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrwL7GRT6LLkI1DatGrDf0",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321665,
+     "currency_options": {
+      "clp": 3099,
+      "cny": 2099,
+      "mvr": 4899,
+      "mxn": 5799,
+      "ron": 1499,
+      "usd": 699,
+      "xcd": 849
+     }
+    },
+    {
+     "id": "price_1URrwC7GRT6LLkI1V9vwHIjC",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321656,
+     "currency_options": {
+      "all": 22900,
+      "ars": 419900,
+      "brl": 1399,
+      "bzd": 549,
+      "eur": 249,
+      "jmd": 43900,
+      "kzt": 129900,
+      "pen": 949,
+      "pgk": 1299,
+      "rsd": 28900,
+      "try": 13900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrw37GRT6LLkI1rnX3diXu",
+     "active": true,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321647,
+     "currency_options": {
+      "bwp": 3399,
+      "cop": 779900,
+      "gel": 649,
+      "gtq": 1899,
+      "lbp": 21900000,
+      "mdl": 4399,
+      "myr": 999,
+      "usd": 249,
+      "xaf": 1399,
+      "zar": 3999
+     }
+    },
+    {
+     "id": "price_1URrvu7GRT6LLkI16gr5yJkk",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321638,
+     "currency_options": {
+      "azn": 349,
+      "dzd": 27900,
+      "hnl": 5900,
+      "mad": 2099,
+      "mnt": 759900,
+      "nad": 3499,
+      "php": 12900,
+      "thb": 6900,
+      "usd": 699
+     }
+    },
+    {
+     "id": "price_1URrvl7GRT6LLkI1g8wSmfnC",
+     "active": true,
+     "unit_amount": 149,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321629,
+     "currency_options": {
+      "afn": 8900,
+      "bdt": 16900,
+      "egp": 7900,
+      "etb": 22900,
+      "ils": 449,
+      "inr": 12900,
+      "lak": 3090000,
+      "lrd": 23900,
+      "mmk": 289900,
+      "mwk": 239900,
+      "ngn": 189900,
+      "npr": 20900,
+      "pkr": 38900,
+      "rwf": 2099,
+      "tzs": 369900,
+      "ugx": 559900,
+      "usd": 149,
+      "uzs": 1690000,
+      "xaf": 819,
+      "zmw": 2900
+     }
+    },
+    {
+     "id": "price_1U2SO57GRT6LLkI1BAvC57zP",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": null,
+     "created": 1786265241,
+     "currency_options": {
+      "brl": 3490,
+      "krw": 9600,
+      "usd": 699
+     }
+    }
+   ]
+  },
+  "prod_V2XRzr2BbiKqJA": {
+   "name": "Extra AI Detection Pack",
+   "prices": [
+    {
+     "id": "price_1URtWB7GRT6LLkI14Vet3GgH",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327731,
+     "currency_options": {
+      "bmd": 499,
+      "eur": 449,
+      "nok": 4700,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtW07GRT6LLkI1KXhSeSFw",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327720,
+     "currency_options": {
+      "bsd": 399,
+      "eur": 399,
+      "gbp": 299,
+      "nzd": 749,
+      "sek": 4200,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtVs7GRT6LLkI15fy1Wub7",
+     "active": true,
+     "unit_amount": 325,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792327712,
+     "currency_options": {
+      "eur": 299,
+      "jpy": 498,
+      "krw": 4290,
+      "twd": 10900,
+      "usd": 325
+     }
+    },
+    {
+     "id": "price_1URtVk7GRT6LLkI1Lw6WAtYL",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327704,
+     "currency_options": {
+      "all": 15900,
+      "ars": 299900,
+      "brl": 990,
+      "bzd": 399,
+      "eur": 179,
+      "jmd": 31900,
+      "kzt": 89900,
+      "pen": 699,
+      "pgk": 899,
+      "rsd": 20900,
+      "try": 9900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtVc7GRT6LLkI1ernnS2ZB",
+     "active": true,
+     "unit_amount": 129,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792327696,
+     "currency_options": {
+      "bob": 1499,
+      "idr": 2300000,
+      "kes": 15900,
+      "khr": 509900,
+      "lkr": 40900,
+      "uah": 5900,
+      "usd": 129,
+      "vnd": 32000,
+      "xof": 729
+     }
+    },
+    {
+     "id": "price_1URtKm7GRT6LLkI1hMB6Y6Mx",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z100 | addon_detection_5 | G1+G2 v1",
+     "created": 1792327024,
+     "currency_options": {
+      "eur": 449,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtKe7GRT6LLkI1SvKukthi",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z095 | addon_detection_5 | G1+G2 v1",
+     "created": 1792327016,
+     "currency_options": {
+      "aud": 699,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtKW7GRT6LLkI16VFilUSz",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z090 | addon_detection_5 | G1+G2 v1",
+     "created": 1792327008,
+     "currency_options": {
+      "cad": 649,
+      "sgd": 599,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtKN7GRT6LLkI1yvZo7hFs",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z085 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326999,
+     "currency_options": {
+      "bsd": 399,
+      "eur": 399,
+      "gbp": 299,
+      "nzd": 749,
+      "sek": 4199,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtKE7GRT6LLkI1KexHnk6F",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z080 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326990,
+     "currency_options": {
+      "eur": 349,
+      "hkd": 2900,
+      "mop": 3200,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtK57GRT6LLkI1NJ81vGgL",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z075 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326981,
+     "currency_options": {
+      "aed": 1399,
+      "eur": 349,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJv7GRT6LLkI1D0L1sWtN",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z070 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326971,
+     "currency_options": {
+      "eur": 299,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJn7GRT6LLkI1an80iBiJ",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z065 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326963,
+     "currency_options": {
+      "jpy": 498,
+      "krw": 4290,
+      "twd": 10900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJd7GRT6LLkI15VNfqFfZ",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z060 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326953,
+     "currency_options": {
+      "eur": 249,
+      "sar": 1099,
+      "usd": 499,
+      "uyu": 11900
+     }
+    },
+    {
+     "id": "price_1URtJV7GRT6LLkI1svB1rtMj",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z055 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326945,
+     "currency_options": {
+      "eur": 249,
+      "gyd": 57900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJM7GRT6LLkI1LaTwSUDv",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z045 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326936,
+     "currency_options": {
+      "cny": 1499,
+      "mxn": 4099,
+      "ron": 1099,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJE7GRT6LLkI1wmn6kSeR",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z040 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326928,
+     "currency_options": {
+      "ars": 299900,
+      "brl": 999,
+      "bzd": 399,
+      "jmd": 31900,
+      "pen": 699,
+      "try": 9900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtJ77GRT6LLkI1FepL8QCs",
+     "active": false,
+     "unit_amount": 179,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z035 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326921,
+     "currency_options": {
+      "bwp": 2499,
+      "cop": 559900,
+      "gtq": 1299,
+      "myr": 699,
+      "usd": 179,
+      "zar": 2899
+     }
+    },
+    {
+     "id": "price_1URtIx7GRT6LLkI1EnsxnrQH",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z030 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326911,
+     "currency_options": {
+      "azn": 249,
+      "dzd": 19900,
+      "mad": 1499,
+      "nad": 2499,
+      "php": 9900,
+      "thb": 4900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URtIo7GRT6LLkI1VvdVAfTI",
+     "active": false,
+     "unit_amount": 129,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z025 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326902,
+     "currency_options": {
+      "bob": 1499,
+      "idr": 2290000,
+      "kes": 15900,
+      "uah": 5900,
+      "usd": 129,
+      "vnd": 31900
+     }
+    },
+    {
+     "id": "price_1URtId7GRT6LLkI1FAgKiL5M",
+     "active": false,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z020 | addon_detection_5 | G1+G2 v1",
+     "created": 1792326891,
+     "currency_options": {
+      "bdt": 11900,
+      "egp": 4900,
+      "etb": 15900,
+      "ils": 299,
+      "inr": 9900,
+      "mwk": 169900,
+      "ngn": 129900,
+      "pkr": 27900,
+      "rwf": 1499,
+      "usd": 99
+     }
+    },
+    {
+     "id": "price_1URsKy7GRT6LLkI1S4nM1SFn",
+     "active": false,
+     "unit_amount": 324,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323192,
+     "currency_options": {
+      "eur": 299,
+      "jpy": 498,
+      "krw": 4290,
+      "twd": 10900,
+      "usd": 324
+     }
+    },
+    {
+     "id": "price_1URsKl7GRT6LLkI1WnPsxDCA",
+     "active": true,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323179,
+     "currency_options": {
+      "bbd": 549,
+      "bnd": 349,
+      "eur": 249,
+      "gyd": 57900,
+      "usd": 249
+     }
+    },
+    {
+     "id": "price_1URsKc7GRT6LLkI1GtqawNoF",
+     "active": true,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323170,
+     "currency_options": {
+      "crc": 109900,
+      "eur": 219,
+      "huf": 80900,
+      "pln": 949,
+      "scr": 3599,
+      "ttd": 1699,
+      "usd": 249
+     }
+    },
+    {
+     "id": "price_1URrz77GRT6LLkI1dH2tbgA9",
+     "active": false,
+     "unit_amount": 129,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321837,
+     "currency_options": {
+      "bob": 1499,
+      "idr": 2290000,
+      "kes": 15900,
+      "khr": 509900,
+      "lkr": 40900,
+      "uah": 5900,
+      "usd": 129,
+      "vnd": 31900,
+      "xof": 729
+     }
+    },
+    {
+     "id": "price_1URrxk7GRT6LLkI1TKq0anAE",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321752,
+     "currency_options": {
+      "bmd": 499,
+      "eur": 449,
+      "nok": 4699,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrxb7GRT6LLkI1Hi7uJytk",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321743,
+     "currency_options": {
+      "aud": 699,
+      "eur": 399,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrxS7GRT6LLkI1JNYuLJWq",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321734,
+     "currency_options": {
+      "cad": 649,
+      "sgd": 599,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrxK7GRT6LLkI10LPECQ60",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321726,
+     "currency_options": {
+      "bsd": 399,
+      "eur": 399,
+      "gbp": 299,
+      "nzd": 749,
+      "sek": 4199,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrxB7GRT6LLkI1dCI4aOGD",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321717,
+     "currency_options": {
+      "eur": 349,
+      "hkd": 2900,
+      "mop": 3200,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrx27GRT6LLkI1UKo28k3Z",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321708,
+     "currency_options": {
+      "aed": 1399,
+      "eur": 349,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrwt7GRT6LLkI18bBIbdgI",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321699,
+     "currency_options": {
+      "eur": 299,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrwk7GRT6LLkI14Rcou1pn",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321690,
+     "currency_options": {
+      "jpy": 498,
+      "krw": 4290,
+      "twd": 10900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrwc7GRT6LLkI1JEqMTYlB",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321682,
+     "currency_options": {
+      "eur": 249,
+      "sar": 1099,
+      "usd": 499,
+      "uyu": 11900
+     }
+    },
+    {
+     "id": "price_1URrwT7GRT6LLkI1fR2Cdg7Z",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321673,
+     "currency_options": {
+      "eur": 249,
+      "gyd": 57900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrwK7GRT6LLkI1LQJ1gKUx",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321664,
+     "currency_options": {
+      "clp": 2199,
+      "cny": 1499,
+      "mvr": 3499,
+      "mxn": 4099,
+      "ron": 1099,
+      "usd": 499,
+      "xcd": 599
+     }
+    },
+    {
+     "id": "price_1URrwB7GRT6LLkI1xIx2gAkW",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321655,
+     "currency_options": {
+      "all": 15900,
+      "ars": 299900,
+      "brl": 999,
+      "bzd": 399,
+      "eur": 179,
+      "jmd": 31900,
+      "kzt": 89900,
+      "pen": 699,
+      "pgk": 899,
+      "rsd": 20900,
+      "try": 9900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrw27GRT6LLkI14bZPFJBu",
+     "active": true,
+     "unit_amount": 179,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321646,
+     "currency_options": {
+      "bwp": 2499,
+      "cop": 559900,
+      "gel": 449,
+      "gtq": 1299,
+      "lbp": 15900000,
+      "mdl": 3099,
+      "myr": 699,
+      "usd": 179,
+      "xaf": 999,
+      "zar": 2899
+     }
+    },
+    {
+     "id": "price_1URrvt7GRT6LLkI1bKn5QaTV",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321637,
+     "currency_options": {
+      "azn": 249,
+      "dzd": 19900,
+      "hnl": 3900,
+      "mad": 1499,
+      "mnt": 539900,
+      "nad": 2499,
+      "php": 9900,
+      "thb": 4900,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrvk7GRT6LLkI1eleddwzo",
+     "active": true,
+     "unit_amount": 99,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321628,
+     "currency_options": {
+      "afn": 6900,
+      "bdt": 11900,
+      "egp": 4900,
+      "etb": 15900,
+      "ils": 299,
+      "inr": 9900,
+      "lak": 2190000,
+      "lrd": 16900,
+      "mmk": 209900,
+      "mwk": 169900,
+      "ngn": 129900,
+      "npr": 14900,
+      "pkr": 27900,
+      "rwf": 1499,
+      "tzs": 259900,
+      "ugx": 399900,
+      "usd": 99,
+      "uzs": 1190000,
+      "xaf": 579,
+      "zmw": 1900
+     }
+    },
+    {
+     "id": "price_1U2SO17GRT6LLkI17H9Bs8DQ",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": null,
+     "created": 1786265237,
+     "currency_options": {
+      "brl": 2490,
+      "krw": 6900,
+      "usd": 499
+     }
+    }
+   ]
+  },
+  "prod_V2XRyb7uDkhTVD": {
+   "name": "Extra Assignment Pack",
+   "prices": [
+    {
+     "id": "price_1URtWA7GRT6LLkI1z1ZH8kXu",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327730,
+     "currency_options": {
+      "bmd": 999,
+      "eur": 899,
+      "nok": 9400,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtVz7GRT6LLkI1XxgkNEYd",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327719,
+     "currency_options": {
+      "bsd": 849,
+      "eur": 749,
+      "gbp": 649,
+      "nzd": 1499,
+      "sek": 8400,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtVj7GRT6LLkI1EsF2nGs3",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327703,
+     "currency_options": {
+      "all": 32900,
+      "ars": 609900,
+      "brl": 1990,
+      "bzd": 799,
+      "eur": 349,
+      "jmd": 62900,
+      "kzt": 179900,
+      "pen": 1399,
+      "pgk": 1799,
+      "rsd": 41900,
+      "try": 19900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtVb7GRT6LLkI1BRbf9Xjq",
+     "active": true,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792327695,
+     "currency_options": {
+      "bob": 2899,
+      "idr": 4500000,
+      "kes": 32900,
+      "khr": 990000,
+      "lkr": 82900,
+      "uah": 10900,
+      "usd": 249,
+      "vnd": 65000,
+      "xof": 1499
+     }
+    },
+    {
+     "id": "price_1URtKm7GRT6LLkI1ztUkr79B",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z100 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792327024,
+     "currency_options": {
+      "eur": 899,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtKe7GRT6LLkI1iQMXF41y",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z095 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792327016,
+     "currency_options": {
+      "aud": 1399,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtKW7GRT6LLkI1dBv1qeq2",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z090 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792327008,
+     "currency_options": {
+      "cad": 1299,
+      "sgd": 1199,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtKN7GRT6LLkI15hVnpPWE",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z085 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326999,
+     "currency_options": {
+      "bsd": 849,
+      "eur": 749,
+      "gbp": 649,
+      "nzd": 1499,
+      "sek": 8399,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtKD7GRT6LLkI1KCwddDtm",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z080 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326989,
+     "currency_options": {
+      "eur": 699,
+      "hkd": 5900,
+      "mop": 6500,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtK47GRT6LLkI1Tb6FAnVA",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z075 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326980,
+     "currency_options": {
+      "aed": 2799,
+      "eur": 649,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJv7GRT6LLkI1dIRfFlvf",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z070 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326971,
+     "currency_options": {
+      "eur": 599,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJm7GRT6LLkI1ZZG2HFdn",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z065 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326962,
+     "currency_options": {
+      "jpy": 980,
+      "krw": 8690,
+      "twd": 20900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJc7GRT6LLkI1MEJJnVGI",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z060 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326952,
+     "currency_options": {
+      "eur": 549,
+      "sar": 2199,
+      "usd": 999,
+      "uyu": 23900
+     }
+    },
+    {
+     "id": "price_1URtJU7GRT6LLkI1PtXdW64L",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z055 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326944,
+     "currency_options": {
+      "eur": 499,
+      "gyd": 119900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJM7GRT6LLkI1i7gZjBDk",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z045 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326936,
+     "currency_options": {
+      "cny": 2999,
+      "mxn": 8299,
+      "ron": 2099,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJE7GRT6LLkI1thcsXS0S",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z040 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326928,
+     "currency_options": {
+      "ars": 609900,
+      "brl": 1999,
+      "bzd": 799,
+      "jmd": 62900,
+      "pen": 1399,
+      "try": 19900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtJ67GRT6LLkI15LV2t0vl",
+     "active": false,
+     "unit_amount": 349,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z035 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326920,
+     "currency_options": {
+      "bwp": 4899,
+      "cop": 1090000,
+      "gtq": 2699,
+      "myr": 1399,
+      "usd": 349,
+      "zar": 5799
+     }
+    },
+    {
+     "id": "price_1URtIw7GRT6LLkI1yupUvl8j",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z030 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326910,
+     "currency_options": {
+      "azn": 499,
+      "dzd": 39900,
+      "mad": 2899,
+      "nad": 4899,
+      "php": 18900,
+      "thb": 9900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URtIn7GRT6LLkI1up51maWd",
+     "active": false,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z025 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326901,
+     "currency_options": {
+      "bob": 2899,
+      "idr": 4490000,
+      "kes": 32900,
+      "uah": 10900,
+      "usd": 249,
+      "vnd": 64900
+     }
+    },
+    {
+     "id": "price_1URtIc7GRT6LLkI1V2mkvopj",
+     "active": false,
+     "unit_amount": 199,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "Z020 | addon_assignment_3 | G1+G2 v1",
+     "created": 1792326890,
+     "currency_options": {
+      "bdt": 24900,
+      "egp": 10900,
+      "etb": 31900,
+      "ils": 599,
+      "inr": 18900,
+      "mwk": 349900,
+      "ngn": 269900,
+      "pkr": 54900,
+      "rwf": 2999,
+      "usd": 199
+     }
+    },
+    {
+     "id": "price_1URsKx7GRT6LLkI11BSEqe4n",
+     "active": true,
+     "unit_amount": 649,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323191,
+     "currency_options": {
+      "eur": 599,
+      "jpy": 980,
+      "krw": 8690,
+      "twd": 20900,
+      "usd": 649
+     }
+    },
+    {
+     "id": "price_1URsKk7GRT6LLkI1n4cjnZ8q",
+     "active": true,
+     "unit_amount": 549,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323178,
+     "currency_options": {
+      "bbd": 1099,
+      "bnd": 699,
+      "eur": 499,
+      "gyd": 119900,
+      "usd": 549
+     }
+    },
+    {
+     "id": "price_1URsKb7GRT6LLkI1LltUASkL",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323169,
+     "currency_options": {
+      "crc": 229900,
+      "eur": 449,
+      "huf": 159900,
+      "pln": 1899,
+      "scr": 7299,
+      "ttd": 3399,
+      "usd": 499
+     }
+    },
+    {
+     "id": "price_1URrz67GRT6LLkI1XjdiqtqS",
+     "active": false,
+     "unit_amount": 249,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321836,
+     "currency_options": {
+      "bob": 2899,
+      "idr": 4490000,
+      "kes": 32900,
+      "khr": 990000,
+      "lkr": 82900,
+      "uah": 10900,
+      "usd": 249,
+      "vnd": 64900,
+      "xof": 1499
+     }
+    },
+    {
+     "id": "price_1URrxj7GRT6LLkI1orqZ2bIk",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321751,
+     "currency_options": {
+      "bmd": 999,
+      "eur": 899,
+      "nok": 9399,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrxb7GRT6LLkI1jL4222FD",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321743,
+     "currency_options": {
+      "aud": 1399,
+      "eur": 849,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrxS7GRT6LLkI1SObEYha0",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321734,
+     "currency_options": {
+      "cad": 1299,
+      "sgd": 1199,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrxJ7GRT6LLkI13xn18FmF",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321725,
+     "currency_options": {
+      "bsd": 849,
+      "eur": 749,
+      "gbp": 649,
+      "nzd": 1499,
+      "sek": 8399,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrxA7GRT6LLkI1bx0O8Ek9",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321716,
+     "currency_options": {
+      "eur": 699,
+      "hkd": 5900,
+      "mop": 6500,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrx17GRT6LLkI1qGsoho4M",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321707,
+     "currency_options": {
+      "aed": 2799,
+      "eur": 649,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrwt7GRT6LLkI1IwuxE3K3",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321699,
+     "currency_options": {
+      "eur": 599,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrwk7GRT6LLkI1G70D918s",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321690,
+     "currency_options": {
+      "jpy": 980,
+      "krw": 8690,
+      "twd": 20900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrwb7GRT6LLkI1xaJ6TDiv",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321681,
+     "currency_options": {
+      "eur": 549,
+      "sar": 2199,
+      "usd": 999,
+      "uyu": 23900
+     }
+    },
+    {
+     "id": "price_1URrwS7GRT6LLkI1cETPTsiG",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321672,
+     "currency_options": {
+      "eur": 499,
+      "gyd": 119900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrwJ7GRT6LLkI1FFIPT3q2",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321663,
+     "currency_options": {
+      "clp": 4399,
+      "cny": 2999,
+      "mvr": 6899,
+      "mxn": 8299,
+      "ron": 2099,
+      "usd": 999,
+      "xcd": 1199
+     }
+    },
+    {
+     "id": "price_1URrwA7GRT6LLkI1UmwIbgF2",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321654,
+     "currency_options": {
+      "all": 32900,
+      "ars": 609900,
+      "brl": 1999,
+      "bzd": 799,
+      "eur": 349,
+      "jmd": 62900,
+      "kzt": 179900,
+      "pen": 1399,
+      "pgk": 1799,
+      "rsd": 41900,
+      "try": 19900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrw17GRT6LLkI1eyTE1Gsc",
+     "active": true,
+     "unit_amount": 349,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321645,
+     "currency_options": {
+      "bwp": 4899,
+      "cop": 1090000,
+      "gel": 899,
+      "gtq": 2699,
+      "lbp": 30900000,
+      "mdl": 6299,
+      "myr": 1399,
+      "usd": 349,
+      "xaf": 1999,
+      "zar": 5799
+     }
+    },
+    {
+     "id": "price_1URrvs7GRT6LLkI183qwm237",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321636,
+     "currency_options": {
+      "azn": 499,
+      "dzd": 39900,
+      "hnl": 7900,
+      "mad": 2899,
+      "mnt": 1090000,
+      "nad": 4899,
+      "php": 18900,
+      "thb": 9900,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrvk7GRT6LLkI1uKA4TtpM",
+     "active": true,
+     "unit_amount": 199,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321628,
+     "currency_options": {
+      "afn": 12900,
+      "bdt": 24900,
+      "egp": 10900,
+      "etb": 31900,
+      "ils": 599,
+      "inr": 18900,
+      "lak": 4490000,
+      "lrd": 33900,
+      "mmk": 419900,
+      "mwk": 349900,
+      "ngn": 269900,
+      "npr": 30900,
+      "pkr": 54900,
+      "rwf": 2999,
+      "tzs": 529900,
+      "ugx": 799900,
+      "usd": 199,
+      "uzs": 2390000,
+      "xaf": 1199,
+      "zmw": 3900
+     }
+    },
+    {
+     "id": "price_1U2SNx7GRT6LLkI10MleQRko",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": null,
+     "interval_count": null,
+     "nickname": null,
+     "created": 1786265233,
+     "currency_options": {
+      "brl": 4990,
+      "krw": 13800,
+      "usd": 999
+     }
+    }
+   ]
+  },
+  "prod_V2XRxk7tA14xQr": {
+   "name": "Verla Pro",
+   "prices": [
+    {
+     "id": "price_1URtWF7GRT6LLkI12Xx5NRzO",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327735,
+     "currency_options": {
+      "bmd": 35988,
+      "eur": 32388,
+      "nok": 339600,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtWD7GRT6LLkI1y5N9CMgw",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327733,
+     "currency_options": {
+      "bmd": 2999,
+      "eur": 2699,
+      "nok": 28300,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtW37GRT6LLkI1Rumqp3BS",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327723,
+     "currency_options": {
+      "bsd": 31188,
+      "eur": 27588,
+      "gbp": 22788,
+      "nzd": 53988,
+      "sek": 303600,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtW27GRT6LLkI1h0DJAY8G",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327722,
+     "currency_options": {
+      "bsd": 2599,
+      "eur": 2299,
+      "gbp": 1899,
+      "nzd": 4499,
+      "sek": 25300,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtVo7GRT6LLkI1PLxl0Wkp",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327708,
+     "currency_options": {
+      "all": 1174800,
+      "ars": 21480000,
+      "brl": 73080,
+      "bzd": 28788,
+      "eur": 13188,
+      "jmd": 2278800,
+      "kzt": 6478800,
+      "pen": 49188,
+      "pgk": 64788,
+      "rsd": 1558800,
+      "try": 718800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtVn7GRT6LLkI1P69dKRSD",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327707,
+     "currency_options": {
+      "all": 97900,
+      "ars": 1790000,
+      "brl": 6090,
+      "bzd": 2399,
+      "eur": 1099,
+      "jmd": 189900,
+      "kzt": 539900,
+      "pen": 4099,
+      "pgk": 5399,
+      "rsd": 129900,
+      "try": 59900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtKl7GRT6LLkI1eoqNOPk8",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z100 | pro_yearly | G1+G2 v1",
+     "created": 1792327023,
+     "currency_options": {
+      "eur": 32388,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtKj7GRT6LLkI1uZDYgAA5",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z100 | pro_monthly | G1+G2 v1",
+     "created": 1792327021,
+     "currency_options": {
+      "eur": 2699,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtKd7GRT6LLkI1031ke6xY",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z095 | pro_yearly | G1+G2 v1",
+     "created": 1792327015,
+     "currency_options": {
+      "aud": 49188,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtKb7GRT6LLkI1HjJ4LBGw",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z095 | pro_monthly | G1+G2 v1",
+     "created": 1792327013,
+     "currency_options": {
+      "aud": 4099,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtKV7GRT6LLkI12qVpP5Yd",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z090 | pro_yearly | G1+G2 v1",
+     "created": 1792327007,
+     "currency_options": {
+      "cad": 45588,
+      "sgd": 41988,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtKT7GRT6LLkI1jUUcIDB5",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z090 | pro_monthly | G1+G2 v1",
+     "created": 1792327005,
+     "currency_options": {
+      "cad": 3799,
+      "sgd": 3499,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtKM7GRT6LLkI1PsRytDvf",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z085 | pro_yearly | G1+G2 v1",
+     "created": 1792326998,
+     "currency_options": {
+      "bsd": 31188,
+      "eur": 27588,
+      "gbp": 22788,
+      "nzd": 53988,
+      "sek": 303588,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtKK7GRT6LLkI1fX0QrzbZ",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z085 | pro_monthly | G1+G2 v1",
+     "created": 1792326996,
+     "currency_options": {
+      "bsd": 2599,
+      "eur": 2299,
+      "gbp": 1899,
+      "nzd": 4499,
+      "sek": 25299,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtKD7GRT6LLkI1EOiQNkT2",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z080 | pro_yearly | G1+G2 v1",
+     "created": 1792326989,
+     "currency_options": {
+      "eur": 25188,
+      "hkd": 226800,
+      "mop": 238800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtKA7GRT6LLkI1IeusMUqR",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z080 | pro_monthly | G1+G2 v1",
+     "created": 1792326986,
+     "currency_options": {
+      "eur": 2099,
+      "hkd": 18900,
+      "mop": 19900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtK37GRT6LLkI1FvhPgM6x",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z075 | pro_yearly | G1+G2 v1",
+     "created": 1792326979,
+     "currency_options": {
+      "aed": 99588,
+      "eur": 23988,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtK07GRT6LLkI1qZDZWAhJ",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z075 | pro_monthly | G1+G2 v1",
+     "created": 1792326976,
+     "currency_options": {
+      "aed": 8299,
+      "eur": 1999,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJu7GRT6LLkI1261GtIh8",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z070 | pro_yearly | G1+G2 v1",
+     "created": 1792326970,
+     "currency_options": {
+      "eur": 22788,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtJr7GRT6LLkI1kR75T9zj",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z070 | pro_monthly | G1+G2 v1",
+     "created": 1792326967,
+     "currency_options": {
+      "eur": 1899,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJl7GRT6LLkI1m4gLQpST",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z065 | pro_yearly | G1+G2 v1",
+     "created": 1792326961,
+     "currency_options": {
+      "jpy": 35760,
+      "krw": 310800,
+      "twd": 754800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtJj7GRT6LLkI16kCuWKyN",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z065 | pro_monthly | G1+G2 v1",
+     "created": 1792326959,
+     "currency_options": {
+      "jpy": 2980,
+      "krw": 25900,
+      "twd": 62900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJb7GRT6LLkI13u6VV5JA",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z060 | pro_yearly | G1+G2 v1",
+     "created": 1792326951,
+     "currency_options": {
+      "eur": 19188,
+      "sar": 80388,
+      "usd": 35988,
+      "uyu": 862800
+     }
+    },
+    {
+     "id": "price_1URtJZ7GRT6LLkI1YlYFpFSP",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z060 | pro_monthly | G1+G2 v1",
+     "created": 1792326949,
+     "currency_options": {
+      "eur": 1599,
+      "sar": 6699,
+      "usd": 2999,
+      "uyu": 71900
+     }
+    },
+    {
+     "id": "price_1URtJT7GRT6LLkI19dGRsl0e",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z055 | pro_yearly | G1+G2 v1",
+     "created": 1792326943,
+     "currency_options": {
+      "eur": 17988,
+      "gyd": 4198800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtJR7GRT6LLkI1hvcAyiBR",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z055 | pro_monthly | G1+G2 v1",
+     "created": 1792326941,
+     "currency_options": {
+      "eur": 1499,
+      "gyd": 349900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJL7GRT6LLkI1wgqedfTB",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z045 | pro_yearly | G1+G2 v1",
+     "created": 1792326935,
+     "currency_options": {
+      "cny": 107988,
+      "mxn": 298788,
+      "ron": 76788,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtJI7GRT6LLkI1qcI4vKTU",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z045 | pro_monthly | G1+G2 v1",
+     "created": 1792326932,
+     "currency_options": {
+      "cny": 8999,
+      "mxn": 24899,
+      "ron": 6399,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJD7GRT6LLkI1oNSmLFW3",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z040 | pro_yearly | G1+G2 v1",
+     "created": 1792326927,
+     "currency_options": {
+      "ars": 21480000,
+      "brl": 73188,
+      "bzd": 28788,
+      "jmd": 2278800,
+      "pen": 49188,
+      "try": 718800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtJB7GRT6LLkI1YeaZk709",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z040 | pro_monthly | G1+G2 v1",
+     "created": 1792326925,
+     "currency_options": {
+      "ars": 1790000,
+      "brl": 6099,
+      "bzd": 2399,
+      "jmd": 189900,
+      "pen": 4099,
+      "try": 59900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtJ67GRT6LLkI19BOq5HfP",
+     "active": false,
+     "unit_amount": 13188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z035 | pro_yearly | G1+G2 v1",
+     "created": 1792326920,
+     "currency_options": {
+      "bwp": 176388,
+      "cop": 40680000,
+      "gtq": 95988,
+      "myr": 51588,
+      "usd": 13188,
+      "zar": 207588
+     }
+    },
+    {
+     "id": "price_1URtJ37GRT6LLkI1NeQDfzJG",
+     "active": false,
+     "unit_amount": 1099,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z035 | pro_monthly | G1+G2 v1",
+     "created": 1792326917,
+     "currency_options": {
+      "bwp": 14699,
+      "cop": 3390000,
+      "gtq": 7999,
+      "myr": 4299,
+      "usd": 1099,
+      "zar": 17299
+     }
+    },
+    {
+     "id": "price_1URtIw7GRT6LLkI1vnbLiJAs",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z030 | pro_yearly | G1+G2 v1",
+     "created": 1792326910,
+     "currency_options": {
+      "azn": 17988,
+      "dzd": 1438800,
+      "mad": 105588,
+      "nad": 177588,
+      "php": 682800,
+      "thb": 358800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URtIt7GRT6LLkI14If7Emti",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z030 | pro_monthly | G1+G2 v1",
+     "created": 1792326907,
+     "currency_options": {
+      "azn": 1499,
+      "dzd": 119900,
+      "mad": 8799,
+      "nad": 14799,
+      "php": 56900,
+      "thb": 29900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URtIm7GRT6LLkI1np0jRRO0",
+     "active": false,
+     "unit_amount": 8988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z025 | pro_yearly | G1+G2 v1",
+     "created": 1792326900,
+     "currency_options": {
+      "bob": 105588,
+      "idr": 166800000,
+      "kes": 1162800,
+      "uah": 406800,
+      "usd": 8988,
+      "vnd": 2268000
+     }
+    },
+    {
+     "id": "price_1URtIi7GRT6LLkI1XZhegBK5",
+     "active": false,
+     "unit_amount": 749,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z025 | pro_monthly | G1+G2 v1",
+     "created": 1792326896,
+     "currency_options": {
+      "bob": 8799,
+      "idr": 13900000,
+      "kes": 96900,
+      "uah": 33900,
+      "usd": 749,
+      "vnd": 189000
+     }
+    },
+    {
+     "id": "price_1URtIc7GRT6LLkI15eYwn9Hz",
+     "active": false,
+     "unit_amount": 7188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z020 | pro_yearly | G1+G2 v1",
+     "created": 1792326890,
+     "currency_options": {
+      "bdt": 886800,
+      "egp": 382800,
+      "etb": 1162800,
+      "ils": 22788,
+      "inr": 682800,
+      "mwk": 13080000,
+      "ngn": 9598800,
+      "pkr": 2038800,
+      "rwf": 106788,
+      "usd": 7188
+     }
+    },
+    {
+     "id": "price_1URtIZ7GRT6LLkI1DNzSJDhE",
+     "active": false,
+     "unit_amount": 599,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z020 | pro_monthly | G1+G2 v1",
+     "created": 1792326887,
+     "currency_options": {
+      "bdt": 73900,
+      "egp": 31900,
+      "etb": 96900,
+      "ils": 1899,
+      "inr": 56900,
+      "mwk": 1090000,
+      "ngn": 799900,
+      "pkr": 169900,
+      "rwf": 8899,
+      "usd": 599
+     }
+    },
+    {
+     "id": "price_1URsL07GRT6LLkI1qU6NMcSm",
+     "active": true,
+     "unit_amount": 23388,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323194,
+     "currency_options": {
+      "eur": 20388,
+      "jpy": 35760,
+      "krw": 310800,
+      "twd": 754800,
+      "usd": 23388
+     }
+    },
+    {
+     "id": "price_1URsKz7GRT6LLkI1sEILJd6a",
+     "active": true,
+     "unit_amount": 1949,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323193,
+     "currency_options": {
+      "eur": 1699,
+      "jpy": 2980,
+      "krw": 25900,
+      "twd": 62900,
+      "usd": 1949
+     }
+    },
+    {
+     "id": "price_1URsKn7GRT6LLkI15XzmpbYm",
+     "active": true,
+     "unit_amount": 20388,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323181,
+     "currency_options": {
+      "bbd": 39588,
+      "bnd": 25188,
+      "eur": 17988,
+      "gyd": 4198800,
+      "usd": 20388
+     }
+    },
+    {
+     "id": "price_1URsKn7GRT6LLkI14o3ccC2S",
+     "active": true,
+     "unit_amount": 1699,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323181,
+     "currency_options": {
+      "bbd": 3299,
+      "bnd": 2099,
+      "eur": 1499,
+      "gyd": 349900,
+      "usd": 1699
+     }
+    },
+    {
+     "id": "price_1URsKf7GRT6LLkI12mPynyvD",
+     "active": true,
+     "unit_amount": 17988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323173,
+     "currency_options": {
+      "crc": 8158800,
+      "eur": 15588,
+      "huf": 5758800,
+      "pln": 69588,
+      "scr": 261588,
+      "ttd": 121188,
+      "usd": 17988
+     }
+    },
+    {
+     "id": "price_1URsKe7GRT6LLkI1GM335bxO",
+     "active": true,
+     "unit_amount": 1499,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323172,
+     "currency_options": {
+      "crc": 679900,
+      "eur": 1299,
+      "huf": 479900,
+      "pln": 5799,
+      "scr": 21799,
+      "ttd": 10099,
+      "usd": 1499
+     }
+    },
+    {
+     "id": "price_1URrz97GRT6LLkI1erq4YsQ7",
+     "active": true,
+     "unit_amount": 8988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321839,
+     "currency_options": {
+      "bob": 105588,
+      "idr": 166800000,
+      "kes": 1162800,
+      "khr": 37080000,
+      "lkr": 2998800,
+      "uah": 406800,
+      "usd": 8988,
+      "vnd": 2268000,
+      "xof": 52788
+     }
+    },
+    {
+     "id": "price_1URrz87GRT6LLkI1Z0psIJcB",
+     "active": true,
+     "unit_amount": 749,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321838,
+     "currency_options": {
+      "bob": 8799,
+      "idr": 13900000,
+      "kes": 96900,
+      "khr": 3090000,
+      "lkr": 249900,
+      "uah": 33900,
+      "usd": 749,
+      "vnd": 189000,
+      "xof": 4399
+     }
+    },
+    {
+     "id": "price_1URrxn7GRT6LLkI1tny3NzO8",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321755,
+     "currency_options": {
+      "bmd": 35988,
+      "eur": 32388,
+      "nok": 339588,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrxm7GRT6LLkI1PMLgb0EM",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321754,
+     "currency_options": {
+      "bmd": 2999,
+      "eur": 2699,
+      "nok": 28299,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrxe7GRT6LLkI1B8k1gbCS",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321746,
+     "currency_options": {
+      "aud": 49188,
+      "eur": 29988,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrxd7GRT6LLkI1e8nxttmE",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321745,
+     "currency_options": {
+      "aud": 4099,
+      "eur": 2499,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrxV7GRT6LLkI1rm59srS4",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321737,
+     "currency_options": {
+      "cad": 45588,
+      "sgd": 41988,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrxU7GRT6LLkI1rZp9mzyv",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321736,
+     "currency_options": {
+      "cad": 3799,
+      "sgd": 3499,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrxM7GRT6LLkI1Y3hfwyKe",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321728,
+     "currency_options": {
+      "bsd": 31188,
+      "eur": 27588,
+      "gbp": 22788,
+      "nzd": 53988,
+      "sek": 303588,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrxL7GRT6LLkI1fRbBkuFi",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321727,
+     "currency_options": {
+      "bsd": 2599,
+      "eur": 2299,
+      "gbp": 1899,
+      "nzd": 4499,
+      "sek": 25299,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrxE7GRT6LLkI1vFIavRT0",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321720,
+     "currency_options": {
+      "eur": 25188,
+      "hkd": 226800,
+      "mop": 238800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrxD7GRT6LLkI1DmR7NpKm",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321719,
+     "currency_options": {
+      "eur": 2099,
+      "hkd": 18900,
+      "mop": 19900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrx57GRT6LLkI1caV5pDOc",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321711,
+     "currency_options": {
+      "aed": 99588,
+      "eur": 23988,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrx47GRT6LLkI1rBHzQKGl",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321710,
+     "currency_options": {
+      "aed": 8299,
+      "eur": 1999,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrww7GRT6LLkI18pYd8hUj",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321702,
+     "currency_options": {
+      "eur": 22788,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrwv7GRT6LLkI1AnI4kOf4",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321701,
+     "currency_options": {
+      "eur": 1899,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrwn7GRT6LLkI1UmGOnUg2",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321693,
+     "currency_options": {
+      "jpy": 35760,
+      "krw": 310800,
+      "twd": 754800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrwm7GRT6LLkI1YlO1Os7P",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321692,
+     "currency_options": {
+      "jpy": 2980,
+      "krw": 25900,
+      "twd": 62900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrwe7GRT6LLkI1s560672r",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321684,
+     "currency_options": {
+      "eur": 19188,
+      "sar": 80388,
+      "usd": 35988,
+      "uyu": 862800
+     }
+    },
+    {
+     "id": "price_1URrwd7GRT6LLkI1PzAAQgv0",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321683,
+     "currency_options": {
+      "eur": 1599,
+      "sar": 6699,
+      "usd": 2999,
+      "uyu": 71900
+     }
+    },
+    {
+     "id": "price_1URrwV7GRT6LLkI1KRu0kOxO",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321675,
+     "currency_options": {
+      "eur": 17988,
+      "gyd": 4198800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrwV7GRT6LLkI1kPCSY8Is",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321675,
+     "currency_options": {
+      "eur": 1499,
+      "gyd": 349900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrwN7GRT6LLkI17oC39eD6",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321667,
+     "currency_options": {
+      "clp": 154800,
+      "cny": 107988,
+      "mvr": 250788,
+      "mxn": 298788,
+      "ron": 76788,
+      "usd": 35988,
+      "xcd": 43188
+     }
+    },
+    {
+     "id": "price_1URrwM7GRT6LLkI1Wt4KJ3MK",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321666,
+     "currency_options": {
+      "clp": 12900,
+      "cny": 8999,
+      "mvr": 20899,
+      "mxn": 24899,
+      "ron": 6399,
+      "usd": 2999,
+      "xcd": 3599
+     }
+    },
+    {
+     "id": "price_1URrwD7GRT6LLkI14wXk5z26",
+     "active": false,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321657,
+     "currency_options": {
+      "all": 1174800,
+      "ars": 21480000,
+      "brl": 73188,
+      "bzd": 28788,
+      "eur": 13188,
+      "jmd": 2278800,
+      "kzt": 6478800,
+      "pen": 49188,
+      "pgk": 64788,
+      "rsd": 1558800,
+      "try": 718800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrwD7GRT6LLkI1AMmtIIZq",
+     "active": false,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321657,
+     "currency_options": {
+      "all": 97900,
+      "ars": 1790000,
+      "brl": 6099,
+      "bzd": 2399,
+      "eur": 1099,
+      "jmd": 189900,
+      "kzt": 539900,
+      "pen": 4099,
+      "pgk": 5399,
+      "rsd": 129900,
+      "try": 59900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrw57GRT6LLkI16eAqZ89n",
+     "active": true,
+     "unit_amount": 13188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321648,
+     "currency_options": {
+      "bwp": 176388,
+      "cop": 40680000,
+      "gel": 32388,
+      "gtq": 95988,
+      "lbp": 1126800000,
+      "mdl": 225588,
+      "myr": 51588,
+      "usd": 13188,
+      "xaf": 73188,
+      "zar": 207588
+     }
+    },
+    {
+     "id": "price_1URrw47GRT6LLkI10CnP0N7y",
+     "active": true,
+     "unit_amount": 1099,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321648,
+     "currency_options": {
+      "bwp": 14699,
+      "cop": 3390000,
+      "gel": 2699,
+      "gtq": 7999,
+      "lbp": 93900000,
+      "mdl": 18799,
+      "myr": 4299,
+      "usd": 1099,
+      "xaf": 6099,
+      "zar": 17299
+     }
+    },
+    {
+     "id": "price_1URrvw7GRT6LLkI1gdtjghlG",
+     "active": true,
+     "unit_amount": 35988,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321640,
+     "currency_options": {
+      "azn": 17988,
+      "dzd": 1438800,
+      "hnl": 286800,
+      "mad": 105588,
+      "mnt": 39480000,
+      "nad": 177588,
+      "php": 682800,
+      "thb": 358800,
+      "usd": 35988
+     }
+    },
+    {
+     "id": "price_1URrvv7GRT6LLkI1aZeFjiih",
+     "active": true,
+     "unit_amount": 2999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321639,
+     "currency_options": {
+      "azn": 1499,
+      "dzd": 119900,
+      "hnl": 23900,
+      "mad": 8799,
+      "mnt": 3290000,
+      "nad": 14799,
+      "php": 56900,
+      "thb": 29900,
+      "usd": 2999
+     }
+    },
+    {
+     "id": "price_1URrvn7GRT6LLkI1c4v281IA",
+     "active": true,
+     "unit_amount": 7188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321631,
+     "currency_options": {
+      "afn": 466800,
+      "bdt": 886800,
+      "egp": 382800,
+      "etb": 1162800,
+      "ils": 22788,
+      "inr": 682800,
+      "lak": 154800000,
+      "lrd": 1198800,
+      "mmk": 15480000,
+      "mwk": 13080000,
+      "ngn": 9598800,
+      "npr": 1090800,
+      "pkr": 2038800,
+      "rwf": 106788,
+      "tzs": 19080000,
+      "ugx": 28680000,
+      "usd": 7188,
+      "uzs": 86280000,
+      "xaf": 41988,
+      "zmw": 142800
+     }
+    },
+    {
+     "id": "price_1URrvm7GRT6LLkI1niFzNvIH",
+     "active": true,
+     "unit_amount": 599,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321630,
+     "currency_options": {
+      "afn": 38900,
+      "bdt": 73900,
+      "egp": 31900,
+      "etb": 96900,
+      "ils": 1899,
+      "inr": 56900,
+      "lak": 12900000,
+      "lrd": 99900,
+      "mmk": 1290000,
+      "mwk": 1090000,
+      "ngn": 799900,
+      "npr": 90900,
+      "pkr": 169900,
+      "rwf": 8899,
+      "tzs": 1590000,
+      "ugx": 2390000,
+      "usd": 599,
+      "uzs": 7190000,
+      "xaf": 3499,
+      "zmw": 11900
+     }
+    },
+    {
+     "id": "price_1UQ1Sh7GRT6LLkI1K09CTtGF",
+     "active": true,
+     "unit_amount": 7999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1791881611,
+     "currency_options": {
+      "brl": 39990,
+      "krw": 110000,
+      "usd": 7999
+     }
+    },
+    {
+     "id": "price_1U2SNt7GRT6LLkI1NwuJJvcc",
+     "active": true,
+     "unit_amount": 38388,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265229,
+     "currency_options": {
+      "brl": 191990,
+      "krw": 530000,
+      "usd": 38388
+     }
+    },
+    {
+     "id": "price_1U2SNp7GRT6LLkI17wGltgTq",
+     "active": true,
+     "unit_amount": 7999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265225,
+     "currency_options": {
+      "brl": 39999,
+      "krw": 110000,
+      "usd": 7999
+     }
+    }
+   ]
+  },
+  "prod_V2XQrWdt06ryxW": {
+   "name": "Verla Plus",
+   "prices": [
+    {
+     "id": "price_1URtW97GRT6LLkI1x7J7ine0",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327729,
+     "currency_options": {
+      "bmd": 19199,
+      "eur": 17099,
+      "nok": 181100,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtW77GRT6LLkI1dZERBRXT",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327727,
+     "currency_options": {
+      "bmd": 3999,
+      "eur": 3599,
+      "nok": 37700,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtVy7GRT6LLkI1pOy9n3BZ",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327718,
+     "currency_options": {
+      "bsd": 16299,
+      "eur": 14499,
+      "gbp": 12199,
+      "nzd": 28799,
+      "sek": 161600,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtVw7GRT6LLkI1gCrd6WBz",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327716,
+     "currency_options": {
+      "bsd": 3399,
+      "eur": 2999,
+      "gbp": 2599,
+      "nzd": 5999,
+      "sek": 33700,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtVr7GRT6LLkI1srKukIEA",
+     "active": true,
+     "unit_amount": 12470,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792327711,
+     "currency_options": {
+      "eur": 11099,
+      "jpy": 18980,
+      "krw": 166900,
+      "twd": 399900,
+      "usd": 12470
+     }
+    },
+    {
+     "id": "price_1URtVi7GRT6LLkI1gegv9hqs",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327702,
+     "currency_options": {
+      "all": 629900,
+      "ars": 11590000,
+      "brl": 39090,
+      "bzd": 15399,
+      "eur": 6799,
+      "jmd": 1190000,
+      "kzt": 3490000,
+      "pen": 26399,
+      "pgk": 34699,
+      "rsd": 799900,
+      "try": 379900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtVg7GRT6LLkI10r8t0cNk",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327700,
+     "currency_options": {
+      "all": 129900,
+      "ars": 2390000,
+      "brl": 8090,
+      "bzd": 3199,
+      "eur": 1399,
+      "jmd": 249900,
+      "kzt": 719900,
+      "pen": 5499,
+      "pgk": 7199,
+      "rsd": 169900,
+      "try": 78900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtKk7GRT6LLkI1KbxM0VT1",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z100 | plus_yearly | G1+G2 v1",
+     "created": 1792327022,
+     "currency_options": {
+      "eur": 17099,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtKi7GRT6LLkI15kHH2qjB",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z100 | plus_monthly | G1+G2 v1",
+     "created": 1792327020,
+     "currency_options": {
+      "eur": 3599,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtKc7GRT6LLkI1xAenJtrI",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z095 | plus_yearly | G1+G2 v1",
+     "created": 1792327014,
+     "currency_options": {
+      "aud": 26199,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtKa7GRT6LLkI1luhjlubG",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z095 | plus_monthly | G1+G2 v1",
+     "created": 1792327012,
+     "currency_options": {
+      "aud": 5499,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtKU7GRT6LLkI1JcFtsr8W",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z090 | plus_yearly | G1+G2 v1",
+     "created": 1792327006,
+     "currency_options": {
+      "cad": 24399,
+      "sgd": 22099,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtKS7GRT6LLkI1SqDgUWpw",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z090 | plus_monthly | G1+G2 v1",
+     "created": 1792327004,
+     "currency_options": {
+      "cad": 5099,
+      "sgd": 4599,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtKL7GRT6LLkI1WRUwobQe",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z085 | plus_yearly | G1+G2 v1",
+     "created": 1792326997,
+     "currency_options": {
+      "bsd": 16299,
+      "eur": 14499,
+      "gbp": 12199,
+      "nzd": 28799,
+      "sek": 161599,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtKI7GRT6LLkI1oBtEQVn0",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z085 | plus_monthly | G1+G2 v1",
+     "created": 1792326994,
+     "currency_options": {
+      "bsd": 3399,
+      "eur": 2999,
+      "gbp": 2599,
+      "nzd": 5999,
+      "sek": 33699,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtKC7GRT6LLkI1EaTcMGP9",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z080 | plus_yearly | G1+G2 v1",
+     "created": 1792326988,
+     "currency_options": {
+      "eur": 13699,
+      "hkd": 119900,
+      "mop": 124900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtK97GRT6LLkI1cxkAulV8",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z080 | plus_monthly | G1+G2 v1",
+     "created": 1792326985,
+     "currency_options": {
+      "eur": 2799,
+      "hkd": 24900,
+      "mop": 25900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtK27GRT6LLkI1T1OXtmlq",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z075 | plus_yearly | G1+G2 v1",
+     "created": 1792326978,
+     "currency_options": {
+      "aed": 52899,
+      "eur": 12799,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJz7GRT6LLkI1X2DZnqgk",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z075 | plus_monthly | G1+G2 v1",
+     "created": 1792326975,
+     "currency_options": {
+      "aed": 10999,
+      "eur": 2699,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJt7GRT6LLkI1Zmd395Ay",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z070 | plus_yearly | G1+G2 v1",
+     "created": 1792326969,
+     "currency_options": {
+      "eur": 11899,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJq7GRT6LLkI1GSrd0xOJ",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z070 | plus_monthly | G1+G2 v1",
+     "created": 1792326966,
+     "currency_options": {
+      "eur": 2499,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJk7GRT6LLkI1x6JDv81g",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z065 | plus_yearly | G1+G2 v1",
+     "created": 1792326960,
+     "currency_options": {
+      "jpy": 18980,
+      "krw": 166900,
+      "twd": 399900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJj7GRT6LLkI17p0tJULN",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z065 | plus_monthly | G1+G2 v1",
+     "created": 1792326959,
+     "currency_options": {
+      "jpy": 3980,
+      "krw": 34900,
+      "twd": 83900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJb7GRT6LLkI19YGmbqcD",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z060 | plus_yearly | G1+G2 v1",
+     "created": 1792326951,
+     "currency_options": {
+      "eur": 10199,
+      "sar": 43199,
+      "usd": 19188,
+      "uyu": 459900
+     }
+    },
+    {
+     "id": "price_1URtJZ7GRT6LLkI1oIBAn1Iv",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z060 | plus_monthly | G1+G2 v1",
+     "created": 1792326949,
+     "currency_options": {
+      "eur": 2099,
+      "sar": 8999,
+      "usd": 3999,
+      "uyu": 96900
+     }
+    },
+    {
+     "id": "price_1URtJS7GRT6LLkI1jrD1EOoF",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z055 | plus_yearly | G1+G2 v1",
+     "created": 1792326942,
+     "currency_options": {
+      "eur": 9399,
+      "gyd": 2190000,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJQ7GRT6LLkI1IF9NR1F9",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z055 | plus_monthly | G1+G2 v1",
+     "created": 1792326940,
+     "currency_options": {
+      "eur": 1999,
+      "gyd": 459900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJK7GRT6LLkI1ZbQyGXEA",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z045 | plus_yearly | G1+G2 v1",
+     "created": 1792326934,
+     "currency_options": {
+      "cny": 57799,
+      "mxn": 159499,
+      "ron": 40899,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJI7GRT6LLkI14eiRgxyt",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z045 | plus_monthly | G1+G2 v1",
+     "created": 1792326932,
+     "currency_options": {
+      "cny": 12099,
+      "mxn": 33199,
+      "ron": 8499,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJC7GRT6LLkI1yK5kEJTw",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z040 | plus_yearly | G1+G2 v1",
+     "created": 1792326926,
+     "currency_options": {
+      "ars": 11590000,
+      "brl": 39099,
+      "bzd": 15399,
+      "jmd": 1190000,
+      "pen": 26399,
+      "try": 379900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtJA7GRT6LLkI1ZLUAZTFl",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z040 | plus_monthly | G1+G2 v1",
+     "created": 1792326924,
+     "currency_options": {
+      "ars": 2390000,
+      "brl": 8099,
+      "bzd": 3199,
+      "jmd": 249900,
+      "pen": 5499,
+      "try": 78900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtJ57GRT6LLkI1wHg3e9CW",
+     "active": false,
+     "unit_amount": 6699,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z035 | plus_yearly | G1+G2 v1",
+     "created": 1792326919,
+     "currency_options": {
+      "bwp": 94299,
+      "cop": 21900000,
+      "gtq": 51299,
+      "myr": 27399,
+      "usd": 6699,
+      "zar": 110599
+     }
+    },
+    {
+     "id": "price_1URtJ27GRT6LLkI1vr4CoNKp",
+     "active": false,
+     "unit_amount": 1399,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z035 | plus_monthly | G1+G2 v1",
+     "created": 1792326916,
+     "currency_options": {
+      "bwp": 19599,
+      "cop": 4490000,
+      "gtq": 10699,
+      "myr": 5699,
+      "usd": 1399,
+      "zar": 23099
+     }
+    },
+    {
+     "id": "price_1URtIv7GRT6LLkI1VYHDNqmY",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z030 | plus_yearly | G1+G2 v1",
+     "created": 1792326909,
+     "currency_options": {
+      "azn": 9799,
+      "dzd": 769900,
+      "mad": 56499,
+      "nad": 94799,
+      "php": 359900,
+      "thb": 192900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URtIs7GRT6LLkI1kIrrX3Pu",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z030 | plus_monthly | G1+G2 v1",
+     "created": 1792326906,
+     "currency_options": {
+      "azn": 1999,
+      "dzd": 159900,
+      "mad": 11799,
+      "nad": 19799,
+      "php": 75900,
+      "thb": 39900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URtIl7GRT6LLkI13Mm0jCwF",
+     "active": false,
+     "unit_amount": 4799,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z025 | plus_yearly | G1+G2 v1",
+     "created": 1792326899,
+     "currency_options": {
+      "bob": 56199,
+      "idr": 86900000,
+      "kes": 619900,
+      "uah": 219900,
+      "usd": 4799,
+      "vnd": 1239000
+     }
+    },
+    {
+     "id": "price_1URtIh7GRT6LLkI1uf5olXfT",
+     "active": false,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z025 | plus_monthly | G1+G2 v1",
+     "created": 1792326895,
+     "currency_options": {
+      "bob": 11699,
+      "idr": 17900000,
+      "kes": 129900,
+      "uah": 44900,
+      "usd": 999,
+      "vnd": 259000
+     }
+    },
+    {
+     "id": "price_1URtIb7GRT6LLkI1YGg4QCGk",
+     "active": false,
+     "unit_amount": 3799,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z020 | plus_yearly | G1+G2 v1",
+     "created": 1792326889,
+     "currency_options": {
+      "bdt": 469900,
+      "egp": 209900,
+      "etb": 619900,
+      "ils": 11899,
+      "inr": 369900,
+      "mwk": 6690000,
+      "ngn": 5190000,
+      "pkr": 1059900,
+      "rwf": 56900,
+      "usd": 3799
+     }
+    },
+    {
+     "id": "price_1URtIY7GRT6LLkI17V2TN7fp",
+     "active": false,
+     "unit_amount": 799,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z020 | plus_monthly | G1+G2 v1",
+     "created": 1792326886,
+     "currency_options": {
+      "bdt": 98900,
+      "egp": 42900,
+      "etb": 129900,
+      "ils": 2499,
+      "inr": 75900,
+      "mwk": 1390000,
+      "ngn": 1090000,
+      "pkr": 219900,
+      "rwf": 11900,
+      "usd": 799
+     }
+    },
+    {
+     "id": "price_1URsKw7GRT6LLkI1RUHGXv83",
+     "active": false,
+     "unit_amount": 12472,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323190,
+     "currency_options": {
+      "eur": 11099,
+      "jpy": 18980,
+      "krw": 166900,
+      "twd": 399900,
+      "usd": 12472
+     }
+    },
+    {
+     "id": "price_1URsKv7GRT6LLkI1mkLMl242",
+     "active": true,
+     "unit_amount": 2599,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323189,
+     "currency_options": {
+      "eur": 2299,
+      "jpy": 3980,
+      "krw": 34900,
+      "twd": 83900,
+      "usd": 2599
+     }
+    },
+    {
+     "id": "price_1URsKj7GRT6LLkI1397t566S",
+     "active": true,
+     "unit_amount": 10599,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323177,
+     "currency_options": {
+      "bbd": 21099,
+      "bnd": 13499,
+      "eur": 9399,
+      "gyd": 2190000,
+      "usd": 10599
+     }
+    },
+    {
+     "id": "price_1URsKi7GRT6LLkI1QqkwZLQb",
+     "active": true,
+     "unit_amount": 2199,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323176,
+     "currency_options": {
+      "bbd": 4399,
+      "bnd": 2799,
+      "eur": 1999,
+      "gyd": 459900,
+      "usd": 2199
+     }
+    },
+    {
+     "id": "price_1URsKb7GRT6LLkI1xJkFHUj7",
+     "active": true,
+     "unit_amount": 9599,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323169,
+     "currency_options": {
+      "crc": 4390000,
+      "eur": 8499,
+      "huf": 3090000,
+      "pln": 37299,
+      "scr": 139799,
+      "ttd": 64799,
+      "usd": 9599
+     }
+    },
+    {
+     "id": "price_1URsKZ7GRT6LLkI1qjnFczml",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323167,
+     "currency_options": {
+      "crc": 909900,
+      "eur": 1799,
+      "huf": 649900,
+      "pln": 7799,
+      "scr": 29099,
+      "ttd": 13499,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrz57GRT6LLkI14Mz7RW5Z",
+     "active": true,
+     "unit_amount": 4799,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321835,
+     "currency_options": {
+      "bob": 56199,
+      "idr": 86900000,
+      "kes": 619900,
+      "khr": 19900000,
+      "lkr": 1590000,
+      "uah": 219900,
+      "usd": 4799,
+      "vnd": 1239000,
+      "xof": 27900
+     }
+    },
+    {
+     "id": "price_1URrz47GRT6LLkI1tQbgKzv4",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321834,
+     "currency_options": {
+      "bob": 11699,
+      "idr": 17900000,
+      "kes": 129900,
+      "khr": 4090000,
+      "lkr": 329900,
+      "uah": 44900,
+      "usd": 999,
+      "vnd": 259000,
+      "xof": 5799
+     }
+    },
+    {
+     "id": "price_1URrxi7GRT6LLkI12kwh4f9g",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321750,
+     "currency_options": {
+      "bmd": 19199,
+      "eur": 17099,
+      "nok": 181099,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrxh7GRT6LLkI1xpT3YQxg",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321749,
+     "currency_options": {
+      "bmd": 3999,
+      "eur": 3599,
+      "nok": 37699,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrxa7GRT6LLkI1Q3Zm2eI9",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321742,
+     "currency_options": {
+      "aud": 26199,
+      "eur": 16199,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrxY7GRT6LLkI1E4QBXglY",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321740,
+     "currency_options": {
+      "aud": 5499,
+      "eur": 3399,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrxR7GRT6LLkI1vQfmPkot",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321733,
+     "currency_options": {
+      "cad": 24399,
+      "sgd": 22099,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrxP7GRT6LLkI1sTAcfne2",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321731,
+     "currency_options": {
+      "cad": 5099,
+      "sgd": 4599,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrxI7GRT6LLkI1k0E1SPEh",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321724,
+     "currency_options": {
+      "bsd": 16299,
+      "eur": 14499,
+      "gbp": 12199,
+      "nzd": 28799,
+      "sek": 161599,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrxH7GRT6LLkI18ADYfbud",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321723,
+     "currency_options": {
+      "bsd": 3399,
+      "eur": 2999,
+      "gbp": 2599,
+      "nzd": 5999,
+      "sek": 33699,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrxA7GRT6LLkI1SdUHuYPT",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321716,
+     "currency_options": {
+      "eur": 13699,
+      "hkd": 119900,
+      "mop": 124900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrx87GRT6LLkI1Jla1Vouy",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321714,
+     "currency_options": {
+      "eur": 2799,
+      "hkd": 24900,
+      "mop": 25900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrx17GRT6LLkI1SXqm2Etw",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321707,
+     "currency_options": {
+      "aed": 52899,
+      "eur": 12799,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrwz7GRT6LLkI1MVqkAsNB",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321705,
+     "currency_options": {
+      "aed": 10999,
+      "eur": 2699,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrws7GRT6LLkI1R5IreqW5",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321698,
+     "currency_options": {
+      "eur": 11899,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrwq7GRT6LLkI1FZP82heW",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321696,
+     "currency_options": {
+      "eur": 2499,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrwj7GRT6LLkI1QQ04iryg",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321689,
+     "currency_options": {
+      "jpy": 18980,
+      "krw": 166900,
+      "twd": 399900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrwh7GRT6LLkI12MIKM1q8",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321687,
+     "currency_options": {
+      "jpy": 3980,
+      "krw": 34900,
+      "twd": 83900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrwa7GRT6LLkI1PG3Lap7L",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321680,
+     "currency_options": {
+      "eur": 10199,
+      "sar": 43199,
+      "usd": 19188,
+      "uyu": 459900
+     }
+    },
+    {
+     "id": "price_1URrwZ7GRT6LLkI11tfCyoqM",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321679,
+     "currency_options": {
+      "eur": 2099,
+      "sar": 8999,
+      "usd": 3999,
+      "uyu": 96900
+     }
+    },
+    {
+     "id": "price_1URrwR7GRT6LLkI16dKq7ap1",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321671,
+     "currency_options": {
+      "eur": 9399,
+      "gyd": 2190000,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrwQ7GRT6LLkI1wJ0XNXp9",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321670,
+     "currency_options": {
+      "eur": 1999,
+      "gyd": 459900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrwI7GRT6LLkI1iZE9n46F",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321662,
+     "currency_options": {
+      "clp": 84900,
+      "cny": 57799,
+      "mvr": 133399,
+      "mxn": 159499,
+      "ron": 40899,
+      "usd": 19188,
+      "xcd": 23299
+     }
+    },
+    {
+     "id": "price_1URrwH7GRT6LLkI1xinyBy0v",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321661,
+     "currency_options": {
+      "clp": 17900,
+      "cny": 12099,
+      "mvr": 27799,
+      "mxn": 33199,
+      "ron": 8499,
+      "usd": 3999,
+      "xcd": 4899
+     }
+    },
+    {
+     "id": "price_1URrwA7GRT6LLkI1fgAOcstS",
+     "active": false,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321654,
+     "currency_options": {
+      "all": 629900,
+      "ars": 11590000,
+      "brl": 39099,
+      "bzd": 15399,
+      "eur": 6799,
+      "jmd": 1190000,
+      "kzt": 3490000,
+      "pen": 26399,
+      "pgk": 34699,
+      "rsd": 799900,
+      "try": 379900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrw87GRT6LLkI1a3Z0uE3u",
+     "active": false,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321652,
+     "currency_options": {
+      "all": 129900,
+      "ars": 2390000,
+      "brl": 8099,
+      "bzd": 3199,
+      "eur": 1399,
+      "jmd": 249900,
+      "kzt": 719900,
+      "pen": 5499,
+      "pgk": 7199,
+      "rsd": 169900,
+      "try": 78900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrw17GRT6LLkI1k4dW83H3",
+     "active": true,
+     "unit_amount": 6699,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321645,
+     "currency_options": {
+      "bwp": 94299,
+      "cop": 21900000,
+      "gel": 17399,
+      "gtq": 51299,
+      "lbp": 609000000,
+      "mdl": 120299,
+      "myr": 27399,
+      "usd": 6699,
+      "xaf": 38900,
+      "zar": 110599
+     }
+    },
+    {
+     "id": "price_1URrvz7GRT6LLkI1cVGH5bWk",
+     "active": true,
+     "unit_amount": 1399,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321643,
+     "currency_options": {
+      "bwp": 19599,
+      "cop": 4490000,
+      "gel": 3599,
+      "gtq": 10699,
+      "lbp": 129000000,
+      "mdl": 25099,
+      "myr": 5699,
+      "usd": 1399,
+      "xaf": 8199,
+      "zar": 23099
+     }
+    },
+    {
+     "id": "price_1URrvs7GRT6LLkI1zTeeYGHe",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321636,
+     "currency_options": {
+      "azn": 9799,
+      "dzd": 769900,
+      "hnl": 149900,
+      "mad": 56499,
+      "mnt": 20900000,
+      "nad": 94799,
+      "php": 359900,
+      "thb": 192900,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1URrvq7GRT6LLkI1KAoCwqTm",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321634,
+     "currency_options": {
+      "azn": 1999,
+      "dzd": 159900,
+      "hnl": 31900,
+      "mad": 11799,
+      "mnt": 4290000,
+      "nad": 19799,
+      "php": 75900,
+      "thb": 39900,
+      "usd": 3999
+     }
+    },
+    {
+     "id": "price_1URrvj7GRT6LLkI1E38NXC8g",
+     "active": true,
+     "unit_amount": 3799,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321627,
+     "currency_options": {
+      "afn": 249900,
+      "bdt": 469900,
+      "egp": 209900,
+      "etb": 619900,
+      "ils": 11899,
+      "inr": 369900,
+      "lak": 85900000,
+      "lrd": 659900,
+      "mmk": 8090000,
+      "mwk": 6690000,
+      "ngn": 5190000,
+      "npr": 579900,
+      "pkr": 1059900,
+      "rwf": 56900,
+      "tzs": 9900000,
+      "ugx": 15290000,
+      "usd": 3799,
+      "uzs": 45900000,
+      "xaf": 22900,
+      "zmw": 76900
+     }
+    },
+    {
+     "id": "price_1URrvh7GRT6LLkI1AQU29tqy",
+     "active": true,
+     "unit_amount": 799,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321625,
+     "currency_options": {
+      "afn": 51900,
+      "bdt": 98900,
+      "egp": 42900,
+      "etb": 129900,
+      "ils": 2499,
+      "inr": 75900,
+      "lak": 17900000,
+      "lrd": 139900,
+      "mmk": 1690000,
+      "mwk": 1390000,
+      "ngn": 1090000,
+      "npr": 119900,
+      "pkr": 219900,
+      "rwf": 11900,
+      "tzs": 2090000,
+      "ugx": 3190000,
+      "usd": 799,
+      "uzs": 9590000,
+      "xaf": 4699,
+      "zmw": 15900
+     }
+    },
+    {
+     "id": "price_1U2SNl7GRT6LLkI1wICSgCbq",
+     "active": true,
+     "unit_amount": 19188,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265221,
+     "currency_options": {
+      "brl": 95990,
+      "krw": 265000,
+      "usd": 19188
+     }
+    },
+    {
+     "id": "price_1U2SNh7GRT6LLkI1xwWeZJn2",
+     "active": true,
+     "unit_amount": 3999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265217,
+     "currency_options": {
+      "brl": 19990,
+      "krw": 55000,
+      "usd": 3999
+     }
+    }
+   ]
+  },
+  "prod_V2XQKO3FZiPKZI": {
+   "name": "Verla Basic",
+   "prices": [
+    {
+     "id": "price_1URtW87GRT6LLkI1nSjixnt7",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327728,
+     "currency_options": {
+      "bmd": 9599,
+      "eur": 8499,
+      "nok": 90500,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtW57GRT6LLkI1yQR8PElp",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792327725,
+     "currency_options": {
+      "bmd": 1999,
+      "eur": 1799,
+      "nok": 18900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtVx7GRT6LLkI1PmiEQYKd",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327717,
+     "currency_options": {
+      "bsd": 8199,
+      "eur": 7199,
+      "gbp": 6099,
+      "nzd": 14399,
+      "sek": 80800,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtVv7GRT6LLkI1xcn7ZvMJ",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792327715,
+     "currency_options": {
+      "bsd": 1699,
+      "eur": 1499,
+      "gbp": 1299,
+      "nzd": 2999,
+      "sek": 16800,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtVq7GRT6LLkI19bBwblJ1",
+     "active": true,
+     "unit_amount": 6230,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792327710,
+     "currency_options": {
+      "eur": 5699,
+      "jpy": 9480,
+      "krw": 80900,
+      "twd": 199900,
+      "usd": 6230
+     }
+    },
+    {
+     "id": "price_1URtVh7GRT6LLkI1yO0RNor0",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327701,
+     "currency_options": {
+      "all": 309900,
+      "ars": 5790000,
+      "brl": 19490,
+      "bzd": 7699,
+      "eur": 3399,
+      "jmd": 609900,
+      "kzt": 1690000,
+      "pen": 13199,
+      "pgk": 17299,
+      "rsd": 399900,
+      "try": 189900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtVf7GRT6LLkI1A21U94Y8",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792327699,
+     "currency_options": {
+      "all": 64900,
+      "ars": 1190000,
+      "brl": 4090,
+      "bzd": 1599,
+      "eur": 699,
+      "jmd": 129900,
+      "kzt": 359900,
+      "pen": 2699,
+      "pgk": 3599,
+      "rsd": 83900,
+      "try": 39900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtVa7GRT6LLkI1cY6OB9kR",
+     "active": true,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792327694,
+     "currency_options": {
+      "bob": 5899,
+      "idr": 9000000,
+      "kes": 64900,
+      "khr": 1990000,
+      "lkr": 169900,
+      "uah": 22900,
+      "usd": 499,
+      "vnd": 129000,
+      "xof": 2899
+     }
+    },
+    {
+     "id": "price_1URtKj7GRT6LLkI1EaAQl89d",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z100 | basic_yearly | G1+G2 v1",
+     "created": 1792327021,
+     "currency_options": {
+      "eur": 8499,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtKh7GRT6LLkI1SKXUsD2d",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z100 | basic_monthly | G1+G2 v1",
+     "created": 1792327019,
+     "currency_options": {
+      "eur": 1799,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtKb7GRT6LLkI1q7Ue8ob0",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z095 | basic_yearly | G1+G2 v1",
+     "created": 1792327013,
+     "currency_options": {
+      "aud": 13099,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtKZ7GRT6LLkI1tVyEFXUs",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z095 | basic_monthly | G1+G2 v1",
+     "created": 1792327011,
+     "currency_options": {
+      "aud": 2699,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtKU7GRT6LLkI1VNenSSDS",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z090 | basic_yearly | G1+G2 v1",
+     "created": 1792327006,
+     "currency_options": {
+      "cad": 12199,
+      "sgd": 10999,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtKR7GRT6LLkI1GgUk23h4",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z090 | basic_monthly | G1+G2 v1",
+     "created": 1792327003,
+     "currency_options": {
+      "cad": 2499,
+      "sgd": 2299,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtKK7GRT6LLkI17erAq4Cw",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z085 | basic_yearly | G1+G2 v1",
+     "created": 1792326996,
+     "currency_options": {
+      "bsd": 8199,
+      "eur": 7199,
+      "gbp": 6099,
+      "nzd": 14399,
+      "sek": 80799,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtKH7GRT6LLkI1QgoYgfzU",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z085 | basic_monthly | G1+G2 v1",
+     "created": 1792326993,
+     "currency_options": {
+      "bsd": 1699,
+      "eur": 1499,
+      "gbp": 1299,
+      "nzd": 2999,
+      "sek": 16799,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtKB7GRT6LLkI16QgX7ua8",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z080 | basic_yearly | G1+G2 v1",
+     "created": 1792326987,
+     "currency_options": {
+      "eur": 6799,
+      "hkd": 61900,
+      "mop": 61900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtK87GRT6LLkI1eWEi9sWb",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z080 | basic_monthly | G1+G2 v1",
+     "created": 1792326984,
+     "currency_options": {
+      "eur": 1399,
+      "hkd": 12900,
+      "mop": 12900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtK17GRT6LLkI1oVRL3gnY",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z075 | basic_yearly | G1+G2 v1",
+     "created": 1792326977,
+     "currency_options": {
+      "aed": 26399,
+      "eur": 6299,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJz7GRT6LLkI1LYPAin8e",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z075 | basic_monthly | G1+G2 v1",
+     "created": 1792326975,
+     "currency_options": {
+      "aed": 5499,
+      "eur": 1299,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJs7GRT6LLkI1HGXXT6BO",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z070 | basic_yearly | G1+G2 v1",
+     "created": 1792326968,
+     "currency_options": {
+      "eur": 5899,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJq7GRT6LLkI1ISwax6ht",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z070 | basic_monthly | G1+G2 v1",
+     "created": 1792326966,
+     "currency_options": {
+      "eur": 1199,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJk7GRT6LLkI1YJcxNViA",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z065 | basic_yearly | G1+G2 v1",
+     "created": 1792326960,
+     "currency_options": {
+      "jpy": 9480,
+      "krw": 80900,
+      "twd": 199900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJh7GRT6LLkI1QCSEKLty",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z065 | basic_monthly | G1+G2 v1",
+     "created": 1792326957,
+     "currency_options": {
+      "jpy": 1980,
+      "krw": 16900,
+      "twd": 41900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJa7GRT6LLkI15So3NBw8",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z060 | basic_yearly | G1+G2 v1",
+     "created": 1792326950,
+     "currency_options": {
+      "eur": 5199,
+      "sar": 21599,
+      "usd": 9588,
+      "uyu": 229900
+     }
+    },
+    {
+     "id": "price_1URtJY7GRT6LLkI1hPL8Re1b",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z060 | basic_monthly | G1+G2 v1",
+     "created": 1792326948,
+     "currency_options": {
+      "eur": 1099,
+      "sar": 4499,
+      "usd": 1999,
+      "uyu": 47900
+     }
+    },
+    {
+     "id": "price_1URtJR7GRT6LLkI1SKjHGVF7",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z055 | basic_yearly | G1+G2 v1",
+     "created": 1792326941,
+     "currency_options": {
+      "eur": 4699,
+      "gyd": 1090000,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJP7GRT6LLkI112WxerWS",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z055 | basic_monthly | G1+G2 v1",
+     "created": 1792326939,
+     "currency_options": {
+      "eur": 999,
+      "gyd": 229900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJK7GRT6LLkI1Um2hIJ3f",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z045 | basic_yearly | G1+G2 v1",
+     "created": 1792326934,
+     "currency_options": {
+      "cny": 28899,
+      "mxn": 79699,
+      "ron": 20499,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJH7GRT6LLkI17hBgvO1c",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z045 | basic_monthly | G1+G2 v1",
+     "created": 1792326931,
+     "currency_options": {
+      "cny": 5999,
+      "mxn": 16599,
+      "ron": 4299,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJB7GRT6LLkI1rEGblTvM",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z040 | basic_yearly | G1+G2 v1",
+     "created": 1792326925,
+     "currency_options": {
+      "ars": 5790000,
+      "brl": 19499,
+      "bzd": 7699,
+      "jmd": 609900,
+      "pen": 13199,
+      "try": 189900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtJ97GRT6LLkI1yo3EJ6Ws",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z040 | basic_monthly | G1+G2 v1",
+     "created": 1792326923,
+     "currency_options": {
+      "ars": 1190000,
+      "brl": 4099,
+      "bzd": 1599,
+      "jmd": 129900,
+      "pen": 2699,
+      "try": 39900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtJ47GRT6LLkI1Hqjk64NP",
+     "active": false,
+     "unit_amount": 3399,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z035 | basic_yearly | G1+G2 v1",
+     "created": 1792326918,
+     "currency_options": {
+      "bwp": 47099,
+      "cop": 10690000,
+      "gtq": 25599,
+      "myr": 13699,
+      "usd": 3399,
+      "zar": 55299
+     }
+    },
+    {
+     "id": "price_1URtJ17GRT6LLkI1wXyDypH5",
+     "active": false,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z035 | basic_monthly | G1+G2 v1",
+     "created": 1792326915,
+     "currency_options": {
+      "bwp": 9799,
+      "cop": 2190000,
+      "gtq": 5299,
+      "myr": 2899,
+      "usd": 699,
+      "zar": 11499
+     }
+    },
+    {
+     "id": "price_1URtIu7GRT6LLkI1xijLQrFZ",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z030 | basic_yearly | G1+G2 v1",
+     "created": 1792326908,
+     "currency_options": {
+      "azn": 4899,
+      "dzd": 389900,
+      "mad": 28199,
+      "nad": 47399,
+      "php": 179900,
+      "thb": 95900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URtIs7GRT6LLkI1sRGIvqj6",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z030 | basic_monthly | G1+G2 v1",
+     "created": 1792326906,
+     "currency_options": {
+      "azn": 999,
+      "dzd": 80900,
+      "mad": 5899,
+      "nad": 9899,
+      "php": 37900,
+      "thb": 19900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URtIk7GRT6LLkI1Y2XhYKWW",
+     "active": false,
+     "unit_amount": 2399,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z025 | basic_yearly | G1+G2 v1",
+     "created": 1792326898,
+     "currency_options": {
+      "bob": 28099,
+      "idr": 42900000,
+      "kes": 309900,
+      "uah": 109900,
+      "usd": 2399,
+      "vnd": 619000
+     }
+    },
+    {
+     "id": "price_1URtIh7GRT6LLkI1082iQNOV",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z025 | basic_monthly | G1+G2 v1",
+     "created": 1792326895,
+     "currency_options": {
+      "bob": 5899,
+      "idr": 8990000,
+      "kes": 64900,
+      "uah": 22900,
+      "usd": 499,
+      "vnd": 129000
+     }
+    },
+    {
+     "id": "price_1URtIa7GRT6LLkI1xVb0Q5Ur",
+     "active": false,
+     "unit_amount": 1899,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "Z020 | basic_yearly | G1+G2 v1",
+     "created": 1792326888,
+     "currency_options": {
+      "bdt": 239900,
+      "egp": 99900,
+      "etb": 309900,
+      "ils": 5899,
+      "inr": 179900,
+      "mwk": 3390000,
+      "ngn": 2590000,
+      "pkr": 529900,
+      "rwf": 27900,
+      "usd": 1899
+     }
+    },
+    {
+     "id": "price_1URtIX7GRT6LLkI1lKcXgkOQ",
+     "active": false,
+     "unit_amount": 399,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "Z020 | basic_monthly | G1+G2 v1",
+     "created": 1792326885,
+     "currency_options": {
+      "bdt": 48900,
+      "egp": 20900,
+      "etb": 64900,
+      "ils": 1199,
+      "inr": 37900,
+      "mwk": 699900,
+      "ngn": 529900,
+      "pkr": 109900,
+      "rwf": 5899,
+      "usd": 399
+     }
+    },
+    {
+     "id": "price_1URsKv7GRT6LLkI1vEe3ft5i",
+     "active": false,
+     "unit_amount": 6232,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323189,
+     "currency_options": {
+      "eur": 5699,
+      "jpy": 9480,
+      "krw": 80900,
+      "twd": 199900,
+      "usd": 6232
+     }
+    },
+    {
+     "id": "price_1URsKu7GRT6LLkI1oaNsbVRW",
+     "active": true,
+     "unit_amount": 1299,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本、西班牙、科威特）",
+     "created": 1792323188,
+     "currency_options": {
+      "eur": 1199,
+      "jpy": 1980,
+      "krw": 16900,
+      "twd": 41900,
+      "usd": 1299
+     }
+    },
+    {
+     "id": "price_1URsKj7GRT6LLkI1pAKVfYnq",
+     "active": true,
+     "unit_amount": 5299,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323177,
+     "currency_options": {
+      "bbd": 10499,
+      "bnd": 6799,
+      "eur": 4699,
+      "gyd": 1090000,
+      "usd": 5299
+     }
+    },
+    {
+     "id": "price_1URsKh7GRT6LLkI1juSuTrnY",
+     "active": true,
+     "unit_amount": 1099,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊、巴巴多斯、文莱、拉脱维亚、波多黎各、斯洛伐克）",
+     "created": 1792323175,
+     "currency_options": {
+      "bbd": 2199,
+      "bnd": 1399,
+      "eur": 999,
+      "gyd": 229900,
+      "usd": 1099
+     }
+    },
+    {
+     "id": "price_1URsKa7GRT6LLkI15EQKyjSY",
+     "active": true,
+     "unit_amount": 4799,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323168,
+     "currency_options": {
+      "crc": 2190000,
+      "eur": 4299,
+      "huf": 1549900,
+      "pln": 18599,
+      "scr": 69799,
+      "ttd": 32399,
+      "usd": 4799
+     }
+    },
+    {
+     "id": "price_1URsKY7GRT6LLkI1AJka3B5H",
+     "active": true,
+     "unit_amount": 999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.50倍率区（巴拿马、哥斯达黎加、克罗地亚、匈牙利、阿曼、波兰、塞舌尔、特立尼达和多巴哥）",
+     "created": 1792323166,
+     "currency_options": {
+      "crc": 459900,
+      "eur": 899,
+      "huf": 319900,
+      "pln": 3899,
+      "scr": 14599,
+      "ttd": 6799,
+      "usd": 999
+     }
+    },
+    {
+     "id": "price_1URrz47GRT6LLkI1nU5MghZR",
+     "active": true,
+     "unit_amount": 2399,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321834,
+     "currency_options": {
+      "bob": 28099,
+      "idr": 42900000,
+      "kes": 309900,
+      "khr": 9690000,
+      "lkr": 799900,
+      "uah": 109900,
+      "usd": 2399,
+      "vnd": 619000,
+      "xof": 13900
+     }
+    },
+    {
+     "id": "price_1URrz37GRT6LLkI1lQ466lhO",
+     "active": false,
+     "unit_amount": 499,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.25倍率区（越南、印度尼西亚、肯尼亚、突尼斯、加纳、乌克兰、玻利维亚、斯里兰卡、柬埔寨、科特迪瓦）",
+     "created": 1792321833,
+     "currency_options": {
+      "bob": 5899,
+      "idr": 8990000,
+      "kes": 64900,
+      "khr": 1990000,
+      "lkr": 169900,
+      "uah": 22900,
+      "usd": 499,
+      "vnd": 129000,
+      "xof": 2899
+     }
+    },
+    {
+     "id": "price_1URrxi7GRT6LLkI1M4TGGISR",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321750,
+     "currency_options": {
+      "bmd": 9599,
+      "eur": 8499,
+      "nok": 90499,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrxg7GRT6LLkI13axvSOdG",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "1.00倍率区（美国、爱尔兰、百慕大、挪威）",
+     "created": 1792321748,
+     "currency_options": {
+      "bmd": 1999,
+      "eur": 1799,
+      "nok": 18899,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrxZ7GRT6LLkI1A4hV4YPe",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321741,
+     "currency_options": {
+      "aud": 13099,
+      "eur": 8099,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrxY7GRT6LLkI1PEGvdg7b",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.95倍率区（澳大利亚、卢森堡）",
+     "created": 1792321740,
+     "currency_options": {
+      "aud": 2699,
+      "eur": 1699,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrxQ7GRT6LLkI1lTQTgNlG",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321732,
+     "currency_options": {
+      "cad": 12199,
+      "sgd": 10999,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrxP7GRT6LLkI1hVTHR9HS",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.90倍率区（加拿大、新加坡）",
+     "created": 1792321731,
+     "currency_options": {
+      "cad": 2499,
+      "sgd": 2299,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrxH7GRT6LLkI1LKRrt9mo",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321723,
+     "currency_options": {
+      "bsd": 8199,
+      "eur": 7199,
+      "gbp": 6099,
+      "nzd": 14399,
+      "sek": 80799,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrxG7GRT6LLkI17fqO4WGs",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.85倍率区（英国、新西兰、荷兰、巴哈马、瑞典）",
+     "created": 1792321722,
+     "currency_options": {
+      "bsd": 1699,
+      "eur": 1499,
+      "gbp": 1299,
+      "nzd": 2999,
+      "sek": 16799,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrx97GRT6LLkI1NsPOo2v8",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321715,
+     "currency_options": {
+      "eur": 6799,
+      "hkd": 61900,
+      "mop": 61900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrx77GRT6LLkI1NRRmlFNt",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.80倍率区（中国香港、德国、中国澳门、奥地利、比利时、芬兰）",
+     "created": 1792321713,
+     "currency_options": {
+      "eur": 1399,
+      "hkd": 12900,
+      "mop": 12900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrx07GRT6LLkI1eOfkPVaI",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321706,
+     "currency_options": {
+      "aed": 26399,
+      "eur": 6299,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrwy7GRT6LLkI1W7fMPMIq",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.75倍率区（阿联酋、法国）",
+     "created": 1792321704,
+     "currency_options": {
+      "aed": 5499,
+      "eur": 1299,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrwr7GRT6LLkI1rKTKBpiq",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321697,
+     "currency_options": {
+      "eur": 5899,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrwp7GRT6LLkI1r676TLRJ",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.70倍率区（意大利）",
+     "created": 1792321695,
+     "currency_options": {
+      "eur": 1199,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrwi7GRT6LLkI1GWjaUcy6",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321688,
+     "currency_options": {
+      "jpy": 9480,
+      "krw": 80900,
+      "twd": 199900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrwh7GRT6LLkI14W3gVPZQ",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.65倍率区（中国台湾、韩国、日本）",
+     "created": 1792321687,
+     "currency_options": {
+      "jpy": 1980,
+      "krw": 16900,
+      "twd": 41900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrwZ7GRT6LLkI1CUnllfC0",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321679,
+     "currency_options": {
+      "eur": 5199,
+      "sar": 21599,
+      "usd": 9588,
+      "uyu": 229900
+     }
+    },
+    {
+     "id": "price_1URrwY7GRT6LLkI15RdVWR5Q",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.60倍率区（斯洛文尼亚、沙特阿拉伯、乌拉圭）",
+     "created": 1792321678,
+     "currency_options": {
+      "eur": 1099,
+      "sar": 4499,
+      "usd": 1999,
+      "uyu": 47900
+     }
+    },
+    {
+     "id": "price_1URrwR7GRT6LLkI1Bj2VRlGK",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321671,
+     "currency_options": {
+      "eur": 4699,
+      "gyd": 1090000,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrwP7GRT6LLkI1Ts5CCxFc",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.55倍率区（圭亚那、希腊）",
+     "created": 1792321669,
+     "currency_options": {
+      "eur": 999,
+      "gyd": 229900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrwH7GRT6LLkI1bJ82CGyF",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321661,
+     "currency_options": {
+      "clp": 41900,
+      "cny": 28899,
+      "mvr": 66699,
+      "mxn": 79699,
+      "ron": 20499,
+      "usd": 9588,
+      "xcd": 11599
+     }
+    },
+    {
+     "id": "price_1URrwG7GRT6LLkI17N1lP4hk",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.45倍率区（墨西哥、中国大陆、罗马尼亚、圣卢西亚、智利、马尔代夫）",
+     "created": 1792321660,
+     "currency_options": {
+      "clp": 8799,
+      "cny": 5999,
+      "mvr": 13899,
+      "mxn": 16599,
+      "ron": 4299,
+      "usd": 1999,
+      "xcd": 2399
+     }
+    },
+    {
+     "id": "price_1URrw97GRT6LLkI16cEF3gWN",
+     "active": false,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321653,
+     "currency_options": {
+      "all": 309900,
+      "ars": 5790000,
+      "brl": 19499,
+      "bzd": 7699,
+      "eur": 3399,
+      "jmd": 609900,
+      "kzt": 1690000,
+      "pen": 13199,
+      "pgk": 17299,
+      "rsd": 399900,
+      "try": 189900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrw77GRT6LLkI1PUhg2WxO",
+     "active": false,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.40倍率区（巴西、阿根廷、土耳其、牙买加、秘鲁、伯利兹、阿尔巴尼亚、哈萨克斯坦、黑山、巴布亚新几内亚、塞尔维亚）",
+     "created": 1792321651,
+     "currency_options": {
+      "all": 64900,
+      "ars": 1190000,
+      "brl": 4099,
+      "bzd": 1599,
+      "eur": 699,
+      "jmd": 129900,
+      "kzt": 359900,
+      "pen": 2699,
+      "pgk": 3599,
+      "rsd": 83900,
+      "try": 39900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrw07GRT6LLkI14dCNzXkF",
+     "active": true,
+     "unit_amount": 3399,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321644,
+     "currency_options": {
+      "bwp": 47099,
+      "cop": 10690000,
+      "gel": 8699,
+      "gtq": 25599,
+      "lbp": 299000000,
+      "mdl": 60099,
+      "myr": 13699,
+      "usd": 3399,
+      "xaf": 19900,
+      "zar": 55299
+     }
+    },
+    {
+     "id": "price_1URrvy7GRT6LLkI1HBrUdByu",
+     "active": true,
+     "unit_amount": 699,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.35倍率区（马来西亚、哥伦比亚、南非、厄瓜多尔、博茨瓦纳、危地马拉、伊拉克、约旦、萨尔瓦多、加蓬、格鲁吉亚、黎巴嫩、摩尔多瓦）",
+     "created": 1792321642,
+     "currency_options": {
+      "bwp": 9799,
+      "cop": 2190000,
+      "gel": 1799,
+      "gtq": 5299,
+      "lbp": 62900000,
+      "mdl": 12499,
+      "myr": 2899,
+      "usd": 699,
+      "xaf": 4099,
+      "zar": 11499
+     }
+    },
+    {
+     "id": "price_1URrvr7GRT6LLkI1KbUePdov",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321635,
+     "currency_options": {
+      "azn": 4899,
+      "dzd": 389900,
+      "hnl": 76900,
+      "mad": 28199,
+      "mnt": 10390000,
+      "nad": 47399,
+      "php": 179900,
+      "thb": 95900,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1URrvp7GRT6LLkI1dFau8mnq",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.30倍率区（菲律宾、阿尔及利亚、摩洛哥、纳米比亚、阿塞拜疆、泰国、洪都拉斯、蒙古）",
+     "created": 1792321633,
+     "currency_options": {
+      "azn": 999,
+      "dzd": 80900,
+      "hnl": 15900,
+      "mad": 5899,
+      "mnt": 2190000,
+      "nad": 9899,
+      "php": 37900,
+      "thb": 19900,
+      "usd": 1999
+     }
+    },
+    {
+     "id": "price_1URrvi7GRT6LLkI1Qnt7aRUr",
+     "active": true,
+     "unit_amount": 1899,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321626,
+     "currency_options": {
+      "afn": 124900,
+      "bdt": 239900,
+      "egp": 99900,
+      "etb": 309900,
+      "ils": 5899,
+      "inr": 179900,
+      "lak": 42900000,
+      "lrd": 329900,
+      "mmk": 3990000,
+      "mwk": 3390000,
+      "ngn": 2590000,
+      "npr": 289900,
+      "pkr": 529900,
+      "rwf": 27900,
+      "tzs": 5190000,
+      "ugx": 7690000,
+      "usd": 1899,
+      "uzs": 22900000,
+      "xaf": 10900,
+      "zmw": 37900
+     }
+    },
+    {
+     "id": "price_1URrvg7GRT6LLkI1WAN5piJL",
+     "active": true,
+     "unit_amount": 399,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": "0.20倍率区（印度、巴基斯坦、埃及、尼日利亚、孟加拉国、埃塞俄比亚、马拉维、津巴布韦、巴勒斯坦、卢旺达、坦桑尼亚、乌干达、委内瑞拉、赞比亚、阿富汗、喀麦隆、老挝、利比里亚、缅甸、尼泊尔、乌兹别克斯坦）",
+     "created": 1792321624,
+     "currency_options": {
+      "afn": 25900,
+      "bdt": 48900,
+      "egp": 20900,
+      "etb": 64900,
+      "ils": 1199,
+      "inr": 37900,
+      "lak": 8890000,
+      "lrd": 67900,
+      "mmk": 839900,
+      "mwk": 699900,
+      "ngn": 529900,
+      "npr": 60900,
+      "pkr": 109900,
+      "rwf": 5899,
+      "tzs": 1090000,
+      "ugx": 1590000,
+      "usd": 399,
+      "uzs": 4790000,
+      "xaf": 2299,
+      "zmw": 7900
+     }
+    },
+    {
+     "id": "price_1U2SNd7GRT6LLkI1icheuGId",
+     "active": true,
+     "unit_amount": 9588,
+     "currency": "usd",
+     "interval": "year",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265213,
+     "currency_options": {
+      "brl": 47990,
+      "krw": 132500,
+      "usd": 9588
+     }
+    },
+    {
+     "id": "price_1U2SNZ7GRT6LLkI1XgzarCSV",
+     "active": true,
+     "unit_amount": 1999,
+     "currency": "usd",
+     "interval": "month",
+     "interval_count": 1,
+     "nickname": null,
+     "created": 1786265209,
+     "currency_options": {
+      "brl": 9990,
+      "krw": 27500,
+      "usd": 1999
+     }
+    }
+   ]
+  }
+ }
+}

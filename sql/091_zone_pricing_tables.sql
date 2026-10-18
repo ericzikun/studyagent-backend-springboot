@@ -15,7 +15,7 @@ USE studyagent;
 CREATE TABLE IF NOT EXISTS pricing_zones (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     zone_code VARCHAR(8) NOT NULL COMMENT '定价区，如 Z080',
-    label VARCHAR(64) NOT NULL,
+    label VARCHAR(255) NOT NULL COMMENT '倍率区与国家清单（来自 Price nickname，审计展示）',
     reference_factor DECIMAL(4,2) NOT NULL COMMENT '参考倍率，仅审计展示，运行时不参与计算',
     active_version VARCHAR(32) NOT NULL COMMENT '当前新购销售版本，如 regional-20261018-v1',
     is_active TINYINT(1) NOT NULL DEFAULT 0 COMMENT '区级销售开关',
@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS pricing_zones (
     UNIQUE KEY uk_pz_zone (zone_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='区域定价：定价区定义与当前销售版本';
+
+-- Older drafts used VARCHAR(64); widen idempotently so the 17-band labels fit.
+SET @zp_ddl = 'ALTER TABLE pricing_zones MODIFY COLUMN label VARCHAR(255) NOT NULL COMMENT ''倍率区与国家清单（来自 Price nickname，审计展示）''';
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
 
 -- ---------------------------------------------------------------------------
 -- 2. pricing_country_routes: country -> zone/currency routing + enable list
@@ -139,4 +143,17 @@ PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
 
 SET @zp_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='study_passes' AND column_name='price_version')=0,
   'ALTER TABLE study_passes ADD COLUMN price_version VARCHAR(32) NULL COMMENT ''当前生效价格版本''', 'SELECT 1');
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
+
+-- ---------------------------------------------------------------------------
+-- 7. Purchase country (ISO alpha-2): the trusted geo used at checkout.
+--    Contract actions price from pricing_zone/version, never from the current
+--    request header, so a user switching IP keeps the purchased region.
+-- ---------------------------------------------------------------------------
+SET @zp_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='user_subscriptions' AND column_name='pricing_country')=0,
+  'ALTER TABLE user_subscriptions ADD COLUMN pricing_country CHAR(2) NULL COMMENT ''购买时可信国家（ISO 3166-1 alpha-2）''', 'SELECT 1');
+PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;
+
+SET @zp_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='study_passes' AND column_name='pricing_country')=0,
+  'ALTER TABLE study_passes ADD COLUMN pricing_country CHAR(2) NULL COMMENT ''购买时可信国家（ISO 3166-1 alpha-2）''', 'SELECT 1');
 PREPARE zp_stmt FROM @zp_ddl; EXECUTE zp_stmt; DEALLOCATE PREPARE zp_stmt;

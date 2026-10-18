@@ -178,7 +178,7 @@
     "TN": {
       "label": "突尼斯",
       "zone": "Z025",
-      "currency": "tnd"
+      "currency": "usd"
     },
     "BW": {
       "label": "博茨瓦纳",
@@ -188,7 +188,7 @@
     "GH": {
       "label": "加纳",
       "zone": "Z025",
-      "currency": "ghs"
+      "currency": "usd"
     },
     "IT": {
       "label": "意大利",
@@ -984,7 +984,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 299,
+              "expectedDefaultAmountMinor": 79,
               "priceType": "recurring",
               "interval": "week",
               "intervalCount": 1,
@@ -1002,15 +1002,6 @@
                   "amountMajor": "99",
                   "amountMinor": 9900
                 },
-                "tnd": {
-                  "amountMajor": "2.19",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "8.49",
-                  "amountMinor": 849
-                },
                 "uah": {
                   "amountMajor": "34",
                   "amountMinor": 3400
@@ -1018,6 +1009,10 @@
                 "bob": {
                   "amountMajor": "8.99",
                   "amountMinor": 899
+                },
+                "usd": {
+                  "amountMajor": "0.79",
+                  "amountMinor": 79
                 }
               },
               "renewalSku": "pro_monthly"
@@ -1026,7 +1021,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 1999,
+              "expectedDefaultAmountMinor": 499,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -1044,15 +1039,6 @@
                   "amountMajor": "649",
                   "amountMinor": 64900
                 },
-                "tnd": {
-                  "amountMajor": "14.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "57.99",
-                  "amountMinor": 5799
-                },
                 "uah": {
                   "amountMajor": "229",
                   "amountMinor": 22900
@@ -1060,6 +1046,10 @@
                 "bob": {
                   "amountMajor": "58.99",
                   "amountMinor": 5899
+                },
+                "usd": {
+                  "amountMajor": "4.99",
+                  "amountMinor": 499
                 }
               }
             },
@@ -1067,7 +1057,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 3999,
+              "expectedDefaultAmountMinor": 999,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -1085,15 +1075,6 @@
                   "amountMajor": "1299",
                   "amountMinor": 129900
                 },
-                "tnd": {
-                  "amountMajor": "29.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "116.99",
-                  "amountMinor": 11699
-                },
                 "uah": {
                   "amountMajor": "449",
                   "amountMinor": 44900
@@ -1101,6 +1082,10 @@
                 "bob": {
                   "amountMajor": "116.99",
                   "amountMinor": 11699
+                },
+                "usd": {
+                  "amountMajor": "9.99",
+                  "amountMinor": 999
                 }
               }
             },
@@ -1108,7 +1093,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 9588,
+              "expectedDefaultAmountMinor": 2399,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -1126,15 +1111,6 @@
                   "amountMajor": "3099",
                   "amountMinor": 309900
                 },
-                "tnd": {
-                  "amountMajor": "71.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "279.99",
-                  "amountMinor": 27999
-                },
                 "uah": {
                   "amountMajor": "1099",
                   "amountMinor": 109900
@@ -1142,6 +1118,10 @@
                 "bob": {
                   "amountMajor": "280.99",
                   "amountMinor": 28099
+                },
+                "usd": {
+                  "amountMajor": "23.99",
+                  "amountMinor": 2399
                 }
               }
             },
@@ -1149,7 +1129,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 19188,
+              "expectedDefaultAmountMinor": 4799,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -1167,15 +1147,6 @@
                   "amountMajor": "6199",
                   "amountMinor": 619900
                 },
-                "tnd": {
-                  "amountMajor": "143.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "558.99",
-                  "amountMinor": 55899
-                },
                 "uah": {
                   "amountMajor": "2199",
                   "amountMinor": 219900
@@ -1183,6 +1154,10 @@
                 "bob": {
                   "amountMajor": "561.99",
                   "amountMinor": 56199
+                },
+                "usd": {
+                  "amountMajor": "47.99",
+                  "amountMinor": 4799
                 }
               }
             },
@@ -1190,7 +1165,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 999,
+              "expectedDefaultAmountMinor": 249,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -1208,15 +1183,6 @@
                   "amountMajor": "329",
                   "amountMinor": 32900
                 },
-                "tnd": {
-                  "amountMajor": "7.49",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "28.99",
-                  "amountMinor": 2899
-                },
                 "uah": {
                   "amountMajor": "109",
                   "amountMinor": 10900
@@ -1224,6 +1190,10 @@
                 "bob": {
                   "amountMajor": "28.99",
                   "amountMinor": 2899
+                },
+                "usd": {
+                  "amountMajor": "2.49",
+                  "amountMinor": 249
                 }
               }
             },
@@ -1231,7 +1201,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 499,
+              "expectedDefaultAmountMinor": 129,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -1249,15 +1219,6 @@
                   "amountMajor": "159",
                   "amountMinor": 15900
                 },
-                "tnd": {
-                  "amountMajor": "3.49",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "14.99",
-                  "amountMinor": 1499
-                },
                 "uah": {
                   "amountMajor": "59",
                   "amountMinor": 5900
@@ -1265,6 +1226,10 @@
                 "bob": {
                   "amountMajor": "14.99",
                   "amountMinor": 1499
+                },
+                "usd": {
+                  "amountMajor": "1.29",
+                  "amountMinor": 129
                 }
               }
             },
@@ -1272,7 +1237,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 699,
+              "expectedDefaultAmountMinor": 179,
               "priceType": "one_time",
               "interval": null,
               "intervalCount": null,
@@ -1290,15 +1255,6 @@
                   "amountMajor": "229",
                   "amountMinor": 22900
                 },
-                "tnd": {
-                  "amountMajor": "4.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "19.99",
-                  "amountMinor": 1999
-                },
                 "uah": {
                   "amountMajor": "79",
                   "amountMinor": 7900
@@ -1306,6 +1262,10 @@
                 "bob": {
                   "amountMajor": "19.99",
                   "amountMinor": 1999
+                },
+                "usd": {
+                  "amountMajor": "1.79",
+                  "amountMinor": 179
                 }
               }
             },
@@ -1313,7 +1273,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 2999,
+              "expectedDefaultAmountMinor": 749,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -1331,15 +1291,6 @@
                   "amountMajor": "969",
                   "amountMinor": 96900
                 },
-                "tnd": {
-                  "amountMajor": "21.99",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "86.99",
-                  "amountMinor": 8699
-                },
                 "uah": {
                   "amountMajor": "339",
                   "amountMinor": 33900
@@ -1347,6 +1298,10 @@
                 "bob": {
                   "amountMajor": "87.99",
                   "amountMinor": 8799
+                },
+                "usd": {
+                  "amountMajor": "7.49",
+                  "amountMinor": 749
                 }
               }
             },
@@ -1354,7 +1309,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 35988,
+              "expectedDefaultAmountMinor": 8988,
               "priceType": "recurring",
               "interval": "year",
               "intervalCount": 1,
@@ -1372,15 +1327,6 @@
                   "amountMajor": "11628",
                   "amountMinor": 1162800
                 },
-                "tnd": {
-                  "amountMajor": "263.88",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "1043.88",
-                  "amountMinor": 104388
-                },
                 "uah": {
                   "amountMajor": "4068",
                   "amountMinor": 406800
@@ -1388,6 +1334,10 @@
                 "bob": {
                   "amountMajor": "1055.88",
                   "amountMinor": 105588
+                },
+                "usd": {
+                  "amountMajor": "89.88",
+                  "amountMinor": 8988
                 }
               }
             },
@@ -1395,7 +1345,7 @@
               "stripePriceId": null,
               "stripeProductId": null,
               "defaultCurrency": "usd",
-              "expectedDefaultAmountMinor": 99,
+              "expectedDefaultAmountMinor": 60,
               "priceType": "recurring",
               "interval": "month",
               "intervalCount": 1,
@@ -1416,16 +1366,6 @@
                   "amountMinor": 7800,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 },
-                "tnd": {
-                  "amountMajor": "1.8",
-                  "amountMinor": null,
-                  "verificationStatus": "pending_currency_support_and_charge_unit_verification"
-                },
-                "ghs": {
-                  "amountMajor": "7",
-                  "amountMinor": 700,
-                  "verificationStatus": "pending_currency_support_and_real_checkout_verification"
-                },
                 "uah": {
                   "amountMajor": "28",
                   "amountMinor": 2800,
@@ -1434,6 +1374,11 @@
                 "bob": {
                   "amountMajor": "7.1",
                   "amountMinor": 710,
+                  "verificationStatus": "pending_target_account_minimum_charge_verification"
+                },
+                "usd": {
+                  "amountMajor": "0.60",
+                  "amountMinor": 60,
                   "verificationStatus": "pending_target_account_minimum_charge_verification"
                 }
               },
@@ -5423,20 +5368,20 @@
     "TH": "倍率0.3，使用此前价格补充表固定金额；AT倍率0.8，复用德国EUR整套价格。",
     "pro": "第一、第二组全部使用新Pro月/新Pro年；仅本次需求确认时线上已购买Pro的合同当前已付周期保留旧金额，下个付费周期切新价。沙盒、仅有旧Price、Basic/Plus/Trial/Pass均不能获得该资格。",
     "USD": "US/Z100、EC/Z035、ZW/Z020使用各自表内USD新金额作为对应Price默认值；其他区无USD销售路由时，usdDefaultAmounts仅为技术默认参考，不能作为销售回退。",
-    "GH_TN": "本草案保留原表GHS/TND固定金额及候选路由；币种支持待目标账户核验。补充表的USD替代金额仍是建议，未据本次文档修正擅自替换币种或金额；不能以此把两地区移出范围或继续卖旧价。TND amountMinor待支持和扣款单位确认，不猜测填值。",
-    "studyPass": "原10组合建议价保持；本轮按既有倍率/固定参考/低额缓冲规则补齐其余52组合，全部62组合已有固定主单位金额。原有EUR参考取德国，USD为1:1，其他新增币种取两组原表中该币种首个Basic月价锚点；全部参考与取整记录见studyPassPricing和study-pass-pricing.md。TND主单位建议价已补，最小单位仍待Stripe支持核验；全量金额待账户最低扣款和真实续费验证。",
+    "GH_TN": "目标HK沙盒Country Spec不支持GHS/TND；用户于2026-10-18当前会话明确确认两地采用此前补充表Z025/USD新金额：Trial0.79，Basic4.99/23.99，Plus9.99/47.99，Pro7.49/89.88，额外包2.49/1.29/1.79，Pass0.60/月。原GHS/TND金额仅留原始表作历史参考，不作为销售回退。",
+    "studyPass": "63地区全部已有固定建议价；现为61个区币种组合、52币种。原10组合保持，GHTN从原GHS/TND建议合并为经用户确认的Z025/USD0.60。全部金额仍须首付、优惠后最低扣款及次月续费实测。",
     "creditPacks": "旧独立额度SKU与会员extra packs不同；新表未提供对应旧包金额，不将addon价格套用旧包，不以此新增保旧价例外。若仍销售，先核对对应新金额和映射，缺失项列待补。"
   },
   "configurationCounts": {
     "countries": 63,
     "zones": 16,
-    "presentmentCurrencies": 54,
-    "zoneCurrencyPairs": 62,
+    "presentmentCurrencies": 52,
+    "zoneCurrencyPairs": 61,
     "newStripePrices": 176,
-    "fixedPlanTrialAddonAmounts": 620,
-    "proposedStudyPassAmounts": 62,
+    "fixedPlanTrialAddonAmounts": 610,
+    "proposedStudyPassAmounts": 61,
     "pendingStudyPassAmounts": 0,
-    "targetAmountsIncludingStudyPass": 682,
+    "targetAmountsIncludingStudyPass": 671,
     "usdDefaultAmountsAcrossPrices": 176
   },
   "stripeAccountId": null,
@@ -5445,7 +5390,7 @@
   "studyPassPricing": {
     "baseUsd": "0.99",
     "referenceUsdFloor": "0.60",
-    "policy": "所有63地区已按USD0.99×地区倍率×固定折算参考补齐；低额按USD0.60等值缓冲、HKD4固定参考折算和已公布同币种结算最低金额中的最大参考值上调，再按记录步长向上取整。原10组合建议金额不变。最低金额依赖实际结算币种及支付方式，上述参考不是已验证的目标账户门槛；启用前实测首付、优惠后非零金额及次月扣款，不足时配置阶段上调并重新确认报价，运行时不临时加价。",
+    "policy": "所有63地区已按USD0.99×地区倍率×固定折算参考补齐；低额按USD0.60等值缓冲、HKD4固定参考折算和已公布同币种结算最低金额中的最大参考值上调，再按记录步长向上取整。原10组合建议金额不变。最低金额依赖实际结算币种及支付方式，上述参考不是已验证的目标账户门槛；启用前实测首付、优惠后非零金额及次月扣款，不足时配置阶段上调并重新确认报价，运行时不临时加价。 加纳和突尼斯按2026-10-18当前会话用户明确确认改用Z025/USD固定新金额，Pass均USD0.60；不再销售本次原GHS/TND候选金额。",
     "rates": {
       "hkd": {
         "anchorCountry": "HK",
@@ -5668,25 +5613,11 @@
         "rateLocalPerUsd": "1.76500014713238972427390165671070829532413265456257540534973",
         "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
       },
-      "tnd": {
-        "anchorCountry": "TN",
-        "anchorBasicMonthly": "14.99",
-        "anchorFactor": "0.25",
-        "rateLocalPerUsd": "2.99949974987493746873436718359179589794897448724362181090545",
-        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
-      },
       "bwp": {
         "anchorCountry": "BW",
         "anchorBasicMonthly": "97.99",
         "anchorFactor": "0.35",
         "rateLocalPerUsd": "14.0055742156792682055313370971199885657114271421424998213392",
-        "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
-      },
-      "ghs": {
-        "anchorCountry": "GH",
-        "anchorBasicMonthly": "57.99",
-        "anchorFactor": "0.25",
-        "rateLocalPerUsd": "11.6038019009504752376188094047023511755877938969484742371186",
         "method": "Basic月表价 / (19.99 * 倍率)，固定表内折算参考，非实时或Stripe结算汇率"
       },
       "jmd": {
@@ -6030,38 +5961,6 @@
         "hkdSettlementMinimumReferenceAmount": "64.3968992248062015503875969015490849828736253830899585362294",
         "publishedSameCurrencySettlementMinimum": null,
         "appliedMinimumReferenceAmount": "77.9189594797398699349674837418709354677338669334667333666832",
-        "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
-      },
-      {
-        "zone": "Z025",
-        "currency": "tnd",
-        "factor": "0.25",
-        "formulaAmount": "0.742376188094047023511755877938969484742371185592796398199099",
-        "referenceFloorAmount": "1.79969984992496248124062031015507753876938469234617308654327",
-        "roundUpStep": "0.1",
-        "proposedAmount": "1.8",
-        "amountMinor": null,
-        "floorApplied": true,
-        "status": "pending_currency_support_and_charge_unit_verification",
-        "hkdSettlementMinimumReferenceAmount": "1.48737984496124031007751937989864527564449251847845682351014",
-        "publishedSameCurrencySettlementMinimum": null,
-        "appliedMinimumReferenceAmount": "1.79969984992496248124062031015507753876938469234617308654327",
-        "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
-      },
-      {
-        "zone": "Z025",
-        "currency": "ghs",
-        "factor": "0.25",
-        "formulaAmount": "2.87194097048524262131065532766383191595797898949474737368685",
-        "referenceFloorAmount": "6.96228114057028514257128564282141070535267633816908454227116",
-        "roundUpStep": "0.1",
-        "proposedAmount": "7",
-        "amountMinor": 700,
-        "floorApplied": true,
-        "status": "pending_currency_support_and_real_checkout_verification",
-        "hkdSettlementMinimumReferenceAmount": "5.7540465116279069767441860467193088415359653866955110870816",
-        "publishedSameCurrencySettlementMinimum": null,
-        "appliedMinimumReferenceAmount": "6.96228114057028514257128564282141070535267633816908454227116",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
       },
       {
@@ -6815,9 +6714,25 @@
         "publishedSameCurrencySettlementMinimum": ".50",
         "appliedMinimumReferenceAmount": "0.52488744372186093046523261628",
         "minimumBasis": "max(USD0.60固定参考缓冲, HKD4按固定参考折算, 官方同币种结算最低金额如有)；非目标账户实测门槛"
+      },
+      {
+        "zone": "Z025",
+        "currency": "usd",
+        "factor": "0.25",
+        "formulaAmount": "0.2475",
+        "referenceFloorAmount": "0.60",
+        "roundUpStep": "0.01",
+        "proposedAmount": "0.60",
+        "amountMinor": 60,
+        "floorApplied": true,
+        "status": "pending_target_account_minimum_charge_verification",
+        "hkdSettlementMinimumReferenceAmount": "0.495875968992248062015503875986889910942851992067784387958100",
+        "publishedSameCurrencySettlementMinimum": ".50",
+        "appliedMinimumReferenceAmount": "0.60",
+        "minimumBasis": "用户确认GHTN使用Z025/USD新价；max(USD0.60固定缓冲,HKD4固定参考折算,USD0.50同币种结算最低金额)；未实测"
       }
     ],
-    "verificationStatus": "all_62_zone_currency_amounts_filled_pending_account_currency_support_and_real_checkout_verification",
+    "verificationStatus": "all_61_zone_currency_amounts_filled_pending_real_checkout_verification",
     "pendingZoneCurrencies": [],
     "roundingPolicy": "沿用已有币种步长；新增币种按max(原始月价,低额参考)选择固定步长：<1用0.01，1至<10用0.1，10至<100用1，100至<1000用10，>=1000用100；零小数币种步长至少1。同币种各区复用该步长。全部向上取整，不降低金额。",
     "minimumChargeReference": {
@@ -6860,5 +6775,5 @@
       "explanation": "官方规则以银行账户结算币种为准，跨币种需满足折算后门槛；Account.default_currency及历史摘要不等于已核验全部银行结算设置。本次仅核对公开规则并计算固定建议价，没有发起扣款、写入Stripe或读取银行账号。"
     }
   },
-  "documentRevision": "2026-10-18-r5-study-pass-all-amounts-filled"
+  "documentRevision": "2026-10-18-r6-gh-tn-approved-usd-sandbox"
 }

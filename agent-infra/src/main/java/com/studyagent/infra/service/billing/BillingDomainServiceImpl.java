@@ -3360,8 +3360,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 && !userSubscription.getStripeCustomerId().isBlank()) {
             try {
                 Customer customer = retrieveStripeCustomer(userSubscription.getStripeCustomerId());
-                if (customer == null || Boolean.TRUE.equals(customer.getDeleted()))
+                if (customer == null || Boolean.TRUE.equals(customer.getDeleted())) {
+                    // 本地映射指向已删除/不存在的 Customer（测试账号清理、账号迁移）：
+                    // 仅 free-like 合同可自愈（清引用后重建）；有效订阅继续报错，避免丢了合同。
+                    if (isFreeLikeContract(userSubscription) && clearStoredStripeCustomer(userSubscription)) {
+                        return ensureStripeCustomer(userSubscription, clerkUserId, customerEmail);
+                    }
                     throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "Customer is unavailable");
+                }
                 String owner = customer.getMetadata() == null ? null : customer.getMetadata().get("clerk_user_id");
                 if (hasText(owner) && !clerkUserId.equals(owner))
                     throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "Customer ownership cannot be verified");
@@ -3544,13 +3550,21 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (userSubscription == null || !hasText(userSubscription.getStripeCustomerId())) {
             return false;
         }
+        return isFreeLikeContract(userSubscription) && isMissingStripeCustomer(exception);
+    }
+
+    /** free/已取消，或仅有本地 mock 订阅引用：Customer 失效时允许重建，不影响真实合同。 */
+    static boolean isFreeLikeContract(UserSubscriptionEntity userSubscription) {
+        if (userSubscription == null) {
+            return false;
+        }
         String status = normalizeNullableText(userSubscription.getStatus());
         String tier = normalizeNullableText(userSubscription.getTier());
         boolean freeLikeState = userSubscription.getPlanCode() == null
                 && ("free".equals(tier) || "free".equals(status) || "canceled".equals(status));
         boolean localMockSubscriptionState = hasText(userSubscription.getStripeSubscriptionId())
                 && !isRealStripeReference(userSubscription.getStripeSubscriptionId());
-        return (freeLikeState || localMockSubscriptionState) && isMissingStripeCustomer(exception);
+        return freeLikeState || localMockSubscriptionState;
     }
 
     static boolean isMissingStripeCustomer(StripeException exception) {

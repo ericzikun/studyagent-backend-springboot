@@ -154,6 +154,72 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void catalogStudyPassPricesFromZoneRegistry() throws Exception {
+        // 区价开启后 legacy Study Pass 行（day/30）不再满足 month 校验；
+        // 目录必须与下单同源，走区绑定价格。
+        regionalConfiguration.setEnabled(true);
+        var zoneMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class);
+        var routeMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class);
+        var priceMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class);
+        var aliasMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class);
+        when(zoneMapper.selectList(any())).thenReturn(List.of(zoneRow("Z090", "SG", true)));
+        var sgRoute = routeRow("SG", "Z090");
+        sgRoute.setCurrency("sgd");
+        when(routeMapper.selectList(any())).thenReturn(List.of(sgRoute));
+        var passBinding = monthlyBinding("Z090", "price_z090_study");
+        passBinding.setSkuCode("study_pass_subscription_30d");
+        passBinding.setSkuKind("study_pass");
+        passBinding.setStripeProductId(null);
+        passBinding.setCurrencyAmounts("{\"sgd\":{\"amountMinor\":89}}");
+        when(priceMapper.selectList(any())).thenReturn(List.of(passBinding));
+        when(aliasMapper.selectList(any())).thenReturn(List.of());
+        var zonedPricing = new ZonePricingSelectionService(
+                new ZonePricingCatalog(zoneMapper, routeMapper, priceMapper, aliasMapper, 60), regionalPricing);
+        var service = new BillingDomainServiceImpl(
+                subscriptionPlanMapper, addonPackageDefMapper, studyPassProductMapper, studyPassMapper,
+                userSubscriptionMapper, rechargeOrderMapper, planQuotaService, userRepository,
+                quotaVipAccessService, userSubscriptionBootstrapService,
+                regionalPricing, zonedPricing, rolloutService,
+                org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+
+        var legacyPass = new com.studyagent.infra.entity.StudyPassProductEntity();
+        legacyPass.setPassCode("study_pass_subscription_30d");
+        legacyPass.setStripePriceId("price_legacy_study");
+        legacyPass.setStripeProductId("prod_VJqvMKubYOnfWS");
+        legacyPass.setPriceCents(99);
+        legacyPass.setCurrency("usd");
+        legacyPass.setBillingType("subscription");
+        legacyPass.setValidityDays(30);
+        legacyPass.setDisplayOrder(5);
+        legacyPass.setIsActive(true);
+        when(studyPassProductMapper.selectList(any(Wrapper.class))).thenReturn(List.of(legacyPass));
+        when(subscriptionPlanMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+
+        var price = new com.stripe.model.Price();
+        price.setId("price_z090_study");
+        price.setCurrency("sgd");
+        price.setUnitAmount(89L);
+        price.setActive(true);
+        price.setLivemode(false);
+        var recurring = new com.stripe.model.Price.Recurring();
+        recurring.setInterval("month");
+        recurring.setIntervalCount(1L);
+        price.setRecurring(recurring);
+        when(regionalPrices.retrieve("price_z090_study", false)).thenReturn(price);
+
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("SG")) {
+            assertTrue(zonedPricing.newPurchaseSelection(
+                    "study_pass_subscription_30d", ZonePricingSelectionService.KIND_STUDY_PASS).isPresent());
+            var catalog = service.getCatalog();
+            assertNotNull(catalog.getStudyPass());
+            assertEquals("study_pass_subscription_30d", catalog.getStudyPass().getPassCode());
+            assertEquals(89, catalog.getStudyPass().getPriceCents());
+            assertEquals("sgd", catalog.getStudyPass().getCurrency());
+        }
+    }
+
+    @Test
     void getCatalogSellsSubscriptionProTrialsAndHidesHistoricalTrials() {
         SubscriptionPlanEntity proTrialMonthly = new SubscriptionPlanEntity();
         proTrialMonthly.setPlanCode(IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY);

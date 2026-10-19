@@ -142,6 +142,31 @@ class SubscriptionPriceRolloutServiceTest {
     }
 
     @Test
+    void dryRunSkipsIntroTrialContracts() throws Exception {
+        long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
+        loadCatalog();
+        UserSubscriptionEntity trial = zoneContract(13L, "user_trial", "sub_trial");
+        when(userSubscriptionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(trial));
+        when(studyPassMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(rolloutMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        TestableRolloutService service = service();
+        service.subscriptions.put("sub_trial",
+                subscription("sub_trial", "price_v1_trial", "usd", periodEnd, false));
+
+        SubscriptionPriceRolloutService.DryRunSummary summary = service.dryRun(ZONE, TARGET_VERSION);
+
+        assertEquals(1, summary.scanned());
+        assertEquals(0, summary.preview());
+        assertEquals(1, summary.skipped());
+        ArgumentCaptor<SubscriptionPriceRolloutEntity> inserted =
+                ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
+        verify(rolloutMapper).insert(inserted.capture());
+        assertEquals("skipped", inserted.getValue().getStatus());
+        assertEquals("intro_trial_contract", inserted.getValue().getStatusReason());
+    }
+
+    @Test
     void dryRunClassifiesLegacyOrderEvidenceWithoutEarlyBackfill() throws Exception {
         long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
         loadCatalog();
@@ -710,6 +735,7 @@ class SubscriptionPriceRolloutServiceTest {
         when(routeMapper.selectList(any())).thenReturn(List.of(brRoute));
         when(priceMapper.selectList(any())).thenReturn(List.of(
                 binding(ZONE, SOURCE_VERSION, "pro_monthly", SOURCE_PRICE, "{\"brl\":{\"amountMinor\":3999}}"),
+                binding(ZONE, SOURCE_VERSION, "pro_trial_to_monthly", "price_v1_trial", "{\"usd\":{\"amountMinor\":299}}"),
                 binding(ZONE, TARGET_VERSION, "pro_monthly", TARGET_PRICE, "{\"brl\":{\"amountMinor\":4499}}"),
                 binding("Z100", TARGET_VERSION, "pro_monthly", "price_z100_pro_v2", "{\"usd\":{\"amountMinor\":2999}}")));
         when(aliasMapper.selectList(any())).thenReturn(List.of());

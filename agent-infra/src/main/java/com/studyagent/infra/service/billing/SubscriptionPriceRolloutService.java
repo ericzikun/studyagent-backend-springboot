@@ -15,6 +15,7 @@ import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.SubscriptionPriceRolloutMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
 import com.studyagent.service.domain.billing.BillingDomainException;
+import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.service.domain.billing.NextCyclePriceChange;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
@@ -183,6 +184,11 @@ public class SubscriptionPriceRolloutService {
         String sku = resolveSku(sourcePriceId, ref);
         if (isBlank(sku)) {
             return classificationForState(subscription, ref, STATUS_SKIPPED, "price_unresolved", currency);
+        }
+        // 试用合同的下一个事件是转正，不是周价续费；排期会干扰转正 Schedule。
+        // 等转成正式套餐后，由后续批次的 dry-run 再迁移。
+        if (IntroTrialPlans.isIntroTrialPlanCode(sku)) {
+            return classificationForState(subscription, ref, STATUS_SKIPPED, "intro_trial_contract", currency);
         }
         var targetBinding = catalog.contractBinding(zoneCode, targetVersion, sku).orElse(null);
         if (targetBinding == null) {

@@ -2632,7 +2632,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
         try {
             Subscription stripeSubscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
-            targetPlan = pricedPlan(targetPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), true);
+            String subscriptionCurrency = BillingPricingService.subscriptionCurrency(stripeSubscription);
+            // 区价合同按合同区/版本取目标价；legacy 合同自动回落目录价（与旧行为一致）。
+            targetPlan = pricedPlanForContract(current, targetPlan, true, subscriptionCurrency);
             if (pricingService.isEnabled() || BillingPricingContext.confirmation() != null) pricingService.assertConfirmed(deferredPurchaseQuote(clerkUserId, targetPlan, current));
             stripeSubscription = resumeCancellationBeforePaidPlanChangeIfNeeded(current, stripeSubscription);
             SubscriptionSchedule schedule = upsertDowngradeSchedule(
@@ -3187,7 +3189,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             UserSubscriptionEntity current,
             Subscription stripeSubscription,
             SubscriptionPlanEntity targetPlan) throws StripeException {
-        targetPlan = pricedPlan(targetPlan, BillingPricingService.subscriptionCurrency(stripeSubscription), true);
+        // 目标价由调用方按合同区/版本解析，此处不得再用 legacy 目录价覆盖。
         String scheduleId = firstNonBlank(current.getStripeScheduleId(), stripeSubscription.getSchedule());
         Subscription scheduleSubscription = stripeSubscription;
         if (scheduleId != null && !scheduleId.isBlank()) {

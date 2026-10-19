@@ -1403,6 +1403,62 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void createSubscriptionCheckoutRecreatesCustomerWhenStoredCustomerObjectIsDeleted() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(17L);
+        subscription.setClerkUserId("user_deleted_customer");
+        subscription.setTier("free");
+        subscription.setStatus("canceled");
+        subscription.setStripeCustomerId("cus_deleted");
+
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("plus_yearly");
+        plan.setTier("plus");
+        plan.setBillingInterval("year");
+        plan.setStripePriceId("price_plus_yearly");
+        plan.setPriceCents(19999);
+        plan.setCurrency("usd");
+        plan.setIsActive(true);
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService() {
+            @Override
+            Customer retrieveStripeCustomer(String id) {
+                Customer customer = new Customer();
+                customer.setId(id);
+                customer.setDeleted(true);
+                return customer;
+            }
+
+            @Override
+            Session createStripeCheckoutSession(SessionCreateParams params) {
+                Session session = new Session();
+                session.setId("cs_test_recreated_customer");
+                session.setUrl("https://checkout.stripe.com/c/pay/cs_test_recreated_customer");
+                session.setExpiresAt(123456789L);
+                return session;
+            }
+        };
+        setStripeSecretKey(service, "sk_test_123");
+
+        var result = service.createSubscriptionCheckout(
+                "user_deleted_customer",
+                "user@example.com",
+                "plus_yearly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_deleted");
+
+        // 删除态 Customer 对象（不是 StripeException）也要自愈：清引用并重建。
+        assertEquals("cus_recreated", subscription.getStripeCustomerId());
+        assertEquals(1, service.createdCustomers);
+        assertEquals("cs_test_recreated_customer", result.getSessionId());
+    }
+
+    @Test
     void createSubscriptionCheckoutSurfacesCustomerRecreationFailureAfterMissingCustomerRetry() throws Exception {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(13L);

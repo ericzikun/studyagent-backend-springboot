@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.google.gson.Gson;
 import com.studyagent.infra.entity.PricingCountryRouteEntity;
+import com.studyagent.infra.entity.PricingZonePriceEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
 import com.studyagent.infra.entity.StudyPassEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
@@ -74,6 +75,7 @@ public class SubscriptionPriceRolloutService {
 
     private static final Gson GSON = new Gson();
     private static final String CHANGE_TYPE = "zone_price_rollout";
+    private static final String INTRO_TRIAL_CHANGE_TYPE = "intro_trial_renewal";
 
     private final SubscriptionPriceRolloutMapper rolloutMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
@@ -185,14 +187,22 @@ public class SubscriptionPriceRolloutService {
         if (isBlank(sku)) {
             return classificationForState(subscription, ref, STATUS_SKIPPED, "price_unresolved", currency);
         }
-        // 试用合同的下一个事件是转正，不是周价续费；排期会干扰转正 Schedule。
-        // 等转成正式套餐后，由后续批次的 dry-run 再迁移。
-        if (IntroTrialPlans.isIntroTrialPlanCode(sku)) {
-            return classificationForState(subscription, ref, STATUS_SKIPPED, "intro_trial_contract", currency);
+        // 试用合同的下一个事件是转正：目标应取转正 SKU 的区价，而不是 Trial 周价。
+        boolean introTrial = IntroTrialPlans.isIntroTrialPlanCode(sku);
+        String targetSku = sku;
+        String renewalSku = null;
+        if (introTrial) {
+            renewalSku = resolveTrialRenewalSku(sourcePriceId, sku);
+            if (isBlank(renewalSku)) {
+                return classificationForState(subscription, ref, STATUS_SKIPPED,
+                        "intro_trial_no_renewal_sku", currency);
+            }
+            targetSku = renewalSku;
         }
-        var targetBinding = catalog.contractBinding(zoneCode, targetVersion, sku).orElse(null);
+        var targetBinding = catalog.contractBinding(zoneCode, targetVersion, targetSku).orElse(null);
         if (targetBinding == null) {
-            return classificationForState(subscription, ref, STATUS_SKIPPED, "no_target_binding:" + sku, currency);
+            return classificationForState(subscription, ref, STATUS_SKIPPED,
+                    "no_target_binding:" + targetSku, currency);
         }
         if (!Boolean.TRUE.equals(targetBinding.getIsActive())) {
             return classificationForState(subscription, ref, STATUS_SKIPPED, "target_binding_inactive", currency);
@@ -240,8 +250,39 @@ public class SubscriptionPriceRolloutService {
         snapshot.put("current_period_end", periodEnd);
         snapshot.put("status", status);
         snapshot.put("price_id", sourcePriceId);
+        if (introTrial) {
+            snapshot.put("change_type", INTRO_TRIAL_CHANGE_TYPE);
+            snapshot.put("renewal_sku", renewalSku);
+        }
         return new Classification(STATUS_PREVIEW, null, sku, currency, sourcePriceId,
                 targetBinding.getStripePriceId(), fromEpoch(periodEnd), GSON.toJson(snapshot), backfill);
+    }
+
+    /**
+     * 试用合同转正 SKU：优先用区绑定上的 renewal_sku_code（新区 Trial），
+     * 老 Trial 再从 subscription_plans.converts_to_plan_code 解析。
+     */
+    private String resolveTrialRenewalSku(String sourcePriceId, String trialSku) {
+        String fromBinding = catalog.bindingById(sourcePriceId)
+                .map(PricingZonePriceEntity::getRenewalSkuCode)
+                .orElse(null);
+        if (!isBlank(fromBinding)) {
+            return fromBinding;
+        }
+        SubscriptionPlanEntity plan = subscriptionPlanMapper.selectOne(
+                new LambdaQueryWrapper<SubscriptionPlanEntity>()
+                        .eq(SubscriptionPlanEntity::getPlanCode, trialSku)
+                        .last("LIMIT 1"));
+        if (plan != null && !isBlank(plan.getConvertsToPlanCode())) {
+            return plan.getConvertsToPlanCode();
+        }
+        if (IntroTrialPlans.PRO_TRIAL_PLAN_CODE_MONTHLY.equals(trialSku)) {
+            return IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY;
+        }
+        if (IntroTrialPlans.PRO_TRIAL_PLAN_CODE_YEARLY.equals(trialSku)) {
+            return IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_YEARLY;
+        }
+        return null;
     }
 
     private Classification classificationForState(Subscription subscription, ContractRef ref,
@@ -353,9 +394,15 @@ public class SubscriptionPriceRolloutService {
             return ApplyOutcome.CONFLICT;
         }
         if (foreignFuturePhaseExists(schedule, preimage, periodEnd,
-                row.getSourcePriceId(), row.getStripeSubscriptionId())) {
+                row.getSourcePriceId(), row.getStripeSubscriptionId())
+                && !isIntroTrialRollout(row)) {
             // 用户在途的未来变更（转正/降级段）不得被换价覆盖：留冲突行人工处理。
             markRow(row, STATUS_CONFLICT, "user_future_change_pending", null);
+            return ApplyOutcome.CONFLICT;
+        }
+        if (isIntroTrialRollout(row) && !introTrialScheduleShapeOk(schedule, preimage, periodEnd)) {
+            // 只在「当前 Trial 段 + 紧邻的转正段」上替换价格；多出来的未来段不动，留给人工。
+            markRow(row, STATUS_CONFLICT, "intro_trial_schedule_shape", null);
             return ApplyOutcome.CONFLICT;
         }
         int replacedIndex = indexOfPhaseAt(preimage, periodEnd);
@@ -364,10 +411,14 @@ public class SubscriptionPriceRolloutService {
         if (schedule.getMetadata() != null) {
             metadata.putAll(schedule.getMetadata());
         }
-        metadata.put("change_type", CHANGE_TYPE);
         metadata.put("rollout_batch", row.getBatchId());
         metadata.put("rollout_target_version", row.getTargetVersion());
         metadata.put("clerk_user_id", row.getClerkUserId());
+        // Trial 的 Schedule metadata 里有 change_type=intro_trial_conversion 和 pending_plan_code，
+        // 转正流程依赖它们；这里只加 rollout 标记，不能覆盖。
+        if (!isIntroTrialRollout(row)) {
+            metadata.put("change_type", CHANGE_TYPE);
+        }
         SubscriptionScheduleUpdateParams params = buildScheduleUpdateParams(merged, metadata,
                 row.getCurrency(), row.getTargetPriceId());
         SubscriptionSchedule updated = updateRolloutSchedule(schedule, params, idempotencyKey);
@@ -379,8 +430,38 @@ public class SubscriptionPriceRolloutService {
         return supersededCount > 0 ? ApplyOutcome.SUPERSEDED : ApplyOutcome.SCHEDULED;
     }
 
-    private int supersedeOtherBatches(SubscriptionPriceRolloutEntity row) {
-        List<SubscriptionPriceRolloutEntity> others = rolloutMapper.selectList(
+    private boolean isIntroTrialRollout(SubscriptionPriceRolloutEntity row) {
+        if (row == null || row.getSnapshotJson() == null) {
+            return false;
+        }
+        try {
+            Map<?, ?> snapshot = GSON.fromJson(row.getSnapshotJson(), Map.class);
+            return snapshot != null
+                    && INTRO_TRIAL_CHANGE_TYPE.equals(String.valueOf(snapshot.get("change_type")));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Trial 转正只允许「当前 Trial 段 + 紧邻生效点的转正段」这一种形状：
+     * 有 schedule 时不能有多余的未来段；无 schedule 时允许创建。
+     */
+    private boolean introTrialScheduleShapeOk(SubscriptionSchedule schedule,
+                                              List<PhaseSpec> preimage, Long effective) {
+        if (schedule == null) {
+            return true;
+        }
+        if (preimage.isEmpty() || preimage.size() > 2) {
+            return false;
+        }
+        if (!Objects.equals(preimage.get(0).end(), effective)) {
+            return false;
+        }
+        return preimage.size() == 1 || Objects.equals(preimage.get(1).start(), effective);
+    }
+
+    private int supersedeOtherBatches(SubscriptionPriceRolloutEntity row) {        List<SubscriptionPriceRolloutEntity> others = rolloutMapper.selectList(
                 new LambdaQueryWrapper<SubscriptionPriceRolloutEntity>()
                         .eq(SubscriptionPriceRolloutEntity::getStripeSubscriptionId,
                                 row.getStripeSubscriptionId())

@@ -761,6 +761,28 @@ public class SubscriptionPriceRolloutService {
                 }
             }
         }
+        // 默认区（Z100）：USD 老合同统一换到 1.00 档，不依赖历史订单证据（部分老订阅没有订单行）。
+        // 币种为 NULL 的行也纳入，分类阶段按 Stripe 实际币种校验；非 USD 会在目标金额校验时跳过。
+        String fallbackZone = defaultZoneCode == null || defaultZoneCode.isBlank()
+                ? "Z100" : defaultZoneCode.trim();
+        if (fallbackZone.equals(zoneCode)) {
+            List<UserSubscriptionEntity> legacyRows = userSubscriptionMapper.selectList(
+                    new LambdaQueryWrapper<UserSubscriptionEntity>()
+                            .isNull(UserSubscriptionEntity::getPricingZone)
+                            .isNotNull(UserSubscriptionEntity::getStripeSubscriptionId)
+                            .in(UserSubscriptionEntity::getStatus,
+                                    List.of("active", "trialing", "past_due", "unpaid"))
+                            .and(w -> w.isNull(UserSubscriptionEntity::getCurrency)
+                                    .or().eq(UserSubscriptionEntity::getCurrency, "usd")));
+            for (UserSubscriptionEntity row : legacyRows) {
+                if (isRealSubscriptionRef(row.getStripeSubscriptionId())
+                        && refs.stream().noneMatch(ref -> ref.subscriptionId().equals(row.getStripeSubscriptionId()))) {
+                    refs.add(new ContractRef(KIND_SUBSCRIPTION, row.getClerkUserId(),
+                            row.getStripeSubscriptionId(), row.getId(), "legacy",
+                            "legacy_contract", false));
+                }
+            }
+        }
         return refs;
     }
 

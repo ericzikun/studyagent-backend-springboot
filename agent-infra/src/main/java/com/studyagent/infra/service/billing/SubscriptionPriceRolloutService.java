@@ -851,15 +851,18 @@ public class SubscriptionPriceRolloutService {
         String idempotencyKey = String.join(":", "rollout", batchId, ref.subscriptionId(),
                 nullSafe(classification.targetPriceId()), nullSafe(effectiveEpoch));
         if (existing != null) {
-            existing.setStatus(classification.status());
-            existing.setStatusReason(classification.reason());
-            existing.setCurrency(classification.currency());
-            existing.setSourcePriceId(classification.sourcePriceId());
-            existing.setTargetPriceId(classification.targetPriceId());
-            existing.setEffectiveAt(classification.effectiveAt());
-            existing.setSnapshotJson(classification.snapshotJson());
-            existing.setIdempotencyKey(idempotencyKey);
-            rolloutMapper.updateById(existing);
+            // 重跑 dry-run 时状态可能从 conflict/skipped 变成 preview，
+            // entity 的 NOT_NULL 更新策略会跳过 null，导致旧的 status_reason 残留。
+            rolloutMapper.update(null, new LambdaUpdateWrapper<SubscriptionPriceRolloutEntity>()
+                    .eq(SubscriptionPriceRolloutEntity::getId, existing.getId())
+                    .set(SubscriptionPriceRolloutEntity::getStatus, classification.status())
+                    .set(SubscriptionPriceRolloutEntity::getStatusReason, classification.reason())
+                    .set(SubscriptionPriceRolloutEntity::getCurrency, classification.currency())
+                    .set(SubscriptionPriceRolloutEntity::getSourcePriceId, classification.sourcePriceId())
+                    .set(SubscriptionPriceRolloutEntity::getTargetPriceId, classification.targetPriceId())
+                    .set(SubscriptionPriceRolloutEntity::getEffectiveAt, classification.effectiveAt())
+                    .set(SubscriptionPriceRolloutEntity::getSnapshotJson, classification.snapshotJson())
+                    .set(SubscriptionPriceRolloutEntity::getIdempotencyKey, idempotencyKey));
             return;
         }
         SubscriptionPriceRolloutEntity row = new SubscriptionPriceRolloutEntity();

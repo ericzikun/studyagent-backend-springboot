@@ -256,7 +256,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         copy.setPriceCents(selection.amountMinor());
         copy.setCurrency(selection.currency());
-        if (selection.billingInterval() != null) {
+        // 试用价在 Stripe 是 week/1（7 天），但目录契约的 billingInterval 表示「转正周期」，
+        // 前端 Pro Trial 卡片按 month 匹配；两者别混用，quote 侧仍显式用 week。
+        if (selection.billingInterval() != null && !isIntroTrialPlan(copy)) {
             copy.setBillingInterval(selection.billingInterval());
         }
         return copy;

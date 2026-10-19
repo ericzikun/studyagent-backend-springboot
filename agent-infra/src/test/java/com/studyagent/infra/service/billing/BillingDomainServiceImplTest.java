@@ -471,7 +471,7 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void manualUpgradeCheckoutReleasesExistingPendingScheduleBeforeCreatingCheckout() throws Exception {
+    void manualUpgradeCheckoutKeepsPendingScheduleUntilPayment() throws Exception {
         UserSubscriptionEntity current = new UserSubscriptionEntity();
         current.setId(21L);
         current.setClerkUserId("user_1");
@@ -520,8 +520,11 @@ class BillingDomainServiceImplTest {
                 "resume_tok_4");
 
         assertEquals("cs_test_manual_upgrade", result.getSessionId());
-        assertEquals("sub_sched_old", service.releasedScheduleId);
-        assertNull(service.subscriptionToRetrieve.getSchedule());
+        // 放弃/未完成支付时不得丢失已排期的待切换变更：创建 Checkout 不释放 Schedule。
+        assertNull(service.releasedScheduleId);
+        assertEquals("sub_sched_old", service.subscriptionToRetrieve.getSchedule());
+        assertEquals("free", current.getPendingPlanCode());
+        assertNotNull(current.getPendingEffectiveAt());
     }
 
     @Test
@@ -1107,7 +1110,7 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
-    void clearPendingUpgradeStateForRetryExpiresPendingOrdersAndResetsSubscriptionFlag() {
+    void clearPendingUpgradeStateForRetryKeepsDeferredPlanChange() {
         UserSubscriptionEntity current = new UserSubscriptionEntity();
         current.setId(10L);
         current.setClerkUserId("user_1");
@@ -1117,8 +1120,8 @@ class BillingDomainServiceImplTest {
         BillingDomainServiceImpl service = service();
         service.clearPendingUpgradeStateForRetry(current);
 
-        assertNull(current.getPendingPlanCode());
-        assertNull(current.getPendingEffectiveAt());
+        // 只重置升级 Checkout 记账；已排期的套餐变更（deferred change）必须保留。
+        assertEquals("plus_monthly", current.getPendingPlanCode());
         assertNull(current.getPendingUpgradeOrderNo());
         assertNull(current.getPendingUpgradeExpiresAt());
         verify(rechargeOrderMapper).update(isNull(), any(Wrapper.class));

@@ -19,11 +19,12 @@ import com.studyagent.service.domain.billing.NextCyclePriceChange;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
+import com.stripe.model.InvoiceCollection;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.SubscriptionSchedule;
 import com.stripe.net.RequestOptions;
-import com.stripe.param.InvoiceUpcomingParams;
+import com.stripe.param.InvoiceListParams;
 import com.stripe.param.SubscriptionScheduleCreateParams;
 import com.stripe.param.SubscriptionScheduleUpdateParams;
 import lombok.RequiredArgsConstructor;
@@ -947,16 +948,22 @@ public class SubscriptionPriceRolloutService {
         return schedule.update(params, RequestOptions.builder().setIdempotencyKey(idempotencyKey).build());
     }
 
+    /**
+     * 是否已有 finalize 但未支付的发票。不能用 {@code Invoice.upcoming}：它是续费预览，
+     * 任何仍会续费的 active 订阅都会返回，会把整个批次误判成 conflict。
+     */
     protected boolean hasUpcomingInvoice(String subscriptionId) {
         try {
-            Invoice.upcoming(InvoiceUpcomingParams.builder().setSubscription(subscriptionId).build());
-            return true;
-        } catch (InvalidRequestException e) {
-            // "no upcoming invoice" 是常态；其余 InvalidRequest 也视为无票，由 apply 前置重读兜底。
-            return false;
+            InvoiceCollection invoices = Invoice.list(
+                    InvoiceListParams.builder()
+                            .setSubscription(subscriptionId)
+                            .setStatus(InvoiceListParams.Status.OPEN)
+                            .setLimit(10L)
+                            .build());
+            return invoices != null && invoices.getData() != null && !invoices.getData().isEmpty();
         } catch (StripeException e) {
             throw new BillingDomainException("STRIPE_ERROR",
-                    "Upcoming invoice probe failed: " + e.getMessage(), e);
+                    "Open invoice probe failed: " + e.getMessage(), e);
         }
     }
 

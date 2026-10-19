@@ -2300,7 +2300,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String orderNo = generateOrderNo();
 
         try {
-            releasePendingScheduleStateBeforeManualUpgradeCheckout(current);
+            resumeCancellationBeforeManualUpgradeCheckout(current);
             SessionCreateParams.PaymentIntentData.Builder paymentIntentDataBuilder =
                     SessionCreateParams.PaymentIntentData.builder()
                             .putMetadata("purchase_type", "subscription_upgrade_manual")
@@ -2375,32 +2375,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
     }
 
-    private void releasePendingScheduleStateBeforeManualUpgradeCheckout(
+    /**
+     * 创建升级 Checkout 时只恢复「已预约取消」，**不动待切换的 Schedule**：
+     * 释放必须等到支付成功（webhook attemptManualUpgradeSwitch），否则用户放弃支付会丢掉已排期的变更。
+     */
+    private void resumeCancellationBeforeManualUpgradeCheckout(
             UserSubscriptionEntity current) throws StripeException {
         if (current == null || !hasText(current.getStripeSubscriptionId())) {
             return;
         }
         Subscription subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
-        // A paid trial still needs its Schedule: it converts the 7-day intro into the formal
-        // plan when the upgrade checkout is abandoned. Releasing it here would leave the
-        // subscription renewing at the weekly trial price instead of ever converting.
-        if (hasConversionSchedule(current)) {
-            resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
-            return;
-        }
-        String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
-        boolean hasPendingState = scheduleId != null
-                || hasText(current.getPendingPlanCode())
-                || current.getPendingEffectiveAt() != null;
-        if (!hasPendingState) {
-            resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
-            return;
-        }
-        if (scheduleId != null) {
-            releasePendingScheduleIfPresent(current, subscription);
-            subscription = retrieveStripeSubscription(current.getStripeSubscriptionId());
-        }
-        clearPendingScheduleState(current);
         resumeCancellationBeforePaidPlanChangeIfNeeded(current, subscription);
     }
 
@@ -2478,29 +2462,18 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(RechargeOrderEntity::getStatus, "checkout_expired")
                 .set(RechargeOrderEntity::getFailureReason, "superseded_by_new_upgrade")
                 .set(RechargeOrderEntity::getUpdatedAt, now));
-        // A paid trial's pending plan is its Schedule conversion target, not an upgrade
-        // target, so it must survive a superseded upgrade checkout. Only the checkout
-        // bookkeeping is reset.
-        boolean keepConversionTarget = hasConversionSchedule(current);
-        if (!keepConversionTarget
-                && !hasText(current.getPendingPlanCode())
-                && !hasText(current.getPendingUpgradeOrderNo())) {
-            return;
+        // 待切换的套餐变更（deferred change）与升级 Checkout 是两件事：这里只重置 Checkout 记账，
+        // 不能清 pending_plan_code/effective_at——否则用户放弃支付会丢掉已排期的变更。
+        if (hasText(current.getPendingUpgradeOrderNo()) || current.getPendingUpgradeExpiresAt() != null) {
+            userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
+                    .eq(UserSubscriptionEntity::getId, current.getId())
+                    .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
+                    .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
+                    .set(UserSubscriptionEntity::getUpdatedAt, now));
+            current.setPendingUpgradeOrderNo(null);
+            current.setPendingUpgradeExpiresAt(null);
+            current.setUpdatedAt(now);
         }
-        userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
-                .eq(UserSubscriptionEntity::getId, current.getId())
-                .set(!keepConversionTarget, UserSubscriptionEntity::getPendingPlanCode, null)
-                .set(!keepConversionTarget, UserSubscriptionEntity::getPendingEffectiveAt, null)
-                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, null)
-                .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, null)
-                .set(UserSubscriptionEntity::getUpdatedAt, now));
-        if (!keepConversionTarget) {
-            current.setPendingPlanCode(null);
-            current.setPendingEffectiveAt(null);
-        }
-        current.setPendingUpgradeOrderNo(null);
-        current.setPendingUpgradeExpiresAt(null);
-        current.setUpdatedAt(now);
     }
 
     private void expirePendingUpgradeCheckoutSessions(String clerkUserId) {
@@ -3071,16 +3044,6 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private boolean isOneTimeProTrialPlan(SubscriptionPlanEntity plan) {
         return plan != null
                 && IntroTrialPlans.isOneTimeProTrialPlan(plan.getPlanCode(), plan.getOfferKind());
-    }
-
-    /**
-     * Subscription-style paid trial: its Stripe Schedule converts the 7-day intro into the
-     * formal plan. The historical one-time Pro Trial has no Schedule.
-     */
-    private boolean hasConversionSchedule(UserSubscriptionEntity current) {
-        return current != null
-                && IntroTrialPlans.isIntroTrialPlanCode(current.getPlanCode())
-                && !IntroTrialPlans.isOneTimeProTrialPlanCode(current.getPlanCode());
     }
 
     private boolean isExpiredOneTimeProTrial(UserSubscriptionEntity entity) {

@@ -208,6 +208,39 @@ class SubscriptionPriceRolloutServiceTest {
     }
 
     @Test
+    void dryRunDefaultZoneFindsLegacyUsdContractsWithoutOrderEvidence() throws Exception {
+        // 老订阅可能没有订单行：默认区仍要枚举 pricing_zone 为空、币种空/USD 的活跃合同。
+        long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
+        loadCatalog();
+        UserSubscriptionEntity legacy = new UserSubscriptionEntity();
+        legacy.setId(14L);
+        legacy.setClerkUserId("user_legacy_direct");
+        legacy.setStripeSubscriptionId("sub_legacy_direct");
+        legacy.setStatus("active");
+        when(userSubscriptionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(), List.of(legacy));
+        when(studyPassMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(rechargeOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        SubscriptionPlanEntity legacyPlan = new SubscriptionPlanEntity();
+        legacyPlan.setPlanCode("pro_monthly");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(legacyPlan);
+        when(rolloutMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        TestableRolloutService service = service();
+        service.subscriptions.put("sub_legacy_direct",
+                subscription("sub_legacy_direct", "price_legacy_pro_monthly", "usd", periodEnd, false));
+
+        SubscriptionPriceRolloutService.DryRunSummary summary = service.dryRun("Z100", TARGET_VERSION);
+
+        assertEquals(1, summary.preview());
+        assertEquals(0, summary.backfilled());
+        ArgumentCaptor<SubscriptionPriceRolloutEntity> inserted =
+                ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
+        verify(rolloutMapper).insert(inserted.capture());
+        assertEquals("legacy", inserted.getValue().getSourceVersion());
+        assertEquals("price_z100_pro_v2", inserted.getValue().getTargetPriceId());
+        assertEquals("usd", inserted.getValue().getCurrency());
+    }
+
+    @Test
     void dryRunMarksConflictsForCancellingAndInvoicedContracts() throws Exception {
         long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
         loadCatalog();

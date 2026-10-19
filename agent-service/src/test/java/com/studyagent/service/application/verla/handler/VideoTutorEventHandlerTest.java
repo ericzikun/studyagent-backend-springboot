@@ -92,7 +92,8 @@ class VideoTutorEventHandlerTest {
                 VerlaAgentEventType.VIDEO_TUTOR_BOARD_COMMIT,
                 VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED,
                 VerlaAgentEventType.VIDEO_TUTOR_FAILED,
-                VerlaAgentEventType.VIDEO_TUTOR_CANCELLED);
+                VerlaAgentEventType.VIDEO_TUTOR_CANCELLED,
+                VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY);
 
         // 这两个是纯渲染帧。注意不注册 ≠ 不落 inbox（SSE 由 drain 驱动，它们照样占一行并参与保序）；
         // 不注册是为了不给它们做任何投影副作用
@@ -272,5 +273,51 @@ class VideoTutorEventHandlerTest {
     @Test
     void boardArtifactUid_shouldStayConversationScopedForTheSnapshotReader() {
         assertThat(VideoTutorEventHandler.boardArtifactUid(2001L)).isEqualTo("board_2001");
+    }
+
+    @Test
+    void lateAsset_shouldMergeIntoBoardMetaAudioInSeqOrder() throws Exception {
+        VerlaArtifact existing = VerlaArtifact.builder()
+                .artifactUid("board_" + CONVERSATION_ID)
+                .sessionId(SESSION_ID)
+                .version(4)
+                .metaJson("{\"refSeq\":3,\"audio\":{\"step:2\":[{\"url\":\"u0\",\"durationMs\":900}]}}")
+                .build();
+        when(boardStore.find(CONVERSATION_ID)).thenReturn(existing);
+
+        handler().handle(row(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY),
+                envelope(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY, Map.of(
+                        "late", true, "target", "step:2", "seq", 1, "total", 2,
+                        "assetUrl", "u1", "durationMs", 1200)));
+
+        ArgumentCaptor<VerlaArtifact> captor = ArgumentCaptor.forClass(VerlaArtifact.class);
+        verify(artifactRepository).upsertByUid(captor.capture());
+        VerlaArtifact saved = captor.getValue();
+        assertThat(saved.getVersion()).isEqualTo(4);
+        assertThat(saved.getBodyOrRef()).isNull();
+        Map<?, ?> meta = new ObjectMapper().readValue(saved.getMetaJson(), Map.class);
+        assertThat(meta.get("refSeq")).isEqualTo(3);
+        List<?> clips = (List<?>) ((Map<?, ?>) meta.get("audio")).get("step:2");
+        assertThat(clips).hasSize(2);
+        assertThat(((Map<?, ?>) clips.get(0)).get("url")).isEqualTo("u0");
+        assertThat(((Map<?, ?>) clips.get(1)).get("url")).isEqualTo("u1");
+    }
+
+    @Test
+    void nonLateAsset_shouldNotTouchTheArtifact() {
+        handler().handle(row(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY),
+                envelope(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY, Map.of(
+                        "target", "step:0", "seq", 0, "assetUrl", "u", "durationMs", 1)));
+        verifyNoInteractions(artifactRepository);
+    }
+
+    @Test
+    void lateAsset_forABoardOwnedByANewerSession_isSkipped() {
+        when(boardStore.find(CONVERSATION_ID)).thenReturn(VerlaArtifact.builder()
+                .artifactUid("board_" + CONVERSATION_ID).sessionId(SESSION_ID + 1).version(5).build());
+        handler().handle(row(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY),
+                envelope(VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY, Map.of(
+                        "late", true, "target", "ask", "seq", 0, "assetUrl", "u", "durationMs", 1)));
+        verify(artifactRepository, never()).upsertByUid(any());
     }
 }

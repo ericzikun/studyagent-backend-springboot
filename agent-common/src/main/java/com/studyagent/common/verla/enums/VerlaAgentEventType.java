@@ -205,7 +205,8 @@ public enum VerlaAgentEventType {
     /**
      * 素材（语音）就绪时单独补一帧：让 step 不再等音频的关键。
      * <p>生产实测单句 TTS 3.5–5.2s、配图 ~14s，挂在 step 上会把每步间隔拖成 ~5.5s，
-     * 而模型本身 7.5s 就能吐完整轮。Java 不订阅（纯渲染帧），但**必须在终态之前发完**。
+     * 而模型本身 7.5s 就能吐完整轮。纯渲染帧，**允许晚于终态到达**（迟到音频，payload.late=true）；
+     * Java 只对 late 帧做一件事：把它并进白板 artifact 的 meta.audio，让重听不缺段。
      */
     VIDEO_TUTOR_ASSET_READY(false),
     /** 白板树快照 → artifact upsert（kind=video_tutor_board），刷新恢复的主路径。 */

@@ -18,7 +18,10 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -27,7 +30,7 @@ import java.util.Set;
 /**
  * Video Tutor 白板事件 handler。
  * <p>
- * 只注册 5 个事件。{@code VIDEO_TUTOR_BOARD_OPS} 与 {@code VIDEO_TUTOR_CHAT_STREAM_CHUNK}
+ * 注册 6 个事件（5 个投影 + {@code VIDEO_TUTOR_ASSET_READY} 的"迟到音频补录"）。{@code VIDEO_TUTOR_BOARD_OPS} 与 {@code VIDEO_TUTOR_CHAT_STREAM_CHUNK}
  * 故意不注册 —— 但要说清它<b>不是</b>"不进 inbox"：SSE 正是由 {@code VerlaInboxService.drainAndDispatch}
  * 驱动的，每一行成功处理的事件都会推给前端，所以渲染帧照样落一行 inbox、照样参与 seq 保序
  * （这正是前端能按序收到 step 帧的原因）。不注册的含义只是<b>不做投影副作用</b>。
@@ -51,7 +54,8 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.VIDEO_TUTOR_BOARD_COMMIT,
             VerlaAgentEventType.VIDEO_TUTOR_TURN_COMPLETED,
             VerlaAgentEventType.VIDEO_TUTOR_FAILED,
-            VerlaAgentEventType.VIDEO_TUTOR_CANCELLED);
+            VerlaAgentEventType.VIDEO_TUTOR_CANCELLED,
+            VerlaAgentEventType.VIDEO_TUTOR_ASSET_READY);
 
     private final VerlaTurnOrchestrator orchestrator;
     private final VerlaArtifactRepository artifactRepository;
@@ -76,6 +80,7 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
             case VIDEO_TUTOR_FAILED -> orchestrator.onAgentFailed(row.getSessionId(), payload);
             case VIDEO_TUTOR_CANCELLED -> orchestrator.onAgentCancelled(row.getSessionId());
             case VIDEO_TUTOR_BOARD_COMMIT -> upsertBoard(row, payload);
+            case VIDEO_TUTOR_ASSET_READY -> mergeLateAudio(row, payload);
             case VIDEO_TUTOR_TURN_COMPLETED -> {
                 // 板子已由前一行 BOARD_COMMIT 落库；这里不再 upsert —— 终态 payload 里没有 board 键
                 orchestrator.onAgentCompleted(row.getSessionId(), payload);
@@ -129,6 +134,81 @@ public class VideoTutorEventHandler implements VerlaEventHandler {
         }
 
         conversationRepository.incrementVersion(row.getConversationId());
+    }
+
+    /**
+     * 迟到音频补录：终态之后才合成完的语音（Python {@code late=true}）不在 BOARD_COMMIT 的
+     * {@code meta.audio} 里，这里把它并进去 —— 否则刷新/重进后的"重听"会缺这几段。
+     * <p>
+     * 只处理 {@code late=true} 的帧：其余音频已随 BOARD_COMMIT 落库，逐帧写库纯属浪费。
+     * 板子已经被更新的一轮覆盖（artifact.sessionId 不是本轮）时不写，避免把旧轮音频挂到新板上。
+     * <b>任何异常都吞掉</b>：本方法跑在 inbox drain 事务里，抛出会回滚整批、卡住 SSE —— 补录只是增强。
+     */
+    @SuppressWarnings("unchecked")
+    private void mergeLateAudio(VerlaEventInbox row, Map<String, Object> payload) {
+        if (!Boolean.TRUE.equals(payload.get("late"))) {
+            return;
+        }
+        try {
+            String target = str(payload.get("target"));
+            String url = str(payload.get("assetUrl"));
+            if (target == null || target.isBlank() || url == null || url.isBlank()) {
+                return;
+            }
+            VerlaArtifact artifact = boardStore.find(row.getConversationId());
+            if (artifact == null || !Objects.equals(artifact.getSessionId(), row.getSessionId())) {
+                log.info("[Verla/videoTutor] late audio skipped (board moved on) cid={} session={} target={}",
+                        row.getConversationId(), row.getSessionId(), target);
+                return;
+            }
+            Map<String, Object> meta = artifact.getMetaJson() == null || artifact.getMetaJson().isBlank()
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(objectMapper.readValue(artifact.getMetaJson(), Map.class));
+            Object rawAudio = meta.get("audio");
+            Map<String, Object> audio = rawAudio instanceof Map<?, ?> m
+                    ? new LinkedHashMap<>((Map<String, Object>) m) : new LinkedHashMap<>();
+            int seq = payload.get("seq") instanceof Number n ? n.intValue() : 0;
+            List<Map<String, Object>> clips = new ArrayList<>();
+            Object existing = audio.get(target);
+            if (existing instanceof List<?> list) {
+                int index = 0;
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> clip) {
+                        Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) clip);
+                        copy.putIfAbsent("seq", index);
+                        clips.add(copy);
+                    }
+                    index++;
+                }
+            } else if (existing instanceof Map<?, ?> single) {
+                Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) single);
+                copy.putIfAbsent("seq", 0);
+                clips.add(copy);
+            }
+            final int wanted = seq;
+            if (clips.stream().anyMatch(c -> c.get("seq") instanceof Number n && n.intValue() == wanted)) {
+                return; // 幂等：MQ 重投
+            }
+            Map<String, Object> clip = new LinkedHashMap<>();
+            clip.put("url", url);
+            clip.put("durationMs", payload.get("durationMs") instanceof Number n ? n.intValue() : 0);
+            clip.put("seq", seq);
+            clips.add(clip);
+            clips.sort(Comparator.comparingInt(c -> c.get("seq") instanceof Number n ? n.intValue() : 0));
+            audio.put(target, clips);
+            meta.put("audio", audio);
+            // 同 version 只刷新 meta（upsertByUid 允许同版本幂等刷新，body 为 null 不覆盖）
+            artifactRepository.upsertByUid(VerlaArtifact.builder()
+                    .artifactUid(artifact.getArtifactUid())
+                    .version(artifact.getVersion())
+                    .metaJson(toJson(meta))
+                    .build());
+            log.info("[Verla/videoTutor] late audio merged cid={} target={} seq={}",
+                    row.getConversationId(), target, seq);
+        } catch (Exception e) {
+            log.warn("[Verla/videoTutor] late audio merge failed cid={}: {}",
+                    row.getConversationId(), e.getMessage());
+        }
     }
 
     @SuppressWarnings("unchecked")

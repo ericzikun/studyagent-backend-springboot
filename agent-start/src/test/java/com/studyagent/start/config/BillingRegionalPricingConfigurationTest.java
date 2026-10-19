@@ -32,11 +32,11 @@ class BillingRegionalPricingConfigurationTest {
         });
     }
 
-    @Test void applicationDefaultsAreDisabledAndOnlyBrazilIsConfigured() {
+    @Test void applicationDefaultsEnablePricingAndOnlyBrazilIsConfigured() {
         configured(Map.of()).run(context -> {
             assertNull(context.getStartupFailure());
             var config = context.getBean(BillingRegionalPricingProperties.class);
-            assertFalse(config.isEnabled());
+            assertTrue(config.isEnabled());
             config.setEnabled(true);
             assertEquals("brl", config.newPurchaseCurrency("BR"));
             assertEquals("usd", config.newPurchaseCurrency("KR"));
@@ -56,7 +56,8 @@ class BillingRegionalPricingConfigurationTest {
     }
 
     @Test void obsoleteBrazilToggleDoesNotEnableGenericPricing() {
-        configured(Map.of("BILLING_BRAZIL_PRICING_ENABLED", "true")).run(context -> {
+        configured(Map.of("BILLING_REGIONAL_PRICING_ENABLED", "false",
+                "BILLING_BRAZIL_PRICING_ENABLED", "true")).run(context -> {
             assertNull(context.getStartupFailure());
             assertFalse(context.getBean(BillingRegionalPricingProperties.class).isEnabled());
         });

@@ -8,26 +8,16 @@
 
 ---
 
-## 0. 下一次需要人参与：**2026-10-20 12:18 CST（04:18 UTC）之前**
+## 0. Trial 转正（方案 A）已执行完成
 
-### 原因：待迁移 Trial 的转正价仍是旧 $79.99
+- 2026-10-19 已完成 trial-aware rollout：8 条待转正 Trial 的 phase2 已改为 **Z100 pro_monthly `price_1USCfP7…`（$29.99）**
+- 7 条已有转正 Schedule：只替换 phase2，保留 `intro_trial_conversion` / `pending_plan_code=pro_monthly` 元数据
+- 1 条原本无 Schedule（`sub_1UQLTo…`）：已补建「Trial 周价 → Z100 pro_monthly」两段
+- 最早一条 `sub_1UPxAN…` 将在 **2026-10-20 04:18:19 UTC / 12:18 CST** 按 $29.99 转正
+- 台账：23 条 scheduled（15 老合同 + 8 Trial）、18 条 cancelling、8 条 past_due；verify 0 failed
+- 代码：main `58a670cf`、release `b55521be`、feat `ef291901`；生产已部署
 
-dry-run 里 13 条 Trial 被标记为 `intro_trial_contract` 跳过。进一步核对 Stripe：
-
-- **8 条 Trial 会转成正式 pro_monthly**（另外 5 条是取消中的 Trial，到期直接取消，无需处理）
-- 其中 **7 条** 已有转正 Schedule，phase2 价格是 **旧 pro_monthly `price_1TmUvv…` = $79.99**
-- **1 条**（`sub_1UQLTo…`）没有 Schedule，由应用侧转正流程处理，预计也会用旧价
-- 最早一条 **`sub_1UPxAN…`（user_3Kclq…）在 2026-10-20 04:18:19 UTC / 12:18 CST 转正**
-
-### 需要拍板的三选一
-
-| 方案 | 做法 | 影响 | 建议 |
-|---|---|---|---|
-| **A. Trial-aware rollout（推荐）** | 让 rollout 对 `pro_trial_to_monthly` 的目标改为 **Z100 pro_monthly `price_1USCfP7…`**，并把已有转正 Schedule 的 phase2 价格替换掉；无 schedule 的那条单独处理 | 转正即按 $29.99，符合“下周期换新价” | 需要代码+测试+部署+apply，必须在 10-20 04:18 UTC 前完成 |
-| B. 手工改 Schedule | 直接对 7 条 Stripe Schedule 的 phase2 价格批量改为 Z100 pro_monthly；无 schedule 的一条单独建 | 快，但绕过 rollout 台账，审计性差 | 时间不够时的备选 |
-| C. 接受首月旧价 | 不处理，Trial 转正先按 $79.99 收一个月；转正后用新批次在**下一次续费**迁到 $29.99 | 8 个用户首月多付 $50；可能需要退款/沟通 | 不推荐 |
-
-> **如果选 C，就不需要在 10-20 前操作；下一个人工检查点顺延到 10-23/24 的首次到期 verify。**
+**下一次人工参与：2026-10-23 18:30 UTC / 10-24 02:30 CST 之后跑 verify**（最早老合同到期）；若 verify 已做成每日 cron，则只在告警时参与。
 
 ---
 
@@ -102,11 +92,11 @@ curl -s -X POST -H "X-Internal-Token: $TOKEN" \
 - 到期自动取消，不需要迁移
 - 无需操作
 
-### 4.3 13 条 Trial（`intro_trial_contract`）
+### 4.3 Trial（已处理）
 
-- 8 条会转正：见 §0，**10-20 前决策是否在转正时就用新价**
+- 8 条会转正：phase2 已改为 Z100 pro_monthly $29.99，最早 10-20 12:18 CST 转正
 - 5 条是取消中的 Trial：到期取消，无需处理
-- 如果选方案 C（首月旧价），转正后的**下一次续费**用新日期新批次迁移（2026-11 月中下旬）
+- 转正后 webhook 自动回填合同三列并落订单；不需要再跑批次
 
 ---
 
@@ -162,8 +152,8 @@ curl -k -s -H "Host: verla.io" -H "CF-IPCountry: DE" https://127.0.0.1/v1/billin
 
 | 时间 | 事件 | 谁做 |
 |---|---|---|
-| **2026-10-20 04:18 UTC（12:18 CST）** | **最早 Trial 转正；决定是否在转正时用 $29.99** | **人拍板；可能需要立即改 schedule/rollout** |
-| 2026-10-21 ~ 10-26 | 其余 7 条 Trial 转正 | 同上；若选 C 则无需操作 |
+| **2026-10-20 04:18 UTC（12:18 CST）** | 最早 Trial 按 $29.99 自动转正 | Stripe 自动；无需操作 |
+| 2026-10-21 ~ 10-26 | 其余 7 条 Trial 按 $29.99 自动转正 | Stripe 自动；无需操作 |
 | 2026-10-23 18:30 UTC（10-24 02:30 CST） | 首条老合同到期换价 | Stripe 自动；之后跑 verify |
 | 2026-10-25 ~ 2026-11-19 | 其余 14 条老合同到期 | Stripe 自动；逐次/每日 verify |
 | 持续 | 8 条 past_due 恢复 | 业务/付款恢复后新批次迁移 |

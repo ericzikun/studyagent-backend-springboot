@@ -567,8 +567,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return null;
         }
         StudyPassProductEntity product = products.get(0);
-        try { product = pricedProduct(product, pricingService.newPurchaseCurrency()); }
-        catch (BillingDomainException e) {
+        try {
+            // 目录与下单同源：区价（含默认区）优先；无区选价时才回退 legacy 目录价。
+            product = pricedStudyPassForSale(product, pricingService.newPurchaseCurrency());
+        } catch (BillingDomainException e) {
             if (!"PRICING_CURRENCY_UNAVAILABLE".equals(e.getCode())) throw e;
             return null;
         }

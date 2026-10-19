@@ -1998,6 +1998,7 @@ public class StripeBillingWebhookService {
                 .set(UserSubscriptionEntity::getPricingZone, entity.getPricingZone())
                 .set(UserSubscriptionEntity::getPriceVersion, entity.getPriceVersion())
                 .set(UserSubscriptionEntity::getCurrency, entity.getCurrency())
+                .set(UserSubscriptionEntity::getPricingCountry, entity.getPricingCountry())
                 .set(UserSubscriptionEntity::getLastSyncedAt, entity.getLastSyncedAt())
                 .set(UserSubscriptionEntity::getUpdatedAt, entity.getUpdatedAt());
         if (deleted) {

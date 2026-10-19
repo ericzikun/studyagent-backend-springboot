@@ -1026,6 +1026,7 @@ class StripeBillingWebhookServiceTest {
         assertFalse(updateValues.contains("active"));
         // 购买国家从订阅 metadata 回填到合同列，后续换 IP 不影响定档。
         assertEquals("DE", existing.getPricingCountry());
+        assertTrue(updateValues.contains("DE"), "update wrapper must persist pricing_country");
         verify(billingQuotaGateway).clearPlanQuota(
                 "user_1", "sub_active", "plus_monthly", "subscription:sub_active:deleted");
     }

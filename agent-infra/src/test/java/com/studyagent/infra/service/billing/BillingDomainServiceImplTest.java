@@ -2604,6 +2604,8 @@ class BillingDomainServiceImplTest {
         trial.setStripePriceId("price_trial_usd"); trial.setCurrency("usd"); trial.setIsActive(true);
         trial.setOfferKind("pro_paid_trial"); trial.setTrialDays(7); trial.setConvertsToPlanCode("pro_monthly");
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(trial);
+        when(subscriptionPlanMapper.selectList(any(Wrapper.class))).thenReturn(List.of(trial));
+        when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(regionalPrices.retrieve("price_de_trial", false)).thenReturn(eurPrice("price_de_trial", "week", 99L));
         when(regionalPrices.retrieve("price_it_trial", false)).thenReturn(eurPrice("price_it_trial", "week", 99L));
         when(regionalPrices.retrieve("price_de_monthly", false)).thenReturn(eurPrice("price_de_monthly", "month", 1499L));
@@ -2616,6 +2618,15 @@ class BillingDomainServiceImplTest {
             assertEquals("eur", deQuote.getCurrency());
             assertEquals(99, deQuote.getAmountCents());
             assertEquals(1499, deQuote.getRenewalAmountCents());
+            // 计费周期是 Stripe 的 week/1（7 天试用）。
+            assertEquals("week", deQuote.getBillingInterval());
+            // 目录契约保持 month（前端按 month 匹配 Pro Trial 卡片），两者不可混用。
+            var trialPlan = service.getCatalog().getPlans().stream()
+                    .filter(plan -> "pro_trial_to_monthly".equals(plan.getPlanCode()))
+                    .findFirst().orElseThrow();
+            assertEquals("month", trialPlan.getBillingInterval());
+            assertEquals(99, trialPlan.getPriceCents());
+            assertEquals("eur", trialPlan.getCurrency());
             deVersion = deQuote.getQuoteVersion();
         }
         try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("IT")) {

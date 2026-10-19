@@ -142,7 +142,7 @@ class SubscriptionPriceRolloutServiceTest {
     }
 
     @Test
-    void dryRunSkipsIntroTrialContracts() throws Exception {
+    void dryRunTargetsTrialConversionPlanInsteadOfWeeklyPrice() throws Exception {
         long periodEnd = Instant.now().getEpochSecond() + 30L * 24 * 3600;
         loadCatalog();
         UserSubscriptionEntity trial = zoneContract(13L, "user_trial", "sub_trial");
@@ -152,18 +152,22 @@ class SubscriptionPriceRolloutServiceTest {
         when(rolloutMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         TestableRolloutService service = service();
         service.subscriptions.put("sub_trial",
-                subscription("sub_trial", "price_v1_trial", "usd", periodEnd, false));
+                subscription("sub_trial", "price_v1_trial", "brl", periodEnd, false));
 
         SubscriptionPriceRolloutService.DryRunSummary summary = service.dryRun(ZONE, TARGET_VERSION);
 
         assertEquals(1, summary.scanned());
-        assertEquals(0, summary.preview());
-        assertEquals(1, summary.skipped());
+        assertEquals(1, summary.preview());
+        assertEquals(0, summary.skipped());
         ArgumentCaptor<SubscriptionPriceRolloutEntity> inserted =
                 ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
         verify(rolloutMapper).insert(inserted.capture());
-        assertEquals("skipped", inserted.getValue().getStatus());
-        assertEquals("intro_trial_contract", inserted.getValue().getStatusReason());
+        SubscriptionPriceRolloutEntity row = inserted.getValue();
+        assertEquals("preview", row.getStatus());
+        assertEquals("price_v1_trial", row.getSourcePriceId());
+        assertEquals(TARGET_PRICE, row.getTargetPriceId());
+        assertTrue(row.getSnapshotJson().contains("intro_trial_renewal"));
+        assertTrue(row.getSnapshotJson().contains("pro_monthly"));
     }
 
     @Test
@@ -422,6 +426,47 @@ class SubscriptionPriceRolloutServiceTest {
         assertEquals("scheduled", updated.getValue().getStatus());
         assertTrue(updated.getValue().getSnapshotJson().contains("preimage_phases"));
         assertTrue(updated.getValue().getSnapshotJson().contains(SOURCE_PRICE));
+    }
+
+    @Test
+    void applyRepricesTrialConversionPhaseWithoutTouchingMetadata() throws Exception {
+        long periodStart = Instant.now().getEpochSecond();
+        long periodEnd = periodStart + 7L * 24 * 3600;
+        String batchId = "rollout-" + ZONE + "-20261115-v2-20261018";
+        SubscriptionPriceRolloutEntity row = ledgerRow(batchId, "sub_trial_a", "price_v1_trial", TARGET_PRICE,
+                "preview", LocalDateTime.ofInstant(Instant.ofEpochSecond(periodEnd), ZoneOffset.UTC));
+        row.setSnapshotJson("{\"change_type\":\"intro_trial_renewal\",\"renewal_sku\":\"pro_monthly\"}");
+        when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row), List.of());
+        TestableRolloutService service = service();
+        Subscription live = subscription("sub_trial_a", "price_v1_trial", "brl", periodEnd, false);
+        live.setCurrentPeriodStart(periodStart);
+        live.setSchedule("sub_sched_trial");
+        service.subscriptions.put("sub_trial_a", live);
+        service.schedules.put("sub_sched_trial", schedule("sub_sched_trial",
+                Map.of("change_type", "intro_trial_conversion", "pending_plan_code", "pro_monthly"),
+                new SubscriptionPriceRolloutService.PhaseSpec(periodStart, periodEnd, "price_v1_trial", 1L),
+                new SubscriptionPriceRolloutService.PhaseSpec(periodEnd, periodEnd + 30L * 24 * 3600, SOURCE_PRICE, 1L)));
+
+        SubscriptionPriceRolloutService.ApplySummary summary = service.apply(batchId);
+
+        assertEquals(1, summary.scheduled());
+        assertEquals(1, service.updateParams.size());
+        SubscriptionScheduleUpdateParams params = service.updateParams.get(0);
+        var phases = params.getPhases();
+        assertEquals(2, phases.size());
+        assertEquals("price_v1_trial", phases.get(0).getItems().get(0).getPrice());
+        assertEquals(TARGET_PRICE, phases.get(1).getItems().get(0).getPrice());
+        assertEquals(periodEnd, (long) phases.get(1).getStartDate());
+        assertEquals(periodEnd + 30L * 24 * 3600, (long) phases.get(1).getEndDate());
+        @SuppressWarnings("unchecked")
+        Map<String, String> writeMetadata = (Map<String, String>) params.getMetadata();
+        assertEquals("intro_trial_conversion", writeMetadata.get("change_type"));
+        assertEquals("pro_monthly", writeMetadata.get("pending_plan_code"));
+        assertEquals(batchId, writeMetadata.get("rollout_batch"));
+        ArgumentCaptor<SubscriptionPriceRolloutEntity> updated =
+                ArgumentCaptor.forClass(SubscriptionPriceRolloutEntity.class);
+        verify(rolloutMapper).updateById(updated.capture());
+        assertEquals("scheduled", updated.getValue().getStatus());
     }
 
     @Test

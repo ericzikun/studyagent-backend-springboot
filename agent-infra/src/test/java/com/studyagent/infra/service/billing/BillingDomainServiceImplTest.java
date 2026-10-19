@@ -960,6 +960,80 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void downgradeSubscriptionPricesTargetFromContractZone() throws Exception {
+        UserSubscriptionEntity current = new UserSubscriptionEntity();
+        current.setId(23L);
+        current.setClerkUserId("user_zone_dg");
+        current.setPlanCode("pro_monthly");
+        current.setTier("pro");
+        current.setStatus("active");
+        current.setStripeSubscriptionId("sub_zone_dg");
+        current.setCurrentPeriodStart(LocalDateTime.parse("2026-10-26T10:00:00"));
+        current.setCurrentPeriodEnd(LocalDateTime.parse("2026-11-26T10:00:00"));
+        current.setPricingZone("Z090");
+        current.setPriceVersion("regional-20261018-v1");
+        current.setCurrency("sgd");
+        current.setPricingCountry("SG");
+
+        SubscriptionPlanEntity currentPlan = plan("pro_monthly", "pro", "month", 3499);
+        currentPlan.setCurrency("sgd");
+        currentPlan.setStripePriceId("price_z090_pro");
+        currentPlan.setIsActive(true);
+        SubscriptionPlanEntity targetPlan = plan("plus_monthly", "plus", "month", 4599);
+        targetPlan.setCurrency("sgd");
+        targetPlan.setStripePriceId("price_z090_plus");
+        targetPlan.setIsActive(true);
+
+        var zoneMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZoneMapper.class);
+        var routeMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingCountryRouteMapper.class);
+        var priceMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.PricingZonePriceMapper.class);
+        var aliasMapper = org.mockito.Mockito.mock(com.studyagent.infra.mapper.StripePriceAliasMapper.class);
+        when(zoneMapper.selectList(any())).thenReturn(List.of(zoneRow("Z090", "SG", true)));
+        when(routeMapper.selectList(any())).thenReturn(List.of());
+        var proBinding = monthlyBinding("Z090", "price_z090_pro");
+        proBinding.setStripeProductId(null);
+        proBinding.setCurrencyAmounts("{\"sgd\":{\"amountMinor\":3499}}");
+        var plusBinding = monthlyBinding("Z090", "price_z090_plus");
+        plusBinding.setSkuCode("plus_monthly");
+        plusBinding.setStripeProductId(null);
+        plusBinding.setCurrencyAmounts("{\"sgd\":{\"amountMinor\":4599}}");
+        when(priceMapper.selectList(any())).thenReturn(List.of(proBinding, plusBinding));
+        when(aliasMapper.selectList(any())).thenReturn(List.of());
+        var zonedPricing = new ZonePricingSelectionService(
+                new ZonePricingCatalog(zoneMapper, routeMapper, priceMapper, aliasMapper, 60), regionalPricing);
+
+        var targetPrice = new com.stripe.model.Price();
+        targetPrice.setId("price_z090_plus");
+        targetPrice.setCurrency("sgd");
+        targetPrice.setUnitAmount(4599L);
+        targetPrice.setActive(true);
+        targetPrice.setLivemode(false);
+        var recurring = new com.stripe.model.Price.Recurring();
+        recurring.setInterval("month");
+        recurring.setIntervalCount(1L);
+        targetPrice.setRecurring(recurring);
+        when(regionalPrices.retrieve("price_z090_plus", false)).thenReturn(targetPrice);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(targetPlan, currentPlan);
+        when(userSubscriptionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        TestBillingDomainService service = new TestBillingDomainService(zonedPricing);
+        setStripeSecretKey(service, "sk_test_123");
+        service.subscriptionToRetrieve = subscription("sub_zone_dg", null, "price_z090_pro", 1793000000L, 1795600000L);
+        service.subscriptionToRetrieve.setCurrency("sgd");
+        service.replacementScheduleToCreate = schedule("sub_sched_new");
+        service.updatedScheduleToReturn = schedule("sub_sched_new");
+
+        var result = service.downgradeSubscription("user_zone_dg", "plus_monthly");
+
+        assertEquals("plus_monthly", result.getPendingPlanCode());
+        var phases = service.lastScheduleUpdateParams.getPhases();
+        assertEquals("price_z090_plus", phases.get(1).getItems().get(0).getPrice());
+        assertEquals("sgd", phases.get(1).getCurrency());
+    }
+
+    @Test
     void manualUpgradeCheckoutResumesCancelAtPeriodEndBeforeCreatingCheckout() throws Exception {
         UserSubscriptionEntity current = new UserSubscriptionEntity();
         current.setId(22L);
@@ -2835,6 +2909,10 @@ class BillingDomainServiceImplTest {
         private com.stripe.exception.StripeException scheduleUpdateFailure;
 
         private TestBillingDomainService() {
+            this(zonePricing);
+        }
+
+        private TestBillingDomainService(ZonePricingSelectionService pricingSelection) {
             super(
                     subscriptionPlanMapper,
                     addonPackageDefMapper,
@@ -2846,7 +2924,7 @@ class BillingDomainServiceImplTest {
                     userRepository,
                     quotaVipAccessService,
                     userSubscriptionBootstrapService,
-                    regionalPricing, zonePricing, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
+                    regionalPricing, pricingSelection, rolloutService, org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class));
         }
 
         @Override

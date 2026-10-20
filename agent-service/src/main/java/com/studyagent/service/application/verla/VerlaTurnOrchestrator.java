@@ -357,6 +357,18 @@ public class VerlaTurnOrchestrator {
     public SendMessageResult startVideoTutorTurn(
             String userId, Long conversationId, String message, String outputLanguage,
             boolean soundEnabled) {
+        return startVideoTutorTurn(userId, conversationId, message, outputLanguage,
+                soundEnabled, null, false);
+    }
+
+    /**
+     * 带教学讲法的一轮。{@code teachingStyle} 缺省/未知由 Python 回落 guided；
+     * {@code styleChanged} 仅在学生刚切讲法的下一轮为 true。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startVideoTutorTurn(
+            String userId, Long conversationId, String message, String outputLanguage,
+            boolean soundEnabled, String teachingStyle, boolean styleChanged) {
         VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
         String text = message == null ? "" : message.trim();
 
@@ -387,7 +399,8 @@ public class VerlaTurnOrchestrator {
         refreshConversationVersion(conv,
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
 
-        VerlaSession session = spawnVideoTutorSession(conv, turn, text, userMsg.getId(), soundEnabled);
+        VerlaSession session = spawnVideoTutorSession(conv, turn, text, userMsg.getId(), soundEnabled,
+                teachingStyle, styleChanged);
         return SendMessageResult.builder()
                 .turnId(turn.getId())
                 .userMessageId(userMsg.getId())
@@ -491,7 +504,8 @@ public class VerlaTurnOrchestrator {
      */
     private VerlaSession spawnVideoTutorSession(VerlaConversation conv, VerlaTurn turn,
                                                 String message, Long userMessageId,
-                                                boolean soundEnabled) {
+                                                boolean soundEnabled, String teachingStyle,
+                                                boolean styleChanged) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv.getId())
@@ -521,7 +535,7 @@ public class VerlaTurnOrchestrator {
         turnRepository.save(turn);
 
         VerlaCommandEnvelope env = buildVideoTutorEnvelope(conv, turn, s, message, userMessageId,
-                soundEnabled);
+                soundEnabled, teachingStyle, styleChanged);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT.getCode());
         return s;
@@ -537,7 +551,8 @@ public class VerlaTurnOrchestrator {
      */
     private VerlaCommandEnvelope buildVideoTutorEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                          VerlaSession session, String message,
-                                                         Long userMessageId, boolean soundEnabled) {
+                                                         Long userMessageId, boolean soundEnabled,
+                                                         String teachingStyle, boolean styleChanged) {
         Map<String, Object> boardContext = readBoardContext(conv.getId());
         Map<String, Object> payload = new HashMap<>();
         payload.put("message", message);
@@ -550,6 +565,12 @@ public class VerlaTurnOrchestrator {
         // 学生这一轮要不要听语音。Python 只在 true 时才发起合成 ——
         // 关掉 = 零请求、零成本（学生可能在图书馆，也可能是流量敏感场景）。
         payload.put("soundEnabled", soundEnabled);
+        // 讲法每轮都带（Python 无状态）；未知值由 Python 归一化回落 guided。
+        String style = teachingStyle == null ? "" : teachingStyle.trim();
+        if (!style.isEmpty()) {
+            payload.put("teachingStyle", style);
+        }
+        payload.put("styleChanged", styleChanged);
 
         return baseEnvelope(VerlaCommandAction.CMD_VIDEO_TUTOR_CHAT, conv, turn, session)
                 .payload(payload)

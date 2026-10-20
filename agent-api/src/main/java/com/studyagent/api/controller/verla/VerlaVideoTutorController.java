@@ -63,7 +63,9 @@ public class VerlaVideoTutorController {
         return Result.success(SendMessageResponseVO.from(
                 turnOrchestrator.startVideoTutorTurn(
                         clerkUserId, cid, req.getMessage(), req.getOutputLanguage(),
-                        Boolean.TRUE.equals(req.getSoundEnabled()))));
+                        Boolean.TRUE.equals(req.getSoundEnabled()),
+                        req.getTeachingStyle(),
+                        Boolean.TRUE.equals(req.getStyleChanged()))));
     }
 
     /**

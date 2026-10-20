@@ -35,4 +35,18 @@ public class VideoTutorTurnRequest {
      * 链路必须与加语音之前完全一致（Python 侧一次合成都不会发生）。
      */
     private Boolean soundEnabled;
+
+    /**
+     * 教学讲法：{@code guided / socratic / coach / self_paced / explore}。
+     * <p>
+     * 每轮都带、不落库：Python 无状态，讲法随 command 下发；缺省/未知值由 Python
+     * 归一化回落 {@code guided}。学生可在会话中随时切换，下一轮生效。
+     */
+    private String teachingStyle;
+
+    /**
+     * 学生刚切换了讲法：下一轮答题前先用一句话确认新讲法。
+     * 仅切换后的第一轮为 true，之后为 false。
+     */
+    private Boolean styleChanged;
 }

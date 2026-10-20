@@ -4093,6 +4093,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return SubscriptionResult.builder()
                 .tier(tier)
                 .planCode(entity.getPlanCode())
+                .legacyPro(isLegacyPro(entity, canConsume, onIntroTrial, LocalDateTime.now()))
                 .status(status)
                 .accessState(accessState)
                 .canConsumePaidEntitlements(canConsume)
@@ -4111,6 +4112,24 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .pendingEffectiveAt(entity.getPendingEffectiveAt())
                 .basicTrial(basicTrial)
                 .build();
+    }
+
+    /**
+     * 徽章只认当前已生效合同，不读取销售目录或未来 Schedule。
+     * NULL 区/版本是既有 legacy 镜像；迁移回填的 legacy 版本同样保留，
+     * 其他缺失组合不猜测。webhook 实际换价后本判断自然失效。
+     */
+    private boolean isLegacyPro(
+            UserSubscriptionEntity entity, boolean canConsume, boolean onIntroTrial, LocalDateTime now) {
+        boolean formalPro = "pro".equalsIgnoreCase(entity.getTier())
+                && ("pro_monthly".equals(entity.getPlanCode()) || "pro_yearly".equals(entity.getPlanCode()));
+        boolean legacyPricing = (!hasText(entity.getPricingZone()) && !hasText(entity.getPriceVersion()))
+                || (hasText(entity.getPricingZone()) && "legacy".equals(entity.getPriceVersion()));
+        return formalPro && legacyPricing && canConsume && !onIntroTrial
+                && !"trialing".equalsIgnoreCase(entity.getStatus())
+                && hasText(entity.getStripeSubscriptionId())
+                && entity.getCurrentPeriodStart() != null && !entity.getCurrentPeriodStart().isAfter(now)
+                && entity.getCurrentPeriodEnd() != null && entity.getCurrentPeriodEnd().isAfter(now);
     }
 
     private BasicTrialAccount resolveBasicTrialAccount(
@@ -4167,6 +4186,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean hardCut = introTrialEnabled;
         return SubscriptionResult.builder()
                 .tier("free")
+                .legacyPro(false)
                 .status("free")
                 .accessState(BillingAccessState.TERMINATED)
                 .canConsumePaidEntitlements(false)

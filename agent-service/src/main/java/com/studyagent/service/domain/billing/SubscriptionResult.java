@@ -11,6 +11,8 @@ import java.util.List;
 public class SubscriptionResult {
     private String tier;
     private String planCode;
+    /** 当前有效已付周期仍使用旧版正式 Pro 价格；仅供徽章展示，不参与计费或权限。 */
+    private Boolean legacyPro;
     private String status;
     private BillingAccessState accessState;
     private Boolean canConsumePaidEntitlements;

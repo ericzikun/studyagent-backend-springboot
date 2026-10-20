@@ -116,6 +116,104 @@ class BillingDomainServiceImplTest {
     private final SubscriptionPriceRolloutService rolloutService = org.mockito.Mockito.mock(SubscriptionPriceRolloutService.class);
 
     @Test
+    void legacyProBadgeSurvivesCycleSelectionCancellationAndScheduledPriceChange() {
+        UserSubscriptionEntity member = stubLegacyProBadgeAccount();
+        var change = com.studyagent.service.domain.billing.NextCyclePriceChange.builder()
+                .targetVersion("regional-new").effectiveAt(member.getCurrentPeriodEnd()).build();
+        when(rolloutService.scheduledChangeFor("user_badge", "sub_badge"))
+                .thenReturn(java.util.Optional.of(change));
+        member.setCancelAtPeriodEnd(true);
+        member.setPendingPlanCode("basic_monthly");
+        for (String code : List.of("pro_monthly", "pro_yearly")) {
+            member.setPlanCode(code);
+            var result = service().getCurrentSubscription("user_badge");
+            assertEquals(Boolean.TRUE, result.getLegacyPro(), code);
+            assertEquals(change, result.getNextCyclePriceChange());
+        }
+    }
+
+    @Test
+    void legacyProBadgeTracksActualContractVersionAndRejectsIncompletePricing() {
+        UserSubscriptionEntity member = stubLegacyProBadgeAccount();
+        member.setPricingZone("Z040");
+        member.setPriceVersion("legacy");
+        assertEquals(Boolean.TRUE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setPriceVersion("regional-new");
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setPriceVersion(null);
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setPricingZone(null);
+        member.setPriceVersion("regional-new");
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+    }
+
+    @Test
+    void otherTiersAndProTrialsDoNotKeepLegacyProBadge() {
+        UserSubscriptionEntity member = stubLegacyProBadgeAccount();
+        for (String tier : List.of("basic", "plus")) {
+            member.setTier(tier);
+            member.setPlanCode(tier + "_monthly");
+            assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro(), tier);
+        }
+        member.setTier("pro");
+        member.setPlanCode("pro_trial_to_monthly");
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setPlanCode("pro_monthly");
+        member.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setSubscriptionPhase(IntroTrialPlans.PHASE_STANDARD);
+        member.setStatus("trialing");
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+    }
+
+    @Test
+    void expiredUnpaidAndIncompleteContractsDoNotKeepLegacyProBadge() {
+        UserSubscriptionEntity member = stubLegacyProBadgeAccount();
+        for (String status : List.of("canceled", "lapsed", "free", "incomplete", "unpaid", "paused", "past_due")) {
+            member.setStatus(status);
+            assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro(), status);
+        }
+        member.setStatus("active");
+        member.setCurrentPeriodEnd(LocalDateTime.now().minusSeconds(1));
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setCurrentPeriodEnd(null);
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setCurrentPeriodEnd(LocalDateTime.now().plusDays(1));
+        member.setCurrentPeriodStart(LocalDateTime.now().plusHours(1));
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setCurrentPeriodStart(null);
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+        member.setCurrentPeriodStart(LocalDateTime.now().minusDays(1));
+        member.setStripeSubscriptionId(null);
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+    }
+
+    @Test
+    void absentSubscriptionExplicitlyHasNoLegacyProBadge() {
+        assertEquals(Boolean.FALSE, service().getCurrentSubscription("user_badge").getLegacyPro());
+    }
+
+    private UserSubscriptionEntity stubLegacyProBadgeAccount() {
+        UserSubscriptionEntity member = new UserSubscriptionEntity();
+        member.setClerkUserId("user_badge");
+        member.setTier("pro");
+        member.setPlanCode("pro_monthly");
+        member.setStatus("active");
+        member.setStripeSubscriptionId("sub_badge");
+        member.setCurrentPeriodStart(LocalDateTime.now().minusDays(1));
+        member.setCurrentPeriodEnd(LocalDateTime.now().plusDays(29));
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(member);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenAnswer(call -> {
+            SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+            plan.setPlanCode(member.getPlanCode());
+            plan.setTier(member.getTier());
+            plan.setAllowedOutputTypes("[\"writing\"]");
+            return plan;
+        });
+        return member;
+    }
+
+    @Test
     void getCatalogMapsActivePlansAndAddons() {
         SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
         plan.setPlanCode("basic_monthly");

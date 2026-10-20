@@ -101,6 +101,22 @@ class VerlaVideoTutorHttpBindingTest {
     }
 
     @Test
+    void teachingStyleAndSwitchFlag_shouldReachTheOrchestrator() throws Exception {
+        turnOrchestrator.result = SendMessageResult.builder().turnId(456L).agentSessionId(789L).build();
+
+        mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/messages")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"message": "继续讲", "teachingStyle": "socratic", "styleChanged": true}
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(turnOrchestrator.lastTeachingStyle).isEqualTo("socratic");
+        assertThat(turnOrchestrator.lastStyleChanged).isTrue();
+    }
+
+    @Test
     void firstTurnWithoutStudentText_shouldStillBeAccepted() throws Exception {
         // 首轮学生没说话：空串必须能进到 orchestrator（Python 会回落成开场指令），
         // 这里加 @NotBlank 的话，第一次打开页面就发不出请求
@@ -249,6 +265,8 @@ class VerlaVideoTutorHttpBindingTest {
         private Long lastConversationId;
         private String lastMessage;
         private Boolean lastSoundEnabled;
+        private String lastTeachingStyle;
+        private Boolean lastStyleChanged;
         private Long lastCancelledSessionId;
         private Long lastCancelledConversationId;
         private SendMessageResult result;
@@ -262,7 +280,17 @@ class VerlaVideoTutorHttpBindingTest {
         public SendMessageResult startVideoTutorTurn(
                 String userId, Long conversationId, String message, String outputLanguage,
                 boolean soundEnabled) {
+            return startVideoTutorTurn(userId, conversationId, message, outputLanguage,
+                    soundEnabled, null, false);
+        }
+
+        @Override
+        public SendMessageResult startVideoTutorTurn(
+                String userId, Long conversationId, String message, String outputLanguage,
+                boolean soundEnabled, String teachingStyle, boolean styleChanged) {
             this.lastSoundEnabled = soundEnabled;
+            this.lastTeachingStyle = teachingStyle;
+            this.lastStyleChanged = styleChanged;
             this.lastUserId = userId;
             this.lastConversationId = conversationId;
             this.lastMessage = message;

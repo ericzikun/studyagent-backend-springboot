@@ -24,4 +24,6 @@ public class BillingCheckoutNotifyRequest {
     String currency;
     String customerEmail;
     String paymentIntentId;
+    /** 购买时可信国家（ISO alpha-2），用于付费播报展示。 */
+    String pricingCountry;
 }

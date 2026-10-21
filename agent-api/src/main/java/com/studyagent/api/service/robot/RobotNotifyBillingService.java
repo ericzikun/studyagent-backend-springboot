@@ -41,6 +41,22 @@ public class RobotNotifyBillingService {
             "addon"
     );
 
+    /** 与定价路由 label 保持一致的中文地区名；其余走 JDK Locale。 */
+    private static final Map<String, String> ZH_COUNTRY_OVERRIDES = Map.of(
+            "HK", "中国香港",
+            "CN", "中国大陆",
+            "TW", "中国台湾",
+            "MO", "中国澳门"
+    );
+
+    /** JDK 的英文名会带 "SAR China" 等后缀，播报里用短名。 */
+    private static final Map<String, String> EN_COUNTRY_OVERRIDES = Map.of(
+            "HK", "Hong Kong",
+            "CN", "China",
+            "TW", "Taiwan",
+            "MO", "Macau"
+    );
+
     private final RobotNotifyService robotNotifyService;
     private final RechargeOrderMapper rechargeOrderMapper;
 
@@ -81,6 +97,7 @@ public class RobotNotifyBillingService {
             sb.append("- **购买类型**: ").append(purchaseTypeLabel(purchaseType)).append("\n");
             sb.append("- **套餐/计划**: ").append(formatBillingProductLine(request)).append("\n");
             sb.append("- **UID**: ").append(nullToDash(request.getClerkUserId())).append("\n");
+            sb.append("- **国家/地区**: ").append(formatCountry(request.getPricingCountry())).append("\n");
             sb.append("- **金额**: ").append(formatMoney(request.getPriceCents(), request.getCurrency())).append("\n");
             sb.append("- **Session**: ").append(nullToDash(request.getSessionId())).append("\n");
             sb.append("- **时间(北京时间)**: ").append(appNowLabel()).append("\n");
@@ -110,6 +127,7 @@ public class RobotNotifyBillingService {
             sb.append("- **购买类型**: ").append(purchaseTypeLabel(purchaseType)).append("\n");
             sb.append("- **计划/Addon**: ").append(formatFailedProductLine(request)).append("\n");
             sb.append("- **UID**: ").append(nullToDash(request.getClerkUserId())).append("\n");
+            sb.append("- **国家/地区**: ").append(formatCountry(request.getPricingCountry())).append("\n");
             sb.append("- **金额**: ").append(formatMoney(request.getPriceCents(), request.getCurrency())).append("\n");
             sb.append("- **失败原因**: ").append(nullToDash(request.getFailureReason())).append("\n");
             sb.append("- **PaymentIntent**: ").append(nullToDash(request.getPaymentIntentId())).append("\n");
@@ -120,6 +138,7 @@ public class RobotNotifyBillingService {
             meta.put("notify_event_id", request.getNotifyEventId());
             meta.put("clerk_user_id", request.getClerkUserId());
             meta.put("purchase_type", purchaseType);
+            putCountryMeta(meta, request.getPricingCountry());
             robotNotifyService.dispatch(
                     RobotNotifyRouteKind.ASSIGNMENT,
                     request.getNotifyEventId(),
@@ -178,6 +197,7 @@ public class RobotNotifyBillingService {
         sb.append("- **套餐/计划**: ").append(formatBillingProductLine(request)).append("\n");
         sb.append("- **UID**: ").append(nullToDash(request.getClerkUserId())).append("\n");
         sb.append("- **邮箱(Stripe/会话)**: ").append(nullToDash(request.getCustomerEmail())).append("\n");
+        sb.append("- **国家/地区**: ").append(formatCountry(request.getPricingCountry())).append("\n");
         sb.append("- **金额**: ").append(formatMoney(request.getPriceCents(), request.getCurrency())).append("\n");
         if (repurchase) {
             sb.append("- **复购间隔(天)**: ").append(repurchaseGapDays(request.getClerkUserId(), request.getSessionId())).append("\n");
@@ -258,6 +278,7 @@ public class RobotNotifyBillingService {
         meta.put("stripe_event_id", request.getStripeEventId());
         meta.put("clerk_user_id", request.getClerkUserId());
         meta.put("stripe_session_id", request.getSessionId());
+        putCountryMeta(meta, request.getPricingCountry());
         return meta;
     }
 
@@ -316,6 +337,41 @@ public class RobotNotifyBillingService {
     private static String formatUsd(long cents) {
         BigDecimal amt = BigDecimal.valueOf(cents).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         return "$" + amt;
+    }
+
+    static String formatCountry(String code) {
+        if (code == null || code.isBlank()) {
+            return "未知 / Unknown";
+        }
+        String cc = code.trim().toUpperCase(Locale.ROOT);
+        return cc + " · " + countryNameEn(cc) + " · " + countryNameZh(cc);
+    }
+
+    private static String countryNameEn(String cc) {
+        return EN_COUNTRY_OVERRIDES.getOrDefault(cc, countryName(cc, Locale.ENGLISH));
+    }
+
+    private static String countryNameZh(String cc) {
+        return ZH_COUNTRY_OVERRIDES.getOrDefault(cc, countryName(cc, Locale.SIMPLIFIED_CHINESE));
+    }
+
+    private static String countryName(String cc, Locale locale) {
+        try {
+            String name = new Locale.Builder().setRegion(cc).build().getDisplayCountry(locale);
+            return name == null || name.isBlank() || name.equalsIgnoreCase(cc) ? cc : name;
+        } catch (RuntimeException e) {
+            return cc;
+        }
+    }
+
+    private static void putCountryMeta(Map<String, Object> meta, String code) {
+        if (code == null || code.isBlank()) {
+            return;
+        }
+        String cc = code.trim().toUpperCase(Locale.ROOT);
+        meta.put("pricing_country", cc);
+        meta.put("pricing_country_en", countryNameEn(cc));
+        meta.put("pricing_country_zh", countryNameZh(cc));
     }
 
     private static String appNowLabel() {

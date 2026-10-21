@@ -431,7 +431,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 return current.getCurrency();
             }
             try { return BillingPricingService.subscriptionCurrency(retrieveStripeSubscription(current.getStripeSubscriptionId())); }
-            catch (StripeException e) { throw stripeFailure("Read subscription currency failed", e); }
+            catch (StripeException e) {
+                // 合同 ID 可能已被删除/迁移；不能因为读币种失败把整个定价页打成 500。
+                if (isMissingStripeSubscription(e)) {
+                    log.warn("Stale Stripe subscription {}, fallback to new purchase currency: {}",
+                            current.getStripeSubscriptionId(), e.getMessage());
+                    return pricingService.newPurchaseCurrency();
+                }
+                throw stripeFailure("Read subscription currency failed", e);
+            }
         }
         if (current != null && "pro_trial_once".equals(current.getPlanCode()) && !isExpiredOneTimeProTrial(current)) {
             RechargeOrderEntity paid = rechargeOrderMapper.selectOne(new LambdaQueryWrapper<RechargeOrderEntity>()
@@ -2196,7 +2204,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private static boolean isRealStripeReference(String value) {
-        return hasText(value) && !value.startsWith("mock_");
+        // manual_sub_ / manual_comp: / manual_cus_ 都是后台手动开通的占位 ID，不是 Stripe 对象。
+        return hasText(value) && !value.startsWith("mock_") && !value.startsWith("manual_");
     }
 
     private String resolveStripeInvoiceIdFromBillingReference(RechargeOrderEntity order) throws StripeException {
@@ -3578,6 +3587,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return message.contains("no such customer")
                 || ("resource_missing".equals(code) && message.contains("customer"))
                 || message.contains("permanently deleted");
+    }
+
+    static boolean isMissingStripeSubscription(StripeException exception) {
+        if (!(exception instanceof InvalidRequestException)) {
+            return false;
+        }
+        String message = normalizeNullableText(exception.getMessage());
+        String code = normalizeNullableText(exception.getCode());
+        return message.contains("no such subscription")
+                || ("resource_missing".equals(code) && message.contains("subscription"));
     }
 
     private SubscriptionPlanEntity requirePlan(String planCode) {

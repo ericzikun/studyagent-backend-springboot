@@ -2863,6 +2863,9 @@ public class StripeBillingWebhookService {
                 .currency(session.getCurrency() != null ? session.getCurrency() : "usd")
                 .customerEmail(session.getCustomerDetails() != null ? session.getCustomerDetails().getEmail() : null)
                 .paymentIntentId(session.getPaymentIntent())
+                .pricingCountry(firstNonBlank(
+                        metadata != null ? metadata.get("pricing_country") : null,
+                        session.getMetadata() != null ? session.getMetadata().get("pricing_country") : null))
                 .build());
     }
 
@@ -2891,6 +2894,9 @@ public class StripeBillingWebhookService {
                 .featureCode(resolveAnalyticsFeatureCode(metadata))
                 .priceCents(session.getAmountTotal() != null ? session.getAmountTotal().intValue() : 0)
                 .currency(session.getCurrency() != null ? session.getCurrency() : "usd")
+                .pricingCountry(firstNonBlank(
+                        metadata != null ? metadata.get("pricing_country") : null,
+                        session.getMetadata() != null ? session.getMetadata().get("pricing_country") : null))
                 .build());
     }
 
@@ -2923,7 +2929,24 @@ public class StripeBillingWebhookService {
                 .invoiceId(invoice.getId())
                 .failureReason(eventType)
                 .stripeEventType(eventType)
+                .pricingCountry(entity != null && hasText(entity.getPricingCountry())
+                        ? entity.getPricingCountry()
+                        : orderPricingCountry(order))
                 .build());
+    }
+
+    private static String orderPricingCountry(RechargeOrderEntity order) {
+        if (order == null || order.getBizContext() == null || order.getBizContext().isBlank()) {
+            return null;
+        }
+        try {
+            JsonObject json = com.stripe.net.ApiResource.GSON.fromJson(order.getBizContext(), JsonObject.class);
+            return json != null && json.has("pricing_country") && !json.get("pricing_country").isJsonNull()
+                    ? json.get("pricing_country").getAsString()
+                    : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private BillingQuotaGateway quotaGateway() {

@@ -17,4 +17,6 @@ public class BillingPaymentFailedNotifyRequest {
     String invoiceId;
     String failureReason;
     String stripeEventType;
+    /** 合同/订单上的购买国家（ISO alpha-2），用于付费播报展示。 */
+    String pricingCountry;
 }

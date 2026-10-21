@@ -252,6 +252,47 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void getCatalogTreatsManualSubscriptionAsNonStripeContract() {
+        SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
+        plan.setPlanCode("basic_monthly");
+        plan.setTier("basic");
+        plan.setBillingInterval("month");
+        plan.setStripePriceId("price_basic");
+        plan.setPriceCents(1999);
+        plan.setCurrency("usd");
+        plan.setAssignmentQuota(3L);
+        plan.setDetectionQuota(3L);
+        plan.setHumanizerQuota(2L);
+
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_assignment_3");
+        addon.setFeatureCode("task_create");
+        addon.setStripePriceId("price_addon");
+        addon.setQuotaAmount(3L);
+        addon.setValidityMonths(2);
+        addon.setPriceCents(999);
+        addon.setCurrency("usd");
+
+        UserSubscriptionEntity manual = new UserSubscriptionEntity();
+        manual.setClerkUserId("user_manual");
+        manual.setPlanCode("pro_monthly");
+        manual.setTier("pro");
+        manual.setStatus("active");
+        manual.setStripeSubscriptionId("manual_sub_pro_user_manual");
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(manual);
+        when(subscriptionPlanMapper.selectList(any(Wrapper.class))).thenReturn(List.of(plan));
+        when(addonPackageDefMapper.selectList(any(Wrapper.class))).thenReturn(List.of(addon));
+
+        try (var scope = com.studyagent.service.domain.billing.BillingPricingContext.open("HK")) {
+            com.studyagent.service.domain.billing.BillingPricingContext.identify("user_manual");
+            var result = service().getCatalog();
+            assertEquals(1, result.getPlans().size());
+            assertEquals("basic_monthly", result.getPlans().get(0).getPlanCode());
+        }
+    }
+
+    @Test
     void catalogStudyPassPricesFromZoneRegistry() throws Exception {
         // 区价开启后 legacy Study Pass 行（day/30）不再满足 month 校验；
         // 目录必须与下单同源，走区绑定价格。

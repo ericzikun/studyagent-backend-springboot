@@ -42,6 +42,9 @@ public class NoteTurnContext {
      */
     private List<Map<String, Object>> referencedNotes;
 
+    /** 本轮是否允许联网搜索（用户显式打开）；false 时 Python 完全不挂搜索工具。 */
+    private boolean webSearch;
+
     /** 本轮输出语言覆盖（可空，缺省沿用会话偏好）。 */
     private String outputLanguage;
 }

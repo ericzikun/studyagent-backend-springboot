@@ -200,6 +200,8 @@ public class NoteVerlaCommandDispatcher {
         // 让 Python 侧「有没有引用」始终是一个确定的值。
         payload.put("referencedNotes",
                 ctx.getReferencedNotes() == null ? List.of() : ctx.getReferencedNotes());
+        // 联网开关：true 时 Python 才挂 search_wiki / search_serper
+        payload.put("webSearch", ctx.isWebSearch());
         payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
         // 课程名/学习目标是会话级设置：首轮落库后每轮都从会话行下发，后续轮不必再传表单
         payload.put("courseName", noteConv.getCourseName());

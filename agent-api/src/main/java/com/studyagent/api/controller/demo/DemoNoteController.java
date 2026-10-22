@@ -166,6 +166,7 @@ public class DemoNoteController {
                 .history(prepared.getHistory())
                 // 引用历史笔记：归属校验 + 双预算裁剪都在 service 里做，前端只传 id
                 .referencedNotes(service.resolveReferencedNotes(clerkUserId, id, req.getReferencedNoteIds()))
+                .webSearch(Boolean.TRUE.equals(req.getWebSearch()))
                 .build();
 
         return Result.success(NoteGenerateResponseVO.from(

@@ -56,4 +56,10 @@ public class NoteGenerateRequest {
      * <p>服务端只认当前用户自己的会话，并做条数 / 字符双预算裁剪后才下发给 Python。
      */
     private java.util.List<Long> referencedNoteIds;
+
+    /**
+     * 本轮是否允许 agent 联网搜索（用户在输入框里显式打开）。
+     * <p>缺省 false —— 不给搜索工具，模型也就不会去搜。
+     */
+    private Boolean webSearch;
 }

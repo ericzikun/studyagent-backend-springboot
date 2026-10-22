@@ -24,9 +24,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -83,6 +85,11 @@ public class DemoNoteService {
      * 这里在 API 边界拦截，给出可执行的提示。
      */
     private static final int MAX_INPUT_TEXT_BYTES = 60_000;
+
+    /** 引用历史笔记：最多几条、每条截多少、总量上限（MQ payload 是 TEXT 列，必须双预算）。 */
+    private static final int REFERENCED_NOTE_MAX_COUNT = 5;
+    private static final int REFERENCED_NOTE_EXCERPT_CHARS = 3_000;
+    private static final int REFERENCED_NOTES_TOTAL_CHARS = 8_000;
 
     private final DemoNoteRepository repo;
     private final VerlaConversationService verlaConversationService;
@@ -286,6 +293,56 @@ public class DemoNoteService {
         m.setMsgType(type);
         m.setContentMd(content);
         return repo.appendMessage(m);
+    }
+
+    /**
+     * 解析用户显式引用的历史笔记，供本轮 prompt 作为上下文。
+     *
+     * <p>三道关：<b>归属</b>（只认 {@code getOwnedConversation}，别人的 id 直接跳过、不泄露存在性）、
+     * <b>条数</b>（{@value #REFERENCED_NOTE_MAX_COUNT} 条封顶）、<b>字符</b>（每条
+     * {@value #REFERENCED_NOTE_EXCERPT_CHARS}、总量 {@value #REFERENCED_NOTES_TOTAL_CHARS}）。
+     * 正文要挤进 MQ payload 的 TEXT 列，不裁会直接撑爆信封。
+     */
+    public List<Map<String, Object>> resolveReferencedNotes(String clerkUserId, Long currentConversationId,
+                                                           List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> notes = new ArrayList<>();
+        Set<Long> seen = new LinkedHashSet<>();
+        int budget = REFERENCED_NOTES_TOTAL_CHARS;
+        for (Long id : ids) {
+            if (id == null || id <= 0) {
+                continue;
+            }
+            if (notes.size() >= REFERENCED_NOTE_MAX_COUNT || budget <= 0) {
+                break;
+            }
+            // 引用自己当前这篇没有意义；重复 id 只算一次
+            if (id.equals(currentConversationId) || !seen.add(id)) {
+                continue;
+            }
+            Optional<NoteConversation> found = repo.getOwnedConversation(clerkUserId, id);
+            if (found.isEmpty()) {
+                continue;
+            }
+            NoteConversation reference = found.get();
+            String md = reference.getNoteMd();
+            if (md == null || md.isBlank()) {
+                continue;
+            }
+            int take = Math.min(Math.min(REFERENCED_NOTE_EXCERPT_CHARS, budget), md.length());
+            String excerpt = md.substring(0, take);
+            budget -= excerpt.length();
+            Map<String, Object> note = new LinkedHashMap<>();
+            note.put("title", reference.getTitle());
+            note.put("excerpt", excerpt);
+            if (take < md.length()) {
+                note.put("truncated", true);
+            }
+            notes.add(note);
+        }
+        return notes;
     }
 
     private static String normalizeRole(String role) {

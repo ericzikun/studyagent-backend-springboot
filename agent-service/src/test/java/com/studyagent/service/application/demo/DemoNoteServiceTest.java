@@ -188,6 +188,48 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void resolve_referenced_notes_keeps_owned_notes_and_skips_self_and_others() {
+        NoteConversation other = draft();
+        other.setId(77L);
+        other.setTitle("细胞呼吸");
+        other.setNoteMd("糖酵解发生在细胞质基质。");
+        when(repo.getOwnedConversation("user_1", 77L)).thenReturn(Optional.of(other));
+        when(repo.getOwnedConversation("user_1", 88L)).thenReturn(Optional.empty());
+
+        List<Map<String, Object>> notes = service.resolveReferencedNotes(
+                "user_1", NOTE_CONVERSATION_ID, List.of(77L, 88L, 77L, NOTE_CONVERSATION_ID));
+
+        // 别人的 id 静默跳过（不泄露存在性）、重复 id 只算一次、不能引用自己
+        assertEquals(1, notes.size());
+        assertEquals("细胞呼吸", notes.get(0).get("title"));
+        assertEquals("糖酵解发生在细胞质基质。", notes.get(0).get("excerpt"));
+    }
+
+    @Test
+    void resolve_referenced_notes_caps_count_and_truncates_excerpts() {
+        for (long id = 100L; id < 110L; id += 1) {
+            NoteConversation c = draft();
+            c.setId(id);
+            c.setTitle("笔记" + id);
+            c.setNoteMd("字".repeat(5_000));
+            when(repo.getOwnedConversation("user_1", id)).thenReturn(Optional.of(c));
+        }
+
+        List<Long> ids = new java.util.ArrayList<>();
+        for (long id = 100L; id < 110L; id += 1) {
+            ids.add(id);
+        }
+        List<Map<String, Object>> notes = service.resolveReferencedNotes("user_1", NOTE_CONVERSATION_ID, ids);
+
+        // 两个预算同时生效：每条截 3000，总量封顶 8000 → 3000+3000+2000 三条
+        assertEquals(3, notes.size());
+        assertEquals(3_000, ((String) notes.get(0).get("excerpt")).length());
+        assertEquals(Boolean.TRUE, notes.get(0).get("truncated"));
+        int total = notes.stream().mapToInt(n -> ((String) n.get("excerpt")).length()).sum();
+        assertEquals(8_000, total);
+    }
+
+    @Test
     void follow_up_turn_appends_user_message_and_builds_history_before_it() {
         NoteConversation conversation = draft();
         conversation.setStatus("completed");

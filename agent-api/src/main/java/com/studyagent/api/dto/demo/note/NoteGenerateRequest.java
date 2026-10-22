@@ -50,4 +50,10 @@ public class NoteGenerateRequest {
      * take_notes / generate_questions / flashcards / other；缺省 take_notes。
      */
     private String learningGoal;
+
+    /**
+     * 本轮显式引用的历史笔记（demo_note_conversation.id）。
+     * <p>服务端只认当前用户自己的会话，并做条数 / 字符双预算裁剪后才下发给 Python。
+     */
+    private java.util.List<Long> referencedNoteIds;
 }

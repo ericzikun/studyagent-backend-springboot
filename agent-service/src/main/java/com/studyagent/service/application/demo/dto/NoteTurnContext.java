@@ -36,6 +36,12 @@ public class NoteTurnContext {
     /** 最近若干轮的 {@code {role, content}}，已按条数 + 字节双预算裁剪。 */
     private List<Map<String, Object>> history;
 
+    /**
+     * 用户显式引用的历史笔记：{@code [{title, excerpt}]}，正文已按条数 + 总字符裁剪。
+     * <p>由 Java 做归属校验与截断后下发 —— 不能让前端把任意笔记 id 塞进来。
+     */
+    private List<Map<String, Object>> referencedNotes;
+
     /** 本轮输出语言覆盖（可空，缺省沿用会话偏好）。 */
     private String outputLanguage;
 }

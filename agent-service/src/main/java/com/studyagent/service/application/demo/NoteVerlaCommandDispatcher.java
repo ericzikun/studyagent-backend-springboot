@@ -196,6 +196,10 @@ public class NoteVerlaCommandDispatcher {
         payload.put("documentBaseVersion",
                 ctx.getDocumentBaseVersion() == null ? 0L : ctx.getDocumentBaseVersion());
         payload.put("history", ctx.getHistory() == null ? List.of() : ctx.getHistory());
+        // 用户显式引用的历史笔记（已做归属校验与双预算裁剪）；空列表也要下发，
+        // 让 Python 侧「有没有引用」始终是一个确定的值。
+        payload.put("referencedNotes",
+                ctx.getReferencedNotes() == null ? List.of() : ctx.getReferencedNotes());
         payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
         // 课程名/学习目标是会话级设置：首轮落库后每轮都从会话行下发，后续轮不必再传表单
         payload.put("courseName", noteConv.getCourseName());

@@ -452,6 +452,22 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void stale_pending_proposal_replay_is_dropped() {
+        // 事件重放会把已提交过的提案再写回来：baseVersion 落后于当前版本时必须丢弃，
+        // 否则前端下次快照又进审阅态、点接受永远版本冲突（线上 vc_Ro5jW）。
+        NoteConversation conversation = draft();
+        conversation.setStatus("completed");
+        conversation.setNoteVersion(3L);
+        when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+
+        service.savePendingProposal(VERLA_CONVERSATION_ID,
+                oneHunkProposal("np_old", 2L, "# 主题\n\n## 要点\n- 新"));
+
+        assertNull(conversation.getPendingProposalJson());
+        verify(repo, never()).saveConversation(any(NoteConversation.class));
+    }
+
+    @Test
     void commit_proposal_accepting_all_uses_the_proposed_md_and_bumps_version_once() {
         NoteConversation conversation = draft();
         conversation.setStatus("completed");

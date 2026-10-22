@@ -378,6 +378,14 @@ public class DemoNoteService {
                     verlaConversationId);
             return;
         }
+        // 过期提案别再存：事件重放（inbox 重扫 / Python 重投）会把已经提交过的提案再写回来，
+        // 前端下次快照又进审阅态，点接受时 baseVersion 对不上 → 永远卡在「待确认」。
+        long currentVersion = c.getNoteVersion() == null ? 0L : c.getNoteVersion();
+        if (baseVersion != null && baseVersion < currentVersion) {
+            log.info("[Notes] stale proposal dropped verlaConvId={} baseVersion={} current={}",
+                    verlaConversationId, baseVersion, currentVersion);
+            return;
+        }
         if (c.getPendingProposalJson() != null && !c.getPendingProposalJson().isBlank()) {
             log.info("[Notes] pending proposal replaced verlaConvId={}", verlaConversationId);
         }

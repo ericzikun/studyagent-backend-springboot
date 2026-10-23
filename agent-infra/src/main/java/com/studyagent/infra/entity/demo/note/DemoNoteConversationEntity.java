@@ -1,5 +1,6 @@
 package com.studyagent.infra.entity.demo.note;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -39,8 +40,12 @@ public class DemoNoteConversationEntity {
     private String noteMd;
     @TableField("note_version")
     private Long noteVersion;
-    /** 待用户接受/忽略的章节级改动提案（JSON）；NULL = 无待审提案。 */
-    @TableField("pending_proposal_json")
+    /**
+     * 待用户接受/忽略的章节级改动提案（JSON）；NULL = 无待审提案。
+     * <p>必须用 {@code ALWAYS}：MyBatis-Plus 默认 {@code updateById} 跳过 null 字段，
+     * 提交/忽略提案时置 null 不会落库，旧提案会一直留在行里（重放补刀后前端又进审阅态）。
+     */
+    @TableField(value = "pending_proposal_json", updateStrategy = FieldStrategy.ALWAYS)
     private String pendingProposalJson;
     private String status;
     @TableField("created_at")

@@ -132,6 +132,7 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setCurrency(currency)
+                .setAllowPromotionCodes(true)
                 .setSuccessUrl(finalSuccessUrl)
                 .setCancelUrl(finalCancelUrl)
                 .addLineItem(

@@ -45,7 +45,8 @@ public class VideoTutorSnapshotService {
                 messageRepository.findVideoTutorByCursor(conversationId, null, MESSAGE_LIMIT));
 
         return new VideoTutorSnapshotView(conversationId, resumeAfterEventId,
-                board.board(), board.refSeq(), board.boardVersion(), messages, board.audio());
+                board.board(), board.pages(), board.pageIndex(),
+                board.refSeq(), board.boardVersion(), messages, board.audio());
     }
 
     /**

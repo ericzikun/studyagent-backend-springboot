@@ -166,8 +166,8 @@ class VideoTutorTurnDispatchTest {
 
         Map<String, Object> payload = dispatchedPayload();
         assertThat(payload).containsOnlyKeys(
-                "message", "topic", "history", "board", "refSeq", "boardVersion", "outputLanguage",
-                "soundEnabled");
+                "message", "topic", "history", "board", "pages", "pageIndex", "refSeq",
+                "boardVersion", "outputLanguage", "soundEnabled", "styleChanged");
         assertThat(payload.get("message")).isEqualTo("k 不存在怎么办？");
         assertThat(payload.get("topic")).isEqualTo("二次函数的顶点式");
         assertThat(payload).containsEntry("board", List.of())

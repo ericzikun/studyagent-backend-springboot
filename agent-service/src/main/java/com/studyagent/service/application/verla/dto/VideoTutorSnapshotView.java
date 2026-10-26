@@ -24,6 +24,8 @@ public record VideoTutorSnapshotView(
         Long conversationId,
         long resumeAfterEventId,
         List<Map<String, Object>> board,
+        List<Map<String, Object>> pages,
+        int pageIndex,
         int refSeq,
         int boardVersion,
         List<VerlaMessage> messages,

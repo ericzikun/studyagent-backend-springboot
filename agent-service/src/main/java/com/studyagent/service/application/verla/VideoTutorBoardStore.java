@@ -69,9 +69,12 @@ public class VideoTutorBoardStore {
         }
         try {
             List<Map<String, Object>> board = parseBoard(artifact.getBodyOrRef(), mapper);
-            return new BoardState(board, parseRefSeq(artifact.getMetaJson(), mapper),
+            String metaJson = artifact.getMetaJson();
+            return new BoardState(board, parsePages(metaJson, mapper),
+                    parsePageIndex(metaJson, mapper),
+                    parseRefSeq(metaJson, mapper),
                     artifact.getVersion() == null ? 0 : artifact.getVersion(),
-                    parseAudio(artifact.getMetaJson(), mapper));
+                    parseAudio(metaJson, mapper));
         } catch (Exception e) {
             log.warn("[Verla/videoTutor] board artifact unreadable cid={} uid={}: {} —— 按空板下发，"
                             + "Python 会从零重建，但引用号计数器会被重置",
@@ -87,6 +90,30 @@ public class VideoTutorBoardStore {
         }
         List<?> raw = mapper.readValue(bodyOrRef, List.class);
         return raw.stream().map(i -> (Map<String, Object>) i).toList();
+    }
+
+    /** A4 页计划：meta.pages = [{id,index,items}]；老 artifact 没有就返回空。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> parsePages(String metaJson, ObjectMapper mapper) throws Exception {
+        if (metaJson == null || metaJson.isBlank()) {
+            return List.of();
+        }
+        Object pages = mapper.readValue(metaJson, Map.class).get("pages");
+        if (!(pages instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(page -> (Map<String, Object>) page)
+                .toList();
+    }
+
+    private static int parsePageIndex(String metaJson, ObjectMapper mapper) throws Exception {
+        if (metaJson == null || metaJson.isBlank()) {
+            return 0;
+        }
+        Object index = mapper.readValue(metaJson, Map.class).get("pageIndex");
+        return index instanceof Number n ? n.intValue() : 0;
     }
 
     private static int parseRefSeq(String metaJson, ObjectMapper mapper) throws Exception {
@@ -116,10 +143,14 @@ public class VideoTutorBoardStore {
     }
 
     /** 引用号计数器随板子一起续上；复用旧号会让陈旧的 {@code of:"b3"} 指向擦黑板后新写的条目。 */
-    public record BoardState(List<Map<String, Object>> board, int refSeq, int boardVersion,
+    public record BoardState(List<Map<String, Object>> board,
+                             List<Map<String, Object>> pages,
+                             int pageIndex,
+                             int refSeq,
+                             int boardVersion,
                              Map<String, Object> audio) {
         public static BoardState empty() {
-            return new BoardState(List.of(), 0, 0, Map.of());
+            return new BoardState(List.of(), List.of(), 0, 0, 0, Map.of());
         }
     }
 }

@@ -561,6 +561,9 @@ public class VerlaTurnOrchestrator {
         payload.put("board", boardContext.get("board"));
         payload.put("refSeq", boardContext.get("refSeq"));
         payload.put("boardVersion", boardContext.get("boardVersion"));
+        // A4 页计划（含当前页）；旧 artifact 没有 pages 时 Python 退回 board 单页。
+        payload.put("pages", boardContext.get("pages"));
+        payload.put("pageIndex", boardContext.get("pageIndex"));
         payload.put("outputLanguage", resolveOutputLanguage(conv));
         // 学生这一轮要不要听语音。Python 只在 true 时才发起合成 ——
         // 关掉 = 零请求、零成本（学生可能在图书馆，也可能是流量敏感场景）。
@@ -592,7 +595,9 @@ public class VerlaTurnOrchestrator {
         return Map.of(
                 "board", state.board(),
                 "refSeq", state.refSeq(),
-                "boardVersion", state.boardVersion());
+                "boardVersion", state.boardVersion(),
+                "pages", state.pages(),
+                "pageIndex", state.pageIndex());
     }
 
     /**

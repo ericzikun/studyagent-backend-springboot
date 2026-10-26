@@ -83,6 +83,8 @@ class VideoTutorSnapshotServiceTest {
 
         assertThat(view.resumeAfterEventId()).isZero();
         assertThat(view.board()).isEmpty();
+        assertThat(view.pages()).isEmpty();
+        assertThat(view.pageIndex()).isZero();
         assertThat(view.refSeq()).isZero();
         assertThat(view.boardVersion()).isZero();
         assertThat(view.messages()).isEmpty();
@@ -115,6 +117,31 @@ class VideoTutorSnapshotServiceTest {
                         "https://studyagent.oss-us-west-1.aliyuncs.com/studyagent/video_tutor/illustration/abc.jpg");
         assertThat(view.board().get(0)).containsEntry("ref", "b1");
         assertThat(view.board().get(1)).containsEntry("latex", "y=a(x-h)^2+k");
+    }
+
+    @Test
+    void a4PagesMustSurviveTheArtifactRoundTrip() {
+        when(messageRepository.findVideoTutorByCursor(eq(CID), isNull(), anyInt())).thenReturn(List.of());
+        when(eventInboxRepository.findRecentProcessedByConversation(CID, 100)).thenReturn(List.of());
+        String board = """
+                [{"op":"title","text":"续页标题","zone":"top"}]
+                """;
+        String meta = """
+                {"refSeq":8,"pageIndex":1,"pages":[
+                  {"id":"p1","index":0,"items":[{"op":"title","text":"第一页","zone":"top"}]},
+                  {"id":"p2","index":1,"items":[{"op":"title","text":"续页标题","zone":"top"}]}
+                ]}
+                """;
+        var artifact = com.studyagent.service.domain.verla.VerlaArtifact.builder()
+                .artifactUid("board_" + CID).conversationId(CID).kind("video_tutor_board")
+                .bodyOrRef(board).metaJson(meta).version(3).build();
+
+        VideoTutorSnapshotView view = service(new VerlaArtifactRepositoryStub(artifact)).getSnapshot(CID);
+
+        assertThat(view.pages()).hasSize(2);
+        assertThat(view.pageIndex()).isEqualTo(1);
+        assertThat(view.pages().get(0)).containsEntry("id", "p1");
+        assertThat(view.pages().get(1)).containsEntry("id", "p2");
     }
 
     private static com.studyagent.service.domain.verla.VerlaArtifact artifactWith(String boardJson) {

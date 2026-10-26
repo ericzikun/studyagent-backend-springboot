@@ -28,6 +28,10 @@ public class VideoTutorSnapshotVO {
     private Long resumeAfterEventId;
     /** 板书树（与 BOARD_COMMIT / BOARD_OPS 里的结构同源）。 */
     private List<Map<String, Object>> board;
+    /** 完整 A4 页计划（含当前页）；老 artifact 没有这个键。 */
+    private List<Map<String, Object>> pages;
+    /** 当前页在 pages 里的下标。 */
+    private Integer pageIndex;
     /** 引用号计数器；前端必须用它，别自己数 —— 复用旧号会让 expand 挂错父项。 */
     private Integer refSeq;
     private Integer boardVersion;
@@ -44,6 +48,8 @@ public class VideoTutorSnapshotVO {
                 .conversationId(VerlaPublicIdVoSupport.conversation(view.conversationId(), true))
                 .resumeAfterEventId(view.resumeAfterEventId())
                 .board(view.board())
+                .pages(view.pages())
+                .pageIndex(view.pageIndex())
                 .refSeq(view.refSeq())
                 .boardVersion(view.boardVersion())
                 .audio(view.audio())

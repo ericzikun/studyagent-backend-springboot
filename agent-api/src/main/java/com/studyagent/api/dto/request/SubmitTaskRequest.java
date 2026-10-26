@@ -54,7 +54,7 @@ public class SubmitTaskRequest {
     /**
      * 输出生成所用语言（标准 locale code，可选）
      */
-    @Pattern(regexp = "^(en|zh-CN|es|pt|vi|ko|id|tr|fr|ja|hi|de|ru|fil|ms)$",
+    @Pattern(regexp = "^(en|zh-CN|es|pt|vi|ko|id|tr|fr|ja|hi|de|ru|fil|ms|th)$",
             message = "outputLanguage must be a supported locale code")
     private String outputLanguage;
 }

@@ -177,10 +177,16 @@ class VerlaVideoTutorHttpBindingTest {
 
     @Test
     void snapshotShouldCarryBoardReferenceCounterAndResumeCursor() throws Exception {
+        List<Map<String, Object>> board = List.of(
+                Map.of("ref", "b2", "op", "eq", "latex", "y=a(x-h)^2+k"));
+        List<Map<String, Object>> pages = List.of(
+                Map.of("id", "p1", "index", 0, "items", board));
         when(snapshotService.getSnapshot(24L)).thenReturn(new VideoTutorSnapshotView(
                 24L,
                 987L,
-                List.of(Map.of("ref", "b2", "op", "eq", "latex", "y=a(x-h)^2+k")),
+                board,
+                pages,
+                0,
                 7,
                 3,
                 List.of(VerlaMessage.builder()
@@ -203,6 +209,9 @@ class VerlaVideoTutorHttpBindingTest {
                 .andExpect(jsonPath("$.data.refSeq").value(7))
                 .andExpect(jsonPath("$.data.boardVersion").value(3))
                 .andExpect(jsonPath("$.data.board[0].ref").value("b2"))
+                // A4 页计划：刷新后前端要靠它恢复全部页面
+                .andExpect(jsonPath("$.data.pages[0].id").value("p1"))
+                .andExpect(jsonPath("$.data.pageIndex").value(0))
                 // 没有它，刷新/从历史重进就永远没有语音（ASSET_READY 是一次性帧）
                 .andExpect(jsonPath("$.data.audio['step:0'].url").value("https://oss.example/a.mp3"))
                 .andExpect(jsonPath("$.data.audio['step:0'].durationMs").value(4100))

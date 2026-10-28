@@ -38,7 +38,8 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
     private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
             VerlaAgentEventType.AGENT_ARTIFACT_UPDATED,
             VerlaAgentEventType.ASSIGNMENT_ARTIFACT_UPDATED,
-            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED);
+            VerlaAgentEventType.ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED,
+            VerlaAgentEventType.SIMULATION_ARTIFACT_UPDATED);
 
     private final VerlaArtifactRepository artifactRepository;
     private final VerlaAttachmentRepository attachmentRepository;
@@ -96,6 +97,12 @@ public class VerlaArtifactEventHandler implements VerlaEventHandler {
         if (HumanizerDetectionMatchService.ARTIFACT_KIND_HUMANIZER_RESULT
                 .equalsIgnoreCase(saved.getKind() == null ? "" : saved.getKind().trim())) {
             humanizerDetectionMatchService.recordFromHumanizerArtifact(saved, p.getMeta());
+        }
+
+        // Simulation Lab：产物 <title> 优先于 prompt 前缀作为会话标题（无额外标题模型调用）
+        if ("simulation_html".equalsIgnoreCase(saved.getKind() == null ? "" : saved.getKind().trim())
+                && p.getSummary() != null && !p.getSummary().isBlank()) {
+            conversationRepository.updateTitle(row.getConversationId(), p.getSummary().trim());
         }
 
         // 上下文 cache 失效：artifact 变更必 bump conv version

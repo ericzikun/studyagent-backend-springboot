@@ -61,6 +61,12 @@ public enum VerlaCommandAction {
     /** V2: 文本 Humanizer 改写 */
     CMD_HUMANIZER_RUN("cmd.humanizer.run"),
 
+    /** Simulation Lab：单轮生成仿真 HTML */
+    CMD_SIMULATION_GENERATE("cmd.simulation.generate"),
+
+    /** Simulation Lab：取消生成 */
+    CMD_SIMULATION_CONTROL_CANCEL("cmd.simulation.control.cancel"),
+
     /** V2: slides source artifact -> editor json seed */
     CMD_SLIDES_CONVERT_TO_EDITOR_JSON("cmd.slides.convert_to_editor_json");
 

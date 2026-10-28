@@ -22,6 +22,9 @@ public enum VerlaSessionKind {
     /** 学习材料生成 */
     MATERIALS,
 
+    /** Simulation Lab：单轮生成仿真 HTML */
+    SIMULATION,
+
     /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
     TASK_NAME
 }

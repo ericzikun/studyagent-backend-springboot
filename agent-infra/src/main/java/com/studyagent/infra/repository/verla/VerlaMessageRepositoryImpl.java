@@ -61,6 +61,14 @@ public class VerlaMessageRepositoryImpl
     }
 
     @Override
+    public VerlaMessage findUserClarifyByTurnAndFormIdForUpdate(Long turnId, String formId) {
+        if (turnId == null || formId == null || formId.isBlank()) {
+            return null;
+        }
+        return toDomain(this.baseMapper.selectUserClarifyByTurnAndFormIdForUpdate(turnId, formId));
+    }
+
+    @Override
     public Map<Long, String> findFirstUserQueryByConversationIds(List<Long> conversationIds) {
         if (conversationIds == null || conversationIds.isEmpty()) {
             return Map.of();

@@ -850,6 +850,23 @@ public class VerlaTurnOrchestrator {
 
         List<Map<String, Object>> normalizedAnswers = normalizeAppendAskAnswers(appendAskAnswers);
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
+
+        // 同一 turn + formId 已提交过 → 幂等返回第一次结果，避免重复建消息/session 与双跑。
+        if (formId != null && !formId.isBlank()) {
+            VerlaMessage existing = messageRepository.findUserClarifyByTurnAndFormIdForUpdate(
+                    turn.getId(), formId);
+            if (existing != null) {
+                log.info("[Verla] finalize duplicate ignored cid={} turnId={} formId={} messageId={}",
+                        conversationId, turn.getId(), formId, existing.getId());
+                return SendMessageResult.builder()
+                        .turnId(turn.getId())
+                        .userMessageId(existing.getId())
+                        .planSessionId(turn.getPlanSessionId())
+                        .agentSessionId(turn.getAgentSessionId())
+                        .build();
+            }
+        }
+
         String messageText = buildClarifyUserMessageText(
                 "generation", "", reservedFields, normalizedAnswers, requirementForm);
         Map<String, Object> blocks = new LinkedHashMap<>();

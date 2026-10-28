@@ -35,6 +35,7 @@ import com.studyagent.service.domain.verla.state.SessionStatus;
 import com.studyagent.service.domain.verla.state.TurnStateMachine;
 import com.studyagent.service.domain.verla.state.TurnStatus;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
+import com.studyagent.service.application.verla.dto.SendMessageResult;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -697,6 +698,82 @@ class VerlaTurnOrchestratorTest {
 
         assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
         Mockito.verify(quotaService).consumeForAssignmentRun(Mockito.any());
+    }
+
+    @Test
+    void finalizeAssignmentClarify_duplicateFormIdReturnsExistingResultWithoutSideEffects() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine(),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .planSessionId(55L)
+                .agentSessionId(1001L)
+                .build();
+        messageRepository.existingClarifySubmission = VerlaMessage.builder()
+                .id(777L)
+                .conversationId(74L)
+                .turnId(700L)
+                .role("user")
+                .textContent("already submitted")
+                .blocksJson("{\"phase\":\"assignment_clarify\",\"formId\":\"form-dup\"}")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        SendMessageResult result = orchestrator.finalizeAssignmentClarify(
+                "free_user",
+                74L,
+                null,
+                "form-dup",
+                "Duplicate submission",
+                Map.of("subject", "Economics"),
+                List.of(),
+                Map.of("subject", "Economics"),
+                List.of(),
+                null);
+
+        assertEquals(777L, result.getUserMessageId());
+        assertEquals(700L, result.getTurnId());
+        assertTrue(messageRepository.savedMessages.isEmpty());
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verifyNoInteractions(quotaService);
     }
 
     @Test
@@ -2001,6 +2078,7 @@ class VerlaTurnOrchestratorTest {
 
     private static final class FakeMessageRepository implements VerlaMessageRepository {
         VerlaMessage saved;
+        VerlaMessage existingClarifySubmission;
         List<VerlaMessage> savedMessages = new ArrayList<>();
         long nextId = 200L;
 
@@ -2054,6 +2132,11 @@ class VerlaTurnOrchestratorTest {
                     .filter(message -> scene.equals(message.getScene()))
                     .findFirst()
                     .orElse(null);
+        }
+
+        @Override
+        public VerlaMessage findUserClarifyByTurnAndFormIdForUpdate(Long turnId, String formId) {
+            return existingClarifySubmission;
         }
     }
 

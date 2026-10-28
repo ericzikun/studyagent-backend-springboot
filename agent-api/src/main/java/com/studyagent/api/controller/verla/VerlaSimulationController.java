@@ -23,7 +23,6 @@ import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,7 +35,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,19 +72,13 @@ public class VerlaSimulationController {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${simulation.create.enabled:false}")
-    private boolean createEnabled;
-
-    @Value("${simulation.create.allowlist:}")
-    private String createAllowlist;
-
     @GetMapping("/config")
     public Result<Map<String, Object>> config(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
         return Result.success(Map.of(
-                "createEnabled", createEnabled,
-                "canCreate", canCreate(clerkUserId),
+                "createEnabled", true,
+                "canCreate", true,
                 "attachmentsEnabled", true,
                 "maxFiles", MAX_FILES,
                 "maxFileBytes", MAX_FILE_BYTES,
@@ -100,7 +92,6 @@ public class VerlaSimulationController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @RequestBody(required = false) CreateSimulationRequest req) {
         ensureLogin(clerkUserId);
-        requireCreateAccess(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         String title = titleFromPrompt(prompt);
         VerlaConversation conversation = conversationService.create(
@@ -117,7 +108,6 @@ public class VerlaSimulationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) GenerateSimulationRequest req) {
         ensureLogin(clerkUserId);
-        requireCreateAccess(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         VerlaConversation conversation = conversationService.getOwned(clerkUserId, cid);
         if (conversation.getPrimaryIntent() != null
@@ -239,23 +229,6 @@ public class VerlaSimulationController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             throw new BusinessException(ApiCode.USER_NOT_LOGGED_IN);
         }
-    }
-
-    private void requireCreateAccess(String clerkUserId) {
-        if (!canCreate(clerkUserId)) {
-            throw new BusinessException(ApiCode.NO_PERMISSION.getCode(), "Simulation Lab is not open for this account");
-        }
-    }
-
-    private boolean canCreate(String clerkUserId) {
-        if (!createEnabled) {
-            return false;
-        }
-        List<String> allowed = Arrays.stream((createAllowlist == null ? "" : createAllowlist).split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-        return allowed.contains("*") || allowed.contains(clerkUserId);
     }
 
     private void validateAttachments(String attachmentsJson, Long conversationId, String clerkUserId) {

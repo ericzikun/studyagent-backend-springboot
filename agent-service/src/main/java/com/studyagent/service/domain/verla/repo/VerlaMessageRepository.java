@@ -52,6 +52,13 @@ public interface VerlaMessageRepository {
     }
 
     /**
+     * 同一 turn 同一 formId 的作业澄清提交；仅供 finalize 幂等去重，生产实现必须加锁读。
+     */
+    default VerlaMessage findUserClarifyByTurnAndFormIdForUpdate(Long turnId, String formId) {
+        return null;
+    }
+
+    /**
      * 批量取每个 conversation 第一条 user 主对话消息的 query 拼接串（text_content + blocks_json）。
      * admin 列表用；default 空实现供测试桩，生产实现覆盖。
      */

@@ -18,7 +18,6 @@ import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -63,25 +62,18 @@ class VerlaSimulationControllerTest {
                 mock(OssStorageService.class),
                 new ObjectMapper(),
                 jdbcTemplate);
-        ReflectionTestUtils.setField(controller, "createEnabled", true);
-        ReflectionTestUtils.setField(controller, "createAllowlist", "user_1");
     }
 
     @Test
-    void configExposesLimitsForAllowlistedUser() {
+    void configExposesLimitsForAnyLoggedInUser() {
         Result<Map<String, Object>> result = controller.config("user_1");
+        Result<Map<String, Object>> other = controller.config("user_2");
 
         assertEquals(Boolean.TRUE, result.getData().get("canCreate"));
+        assertEquals(Boolean.TRUE, other.getData().get("canCreate"));
         assertEquals(3, result.getData().get("maxFiles"));
         assertEquals(1, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
-    }
-
-    @Test
-    void configDeniesUserOutsideAllowlist() {
-        Result<Map<String, Object>> result = controller.config("user_2");
-
-        assertEquals(Boolean.FALSE, result.getData().get("canCreate"));
     }
 
     @Test

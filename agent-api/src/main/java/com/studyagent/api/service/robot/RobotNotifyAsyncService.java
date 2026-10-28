@@ -6,6 +6,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.common.verla.id.VerlaPublicIdCodec;
+import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.infra.entity.FeedbackPromptSessionEntity;
 import com.studyagent.infra.entity.FeedbackSubmissionEntity;
 import com.studyagent.infra.entity.FileEntity;
@@ -200,6 +202,14 @@ public class RobotNotifyAsyncService {
                     featureLabel = "Humanizer";
                     titlePrefix = "Humanizer 用户反馈";
                 }
+            } else if ("verla_conversation".equals(session.getSubjectType())
+                    && "detection_complete_first".equals(session.getTriggerCode())) {
+                featureLabel = "AI Detection";
+                titlePrefix = "AI Detection 用户反馈";
+            } else if ("verla_conversation".equals(session.getSubjectType())
+                    && "humanizer_complete_first".equals(session.getTriggerCode())) {
+                featureLabel = "Humanizer";
+                titlePrefix = "Humanizer 用户反馈";
             } else {
                 featureLabel = session.getSubjectType();
                 titlePrefix = "用户反馈";
@@ -207,6 +217,9 @@ public class RobotNotifyAsyncService {
 
             StringBuilder sb = new StringBuilder();
             sb.append("- **功能**: ").append(featureLabel).append("\n");
+            if ("verla_conversation".equals(session.getSubjectType())) {
+                appendAiWritingFeedbackContext(sb, session.getTriggerCode(), session.getSubjectId());
+            }
             if ("rating".equals(session.getVariant()) && sub.getScore() != null) {
                 sb.append("- **评分**: ").append(sub.getScore()).append(" 星\n");
             } else if ("thumb".equals(session.getVariant())) {
@@ -621,6 +634,31 @@ public class RobotNotifyAsyncService {
 
     private static String nullToDash(String s) {
         return s == null || s.isEmpty() ? "—" : s;
+    }
+
+    /** V2 AI Writing 使用 conversation public ID；未知触发码不猜测工作区类型。 */
+    private void appendAiWritingFeedbackContext(StringBuilder sb, String triggerCode, String subjectId) {
+        String route = switch (triggerCode == null ? "" : triggerCode) {
+            case "detection_complete_first" -> "ai-detection";
+            case "humanizer_complete_first" -> "humanizer";
+            default -> null;
+        };
+        if (route == null) {
+            return;
+        }
+        String rawId = subjectId == null ? "" : subjectId.trim();
+        if (rawId.startsWith(PREFIX_VERLA_CONVERSATION_SUBJECT)) {
+            rawId = rawId.substring(PREFIX_VERLA_CONVERSATION_SUBJECT.length());
+        }
+        try {
+            long conversationId = VerlaPublicIdCodec.requireInternalId(VerlaPublicIdType.CONVERSATION, rawId);
+            String publicId = VerlaPublicIdCodec.encode(VerlaPublicIdType.CONVERSATION, conversationId);
+            sb.append("- **会话 ID**: ").append(publicId).append("\n");
+            sb.append("- **工作区链接**: ").append(publicSiteUrl.replaceAll("/+$", ""))
+                    .append("/").append(route).append("/").append(publicId).append("\n");
+        } catch (IllegalArgumentException e) {
+            sb.append("- **会话 ID**: 无法解析 ").append(nullToDash(subjectId)).append("\n");
+        }
     }
 
     private void appendVerlaConversationFeedback(StringBuilder sb, String clerkUserId, long conversationId) {

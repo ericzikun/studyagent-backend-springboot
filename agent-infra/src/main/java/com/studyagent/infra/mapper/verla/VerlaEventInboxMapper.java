@@ -44,18 +44,25 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
 
     /**
      * SSE 补发：拉某 conversation 自 afterId 之后所有已 PROCESSED 的事件，按 id 升序。
+     *
+     * FORCE INDEX：否则优化器会选 idx_conv(conversation_id, received_at) 再 filesort，
+     * 排序记录里带 payload_json（单条可达 ~10MB），直接 MySQL 1038 Out of sort memory。
      */
-    @Select("SELECT * FROM verla_event_inbox "
+    @Select("SELECT * FROM verla_event_inbox FORCE INDEX (idx_conv_status_id) "
             + "WHERE conversation_id = #{cid} AND id > #{afterId} AND status = 'PROCESSED' "
             + "ORDER BY id ASC LIMIT #{limit}")
     List<VerlaEventInboxEntity> selectReplay(@Param("cid") Long conversationId,
                                              @Param("afterId") Long afterId,
                                              @Param("limit") int limit);
 
+    /**
+     * FORCE INDEX 原因同 selectReplay：让 (conversation_id, status, id) 提供有序回扫，
+     * 避免对含大 payload 的行做 filesort。
+     */
     @Select("SELECT id, message_id, correlation_id, conversation_id, turn_id, session_id, "
             + "event_seq, event_type, step_id, step_seq, payload_json, status, "
             + "error_message, received_at, processed_at "
-            + "FROM verla_event_inbox "
+            + "FROM verla_event_inbox FORCE INDEX (idx_conv_status_id) "
             + "WHERE conversation_id = #{cid} AND status = 'PROCESSED' "
             + "ORDER BY id DESC LIMIT #{limit}")
     List<VerlaEventInboxEntity> selectRecentProcessed(@Param("cid") Long conversationId,
@@ -63,26 +70,38 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
 
     /**
      * Dashboard 批量状态：每个 conversation 取最近 N 条 PROCESSED 事件（MySQL 8 窗口函数）。
+     *
+     * 窗口排序只覆盖 (id, conversation_id)：payload_json 单条最大约 10MB（ATTACHMENT_PARSED），
+     * 一旦进入排序记录就会 1038 Out of sort memory。回表后 payload 也只对 Dashboard 需要判读
+     * ready 标记的两类事件按主键取值。
      */
     @Select("<script>"
-            + "SELECT id, message_id, correlation_id, conversation_id, turn_id, session_id, "
-            + "event_seq, event_type, step_id, step_seq, payload_json, status, "
-            + "error_message, received_at, processed_at "
+            + "SELECT e.id, e.message_id, e.correlation_id, e.conversation_id, e.turn_id, e.session_id, "
+            + "e.event_seq, e.event_type, e.step_id, e.step_seq, "
+            + "CASE WHEN e.event_type IN ('ASSIGNMENT_INIT_COMPLETED', 'ASSIGNMENT_DEEP_UNDERSTANDING_COMPLETED') "
+            + "  THEN (SELECT p.payload_json FROM verla_event_inbox p WHERE p.id = e.id) "
+            + "  ELSE NULL END AS payload_json, "
+            + "e.status, e.error_message, e.received_at, e.processed_at "
             + "FROM ("
-            + "  SELECT *, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY id DESC) AS rn "
+            + "  SELECT id, conversation_id, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY id DESC) AS rn "
             + "  FROM verla_event_inbox "
             + "  WHERE status = 'PROCESSED' "
             + "  AND conversation_id IN "
             + "  <foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>"
-            + ") ranked WHERE rn &lt;= #{limitPerConversation} "
-            + "ORDER BY conversation_id, id DESC"
+            + ") ranked "
+            + "JOIN verla_event_inbox e ON e.id = ranked.id "
+            + "WHERE ranked.rn &lt;= #{limitPerConversation} "
+            + "ORDER BY e.conversation_id, e.id DESC"
             + "</script>")
     List<VerlaEventInboxEntity> selectRecentProcessedByConversationIds(
             @Param("conversationIds") List<Long> conversationIds,
             @Param("limitPerConversation") int limitPerConversation);
 
-    @Select("SELECT * FROM verla_event_inbox "
-            + "WHERE session_id = #{sessionId} AND status = 'PROCESSED' "
-            + "ORDER BY id DESC LIMIT 1")
+    /**
+     * 用 MAX(id) 子查询代替 ORDER BY id DESC LIMIT 1：后者会 filesort 含大 payload 的行。
+     */
+    @Select("SELECT * FROM verla_event_inbox WHERE id = ("
+            + "SELECT MAX(id) FROM verla_event_inbox "
+            + "WHERE session_id = #{sessionId} AND status = 'PROCESSED')")
     VerlaEventInboxEntity selectLatestProcessedBySession(@Param("sessionId") Long sessionId);
 }

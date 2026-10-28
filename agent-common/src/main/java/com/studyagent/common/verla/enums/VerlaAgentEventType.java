@@ -213,7 +213,15 @@ public enum VerlaAgentEventType {
     VIDEO_TUTOR_BOARD_COMMIT(false),
     VIDEO_TUTOR_TURN_COMPLETED(true),
     VIDEO_TUTOR_FAILED(true),
-    VIDEO_TUTOR_CANCELLED(true);
+    VIDEO_TUTOR_CANCELLED(true),
+
+    /** Simulation Lab 域（单轮生成仿真 HTML） */
+    SIMULATION_STARTED(false),
+    SIMULATION_PROGRESS(false),
+    SIMULATION_ARTIFACT_UPDATED(false),
+    SIMULATION_COMPLETED(true),
+    SIMULATION_FAILED(true),
+    SIMULATION_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -266,7 +274,10 @@ public enum VerlaAgentEventType {
             NOTE_CANCELLED,
             VIDEO_TUTOR_TURN_COMPLETED,
             VIDEO_TUTOR_FAILED,
-            VIDEO_TUTOR_CANCELLED);
+            VIDEO_TUTOR_CANCELLED,
+            SIMULATION_COMPLETED,
+            SIMULATION_FAILED,
+            SIMULATION_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

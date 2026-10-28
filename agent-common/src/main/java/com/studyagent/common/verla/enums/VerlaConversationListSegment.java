@@ -14,6 +14,7 @@ import lombok.Getter;
  *     <li>{@link #AI_HUMANIZER} — Humanizer</li>
  *     <li>{@link #NOTE} — AI Note（笔记 demo 域，intent = NOTE_MAKER）</li>
  *     <li>{@link #VIDEO_TUTOR} — AI 画板（交互式白板教学域，intent = video_tutor）</li>
+ *     <li>{@link #SIMULATION} — Simulation Lab（单轮生成仿真 HTML）</li>
  * </ul>
  * GET {@code /v1/verla/conversations?segment=...} 使用 {@link #queryKey}。
  */
@@ -31,7 +32,8 @@ public enum VerlaConversationListSegment {
      * {@code VerlaConversationService#create} 只 trim 不做大小写归一，库里存的就是它。
      * （其余分栏的 intent 都是大写，别照抄。）
      */
-    VIDEO_TUTOR("video_tutor");
+    VIDEO_TUTOR("video_tutor"),
+    SIMULATION("simulation");
 
     private final String queryKey;
 

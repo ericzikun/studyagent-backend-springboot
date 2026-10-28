@@ -674,8 +674,10 @@ public class VerlaTurnOrchestrator {
             throw new BusinessException(ApiCode.PARAM_ERROR, "sessionId required");
         }
         VerlaSession session = sessionRepository.findByIdForUpdate(sessionId);
-        if (session == null || !VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())) {
-            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment run session");
+        if (session == null
+                || !(VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())
+                || VerlaSessionKind.SIMULATION.name().equals(session.getKind()))) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "assignment or simulation run session");
         }
 
         SessionStatus curSession = SessionStatus.valueOf(session.getStatus());
@@ -700,11 +702,13 @@ public class VerlaTurnOrchestrator {
             turnRepository.save(turn);
         }
 
-        VerlaCommandEnvelope env = buildAgentRunCancelEnvelope(conv, turn, session);
-        mqOutboxService.createVerlaCommand(env, commandExchange,
-                VerlaCommandAction.CMD_AGENT_CANCEL.getCode());
-        log.info("[admin/assignment-run-dispatch] cancel published session={} turn={}",
-                session.getId(), turn.getId());
+        VerlaCommandAction cancelAction = VerlaSessionKind.SIMULATION.name().equals(session.getKind())
+                ? VerlaCommandAction.CMD_SIMULATION_CONTROL_CANCEL
+                : VerlaCommandAction.CMD_AGENT_CANCEL;
+        VerlaCommandEnvelope env = buildAgentRunCancelEnvelope(conv, turn, session, cancelAction);
+        mqOutboxService.createVerlaCommand(env, commandExchange, cancelAction.getCode());
+        log.info("[admin/assignment-run-dispatch] cancel published session={} turn={} action={}",
+                session.getId(), turn.getId(), cancelAction.getCode());
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -806,7 +810,8 @@ public class VerlaTurnOrchestrator {
 
         // 第一轮对话生成会话标题（isFirstTurn 在创建 turn 之前通过 lastTurnId == null 判断，
         // 比依赖 turnCount 内存值更可靠）
-        if (isFirstTurn) {
+        // Simulation Lab 是单轮、无标题任务；不要额外调一次标题模型。
+        if (isFirstTurn && !"SIMULATION".equals(intent)) {
             spawnTaskNameSession(conv, turn, cmd.getText(), cmd.getAttachmentsJson());
         }
 
@@ -816,8 +821,11 @@ public class VerlaTurnOrchestrator {
         } else {
             VerlaCommandAction action = "AI_DETECTION".equals(intent)
                     ? VerlaCommandAction.CMD_DETECTION_RUN
+                    : "SIMULATION".equals(intent)
+                    ? VerlaCommandAction.CMD_SIMULATION_GENERATE
                     : VerlaCommandAction.CMD_HUMANIZER_RUN;
-            agentSession = spawnCapabilitySession(conv, turn, intent, Map.of(), action);
+            agentSession = spawnCapabilitySession(
+                    conv, turn, intent, Map.of(), action, cmd.getAttachmentsJson());
         }
 
         log.info("[Verla] forced capability intent={} convId={}, turnId={}, agentSessionId={}",
@@ -843,11 +851,14 @@ public class VerlaTurnOrchestrator {
         if ("AI_HUMANIZER".equals(n)) {
             return Optional.of("AI_HUMANIZER");
         }
+        if ("SIMULATION".equals(n)) {
+            return Optional.of("SIMULATION");
+        }
         if (isAssignmentIntent(n)) {
             return Optional.of("ASSIGNMENT");
         }
         throw new BusinessException(ApiCode.PARAM_ERROR,
-                "forceIntent must be ASSIGNMENT, AI_DETECTION or AI_HUMANIZER");
+                "forceIntent must be ASSIGNMENT, AI_DETECTION, AI_HUMANIZER or SIMULATION");
     }
 
     // ==========================================================
@@ -2284,6 +2295,13 @@ public class VerlaTurnOrchestrator {
     private VerlaSession spawnCapabilitySession(VerlaConversation conv, VerlaTurn turn,
                                                String intent, Map<String, Object> resolvedSlots,
                                                VerlaCommandAction commandAction) {
+        return spawnCapabilitySession(conv, turn, intent, resolvedSlots, commandAction, null);
+    }
+
+    private VerlaSession spawnCapabilitySession(VerlaConversation conv, VerlaTurn turn,
+                                               String intent, Map<String, Object> resolvedSlots,
+                                               VerlaCommandAction commandAction,
+                                               String attachmentsJson) {
         if (turn.getAgentSessionId() != null) {
             log.info("[Verla] capability already dispatched turnId={} agentSessionId={}, skip duplicate",
                     turn.getId(), turn.getAgentSessionId());
@@ -2293,7 +2311,9 @@ public class VerlaTurnOrchestrator {
         VerlaSession s = VerlaSession.builder()
                 .conversationId(conv == null ? turn.getConversationId() : conv.getId())
                 .turnId(turn.getId())
-                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .kind(("SIMULATION".equals(intent)
+                        ? VerlaSessionKind.SIMULATION
+                        : VerlaSessionKind.ASSIGNMENT).name())
                 .featureCode(intent)
                 .status(SessionStatus.CREATED.name())
                 .correlationId("placeholder")
@@ -2359,7 +2379,7 @@ public class VerlaTurnOrchestrator {
 
         VerlaCommandEnvelope env = buildCapabilityEnvelope(
                 conv, turn, s, intent, resolvedSlots, commandAction,
-                userText, matchedHumanizer);
+                userText, matchedHumanizer, attachmentsJson);
         mqOutboxService.createVerlaCommand(env, commandExchange, commandAction.getCode());
         log.info("[Verla] dispatched {} turnId={} sessionId={} matchedHumanizer={}",
                 commandAction.getCode(), turn.getId(), s.getId(), matchedHumanizer);
@@ -2671,12 +2691,16 @@ public class VerlaTurnOrchestrator {
                                                         Map<String, Object> slots,
                                                         VerlaCommandAction action,
                                                         String userMessageText,
-                                                        boolean matchedHumanizer) {
+                                                        boolean matchedHumanizer,
+                                                        String attachmentsJson) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("agentType", intent);
         payload.put("slots", slots == null ? Map.of() : slots);
         if (userMessageText != null && !userMessageText.isBlank()) {
             payload.put("userText", userMessageText.trim());
+        }
+        if (attachmentsJson != null && !attachmentsJson.isBlank()) {
+            payload.put("attachmentsJson", attachmentsJson);
         }
         if (action == VerlaCommandAction.CMD_DETECTION_RUN && matchedHumanizer) {
             payload.put("matchedHumanizer", true);
@@ -2743,12 +2767,13 @@ public class VerlaTurnOrchestrator {
     }
 
     private VerlaCommandEnvelope buildAgentRunCancelEnvelope(VerlaConversation conv, VerlaTurn turn,
-                                                             VerlaSession session) {
+                                                             VerlaSession session,
+                                                             VerlaCommandAction action) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("sessionId", session.getId());
         payload.put("turnId", turn.getId());
 
-        return baseEnvelope(VerlaCommandAction.CMD_AGENT_CANCEL, conv, turn, session)
+        return baseEnvelope(action, conv, turn, session)
                 .payload(payload)
                 .build();
     }

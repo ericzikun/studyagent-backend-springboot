@@ -61,7 +61,11 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.MATERIALS_STARTED,
             VerlaAgentEventType.MATERIALS_COMPLETED,
             VerlaAgentEventType.AI_DETECTION_COMPLETED,
-            VerlaAgentEventType.AI_HUMANIZER_COMPLETED);
+            VerlaAgentEventType.AI_HUMANIZER_COMPLETED,
+            VerlaAgentEventType.SIMULATION_STARTED,
+            VerlaAgentEventType.SIMULATION_COMPLETED,
+            VerlaAgentEventType.SIMULATION_FAILED,
+            VerlaAgentEventType.SIMULATION_CANCELLED);
 
     private final VerlaTurnOrchestrator orchestrator;
 
@@ -80,7 +84,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
         switch (type) {
             case AGENT_STARTED, ASSIGNMENT_INIT_STARTED, ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
                     ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED,
-                    ASSIGNMENT_AGENT_FLOW_STARTED -> {
+                    ASSIGNMENT_AGENT_FLOW_STARTED, SIMULATION_STARTED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentStarted(sessionId);
             }
@@ -110,7 +114,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             }
             case AGENT_COMPLETED, MATERIALS_COMPLETED,
                     AI_DETECTION_COMPLETED,
-                    AI_HUMANIZER_COMPLETED -> {
+                    AI_HUMANIZER_COMPLETED,
+                    SIMULATION_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCompleted(sessionId, payload);
             }
@@ -127,7 +132,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
                 orchestrator.onAssignmentChatCompleted(sessionId, payload);
             }
             case AGENT_FAILED, ASSIGNMENT_INIT_FAILED, ASSIGNMENT_DEEP_UNDERSTANDING_FAILED,
-                    ASSIGNMENT_CLARIFY_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED -> {
+                    ASSIGNMENT_CLARIFY_FAILED, AI_DETECTION_FAILED, AI_HUMANIZER_FAILED,
+                    SIMULATION_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentFailed(sessionId, payload);
             }
@@ -146,7 +152,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             case AGENT_CANCELLED, ASSIGNMENT_CLARIFY_CANCELLED, ASSIGNMENT_CANCELLED,
                     ASSIGNMENT_INIT_CANCELLED, ASSIGNMENT_DEEP_UNDERSTANDING_CANCELLED,
                     ASSIGNMENT_AGENT_FLOW_CANCELLED, AI_DETECTION_CANCELLED,
-                    AI_HUMANIZER_CANCELLED -> {
+                    AI_HUMANIZER_CANCELLED, SIMULATION_CANCELLED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentCancelled(sessionId);
             }

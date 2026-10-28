@@ -215,9 +215,21 @@ public class VerlaRabbitConfig {
     }
 
     @Bean
+    public Binding verlaCmdSimulationGenerateBinding(Queue verlaCmdAgentQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdAgentQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_SIMULATION_GENERATE.getCode());
+    }
+
+    @Bean
     public Binding verlaCmdControlCancelBinding(Queue verlaCmdControlQueue, DirectExchange commandExchange) {
         return BindingBuilder.bind(verlaCmdControlQueue).to(commandExchange)
                 .with(VerlaCommandAction.CMD_AGENT_CANCEL.getCode());
+    }
+
+    @Bean
+    public Binding verlaCmdSimulationCancelBinding(Queue verlaCmdControlQueue, DirectExchange commandExchange) {
+        return BindingBuilder.bind(verlaCmdControlQueue).to(commandExchange)
+                .with(VerlaCommandAction.CMD_SIMULATION_CONTROL_CANCEL.getCode());
     }
 
     @Bean

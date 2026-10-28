@@ -14,7 +14,8 @@ public enum FeatureCode {
     /** AI Tutor demo：学术论文写作 Copilot（pure-free 记账） */
     DEMO_AI_TUTOR("demo_ai_tutor"),
     /** Notes demo：素材 → 笔记生成（pure-free 记账） */
-    DEMO_NOTE_MAKER("demo_note_maker");
+    DEMO_NOTE_MAKER("demo_note_maker"),
+    SIMULATION("simulation");
 
     private final String code;
 

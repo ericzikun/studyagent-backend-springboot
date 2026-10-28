@@ -138,7 +138,15 @@ public enum VerlaAgentEventType {
     AI_DETECTION_CANCELLED(true),
     AI_HUMANIZER_COMPLETED(true),
     AI_HUMANIZER_FAILED(true),
-    AI_HUMANIZER_CANCELLED(true);
+    AI_HUMANIZER_CANCELLED(true),
+
+    /** Simulation Lab 域（单轮生成仿真 HTML） */
+    SIMULATION_STARTED(false),
+    SIMULATION_PROGRESS(false),
+    SIMULATION_ARTIFACT_UPDATED(false),
+    SIMULATION_COMPLETED(true),
+    SIMULATION_FAILED(true),
+    SIMULATION_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -182,7 +190,10 @@ public enum VerlaAgentEventType {
             AI_DETECTION_CANCELLED,
             AI_HUMANIZER_COMPLETED,
             AI_HUMANIZER_FAILED,
-            AI_HUMANIZER_CANCELLED);
+            AI_HUMANIZER_CANCELLED,
+            SIMULATION_COMPLETED,
+            SIMULATION_FAILED,
+            SIMULATION_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

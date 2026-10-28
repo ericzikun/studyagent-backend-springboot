@@ -22,7 +22,8 @@ public enum VerlaConversationListSegment {
     LEARNING("learning"),
     AI_WRITING("ai_writing"),
     AI_DETECTION("ai_detection"),
-    AI_HUMANIZER("ai_humanizer");
+    AI_HUMANIZER("ai_humanizer"),
+    SIMULATION("simulation");
 
     private final String queryKey;
 

@@ -10,7 +10,8 @@ public enum FeatureCode {
 
     TASK_CREATE("task_create"),
     AI_DETECTION("ai_detection"),
-    HUMANIZER("humanizer");
+    HUMANIZER("humanizer"),
+    SIMULATION("simulation");
 
     private final String code;
 

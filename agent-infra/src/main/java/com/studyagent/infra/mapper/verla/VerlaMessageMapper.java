@@ -81,6 +81,22 @@ public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
                                              @Param("scene") String scene);
 
     /**
+     * 同一 turn 同一 formId 的作业澄清提交，finalize 幂等去重用。
+     * <p>
+     * 必须是加锁读：finalize 事务在拿到 turn 行锁前已执行过普通 SELECT，
+     * REPEATABLE READ 快照可能早于并发事务的提交；FOR UPDATE 才能读到最新已提交行。
+     */
+    @Select("SELECT * FROM verla_messages "
+            + "WHERE turn_id = #{turnId} "
+            + "AND role = 'user' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(blocks_json, '$.phase')) = 'assignment_clarify' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(blocks_json, '$.formId')) = #{formId} "
+            + "ORDER BY id ASC LIMIT 1 FOR UPDATE")
+    VerlaMessageEntity selectUserClarifyByTurnAndFormIdForUpdate(
+            @Param("turnId") Long turnId,
+            @Param("formId") String formId);
+
+    /**
      * 批量取每个 conversation 第一条 user 主对话消息（scene 过滤与 selectByCursor 一致）。
      * admin 列表用；返回 {@code m.*}，供仓储层拼接 text_content + blocks_json。
      */

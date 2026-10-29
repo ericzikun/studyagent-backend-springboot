@@ -49,4 +49,11 @@ public class VideoTutorTurnRequest {
      * 仅切换后的第一轮为 true，之后为 false。
      */
     private Boolean styleChanged;
+
+
+    /**
+     * 语音由谁合成。{@code java} = 前端直接请求 Java 的 TTS 流，本轮不要 Python 合成；
+     * 缺省 / 其他值保持旧链路（Python 合成 → OSS → MQ）。
+     */
+    private String ttsProvider;
 }

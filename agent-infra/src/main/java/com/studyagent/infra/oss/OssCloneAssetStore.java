@@ -1,6 +1,7 @@
 package com.studyagent.infra.oss;
 
 import com.studyagent.service.application.verla.clone.CloneAssetStore;
+import com.studyagent.service.domain.file.OssStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OssCloneAssetStore implements CloneAssetStore {
 
-    private final OssService ossService;
+    private final OssStorageService ossService;
 
     @Override
     public String storeSvg(String svg, String name) {

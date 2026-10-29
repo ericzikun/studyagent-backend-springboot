@@ -364,6 +364,15 @@ verla:
       voice-nora: ${VERLA_VIDEO_TUTOR_TTS_VOICE_NORA:longxiaochun_v3}
       sample-rate: ${VERLA_VIDEO_TUTOR_TTS_SAMPLE_RATE:24000}
       max-concurrency: ${VERLA_VIDEO_TUTOR_TTS_MAX_CONCURRENCY:4}
+    # clone 实时语音输入（DashScope fun-asr-realtime）；key 默认复用 TTS 的百炼 key。
+    stt:
+      enabled: ${VERLA_VIDEO_TUTOR_STT_ENABLED:true}
+      api-key: ${VERLA_VIDEO_TUTOR_STT_API_KEY:${VERLA_VIDEO_TUTOR_TTS_API_KEY:}}
+      models-yaml: ${MODELS_YAML:}
+      api-key-ref: ${VERLA_VIDEO_TUTOR_STT_API_KEY_REF:aliyun_bailian}
+      ws-url: ${VERLA_VIDEO_TUTOR_STT_WS_URL:wss://dashscope.aliyuncs.com/api-ws/v1/inference}
+      model: ${VERLA_VIDEO_TUTOR_STT_MODEL:fun-asr-realtime}
+      language-hints: ${VERLA_VIDEO_TUTOR_STT_LANGUAGE_HINTS:zh,en}
     # clone agent：Java 直接跑 LLM 教学回合（JSONL + LLM SVG），不经过 Python/MQ。
     clone:
       enabled: ${VERLA_VIDEO_TUTOR_CLONE_ENABLED:true}

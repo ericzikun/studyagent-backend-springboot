@@ -29,6 +29,12 @@
             <artifactId>spring-context</artifactId>
         </dependency>
         
+        <!-- WebSocket：Video Tutor 实时 STT 代理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- Spring Transaction -->
         <dependency>
             <groupId>org.springframework</groupId>

@@ -8,6 +8,7 @@ import com.studyagent.api.dto.response.SubmitFeedbackResponse;
 import com.studyagent.api.service.FeedbackApplicationService;
 import com.studyagent.api.service.robot.RobotNotifyAsyncService;
 import com.studyagent.common.api.ApiCode;
+import com.studyagent.service.domain.billing.BillingPricingContext;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +63,8 @@ public class FeedbackController {
                 request.getSelectedTagCodes(),
                 request.getComment(),
                 request.getContact());
-        robotNotifyAsyncService.notifyFeedbackSubmitted(clerkUserId, request.getPromptSessionId(), response.getSubmissionId());
+        robotNotifyAsyncService.notifyFeedbackSubmitted(clerkUserId, request.getPromptSessionId(),
+                response.getSubmissionId(), BillingPricingContext.country());
         return Result.success(response);
     }
 }

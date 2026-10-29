@@ -26,6 +26,7 @@ import com.studyagent.infra.mapper.TaskFileMapper;
 import com.studyagent.infra.mapper.TaskMapper;
 import com.studyagent.infra.mapper.UserMapper;
 import com.studyagent.infra.mapper.verla.VerlaConversationMapper;
+import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.api.util.TaskIdEncoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +67,7 @@ public class RobotNotifyAsyncService {
     private final FeedbackPromptSessionMapper feedbackPromptSessionMapper;
     private final FeedbackSubmissionMapper feedbackSubmissionMapper;
     private final VerlaConversationMapper verlaConversationMapper;
+    private final ClerkClient clerkClient;
 
     @Value("${app.public-site-url:http://localhost:3000}")
     private String publicSiteUrl;
@@ -171,7 +173,8 @@ public class RobotNotifyAsyncService {
     }
 
     @Async("robotNotifyExecutor")
-    public void notifyFeedbackSubmitted(String clerkUserId, String promptSessionId, String submissionId) {
+    public void notifyFeedbackSubmitted(String clerkUserId, String promptSessionId, String submissionId,
+                                        String requestCountry) {
         try {
             FeedbackPromptSessionEntity session = feedbackPromptSessionMapper.selectOne(
                     new LambdaQueryWrapper<FeedbackPromptSessionEntity>()
@@ -229,8 +232,11 @@ public class RobotNotifyAsyncService {
             sb.append("- **自定义评价**: ").append(blankToUserSkipped(sub.getComment())).append("\n");
             sb.append("- **联系方式**: ").append(blankToUserSkipped(sub.getContact())).append("\n");
             sb.append("- **UID**: ").append(nullToDash(clerkUserId)).append("\n");
-            sb.append("- **邮箱**: ").append("未入库（user_profiles 无 email）").append("\n");
-            sb.append("- **国家 / 首访来源**: ").append("未入库").append("\n");
+            UserProfileEntity profile = loadUserProfile(clerkUserId);
+            sb.append("- **邮箱(Clerk)**: ").append(nullToDash(resolveUserEmail(clerkUserId))).append("\n");
+            sb.append("- **国家/地区**: ")
+                    .append(feedbackCountryLabel(requestCountry, profile != null ? profile.getCountry() : null))
+                    .append("\n");
             sb.append("- **反馈时机**: ").append(feedbackTimingCn(session.getTriggerCode())).append("\n");
 
             if ("task".equals(session.getSubjectType())) {
@@ -634,6 +640,42 @@ public class RobotNotifyAsyncService {
 
     private static String nullToDash(String s) {
         return s == null || s.isEmpty() ? "—" : s;
+    }
+
+    private UserProfileEntity loadUserProfile(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return null;
+        }
+        return userMapper.selectOne(
+                new LambdaQueryWrapper<UserProfileEntity>()
+                        .eq(UserProfileEntity::getClerkUserId, clerkUserId)
+                        .last("LIMIT 1"));
+    }
+
+    private String resolveUserEmail(String clerkUserId) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return null;
+        }
+        try {
+            return clerkClient.getUserEmail(clerkUserId);
+        } catch (Exception e) {
+            log.warn("feedback notify email lookup failed: userId={}, err={}", clerkUserId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 与付费播报同口径：优先请求级可信国家头（CC · EN · ZH），缺失时回退 user_profiles.country 原文。 */
+    private static String feedbackCountryLabel(String requestCountry, String profileCountry) {
+        if (requestCountry != null && !requestCountry.isBlank()) {
+            String cc = requestCountry.trim().toUpperCase(Locale.ROOT);
+            if (cc.length() == 2) {
+                return RobotNotifyBillingService.formatCountry(cc);
+            }
+        }
+        if (profileCountry != null && !profileCountry.isBlank()) {
+            return profileCountry.trim();
+        }
+        return RobotNotifyBillingService.formatCountry(null);
     }
 
     /** V2 AI Writing 使用 conversation public ID；未知触发码不猜测工作区类型。 */

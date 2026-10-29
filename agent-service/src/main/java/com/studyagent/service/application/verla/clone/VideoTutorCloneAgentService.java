@@ -70,7 +70,7 @@ public class VideoTutorCloneAgentService {
             - 需要函数图像时用 kind:"graph"，spec.expr 支持 x^2、2*x+3、sin(x)。
             - highlight / circle_annotate **必须带 textToMatch**：填白板上真实出现的、要强调的最短短语（≤12 字）；绝对不要整段高亮。
             - 布局：main 列只放「标题 + 今日路线 + 最多 1 个要点」；其余要点和公式放 notes；示意图/函数图放 visual。不要把 4 个以上元素堆在 main 列。
-            - spaceId 用英文小写短横线；columnId 只用 main、visual、notes。
+            - spaceId 固定写 lesson（一节会话只有一块白板，不要换名字）；columnId 只用 main、visual、notes。
             - 最后一条 speak 必须是检查理解的问题，以？结尾；不要输出 finish_lesson。
             - 只输出 JSON Lines，行与行之间不要空行。""";
 
@@ -232,10 +232,40 @@ public class VideoTutorCloneAgentService {
         out.addProperty("orderIndex", order);
         turn.order = Math.max(turn.order, order + 1);
 
+        // 模型偶尔把 write_latex 的内容写成 text/html：统一成前端约定的 latex 字段。
+        if (name.equals("write_latex")) {
+            String latex = str(out, "latex", "");
+            if (latex.isBlank()) {
+                latex = str(out, "text", "");
+            }
+            if (latex.isBlank()) {
+                latex = str(out, "html", "");
+            }
+            out.remove("text");
+            out.remove("html");
+            if (latex.isBlank()) {
+                return null;
+            }
+            out.addProperty("latex", latex);
+        }
+        if (name.equals("write_text")) {
+            String html = str(out, "text", "");
+            if (html.isBlank()) {
+                html = str(out, "html", "");
+            }
+            out.remove("latex");
+            out.remove("html");
+            if (html.isBlank()) {
+                return null;
+            }
+            out.addProperty("text", html);
+        }
+
         if (name.equals("write_text") || name.equals("write_latex") || name.equals("draw")) {
             JsonObject position = out.has("position") && out.get("position").isJsonObject()
                     ? out.getAsJsonObject("position") : new JsonObject();
-            String space = str(position, "spaceId", "lesson");
+            // 一节会话只有一块白板，模型自己编的 spaceId 每轮都会变，统一钉死。
+            String space = "lesson";
             String column = str(position, "columnId", name.equals("draw") ? "visual" : "main");
             if ((name.equals("write_text") || name.equals("write_latex")) && "main".equals(column)) {
                 if (turn.mainCount >= 2) {

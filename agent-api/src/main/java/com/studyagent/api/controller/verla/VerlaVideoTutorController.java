@@ -313,7 +313,10 @@ public class VerlaVideoTutorController {
                 case "speak" -> lines.add("老师：" + string(event.get("text")));
                 case "write_text" -> lines.add("[板书] " + plain(string(event.get("text"))).substring(
                         0, Math.min(80, plain(string(event.get("text"))).length())));
-                case "write_latex" -> lines.add("[公式] " + string(event.get("latex")));
+                case "write_latex" -> {
+                    String latex = string(event.get("latex"));
+                    lines.add("[公式] " + (latex.isBlank() ? string(event.get("text")) : latex));
+                }
                 case "draw" -> lines.add("[画图] " + string(event.get("kind")) + ": "
                         + string(event.get("prompt")).substring(0,
                         Math.min(80, string(event.get("prompt")).length())));

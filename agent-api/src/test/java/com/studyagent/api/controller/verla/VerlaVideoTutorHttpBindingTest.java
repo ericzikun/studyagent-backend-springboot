@@ -7,6 +7,9 @@ import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.VideoTutorSnapshotService;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.application.verla.dto.VideoTutorSnapshotView;
+import com.studyagent.service.application.verla.clone.CloneLessonStore;
+import com.studyagent.service.application.verla.clone.VideoTutorCloneAgentService;
+import com.studyagent.service.application.verla.tts.VideoTutorTtsService;
 import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
@@ -48,6 +51,9 @@ class VerlaVideoTutorHttpBindingTest {
     private VerlaConversationService conversationService;
     private VideoTutorSnapshotService snapshotService;
     private VerlaMessageRepository messageRepository;
+    private VideoTutorTtsService ttsService;
+    private VideoTutorCloneAgentService cloneAgent;
+    private CloneLessonStore cloneStore;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -56,8 +62,12 @@ class VerlaVideoTutorHttpBindingTest {
         conversationService = mock(VerlaConversationService.class);
         snapshotService = mock(VideoTutorSnapshotService.class);
         messageRepository = mock(VerlaMessageRepository.class);
+        ttsService = mock(VideoTutorTtsService.class);
+        cloneAgent = mock(VideoTutorCloneAgentService.class);
+        cloneStore = mock(CloneLessonStore.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new VerlaVideoTutorController(
-                        turnOrchestrator, conversationService, snapshotService, messageRepository))
+                        turnOrchestrator, conversationService, snapshotService, messageRepository, ttsService,
+                        cloneAgent, cloneStore))
                 .build();
     }
 
@@ -98,6 +108,64 @@ class VerlaVideoTutorHttpBindingTest {
                 .andExpect(status().isOk());
 
         assertThat(turnOrchestrator.lastSoundEnabled).isTrue();
+    }
+
+    @Test
+    void javaTtsProvider_shouldDisableBackendSynthesis() throws Exception {
+        when(ttsService.isReady()).thenReturn(true);
+        turnOrchestrator.result = SendMessageResult.builder().turnId(456L).agentSessionId(789L).build();
+
+        mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/messages")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"message": "接着讲", "soundEnabled": true, "ttsProvider": "java"}
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(turnOrchestrator.lastSoundEnabled)
+                .as("Java 直连 TTS 时不能再让 Python 合成一遍")
+                .isFalse();
+    }
+
+    @Test
+    void cloneTurn_shouldReturn503WhenAgentNotReady() throws Exception {
+        when(cloneAgent.isReady()).thenReturn(false);
+        mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/clone/turn")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"message": "讲 RAG"}
+                                """))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void cloneSnapshot_shouldReturnMessagesAndEvents() throws Exception {
+        when(cloneStore.read(24L)).thenReturn(new CloneLessonStore.State(
+                List.of(Map.of("role", "user", "text", "RAG")),
+                List.of(Map.of("commandName", "speak", "text", "你好"))));
+
+        mockMvc.perform(get("/v1/verla/conversations/24/video-tutor/clone/snapshot")
+                        .requestAttr("clerkUserId", "user_1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data.messages[0].text").value("RAG"))
+                .andExpect(jsonPath("$.data.events[0].commandName").value("speak"));
+    }
+
+    @Test
+    void ttsEndpoint_shouldReturn503WhenProviderUnavailable() throws Exception {
+        when(ttsService.open(any(), any()))
+                .thenThrow(new VideoTutorTtsService.TtsUnavailableException("no key"));
+
+        mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/tts")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"text": "同学们好"}
+                                """))
+                .andExpect(status().isServiceUnavailable());
     }
 
     @Test

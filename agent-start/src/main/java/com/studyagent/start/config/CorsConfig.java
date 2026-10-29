@@ -53,6 +53,10 @@ public class CorsConfig {
         
         // 允许的请求头
         config.setAllowedHeaders(Arrays.asList("*"));
+        // TTS 流要让前端读到音频格式/采样率，跨域必须显式暴露
+        config.setExposedHeaders(Arrays.asList(
+            "x-audio-format", "x-tts-sample-rate", "x-tts-provider"
+        ));
         
         // 允许携带凭证
         config.setAllowCredentials(true);

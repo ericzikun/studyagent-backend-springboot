@@ -1,0 +1,2 @@
+# 本地临时密钥文件：不要提交（GitHub secret scanning 会拒绝 push）
+video-tutor-defaults.properties

@@ -1,0 +1,5 @@
+# 复制为 video-tutor-defaults.properties 后填入；该文件已在 .gitignore 中。
+# 生产建议挂载 models.yaml 并设置 MODELS_YAML，而不是使用本文件。
+video-tutor.clone.api-key=
+video-tutor.clone.fallback-api-key=
+video-tutor.tts.api-key=

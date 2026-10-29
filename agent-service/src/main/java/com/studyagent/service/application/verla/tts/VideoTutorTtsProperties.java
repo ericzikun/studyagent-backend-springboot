@@ -33,7 +33,11 @@ public class VideoTutorTtsProperties {
 
     private String model = "cosyvoice-v3-flash";
 
+    /** Theo 的音色（clone 默认）。 */
     private String voice = "longanhuan_v3";
+
+    /** Nora 的音色；前端字幕栏可切换。 */
+    private String voiceNora = "longxiaochun_v3";
 
     private int sampleRate = 24000;
 

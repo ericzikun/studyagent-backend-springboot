@@ -15,4 +15,7 @@ public class VideoTutorTtsRequest {
 
     /** 预留：当前音色是中文，前端仍会把 UI 语言带上来。 */
     private String language;
+
+    /** theo / nora；缺省 theo。 */
+    private String tutorId;
 }

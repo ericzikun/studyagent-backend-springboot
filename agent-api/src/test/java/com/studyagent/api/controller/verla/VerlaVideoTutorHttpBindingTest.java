@@ -156,7 +156,7 @@ class VerlaVideoTutorHttpBindingTest {
 
     @Test
     void ttsEndpoint_shouldReturn503WhenProviderUnavailable() throws Exception {
-        when(ttsService.open(any(), any()))
+        when(ttsService.open(any(), any(), any()))
                 .thenThrow(new VideoTutorTtsService.TtsUnavailableException("no key"));
 
         mockMvc.perform(post("/v1/verla/conversations/24/video-tutor/tts")

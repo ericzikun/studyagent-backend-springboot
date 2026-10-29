@@ -167,7 +167,7 @@ public class VerlaVideoTutorController {
         }
         VideoTutorTtsService.Stream stream;
         try {
-            stream = ttsService.open(text, req.getSpeed());
+            stream = ttsService.open(text, req.getSpeed(), req.getTutorId());
         } catch (VideoTutorTtsService.TtsUnavailableException e) {
             log.warn("[video-tutor/tts] unavailable cid={} textChars={} reason={}",
                     cid, text.length(), e.getMessage());

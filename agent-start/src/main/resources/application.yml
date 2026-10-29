@@ -361,6 +361,7 @@ verla:
       ws-url: ${VERLA_VIDEO_TUTOR_TTS_WS_URL:wss://llm-nuotcmidonohnwwc.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference}
       model: ${VERLA_VIDEO_TUTOR_TTS_MODEL:cosyvoice-v3-flash}
       voice: ${VERLA_VIDEO_TUTOR_TTS_VOICE:longanhuan_v3}
+      voice-nora: ${VERLA_VIDEO_TUTOR_TTS_VOICE_NORA:longxiaochun_v3}
       sample-rate: ${VERLA_VIDEO_TUTOR_TTS_SAMPLE_RATE:24000}
       max-concurrency: ${VERLA_VIDEO_TUTOR_TTS_MAX_CONCURRENCY:4}
     # clone agent：Java 直接跑 LLM 教学回合（JSONL + LLM SVG），不经过 Python/MQ。

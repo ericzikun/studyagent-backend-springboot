@@ -85,6 +85,11 @@ public class VideoTutorTtsService {
      * 调用方负责在响应结束时 {@link Stream#close()}。
      */
     public Stream open(String rawText, Double rawSpeed) {
+        return open(rawText, rawSpeed, "theo");
+    }
+
+    public Stream open(String rawText, Double rawSpeed, String tutorId) {
+        String voice = voiceFor(tutorId);
         if (!isReady()) {
             throw new TtsUnavailableException("tts not configured");
         }
@@ -114,7 +119,7 @@ public class VideoTutorTtsService {
                             .get(Math.max(1, props.getConnectTimeoutSeconds()), TimeUnit.SECONDS);
                     session.attach(ws);
                     String taskId = UUID.randomUUID().toString().replace("-", "");
-                    ws.sendText(runTask(taskId, speed), true).join();
+                    ws.sendText(runTask(taskId, speed, voice), true).join();
                     if (!session.awaitStarted(props.getConnectTimeoutSeconds())) {
                         session.abort();
                         throw new TtsUnavailableException("task not started: " + session.failure());
@@ -123,7 +128,7 @@ public class VideoTutorTtsService {
                     ws.sendText(finishTask(taskId), true).join();
                     byte[] first = session.awaitFirst(props.getFirstAudioTimeoutSeconds());
                     log.info("[video-tutor/tts] stream open chars={} bytes={} voice={}",
-                            text.length(), first.length, props.getVoice());
+                            text.length(), first.length, voice);
                     Stream stream = new Stream(first, session, slots, props.getReadTimeoutSeconds());
                     acquire = false;
                     return stream;
@@ -150,10 +155,18 @@ public class VideoTutorTtsService {
         }
     }
 
-    private String runTask(String taskId, double speed) {
+    private String voiceFor(String tutorId) {
+        if ("nora".equalsIgnoreCase(tutorId) && props.getVoiceNora() != null
+                && !props.getVoiceNora().isBlank()) {
+            return props.getVoiceNora();
+        }
+        return props.getVoice();
+    }
+
+    private String runTask(String taskId, double speed, String voice) {
         JsonObject parameters = new JsonObject();
         parameters.addProperty("text_type", "PlainText");
-        parameters.addProperty("voice", props.getVoice());
+        parameters.addProperty("voice", voice);
         parameters.addProperty("format", "pcm");
         parameters.addProperty("sample_rate", props.getSampleRate());
         if (Math.abs(speed - 1.0) > 0.01) {

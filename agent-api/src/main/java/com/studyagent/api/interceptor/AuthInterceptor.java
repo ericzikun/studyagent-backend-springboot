@@ -70,7 +70,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         String authHeader = request.getHeader("Authorization");
         // SSE 兼容：EventSource 不支持自定义 header，仅 verla SSE 路径允许从 query string 取 access_token
         // 详见 docs/verla-Java侧MVP技术方案.md §13.1
-        if ((authHeader == null || !authHeader.startsWith("Bearer ")) && isVerlaSseRequest(request)) {
+        if ((authHeader == null || !authHeader.startsWith("Bearer "))
+                && (isVerlaSseRequest(request) || isVerlaSttRequest(request))) {
             String qsToken = request.getParameter("access_token");
             if (qsToken != null && !qsToken.isEmpty()) {
                 authHeader = "Bearer " + qsToken;
@@ -196,6 +197,15 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         // /v1/verla/conversations/{cid}/events，cid 可为纯数字或 public id（vc_xxx）
         return uri.matches(".*/v1/verla/conversations/[^/]+/events");
+    }
+
+    /** 浏览器 WebSocket 不能带 Authorization header：STT 握手用 access_token query。 */
+    private boolean isVerlaSttRequest(HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        return uri != null && uri.matches(".*/v1/verla/conversations/[^/]+/video-tutor/stt/?");
     }
 
     private boolean isInternalRequest(HttpServletRequest request) {

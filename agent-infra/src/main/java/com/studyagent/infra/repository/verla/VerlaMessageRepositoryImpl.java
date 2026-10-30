@@ -69,6 +69,14 @@ public class VerlaMessageRepositoryImpl
     }
 
     @Override
+    public VerlaMessage findUserFinalizeByTurnForUpdate(Long turnId) {
+        if (turnId == null) {
+            return null;
+        }
+        return toDomain(this.baseMapper.selectUserFinalizeByTurnForUpdate(turnId));
+    }
+
+    @Override
     public Map<Long, String> findFirstUserQueryByConversationIds(List<Long> conversationIds) {
         if (conversationIds == null || conversationIds.isEmpty()) {
             return Map.of();

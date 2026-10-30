@@ -701,7 +701,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void finalizeAssignmentClarify_duplicateFormIdReturnsExistingResultWithoutSideEffects() throws Exception {
+    void finalizeAssignmentClarify_duplicateOrUnstableFormIdReturnsExistingResultWithoutSideEffects() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -774,6 +774,89 @@ class VerlaTurnOrchestratorTest {
         assertTrue(messageRepository.savedMessages.isEmpty());
         assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
         Mockito.verifyNoInteractions(quotaService);
+
+        // formId 在前端不同加载路径下可能不一致：按 turn 兜底仍应命中已有提交。
+        messageRepository.existingClarifySubmission = null;
+        messageRepository.existingTurnFinalize = VerlaMessage.builder()
+                .id(888L)
+                .conversationId(74L)
+                .turnId(700L)
+                .role("user")
+                .textContent("submitted with another form id")
+                .blocksJson("{\"phase\":\"assignment_clarify\",\"formId\":\"form-vs-live\","
+                        + "\"requirementForm\":{}}")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        SendMessageResult fallback = orchestrator.finalizeAssignmentClarify(
+                "free_user",
+                74L,
+                null,
+                "form-vc-history",
+                "Different form id",
+                Map.of("subject", "Economics"),
+                List.of(),
+                Map.of("subject", "Economics"),
+                List.of(),
+                null);
+
+        assertEquals(888L, fallback.getUserMessageId());
+        assertTrue(messageRepository.savedMessages.isEmpty());
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verifyNoInteractions(quotaService);
+    }
+
+    @Test
+    void onAssignmentClarifyFormReady_persistsStableFormIdForFrontend() {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine(),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                Mockito.mock(VerlaQuotaService.class),
+                Mockito.mock(EntitlementService.class),
+                null,
+                event -> {},
+                mockAnalyticsService());
+
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .status(TurnStatus.RUNNING_AGENT.name())
+                .build();
+        sessionRepository.session = VerlaSession.builder()
+                .id(1001L)
+                .conversationId(74L)
+                .turnId(700L)
+                .kind("ASSIGNMENT")
+                .status(SessionStatus.DISPATCHING.name())
+                .build();
+
+        orchestrator.onAssignmentClarifyFormReady(1001L, Map.of(
+                "content", "form ready",
+                "appendAsk", Map.of("questions", List.of())));
+
+        assertNotNull(messageRepository.saved);
+        assertTrue(messageRepository.saved.getBlocksJson().contains("\"formId\":\"form-1001\""));
+        assertEquals(SessionStatus.SUCCEEDED.name(), sessionRepository.saved.getStatus());
     }
 
     @Test
@@ -2079,6 +2162,7 @@ class VerlaTurnOrchestratorTest {
     private static final class FakeMessageRepository implements VerlaMessageRepository {
         VerlaMessage saved;
         VerlaMessage existingClarifySubmission;
+        VerlaMessage existingTurnFinalize;
         List<VerlaMessage> savedMessages = new ArrayList<>();
         long nextId = 200L;
 
@@ -2137,6 +2221,11 @@ class VerlaTurnOrchestratorTest {
         @Override
         public VerlaMessage findUserClarifyByTurnAndFormIdForUpdate(Long turnId, String formId) {
             return existingClarifySubmission;
+        }
+
+        @Override
+        public VerlaMessage findUserFinalizeByTurnForUpdate(Long turnId) {
+            return existingTurnFinalize;
         }
     }
 

@@ -851,20 +851,24 @@ public class VerlaTurnOrchestrator {
         List<Map<String, Object>> normalizedAnswers = normalizeAppendAskAnswers(appendAskAnswers);
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
 
-        // 同一 turn + formId 已提交过 → 幂等返回第一次结果，避免重复建消息/session 与双跑。
+        // 同一 turn 已提交过 → 幂等返回第一次结果，避免重复建消息/session 与双跑。
+        // 先按 formId 精确匹配；formId 在前端不同加载路径下可能不一致，再按 turn 兜底。
+        VerlaMessage existing = null;
         if (formId != null && !formId.isBlank()) {
-            VerlaMessage existing = messageRepository.findUserClarifyByTurnAndFormIdForUpdate(
-                    turn.getId(), formId);
-            if (existing != null) {
-                log.info("[Verla] finalize duplicate ignored cid={} turnId={} formId={} messageId={}",
-                        conversationId, turn.getId(), formId, existing.getId());
-                return SendMessageResult.builder()
-                        .turnId(turn.getId())
-                        .userMessageId(existing.getId())
-                        .planSessionId(turn.getPlanSessionId())
-                        .agentSessionId(turn.getAgentSessionId())
-                        .build();
-            }
+            existing = messageRepository.findUserClarifyByTurnAndFormIdForUpdate(turn.getId(), formId);
+        }
+        if (existing == null) {
+            existing = messageRepository.findUserFinalizeByTurnForUpdate(turn.getId());
+        }
+        if (existing != null) {
+            log.info("[Verla] finalize duplicate ignored cid={} turnId={} formId={} messageId={}",
+                    conversationId, turn.getId(), formId, existing.getId());
+            return SendMessageResult.builder()
+                    .turnId(turn.getId())
+                    .userMessageId(existing.getId())
+                    .planSessionId(turn.getPlanSessionId())
+                    .agentSessionId(turn.getAgentSessionId())
+                    .build();
         }
 
         String messageText = buildClarifyUserMessageText(
@@ -1254,17 +1258,20 @@ public class VerlaTurnOrchestrator {
         }
         VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
 
+        // FORM_READY 下发稳定 formId，避免前端在 SSE / 历史恢复两条路径上各自回退出不同 id。
+        Map<String, Object> formPayload = withStableClarifyFormId(result, agentSessionId);
+
         SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
         if (!curSess.isTerminal()) {
             SessionStatus nextSess = sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED);
             s.setStatus(nextSess.name());
             s.setEndedAt(LocalDateTime.now());
             s.setUpdatedAt(LocalDateTime.now());
-            s.setResultJson(serializeJson(result));
+            s.setResultJson(serializeJson(formPayload));
             sessionRepository.save(s);
         }
 
-        String reply = extractAssistantReply(result);
+        String reply = extractAssistantReply(formPayload);
         VerlaMessage assistant = VerlaMessage.builder()
                 .conversationId(turn.getConversationId())
                 .turnId(turn.getId())
@@ -1272,12 +1279,19 @@ public class VerlaTurnOrchestrator {
                 .sourceSessionId(agentSessionId)
                 .textContent(reply == null ? "" : reply)
                 .blocksJson(serializeJson(withEventTypeWithoutStageForFrontend(
-                        result, "ASSIGNMENT_CLARIFY_FORM_READY")))
+                        formPayload, "ASSIGNMENT_CLARIFY_FORM_READY")))
                 .createdAt(LocalDateTime.now())
                 .build();
         messageRepository.save(assistant);
 
         conversationRepository.incrementVersion(turn.getConversationId());
+    }
+
+    /** FORM_READY 下发稳定 formId（按发起表单的 session），供前端实时/历史两条路径共用。 */
+    private Map<String, Object> withStableClarifyFormId(Map<String, Object> payload, Long sessionId) {
+        Map<String, Object> enriched = new LinkedHashMap<>(payload);
+        enriched.putIfAbsent("formId", "form-" + sessionId);
+        return enriched;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)

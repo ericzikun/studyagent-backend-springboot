@@ -79,6 +79,21 @@ public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
             @Param("formId") String formId);
 
     /**
+     * 同一 turn 的作业澄清提交（不依赖 formId），finalize 幂等的最终兜底。
+     * <p>
+     * 前端 formId 在实时 SSE / 历史恢复两条路径上可能不一致，按 turn 兜底可避免
+     * 同一张表单因 formId 不同而重复提交。finalize 消息必定写 requirementForm；
+     * continue（deep_understanding / setup）消息没有该键，不会被误命中。
+     */
+    @Select("SELECT * FROM verla_messages "
+            + "WHERE turn_id = #{turnId} "
+            + "AND role = 'user' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(blocks_json, '$.phase')) = 'assignment_clarify' "
+            + "AND JSON_CONTAINS_PATH(blocks_json, 'one', '$.requirementForm') "
+            + "ORDER BY id ASC LIMIT 1 FOR UPDATE")
+    VerlaMessageEntity selectUserFinalizeByTurnForUpdate(@Param("turnId") Long turnId);
+
+    /**
      * 批量取每个 conversation 第一条 user 主对话消息（scene 过滤与 selectByCursor 一致）。
      * admin 列表用；返回 {@code m.*}，供仓储层拼接 text_content + blocks_json。
      */

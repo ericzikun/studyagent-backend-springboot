@@ -976,7 +976,8 @@ class VerlaTurnOrchestratorTest {
                         .resultJson(objectMapper.writeValueAsString(Map.of(
                                 "isReadyForGeneration", true,
                                 "requirementForm", Map.of(
-                                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)))))
+                                        "deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0),
+                                        "output_language", "日本語"))))
                         .build());
 
         orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
@@ -985,6 +986,8 @@ class VerlaTurnOrchestratorTest {
         Map<String, Object> envelope = objectMapper.readValue(runCommand.getPayload(), Map.class);
         Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
         assertEquals(List.of("writing"), payload.get("allowedOutputTypes"));
+        assertEquals("日本語", ((Map<?, ?>) payload.get("requirementForm")).get("output_language"));
+        assertEquals("english", payload.get("outputLanguage"));
     }
 
     @Test

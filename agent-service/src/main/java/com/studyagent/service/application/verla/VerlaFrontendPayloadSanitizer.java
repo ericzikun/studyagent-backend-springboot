@@ -18,7 +18,8 @@ public final class VerlaFrontendPayloadSanitizer {
             new VisibleRequirementField("subject", List.of("subject")),
             new VisibleRequirementField("academic_level", List.of("academic_level", "academicLevel")),
             new VisibleRequirementField("citation_style", List.of("citation_style", "citationStyle")),
-            new VisibleRequirementField("estimated_length", List.of("estimated_length", "estimatedLength", "pageLength"))
+            new VisibleRequirementField("estimated_length", List.of("estimated_length", "estimatedLength", "pageLength")),
+            new VisibleRequirementField("output_language", List.of("output_language"))
     );
 
     private VerlaFrontendPayloadSanitizer() {

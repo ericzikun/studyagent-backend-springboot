@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -268,6 +269,12 @@ public class VerlaInboxService {
                 : VerlaFrontendPayloadSanitizer.sanitize(row.getEventType(), env.getPayload());
         payload = progressEstimator.enrichAssignmentRunPayload(
                 row.getEventType(), payload, row.getConversationId(), row);
+        // 与落库消息保持同一个 formId，避免前端实时/历史两条路径回退出不同 id。
+        if ("ASSIGNMENT_CLARIFY_FORM_READY".equals(row.getEventType()) && payload != null) {
+            Map<String, Object> enriched = new LinkedHashMap<>(payload);
+            enriched.putIfAbsent("formId", "form-" + row.getSessionId());
+            payload = enriched;
+        }
         return VerlaSseEventPayload.builder()
                 .id(row.getId())
                 .type(row.getEventType())

@@ -25,6 +25,7 @@ class VerlaFrontendPayloadSanitizerTest {
                         "academicLevel", "Undergraduate",
                         "citation_style", "APA",
                         "pageLength", "6 pages",
+                        "output_language", "日本語",
                         "rubric", "Not specified",
                         "input_relationship_analysis", "The user provided clear instructions."),
                 "appendAsk", appendAsk);
@@ -37,7 +38,8 @@ class VerlaFrontendPayloadSanitizerTest {
                 "subject", "Chemistry",
                 "academic_level", "Undergraduate",
                 "citation_style", "APA",
-                "estimated_length", "6 pages"), sanitized.get("requirementForm"));
+                "estimated_length", "6 pages",
+                "output_language", "日本語"), sanitized.get("requirementForm"));
         assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("task_title"));
         assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("rubric"));
     }
@@ -52,6 +54,7 @@ class VerlaFrontendPayloadSanitizerTest {
                         "academic_level", "Undergraduate",
                         "citationStyle", "APA",
                         "estimatedLength", "6 pages",
+                        "output_language", "日本語",
                         "rubric", "Not specified"),
                 "appendAsk", Map.of("questions", List.of()));
 
@@ -62,7 +65,8 @@ class VerlaFrontendPayloadSanitizerTest {
                 "subject", "Chemistry",
                 "academic_level", "Undergraduate",
                 "citation_style", "APA",
-                "estimated_length", "6 pages"), sanitized.get("requirementForm"));
+                "estimated_length", "6 pages",
+                "output_language", "日本語"), sanitized.get("requirementForm"));
         assertEquals(Map.of("questions", List.of()), sanitized.get("appendAsk"));
         assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("task_title"));
         assertFalse(((Map<?, ?>) sanitized.get("requirementForm")).containsKey("rubric"));
@@ -104,6 +108,7 @@ class VerlaFrontendPayloadSanitizerTest {
                         "academic_level", "Not specified",
                         "citation_style", "Not specified",
                         "estimated_length", "1000字",
+                        "output_language", "繁體中文",
                         "task_title", "Hidden title",
                         "rubric", "Not specified"),
                 "appendAsk", Map.of("questions", List.of()));
@@ -115,6 +120,7 @@ class VerlaFrontendPayloadSanitizerTest {
         // 白名单字段值仍保留
         assertEquals("历史", form.get("subject"));
         assertEquals("1000字", form.get("estimated_length"));
+        assertEquals("繁體中文", form.get("output_language"));
         // fields 定义数组（含本地化 label）保留，供前端渲染
         assertEquals(fields, form.get("fields"));
         // 白名单外字段仍被过滤

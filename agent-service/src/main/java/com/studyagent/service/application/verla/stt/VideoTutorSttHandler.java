@@ -218,6 +218,10 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
         private volatile boolean ready;
         private volatile boolean closed;
         private volatile String taskId = "";
+        private int frames;
+        private int partials;
+        private int finals;
+        private boolean statsLogged;
 
         AsrSession(WebSocketSession client, VideoTutorSttProperties props, String key, List<String> hints) {
             this.client = client;
@@ -273,9 +277,17 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
             if (ws == null || closed) return;
             try {
                 ws.sendBinary(ByteBuffer.wrap(pcm), true);
+                frames += 1;
             } catch (Exception e) {
                 closed = true;
+                logStats("send-failed");
             }
+        }
+
+        private void logStats(String reason) {
+            if (statsLogged) return;
+            statsLogged = true;
+            log.info("[video-tutor/stt] {} frames={} partials={} finals={}", reason, frames, partials, finals);
         }
 
         void clearPending() {
@@ -294,6 +306,7 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
 
         void close() {
             closed = true;
+            logStats("closed");
             WebSocket ws = vendor;
             if (ws != null) {
                 try {
@@ -361,9 +374,11 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
                     started.countDown();
                     send(client, Map.of("type", "error", "message", failure.get()));
                     closed = true;
+                    logStats("vendor-failed");
                 } else if ("task-finished".equals(name)) {
                     send(client, Map.of("type", "closed", "reason", "finished"));
                     closed = true;
+                    logStats("finished");
                 } else if ("result-generated".equals(name)) {
                     JsonObject payload = event.has("payload") ? event.getAsJsonObject("payload") : null;
                     JsonObject output = payload != null && payload.has("output")
@@ -374,6 +389,7 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
                             ? sentence.get("text").getAsString().trim() : "";
                     if (!sentenceText.isEmpty()) {
                         boolean end = sentence.has("sentence_end") && sentence.get("sentence_end").getAsBoolean();
+                        if (end) finals += 1; else partials += 1;
                         send(client, Map.of(
                                 "type", end ? "final" : "partial",
                                 "text", sentenceText
@@ -397,6 +413,7 @@ public class VideoTutorSttHandler extends AbstractWebSocketHandler {
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             closed = true;
             started.countDown();
+            logStats("vendor-closed");
             send(client, Map.of("type", "closed", "reason", reason == null ? "closed" : reason));
             return null;
         }

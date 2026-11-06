@@ -72,9 +72,9 @@ public class DemoNoteService {
     private static final int HISTORY_MAX_MESSAGES = 20;
     private static final int HISTORY_MAX_CHARS = 12_000;
 
-    /** 学习目标枚举码：与前端 tab 里的 8 个选项一一对应，未识别回落 other。 */
+    /** 学习目标枚举码：与前端上传表单的选项一一对应；none = 用户明确不设置，未识别回落 other。 */
     private static final Set<String> LEARNING_GOALS = Set.of(
-            "exam_prep", "quiz_review", "homework", "understand_lesson",
+            "none", "exam_prep", "quiz_review", "homework", "understand_lesson",
             "take_notes", "generate_questions", "flashcards", "other");
     private static final String LEARNING_GOAL_DEFAULT = "take_notes";
 

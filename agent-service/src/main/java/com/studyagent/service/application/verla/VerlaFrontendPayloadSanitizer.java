@@ -11,14 +11,16 @@ import java.util.Map;
  */
 public final class VerlaFrontendPayloadSanitizer {
 
-    /** requirementForm 中的 schema 定义数组 key：前端据此渲染字段 label（按 Output Language 生成）。 */
+    /** requirementForm 中的 schema 定义数组 key：前端据此渲染字段 label（按 Response Language 生成）。 */
     private static final String FIELDS_KEY = "fields";
 
     private static final List<VisibleRequirementField> VISIBLE_REQUIREMENT_FIELDS = List.of(
             new VisibleRequirementField("subject", List.of("subject")),
             new VisibleRequirementField("academic_level", List.of("academic_level", "academicLevel")),
             new VisibleRequirementField("citation_style", List.of("citation_style", "citationStyle")),
-            new VisibleRequirementField("estimated_length", List.of("estimated_length", "estimatedLength", "pageLength"))
+            new VisibleRequirementField("estimated_length", List.of("estimated_length", "estimatedLength", "pageLength")),
+            // 最终作业语言：新 key 优先，兼容重命名前落库的 output_language。
+            new VisibleRequirementField("deliverable_language", List.of("deliverable_language", "output_language"))
     );
 
     private VerlaFrontendPayloadSanitizer() {

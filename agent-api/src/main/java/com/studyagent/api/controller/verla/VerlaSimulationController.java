@@ -15,9 +15,11 @@ import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import com.studyagent.service.domain.verla.VerlaConversation;
+import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
+import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
@@ -35,6 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +71,7 @@ public class VerlaSimulationController {
     private final VerlaTurnRepository turnRepository;
     private final VerlaSessionRepository sessionRepository;
     private final VerlaArtifactRepository artifactRepository;
+    private final VerlaMessageRepository messageRepository;
     private final VerlaAttachmentRepository attachmentRepository;
     private final OssStorageService ossStorageService;
     private final ObjectMapper objectMapper;
@@ -115,7 +120,7 @@ public class VerlaSimulationController {
                 && !INTENT_SIMULATION.equalsIgnoreCase(conversation.getPrimaryIntent())) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "conversation is not a simulation lab");
         }
-        if (conversation.getLastTurnId() != null || (conversation.getTurnCount() != null && conversation.getTurnCount() > 0)) {
+        if (latestSimulationArtifact(cid) != null) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "simulation lab already generated");
         }
         String attachmentsJson = req == null ? null : req.attachmentsJson();
@@ -164,6 +169,44 @@ public class VerlaSimulationController {
                     "contentAvailable", hasContent(artifact)));
         }
         return Result.success(body);
+    }
+
+    @GetMapping("/{cid}/messages")
+    public Result<List<Map<String, Object>>> messages(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
+        ensureLogin(clerkUserId);
+        conversationService.getOwned(clerkUserId, cid);
+        List<VerlaMessage> rows = new ArrayList<>(messageRepository.findByCursor(cid, null, 100));
+        Collections.reverse(rows);
+        List<Map<String, Object>> body = rows.stream()
+                .filter(m -> "user".equals(m.getRole()) || "assistant".equals(m.getRole()))
+                .map(m -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", m.getId());
+                    item.put("role", m.getRole());
+                    item.put("text", m.getTextContent() == null ? "" : m.getTextContent());
+                    item.put("scene", m.getScene());
+                    item.put("createdAt", m.getCreatedAt() == null ? null : m.getCreatedAt().toString());
+                    return item;
+                })
+                .toList();
+        return Result.success(body);
+    }
+
+    @PostMapping("/{cid}/chat")
+    public Result<Map<String, Object>> chat(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
+            @RequestBody(required = false) ChatSimulationRequest req) {
+        ensureLogin(clerkUserId);
+        String message = normalizePrompt(req == null ? null : req.message());
+        conversationService.getOwned(clerkUserId, cid);
+        SendMessageResult result = turnOrchestrator.startSimulationChat(clerkUserId, cid, message);
+        return Result.success(Map.of(
+                "turnId", result.getTurnId(),
+                "sessionId", result.getAgentSessionId(),
+                "status", "QUEUED"));
     }
 
     @GetMapping("/{cid}/content")
@@ -417,6 +460,9 @@ public class VerlaSimulationController {
     }
 
     public record CreateSimulationRequest(String prompt) {
+    }
+
+    public record ChatSimulationRequest(String message) {
     }
 
     public record GenerateSimulationRequest(

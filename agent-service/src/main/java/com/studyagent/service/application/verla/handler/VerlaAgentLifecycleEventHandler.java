@@ -65,7 +65,11 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.SIMULATION_STARTED,
             VerlaAgentEventType.SIMULATION_COMPLETED,
             VerlaAgentEventType.SIMULATION_FAILED,
-            VerlaAgentEventType.SIMULATION_CANCELLED);
+            VerlaAgentEventType.SIMULATION_CANCELLED,
+            VerlaAgentEventType.SIMULATION_CHAT_STARTED,
+            VerlaAgentEventType.SIMULATION_CHAT_COMPLETED,
+            VerlaAgentEventType.SIMULATION_CHAT_FAILED,
+            VerlaAgentEventType.SIMULATION_CHAT_CANCELLED);
 
     private final VerlaTurnOrchestrator orchestrator;
 
@@ -84,7 +88,8 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
         switch (type) {
             case AGENT_STARTED, ASSIGNMENT_INIT_STARTED, ASSIGNMENT_DEEP_UNDERSTANDING_STARTED,
                     ASSIGNMENT_CLARIFY_STARTED, ASSIGNMENT_STARTED, MATERIALS_STARTED,
-                    ASSIGNMENT_AGENT_FLOW_STARTED, SIMULATION_STARTED -> {
+                    ASSIGNMENT_AGENT_FLOW_STARTED, SIMULATION_STARTED,
+                    SIMULATION_CHAT_STARTED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAgentStarted(sessionId);
             }
@@ -140,6 +145,14 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             case ASSIGNMENT_FAILED, ASSIGNMENT_AGENT_FLOW_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);
                 orchestrator.onAssignmentFailed(sessionId, payload);
+            }
+            case SIMULATION_CHAT_COMPLETED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onSimulationChatCompleted(sessionId, payload);
+            }
+            case SIMULATION_CHAT_FAILED, SIMULATION_CHAT_CANCELLED -> {
+                log.info("[Verla/agent] {} sessionId={}", type, sessionId);
+                orchestrator.onSimulationChatFailed(sessionId, payload);
             }
             case FILE_CHAT_FAILED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);

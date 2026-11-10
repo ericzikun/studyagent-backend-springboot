@@ -66,6 +66,8 @@ import java.time.LocalDateTime;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -331,6 +333,228 @@ public class VerlaTurnOrchestrator {
                 .userMessageId(turn.getUserMessageId())
                 .agentSessionId(session.getId())
                 .build();
+    }
+
+    // ==========================================================
+    // Simulation Chat（生成完成后的伴随教学对话）
+    // ==========================================================
+
+    private static final String SIMULATION_CHAT_INTENT = VerlaSessionKind.SIMULATION_CHAT.name();
+    private static final String SIMULATION_CHAT_SCENE = "SIMULATION_CHAT";
+    private static final int SIMULATION_CHAT_HISTORY_LIMIT = 12;
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public SendMessageResult startSimulationChat(String userId, Long conversationId, String message) {
+        if (message == null || message.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "message required");
+        }
+        VerlaConversation conv = conversationService.loadWritable(userId, conversationId);
+        VerlaArtifact artifact = latestSimulationArtifact(conversationId);
+        if (artifact == null || !"READY".equalsIgnoreCase(artifact.getStatus())) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE, "simulation is not ready");
+        }
+
+        VerlaMessage userMsg = insertSimulationChatUserMessage(conversationId, message);
+        VerlaTurn turn = createTurn(conversationId, userMsg.getId());
+        TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
+        turn.setStatus(afterSkip.name());
+        turn.setResolvedIntent(SIMULATION_CHAT_INTENT);
+        turn.setUpdatedAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        userMsg.setTurnId(turn.getId());
+        messageRepository.save(userMsg);
+        refreshConversationVersion(conv,
+                conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
+
+        VerlaSession session = spawnSimulationChatSession(conv, turn, artifact, message, userMsg.getId());
+        return SendMessageResult.builder()
+                .turnId(turn.getId())
+                .userMessageId(userMsg.getId())
+                .agentSessionId(session.getId())
+                .build();
+    }
+
+    private VerlaMessage insertSimulationChatUserMessage(Long conversationId, String text) {
+        VerlaMessage m = VerlaMessage.builder()
+                .conversationId(conversationId)
+                .turnId(0L)
+                .role("user")
+                .textContent(text)
+                .scene(SIMULATION_CHAT_SCENE)
+                .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
+                .createdAt(LocalDateTime.now())
+                .build();
+        return messageRepository.save(m);
+    }
+
+    private VerlaSession spawnSimulationChatSession(VerlaConversation conv, VerlaTurn turn,
+                                                    VerlaArtifact artifact, String message,
+                                                    Long userMessageId) {
+        LocalDateTime now = LocalDateTime.now();
+        VerlaSession s = VerlaSession.builder()
+                .conversationId(conv.getId())
+                .turnId(turn.getId())
+                .kind(SIMULATION_CHAT_INTENT)
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(s);
+
+        s.setCorrelationId(VerlaCorrelationId.of(s.getConversationId(), turn.getId(), s.getId()));
+        s.setStatus(sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH).name());
+        s.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(s);
+
+        turn.setStatus(TurnStatus.RUNNING_AGENT.name());
+        turn.setActiveSessionId(s.getId());
+        turn.setAgentSessionId(s.getId());
+        turn.setUpdatedAt(LocalDateTime.now());
+        turn.setLastProgressAt(LocalDateTime.now());
+        turnRepository.save(turn);
+
+        VerlaCommandEnvelope env = buildSimulationChatEnvelope(conv, turn, s, artifact, message, userMessageId);
+        mqOutboxService.createVerlaCommand(env, commandExchange,
+                VerlaCommandAction.CMD_SIMULATION_CHAT.getCode());
+        return s;
+    }
+
+    private VerlaCommandEnvelope buildSimulationChatEnvelope(VerlaConversation conv, VerlaTurn turn,
+                                                             VerlaSession session, VerlaArtifact artifact,
+                                                             String message, Long userMessageId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("message", message);
+        payload.put("title", conv.getTitle());
+        payload.put("history", buildSimulationChatHistory(conv.getId(), userMessageId));
+        payload.put("artifactUid", artifact.getArtifactUid());
+        payload.put("contentRef", artifact.getContentRef());
+        payload.put("summary", artifact.getSummary());
+        payload.put("labBrief", readArtifactLabBrief(artifact));
+        payload.put("outputLanguage", resolveOutputLanguage(conv));
+        return baseEnvelope(VerlaCommandAction.CMD_SIMULATION_CHAT, conv, turn, session)
+                .payload(payload)
+                .build();
+    }
+
+    private List<Map<String, Object>> buildSimulationChatHistory(Long conversationId, Long excludeMessageId) {
+        List<VerlaMessage> recent = messageRepository.findByCursor(conversationId, null, 30);
+        List<Map<String, Object>> picked = new ArrayList<>();
+        for (VerlaMessage m : recent) {
+            if (m.getId() != null && m.getId().equals(excludeMessageId)) {
+                continue;
+            }
+            String role = m.getRole();
+            if (!"user".equals(role) && !"assistant".equals(role)) {
+                continue;
+            }
+            String content = m.getTextContent();
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            picked.add(Map.of("role", role, "content", content.trim()));
+        }
+        Collections.reverse(picked);
+        if (picked.size() > SIMULATION_CHAT_HISTORY_LIMIT) {
+            return picked.subList(picked.size() - SIMULATION_CHAT_HISTORY_LIMIT, picked.size());
+        }
+        return picked;
+    }
+
+    private Object readArtifactLabBrief(VerlaArtifact artifact) {
+        if (artifact == null || artifact.getMetaJson() == null || artifact.getMetaJson().isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> meta = objectMapper.readValue(artifact.getMetaJson(), MAP_STRING_OBJECT);
+            return meta.get("labBrief");
+        } catch (Exception e) {
+            log.warn("[Verla/simulationChat] labBrief parse failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private VerlaArtifact latestSimulationArtifact(Long conversationId) {
+        List<VerlaArtifact> artifacts = artifactRepository.findByConversation(conversationId);
+        return artifacts.stream()
+                .filter(a -> "simulation_html".equalsIgnoreCase(a.getKind()))
+                .max(Comparator.comparing(a -> a.getUpdatedAt() == null
+                        ? LocalDateTime.MIN : a.getUpdatedAt()))
+                .orElse(null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onSimulationChatCompleted(Long agentSessionId, Map<String, Object> result) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        Map<String, Object> safeResult = result == null ? Map.of() : result;
+
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            s.setStatus(sessionStateMachine.next(curSess, SessionEvent.AGENT_COMPLETED).name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setResultJson(serializeJson(safeResult));
+            sessionRepository.save(s);
+        }
+
+        if (turn != null && TurnStatus.valueOf(turn.getStatus()) == TurnStatus.RUNNING_AGENT) {
+            turn.setStatus(turnStateMachine.next(TurnStatus.RUNNING_AGENT, TurnEvent.AGENT_OK).name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turn.setLastProgressAt(LocalDateTime.now());
+            turnRepository.save(turn);
+        }
+
+        String reply = safeResult.get("reply") == null ? "" : String.valueOf(safeResult.get("reply")).trim();
+        if (turn != null && !reply.isBlank()
+                && messageRepository.findByTurnRoleScene(turn.getId(), "assistant", SIMULATION_CHAT_SCENE) == null) {
+            messageRepository.save(VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent(reply)
+                    .scene(SIMULATION_CHAT_SCENE)
+                    .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+        if (turn != null) {
+            conversationRepository.incrementVersion(turn.getConversationId());
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onSimulationChatFailed(Long agentSessionId, Map<String, Object> errorBlock) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        SessionStatus curSess = SessionStatus.valueOf(s.getStatus());
+        if (!curSess.isTerminal()) {
+            s.setStatus(sessionStateMachine.next(curSess, SessionEvent.AGENT_FAILED).name());
+            s.setEndedAt(LocalDateTime.now());
+            s.setUpdatedAt(LocalDateTime.now());
+            s.setErrorJson(serializeJson(errorBlock == null ? Map.of() : errorBlock));
+            sessionRepository.save(s);
+        }
+        if (turn != null && TurnStatus.valueOf(turn.getStatus()) == TurnStatus.RUNNING_AGENT) {
+            turn.setStatus(turnStateMachine.next(TurnStatus.RUNNING_AGENT, TurnEvent.AGENT_FAIL).name());
+            turn.setEndedAt(LocalDateTime.now());
+            turn.setUpdatedAt(LocalDateTime.now());
+            turnRepository.save(turn);
+            conversationRepository.incrementVersion(turn.getConversationId());
+        }
     }
 
     // ==========================================================

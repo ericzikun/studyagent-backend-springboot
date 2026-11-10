@@ -64,6 +64,9 @@ public enum VerlaCommandAction {
     /** Simulation Lab：单轮生成仿真 HTML */
     CMD_SIMULATION_GENERATE("cmd.simulation.generate"),
 
+    /** Simulation Lab：生成完成后的伴随教学对话 */
+    CMD_SIMULATION_CHAT("cmd.simulation.chat"),
+
     /** Simulation Lab：取消生成 */
     CMD_SIMULATION_CONTROL_CANCEL("cmd.simulation.control.cancel"),
 

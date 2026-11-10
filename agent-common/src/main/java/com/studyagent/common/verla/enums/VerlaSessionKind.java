@@ -25,6 +25,9 @@ public enum VerlaSessionKind {
     /** Simulation Lab：单轮生成仿真 HTML */
     SIMULATION,
 
+    /** Simulation Lab：生成完成后的伴随教学对话（只读，不修改 HTML） */
+    SIMULATION_CHAT,
+
     /** 对话标题生成（与 PLAN 并行，Java 单独分流） */
     TASK_NAME,
 

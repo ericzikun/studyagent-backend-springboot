@@ -139,6 +139,9 @@ public class StripeBillingWebhookService {
     private final BillingPricingService pricingService;
     private final ZonePricingSelectionService zonePricing;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.studyagent.infra.service.simulation.SimulationPassService simulationPassService;
+
     @Value("${billing.payment-grace-days:3}")
     private int paymentGraceDays = 3;
 
@@ -562,6 +565,18 @@ public class StripeBillingWebhookService {
         Map<String, String> metadata = session.getMetadata();
         String purchaseType = metadata.get("purchase_type");
         String clerkUserId = firstNonBlank(metadata.get("clerk_user_id"), session.getClientReferenceId());
+        if (com.studyagent.infra.service.simulation.SimulationPassService.PURCHASE_TYPE.equals(purchaseType)) {
+            if (!"paid".equals(session.getPaymentStatus())) {
+                log.info("Simulation Lab pass checkout is not paid yet: session={}, payment_status={}",
+                        session.getId(), session.getPaymentStatus());
+                return;
+            }
+            if (simulationPassService == null) {
+                throw new IllegalStateException("SimulationPassService unavailable for pass fulfill");
+            }
+            simulationPassService.fulfillCheckout(clerkUserId, session);
+            return;
+        }
         if (IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)) {
             if (!"paid".equals(session.getPaymentStatus())) {
                 log.info("Pro Trial Checkout is not paid yet: session={}, payment_status={}",

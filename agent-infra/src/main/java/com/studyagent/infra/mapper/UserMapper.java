@@ -20,5 +20,8 @@ public interface UserMapper extends BaseMapper<UserProfileEntity> {
             + "</foreach>"
             + "</script>")
     List<UserProfileEntity> selectByClerkUserIds(@Param("clerkUserIds") List<String> clerkUserIds);
+
+    @Select("SELECT COALESCE(is_admin, 0) FROM user_profiles WHERE clerk_user_id = #{clerkUserId} LIMIT 1")
+    Boolean selectIsAdmin(@Param("clerkUserId") String clerkUserId);
 }
 

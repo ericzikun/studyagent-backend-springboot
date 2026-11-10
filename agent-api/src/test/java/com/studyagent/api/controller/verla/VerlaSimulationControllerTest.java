@@ -13,6 +13,7 @@ import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
 import com.studyagent.service.domain.verla.repo.VerlaAttachmentRepository;
+import com.studyagent.service.domain.verla.repo.VerlaMessageRepository;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
 import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,7 @@ class VerlaSimulationControllerTest {
     private VerlaTurnRepository turnRepository;
     private VerlaSessionRepository sessionRepository;
     private VerlaArtifactRepository artifactRepository;
+    private VerlaMessageRepository messageRepository;
     private VerlaAttachmentRepository attachmentRepository;
     private JdbcTemplate jdbcTemplate;
     private VerlaSimulationController controller;
@@ -50,6 +52,7 @@ class VerlaSimulationControllerTest {
         turnRepository = mock(VerlaTurnRepository.class);
         sessionRepository = mock(VerlaSessionRepository.class);
         artifactRepository = mock(VerlaArtifactRepository.class);
+        messageRepository = mock(VerlaMessageRepository.class);
         attachmentRepository = mock(VerlaAttachmentRepository.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         controller = new VerlaSimulationController(
@@ -58,6 +61,7 @@ class VerlaSimulationControllerTest {
                 turnRepository,
                 sessionRepository,
                 artifactRepository,
+                messageRepository,
                 attachmentRepository,
                 mock(OssStorageService.class),
                 new ObjectMapper(),
@@ -103,6 +107,8 @@ class VerlaSimulationControllerTest {
                 .turnCount(1)
                 .build();
         when(conversationService.getOwned("user_1", 11L)).thenReturn(conversation);
+        when(artifactRepository.findByConversation(11L)).thenReturn(List.of(
+                VerlaArtifact.builder().kind("simulation_html").status("READY").build()));
 
         assertThrows(BusinessException.class,
                 () -> controller.generate("user_1", 11L,

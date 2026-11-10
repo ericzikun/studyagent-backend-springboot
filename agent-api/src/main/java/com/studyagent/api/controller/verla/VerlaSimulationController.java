@@ -187,6 +187,7 @@ public class VerlaSimulationController {
                     item.put("role", m.getRole());
                     item.put("text", m.getTextContent() == null ? "" : m.getTextContent());
                     item.put("scene", m.getScene());
+                    item.put("streaming", "assistant".equals(m.getRole()) && isStreamingMessage(m));
                     item.put("createdAt", m.getCreatedAt() == null ? null : m.getCreatedAt().toString());
                     return item;
                 })
@@ -456,6 +457,18 @@ public class VerlaSimulationController {
             return objectMapper.readValue(metaJson, Map.class);
         } catch (Exception e) {
             return Map.of();
+        }
+    }
+
+    private boolean isStreamingMessage(VerlaMessage message) {
+        String metaJson = message.getMetaJson();
+        if (metaJson == null || metaJson.isBlank()) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(metaJson).path("streaming").asBoolean(false);
+        } catch (Exception e) {
+            return false;
         }
     }
 

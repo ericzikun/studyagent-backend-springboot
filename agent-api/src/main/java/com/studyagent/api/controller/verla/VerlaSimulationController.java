@@ -110,10 +110,7 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> passCheckout(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        if (simulationPassService.access(clerkUserId).active()) {
-            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
-                    "simulation lab pass already active");
-        }
+        // Buying while a pass is active extends it from the current expiry.
         return Result.success(Map.of("url", simulationPassService.createCheckout(clerkUserId)));
     }
 

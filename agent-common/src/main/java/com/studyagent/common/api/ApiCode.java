@@ -57,6 +57,10 @@ public enum ApiCode {
             1030,
             "Get 7 days of Verla Pro for $2.99. After 7 days, your selected monthly or annual plan starts automatically at the regular price unless you cancel before the trial ends. Cancel anytime.",
             "以 $2.99 获得 7 天 Verla Pro。7 天后将按您选择的月付或年付方案以正价自动开始，除非您在试用结束前取消。可随时取消。"),
+    SIMULATION_PASS_REQUIRED(
+            1031,
+            "A Simulation Lab pass is required to create a new lab",
+            "创建新 Lab 需要先购买 Simulation Lab 通行证"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

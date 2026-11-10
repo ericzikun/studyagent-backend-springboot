@@ -7,6 +7,7 @@ import com.studyagent.api.web.verla.VerlaPublicId;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.id.VerlaPublicIdType;
+import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
@@ -76,20 +77,51 @@ public class VerlaSimulationController {
     private final OssStorageService ossStorageService;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final SimulationPassService simulationPassService;
 
     @GetMapping("/config")
     public Result<Map<String, Object>> config(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        return Result.success(Map.of(
-                "createEnabled", true,
-                "canCreate", true,
-                "attachmentsEnabled", true,
-                "maxFiles", MAX_FILES,
-                "maxFileBytes", MAX_FILE_BYTES,
-                "maxExtractedChars", 30000,
-                "maxActiveRuns", MAX_ACTIVE_RUNS,
-                "maxDailyRuns", MAX_DAILY_RUNS));
+        SimulationPassService.Access access = simulationPassService.access(clerkUserId);
+        Map<String, Object> pass = new LinkedHashMap<>();
+        pass.put("active", access.active());
+        pass.put("admin", access.admin());
+        pass.put("purchasable", access.purchasable());
+        pass.put("passCode", access.passCode());
+        pass.put("expiresAt", access.expiresAt() == null ? null : access.expiresAt().toString());
+        pass.put("amountCents", access.amountCents());
+        pass.put("currency", access.currency());
+        pass.put("accessDays", access.accessDays());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("createEnabled", access.active());
+        body.put("canCreate", access.active());
+        body.put("attachmentsEnabled", true);
+        body.put("maxFiles", MAX_FILES);
+        body.put("maxFileBytes", MAX_FILE_BYTES);
+        body.put("maxExtractedChars", 30000);
+        body.put("maxActiveRuns", MAX_ACTIVE_RUNS);
+        body.put("maxDailyRuns", MAX_DAILY_RUNS);
+        body.put("pass", pass);
+        return Result.success(body);
+    }
+
+    @PostMapping("/pass/checkout")
+    public Result<Map<String, Object>> passCheckout(
+            @RequestAttribute("clerkUserId") String clerkUserId) {
+        ensureLogin(clerkUserId);
+        if (simulationPassService.access(clerkUserId).active()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
+                    "simulation lab pass already active");
+        }
+        return Result.success(Map.of("url", simulationPassService.createCheckout(clerkUserId)));
+    }
+
+    private void requirePass(String clerkUserId) {
+        if (!simulationPassService.access(clerkUserId).active()) {
+            throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
+                    "simulation lab pass required");
+        }
     }
 
     @PostMapping
@@ -97,6 +129,7 @@ public class VerlaSimulationController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @RequestBody(required = false) CreateSimulationRequest req) {
         ensureLogin(clerkUserId);
+        requirePass(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         String title = titleFromPrompt(prompt);
         VerlaConversation conversation = conversationService.create(
@@ -113,6 +146,7 @@ public class VerlaSimulationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) GenerateSimulationRequest req) {
         ensureLogin(clerkUserId);
+        requirePass(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         VerlaConversation conversation = conversationService.getOwned(clerkUserId, cid);
         if (conversation.getPrimaryIntent() != null

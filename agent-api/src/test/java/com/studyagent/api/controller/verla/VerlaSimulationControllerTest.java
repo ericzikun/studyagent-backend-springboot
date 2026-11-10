@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.api.common.Result;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.domain.file.OssStorageService;
@@ -43,6 +44,7 @@ class VerlaSimulationControllerTest {
     private VerlaMessageRepository messageRepository;
     private VerlaAttachmentRepository attachmentRepository;
     private JdbcTemplate jdbcTemplate;
+    private SimulationPassService simulationPassService;
     private VerlaSimulationController controller;
 
     @BeforeEach
@@ -55,6 +57,10 @@ class VerlaSimulationControllerTest {
         messageRepository = mock(VerlaMessageRepository.class);
         attachmentRepository = mock(VerlaAttachmentRepository.class);
         jdbcTemplate = mock(JdbcTemplate.class);
+        simulationPassService = mock(SimulationPassService.class);
+        when(simulationPassService.access(anyString())).thenReturn(
+                new SimulationPassService.Access(
+                        true, false, true, "simulation_lab_7d", null, 199, "usd", 7));
         controller = new VerlaSimulationController(
                 conversationService,
                 turnOrchestrator,
@@ -65,7 +71,8 @@ class VerlaSimulationControllerTest {
                 attachmentRepository,
                 mock(OssStorageService.class),
                 new ObjectMapper(),
-                jdbcTemplate);
+                jdbcTemplate,
+                simulationPassService);
     }
 
     @Test
@@ -78,6 +85,20 @@ class VerlaSimulationControllerTest {
         assertEquals(3, result.getData().get("maxFiles"));
         assertEquals(1, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
+    }
+
+    @Test
+    void createRequiresSimulationPass() {
+        when(simulationPassService.access("user_1")).thenReturn(
+                new SimulationPassService.Access(
+                        false, false, true, "simulation_lab_7d", null, 199, "usd", 7));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.create("user_1",
+                        new VerlaSimulationController.CreateSimulationRequest("make a lab")));
+
+        assertEquals(ApiCode.SIMULATION_PASS_REQUIRED.getCode(), error.getCode());
+        verify(conversationService, never()).create(anyString(), anyString(), anyString(), any());
     }
 
     @Test

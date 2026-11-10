@@ -225,6 +225,7 @@ public enum VerlaAgentEventType {
 
     /** Simulation Lab 域（生成完成后的伴随教学对话） */
     SIMULATION_CHAT_STARTED(false),
+    SIMULATION_CHAT_DELTA(false),
     SIMULATION_CHAT_COMPLETED(true),
     SIMULATION_CHAT_FAILED(true),
     SIMULATION_CHAT_CANCELLED(true);

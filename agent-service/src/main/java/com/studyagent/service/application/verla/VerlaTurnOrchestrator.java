@@ -489,6 +489,43 @@ public class VerlaTurnOrchestrator {
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
+    public void onSimulationChatDelta(Long agentSessionId, Map<String, Object> payload) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        if (turn == null || TurnStatus.valueOf(turn.getStatus()) != TurnStatus.RUNNING_AGENT) {
+            return;
+        }
+        String text = payload == null || payload.get("text") == null
+                ? "" : String.valueOf(payload.get("text")).strip();
+        if (text.isEmpty()) {
+            return;
+        }
+        VerlaMessage existing = messageRepository.findByTurnRoleScene(
+                turn.getId(), "assistant", SIMULATION_CHAT_SCENE);
+        if (existing == null) {
+            messageRepository.save(VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent(text)
+                    .scene(SIMULATION_CHAT_SCENE)
+                    .metaJson(serializeJson(Map.of(
+                            "scene", SIMULATION_CHAT_SCENE, "streaming", true)))
+                    .createdAt(LocalDateTime.now())
+                    .build());
+            return;
+        }
+        existing.setTextContent(text);
+        existing.setMetaJson(serializeJson(Map.of(
+                "scene", SIMULATION_CHAT_SCENE, "streaming", true)));
+        messageRepository.save(existing);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
     public void onSimulationChatCompleted(Long agentSessionId, Map<String, Object> result) {
         VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
         if (s == null) {
@@ -515,18 +552,27 @@ public class VerlaTurnOrchestrator {
         }
 
         String reply = safeResult.get("reply") == null ? "" : String.valueOf(safeResult.get("reply")).trim();
-        if (turn != null && !reply.isBlank()
-                && messageRepository.findByTurnRoleScene(turn.getId(), "assistant", SIMULATION_CHAT_SCENE) == null) {
-            messageRepository.save(VerlaMessage.builder()
-                    .conversationId(turn.getConversationId())
-                    .turnId(turn.getId())
-                    .role("assistant")
-                    .sourceSessionId(agentSessionId)
-                    .textContent(reply)
-                    .scene(SIMULATION_CHAT_SCENE)
-                    .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
-                    .createdAt(LocalDateTime.now())
-                    .build());
+        if (turn != null && !reply.isBlank()) {
+            VerlaMessage existing = messageRepository.findByTurnRoleScene(
+                    turn.getId(), "assistant", SIMULATION_CHAT_SCENE);
+            if (existing != null) {
+                // Streaming deltas already created the row; finalize its text so
+                // the UI stops treating it as partial.
+                existing.setTextContent(reply);
+                existing.setMetaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)));
+                messageRepository.save(existing);
+            } else {
+                messageRepository.save(VerlaMessage.builder()
+                        .conversationId(turn.getConversationId())
+                        .turnId(turn.getId())
+                        .role("assistant")
+                        .sourceSessionId(agentSessionId)
+                        .textContent(reply)
+                        .scene(SIMULATION_CHAT_SCENE)
+                        .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
+                        .createdAt(LocalDateTime.now())
+                        .build());
+            }
         }
         if (turn != null) {
             conversationRepository.incrementVersion(turn.getConversationId());

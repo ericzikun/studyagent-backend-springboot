@@ -79,6 +79,9 @@ public class VerlaSimulationController {
     private final JdbcTemplate jdbcTemplate;
     private final SimulationPassService simulationPassService;
 
+    @org.springframework.beans.factory.annotation.Value("${frontend-url:https://verla.io}")
+    private String frontendUrl;
+
     @GetMapping("/config")
     public Result<Map<String, Object>> config(
             @RequestAttribute("clerkUserId") String clerkUserId) {
@@ -244,14 +247,16 @@ public class VerlaSimulationController {
     @GetMapping("/{cid}/content")
     public Result<Map<String, Object>> content(
             @RequestAttribute("clerkUserId") String clerkUserId,
-            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
+            jakarta.servlet.http.HttpServletResponse response) {
         ensureLogin(clerkUserId);
         VerlaConversation conversation = conversationService.getOwned(clerkUserId, cid);
         VerlaArtifact artifact = latestSimulationArtifact(cid);
         if (artifact == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), "simulation artifact not found");
         }
-        String html = readArtifactHtml(artifact);
+        response.setHeader("Cache-Control", "no-store");
+        String html = mirrorLibraries(readArtifactHtml(artifact));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactUid", artifact.getArtifactUid());
         body.put("title", conversation.getTitle());
@@ -478,6 +483,25 @@ public class VerlaSimulationController {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), "simulation content unavailable");
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Generated labs load pinned libraries from jsdelivr. Mirror them through our
+     * own origin so the sandboxed preview works even when the viewer cannot reach
+     * the CDN (the page would otherwise show "3D库加载失败").
+     */
+    private String mirrorLibraries(String html) {
+        if (html == null || html.isEmpty() || !html.contains("https://cdn.jsdelivr.net")) {
+            return html;
+        }
+        String base = frontendUrl == null ? "" : frontendUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.isEmpty()) {
+            return html;
+        }
+        return html.replace("https://cdn.jsdelivr.net", base + "/cdn-jsdelivr");
     }
 
     private Object parseMeta(String metaJson) {

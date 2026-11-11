@@ -11,10 +11,15 @@ import com.studyagent.api.dto.demo.note.NoteProposalCommitRequest;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
+import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
 import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -43,6 +49,7 @@ public class DemoNoteController {
 
     private final DemoNoteService service;
     private final NoteVerlaCommandDispatcher commandDispatcher;
+    private final VerlaEditorPdfExportService pdfExportService;
 
     /** 进入页面时的会话分配：复用最近的草稿，没有才新建。 */
     @PostMapping("/conversations/draft")
@@ -79,6 +86,39 @@ public class DemoNoteController {
         // 待审提案也一并带出，刷新页面仍能继续审阅
         return Result.success(NoteConversationVO.from(
                 conv, service.listMessages(conv.getId()), service.parsePendingProposal(conv)));
+    }
+
+    /**
+     * 笔记导出 PDF：笔记没有 artifact/editor-content 行，不能走作业链路那条
+     * {@code artifacts/{uid}/exports/pdf}；这里直接把前端编辑器当前的 TipTap JSON
+     * 交给同一个 PDF 渲染服务（Gotenberg），保证两边导出样式一致。
+     */
+    @PostMapping("/conversations/{id}/exports/pdf")
+    public ResponseEntity<byte[]> exportPdf(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        NoteConversation conv = service.getOwned(
+                clerkUserId, service.resolveConversationId(clerkUserId, id));
+        Object doc = body == null ? null : body.get("doc");
+        if (!(doc instanceof Map<?, ?>)) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(),
+                    "doc (TipTap JSON) is required");
+        }
+        String title = body.get("title") instanceof String s && !s.isBlank()
+                ? s.trim()
+                : (conv.getTitle() == null || conv.getTitle().isBlank() ? "Note" : conv.getTitle());
+        byte[] pdf = pdfExportService.renderTiptapToPdf(title, doc);
+        String filename = title.replaceAll("[/\\\\?%*:|\"<>]", "_") + ".pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(filename, StandardCharsets.UTF_8)
+                                .build()
+                                .toString())
+                .body(pdf);
     }
 
     /**

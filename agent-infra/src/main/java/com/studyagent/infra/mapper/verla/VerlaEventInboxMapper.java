@@ -63,19 +63,26 @@ public interface VerlaEventInboxMapper extends BaseMapper<VerlaEventInboxEntity>
 
     /**
      * Dashboard 批量状态：每个 conversation 取最近 N 条 PROCESSED 事件（MySQL 8 窗口函数）。
+     *
+     * <p>窗口排序只带 id/conversation_id，再 join 回完整行；不能在这里 SELECT *，
+     * 否则 ATTACHMENT_PARSED 携带的 4MB+ payload_json 会把 sort buffer 撑爆
+     * （MySQL 1038 Out of sort memory）。</p>
      */
     @Select("<script>"
-            + "SELECT id, message_id, correlation_id, conversation_id, turn_id, session_id, "
-            + "event_seq, event_type, step_id, step_seq, payload_json, status, "
-            + "error_message, received_at, processed_at "
+            + "SELECT e.id, e.message_id, e.correlation_id, e.conversation_id, e.turn_id, e.session_id, "
+            + "e.event_seq, e.event_type, e.step_id, e.step_seq, e.payload_json, e.status, "
+            + "e.error_message, e.received_at, e.processed_at "
             + "FROM ("
-            + "  SELECT *, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY id DESC) AS rn "
+            + "  SELECT id, conversation_id, "
+            + "         ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY id DESC) AS rn "
             + "  FROM verla_event_inbox "
             + "  WHERE status = 'PROCESSED' "
             + "  AND conversation_id IN "
             + "  <foreach item='id' collection='conversationIds' open='(' separator=',' close=')'>#{id}</foreach>"
-            + ") ranked WHERE rn &lt;= #{limitPerConversation} "
-            + "ORDER BY conversation_id, id DESC"
+            + ") ranked "
+            + "JOIN verla_event_inbox e ON e.id = ranked.id "
+            + "WHERE ranked.rn &lt;= #{limitPerConversation} "
+            + "ORDER BY ranked.conversation_id, e.id DESC"
             + "</script>")
     List<VerlaEventInboxEntity> selectRecentProcessedByConversationIds(
             @Param("conversationIds") List<Long> conversationIds,

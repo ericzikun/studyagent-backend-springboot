@@ -2,6 +2,7 @@ package com.studyagent.api.controller.demo;
 
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
+import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
@@ -28,6 +29,9 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -39,15 +43,31 @@ class DemoNoteControllerTest {
 
     private DemoNoteService service;
     private NoteVerlaCommandDispatcher dispatcher;
+    private VerlaEditorPdfExportService pdfExportService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = mock(DemoNoteService.class);
         dispatcher = mock(NoteVerlaCommandDispatcher.class);
+        pdfExportService = mock(VerlaEditorPdfExportService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DemoNoteController(service, dispatcher))
+                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService))
                 .build();
+    }
+
+    @Test
+    void exportPdf_renders_editor_tiptap_json() throws Exception {
+        when(service.resolveConversationId("user_1", "vc_abc")).thenReturn(NOTE_CONVERSATION_ID);
+        when(service.getOwned("user_1", NOTE_CONVERSATION_ID)).thenReturn(conversation());
+        when(pdfExportService.renderTiptapToPdf(anyString(), any())).thenReturn(new byte[]{1, 2, 3});
+
+        mockMvc.perform(post("/v1/demo/note/conversations/vc_abc/exports/pdf")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"My note\",\"doc\":{\"type\":\"doc\",\"content\":[]}}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "application/pdf"));
     }
 
     @Test

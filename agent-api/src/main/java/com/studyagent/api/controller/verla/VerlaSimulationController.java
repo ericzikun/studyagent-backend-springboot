@@ -501,7 +501,11 @@ public class VerlaSimulationController {
         if (base.isEmpty()) {
             return html;
         }
-        return html.replace("https://cdn.jsdelivr.net", base + "/cdn-jsdelivr");
+        // CSP source expressions with a path are exact-match in Chrome; allow the
+        // whole origin there while keeping library URLs under /cdn-jsdelivr.
+        return html
+                .replace("https://cdn.jsdelivr.net;", base + ";")
+                .replace("https://cdn.jsdelivr.net", base + "/cdn-jsdelivr");
     }
 
     private Object parseMeta(String metaJson) {

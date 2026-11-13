@@ -1479,6 +1479,9 @@ public class VerlaTurnOrchestrator {
                     .build();
         }
 
+        assertAssignmentFinalizeEntitlements(userId, conversationId, turn.getId(),
+                normalizeAssignmentRequirementForm(requirementForm, reservedFields, normalizedAnswers, null));
+
         String messageText = buildClarifyUserMessageText(
                 "generation", "", reservedFields, normalizedAnswers, requirementForm);
         Map<String, Object> blocks = new LinkedHashMap<>();
@@ -1523,6 +1526,18 @@ public class VerlaTurnOrchestrator {
                 .planSessionId(turn.getPlanSessionId())
                 .agentSessionId(nextSession.getId())
                 .build();
+    }
+
+    /**
+     * 商业化拦截统一在 finalize（confirm/skip）判定，按 额度 &gt; 输出类型 &gt; 文件数 短路，
+     * 保证一次只抛一个可购买错误。签名期不再做套餐判定，否则弹窗会早于追问表单出现。
+     */
+    private void assertAssignmentFinalizeEntitlements(String userId, Long conversationId, Long turnId,
+                                                      Map<String, Object> normalizedRequirementForm) {
+        verlaQuotaService.assertSufficientForAssignmentRun(userId, turnId);
+        EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(userId);
+        entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
+        entitlementService.assertAssignmentFileLimit(entitlements, conversationId);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -2490,8 +2505,6 @@ public class VerlaTurnOrchestrator {
 
         EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
                 conv == null ? null : conv.getUserId());
-        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
-        // entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
 
         // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
         //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
@@ -2553,10 +2566,7 @@ public class VerlaTurnOrchestrator {
                 entitlements.allowedOutputTypes());
         log.info("[Verla] assignment auto-run entitlement check conversationId={} turnId={} sessionId={} diagnostics={}",
                 turn.getConversationId(), turn.getId(), s.getId(), diagnostics);
-        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
-        // entitlementService.assertAssignmentOutputAllowed(
-        //         entitlements,
-        //         castMap(normalizedFinalClarifyResult.get("requirementForm")));
+        // 权益已在 finalize 入口判定并扣费，run 阶段不重复拦截，避免扣费后才失败。
 
         // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
         verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());

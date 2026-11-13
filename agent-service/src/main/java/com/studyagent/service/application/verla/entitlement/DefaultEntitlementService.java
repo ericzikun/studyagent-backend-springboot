@@ -53,6 +53,9 @@ public class DefaultEntitlementService implements EntitlementService {
     @Value("${verla.attachment.sign-ttl-seconds:3600}")
     private long signTtlSeconds;
 
+    @Value("${verla.attachment.max-user-uploads-per-conversation:20}")
+    private int maxUserUploadsPerConversation;
+
     @Override
     public EffectiveEntitlements getEffectiveEntitlements(String clerkUserId) {
         // admin / Quota VIP：产品权益无限（文件数 / 追问 / 产出类型），不含运营后台
@@ -123,34 +126,42 @@ public class DefaultEntitlementService implements EntitlementService {
         if (conversationId == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
         }
-        EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);
+        // 无限套餐（Pro/admin/quotaVip）在签名期不设上限，与既有行为一致。
+        if (getEffectiveEntitlements(clerkUserId).maxFiles() == null) {
+            return;
+        }
+        if (countActiveUserUploads(conversationId) >= maxUserUploadsPerConversation) {
+            throw new BusinessException(ApiCode.PARAM_ERROR,
+                    "too many attachments in this conversation, max=" + maxUserUploadsPerConversation);
+        }
+    }
+
+    @Override
+    public void assertAssignmentFileLimit(EffectiveEntitlements entitlements, Long conversationId) {
+        if (conversationId == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
+        }
         Integer limit = entitlements.maxFiles();
         // null = unlimited (Pro); 0 = blocked (not unlimited)
         if (limit == null) {
             return;
         }
-        if (limit <= 0) {
+        long activeCount = countActiveUserUploads(conversationId);
+        if (limit <= 0 || activeCount >= limit) {
             throw BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
                     .currentPlan(currentPlanData(entitlements))
                     .reasonCode("file_limit_reached")
                     .purchaseProductId("assignment")
-                    .blockedAction("upload_sign")
-                    .maxFiles(0)
-                    .activeFiles(0L)
-                    .build());
-        }
-        LocalDateTime pendingCutoff = LocalDateTime.now().minusSeconds(Math.max(60L, signTtlSeconds));
-        long activeCount = attachmentRepository.countActiveUserUploadsForConversation(conversationId, pendingCutoff);
-        if (activeCount >= limit) {
-            throw BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
-                    .currentPlan(currentPlanData(entitlements))
-                    .reasonCode("file_limit_reached")
-                    .purchaseProductId("assignment")
-                    .blockedAction("upload_sign")
-                    .maxFiles(limit)
+                    .blockedAction("assignment_generate")
+                    .maxFiles(Math.max(limit, 0))
                     .activeFiles(activeCount)
                     .build());
         }
+    }
+
+    private long countActiveUserUploads(Long conversationId) {
+        LocalDateTime pendingCutoff = LocalDateTime.now().minusSeconds(Math.max(60L, signTtlSeconds));
+        return attachmentRepository.countActiveUserUploadsForConversation(conversationId, pendingCutoff);
     }
 
     @Override

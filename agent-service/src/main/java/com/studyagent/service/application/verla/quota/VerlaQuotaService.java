@@ -59,6 +59,7 @@ public interface VerlaQuotaService {
     /**
      * Assignment Clarify 流程入口前只读校验：余额不足时抛 {@link com.studyagent.common.exception.InsufficientQuotaException}，
      * 不扣费。真正扣费在 {@link #consumeForAssignmentRun}（{@code assignment/clarify/finalize} 派发前）。
+     * 同 turn 已扣费时直接放行，与 {@link #consumeForAssignmentRun} 的 ledger 复用规则一致。
      */
-    void assertSufficientForAssignmentRun(String clerkUserId);
+    void assertSufficientForAssignmentRun(String clerkUserId, Long turnId);
 }

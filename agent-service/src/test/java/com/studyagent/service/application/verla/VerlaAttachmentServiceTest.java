@@ -76,8 +76,8 @@ class VerlaAttachmentServiceTest {
     }
 
     @Test
-    void sign_rejectsWhenUserUploadLimitReached() {
-        org.mockito.Mockito.doThrow(new BusinessException(ApiCode.FILE_LIMIT_REACHED))
+    void sign_rejectsWhenAbuseHardCapReached() {
+        org.mockito.Mockito.doThrow(new BusinessException(ApiCode.PARAM_ERROR, "too many attachments"))
                 .when(entitlementService).assertCanReserveUserUpload(USER_ID, 74L);
 
         assertThrows(BusinessException.class,

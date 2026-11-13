@@ -87,7 +87,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
     }
 
     @Override
-    public void assertSufficientForAssignmentRun(String clerkUserId) {
+    public void assertSufficientForAssignmentRun(String clerkUserId, Long turnId) {
+        // 与 consumeInternal 的第 0 步一致：同 turn 已扣费时只会复用 ledger，不会再消费。
+        if (findChargedSessionForTurn(turnId).isPresent()) {
+            return;
+        }
         if (isQuotaExempt(clerkUserId)) {
             return;
         }

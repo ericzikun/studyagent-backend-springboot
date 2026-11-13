@@ -40,10 +40,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +81,7 @@ class DefaultEntitlementServiceTest {
                 quotaVipAccessService,
                 new ObjectMapper());
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
+        ReflectionTestUtils.setField(service, "maxUserUploadsPerConversation", 20);
     }
 
     @Test
@@ -109,24 +112,29 @@ class DefaultEntitlementServiceTest {
     }
 
     @Test
-    void assertCanReserveUserUploadRejectsWhenLimitReached() {
-        when(billingDomainService.getEffectivePlanOrFree("free_user"))
-                .thenReturn(freePlan());
+    void assertCanReserveUserUploadAllowsBeyondPlanLimitSoSkuWaitsForFinalize() {
+        when(billingDomainService.getEffectivePlanOrFree("free_user")).thenReturn(freePlan());
         when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
-                .thenReturn(3L);
+                .thenReturn(5L);
+
+        service.assertCanReserveUserUpload("free_user", 74L);
+    }
+
+    @Test
+    void assertCanReserveUserUploadRejectsAtAbuseHardCapWithoutCommercialPayload() {
+        when(billingDomainService.getEffectivePlanOrFree("free_user")).thenReturn(freePlan());
+        when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
+                .thenReturn(20L);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.assertCanReserveUserUpload("free_user", 74L));
 
-        assertEquals(ApiCode.FILE_LIMIT_REACHED.getCode(), ex.getCode());
-        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
-        assertEquals("file_limit_reached", data.getReasonCode());
-        assertEquals(Integer.valueOf(3), data.getMaxFiles());
-        assertEquals(Long.valueOf(3L), data.getActiveFiles());
+        assertEquals(ApiCode.PARAM_ERROR.getCode(), ex.getCode());
+        assertNull(ex.getData());
     }
 
     @Test
-    void assertCanReserveUserUploadAllowsAdminBeyondFreeLimit() {
+    void assertCanReserveUserUploadSkipsHardCapForUnlimitedPlan() {
         when(userRepository.findByClerkUserId("admin_user"))
                 .thenReturn(java.util.Optional.of(User.builder()
                         .clerkUserId("admin_user")
@@ -134,10 +142,61 @@ class DefaultEntitlementServiceTest {
                         .build()));
 
         service.assertCanReserveUserUpload("admin_user", 74L);
+
+        verify(attachmentRepository, never())
+                .countActiveUserUploadsForConversation(any(), any(LocalDateTime.class));
     }
 
     @Test
-    void assertCanReserveUserUploadAllowsQuotaVipBeyondFreeLimit() {
+    void assertAssignmentFileLimitRejectsWhenPlanLimitReached() {
+        when(billingDomainService.getEffectivePlanOrFree("free_user"))
+                .thenReturn(freePlan());
+        when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
+                .thenReturn(3L);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.assertAssignmentFileLimit(service.getEffectiveEntitlements("free_user"), 74L));
+
+        assertEquals(ApiCode.FILE_LIMIT_REACHED.getCode(), ex.getCode());
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals("file_limit_reached", data.getReasonCode());
+        assertEquals("assignment_generate", data.getBlockedAction());
+        assertEquals("assignment", data.getPurchaseProductId());
+        assertEquals(Integer.valueOf(3), data.getMaxFiles());
+        assertEquals(Long.valueOf(3L), data.getActiveFiles());
+    }
+
+    @Test
+    void assertAssignmentFileLimitRejectsWhenPlanAllowsNoFile() {
+        BillingPlan blocked = freePlan();
+        blocked.setMaxFiles(0);
+        when(billingDomainService.getEffectivePlanOrFree("free_user")).thenReturn(blocked);
+        when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
+                .thenReturn(0L);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.assertAssignmentFileLimit(service.getEffectiveEntitlements("free_user"), 74L));
+
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals(Integer.valueOf(0), data.getMaxFiles());
+    }
+
+    @Test
+    void assertAssignmentFileLimitAllowsAdminBeyondFreeLimit() {
+        when(userRepository.findByClerkUserId("admin_user"))
+                .thenReturn(java.util.Optional.of(User.builder()
+                        .clerkUserId("admin_user")
+                        .isAdmin(Boolean.TRUE)
+                        .build()));
+
+        service.assertAssignmentFileLimit(service.getEffectiveEntitlements("admin_user"), 74L);
+
+        verify(attachmentRepository, never())
+                .countActiveUserUploadsForConversation(any(), any(LocalDateTime.class));
+    }
+
+    @Test
+    void assertAssignmentFileLimitAllowsQuotaVipBeyondFreeLimit() {
         when(userRepository.findByClerkUserId("vip_user"))
                 .thenReturn(java.util.Optional.of(User.builder()
                         .clerkUserId("vip_user")
@@ -145,7 +204,7 @@ class DefaultEntitlementServiceTest {
                         .build()));
         when(quotaVipAccessService.isQuotaVip("vip_user")).thenReturn(true);
 
-        service.assertCanReserveUserUpload("vip_user", 74L);
+        service.assertAssignmentFileLimit(service.getEffectiveEntitlements("vip_user"), 74L);
     }
 
     @Test

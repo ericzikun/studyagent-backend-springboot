@@ -61,6 +61,10 @@ public enum ApiCode {
             1031,
             "A Simulation Lab pass is required to create a new lab",
             "创建新 Lab 需要先购买 Simulation Lab 通行证"),
+    ASSIGNMENT_UNDERSTANDING_IN_PROGRESS(
+            1032,
+            "Assignment understanding is still in progress. Please wait for it to finish before adding more material.",
+            "正在理解材料，请稍候再补充"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

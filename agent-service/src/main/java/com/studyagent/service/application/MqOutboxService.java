@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -129,6 +130,14 @@ public class MqOutboxService {
 
         eventPublisher.publishEvent(new MqOutboxCreatedEvent(this, saved.getId()));
         return saved;
+    }
+
+    /**
+     * 查询 session 下最新一条指定 action 的 outbox 投递状态；无记录返回 null。
+     * 供 Verla 编排器做「同一 turn 是否已派发过某类命令」的单飞判定。
+     */
+    public Integer findLatestStatusBySessionIdAndActions(Long sessionId, List<String> actions) {
+        return mqOutboxRepository.findLatestStatusBySessionIdAndActions(sessionId, actions);
     }
 
     private String serialize(VerlaCommandEnvelope envelope) {

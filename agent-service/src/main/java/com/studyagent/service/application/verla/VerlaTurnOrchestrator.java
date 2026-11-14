@@ -789,6 +789,11 @@ public class VerlaTurnOrchestrator {
         }
 
         VerlaTurn turn = turnRepository.findByIdForUpdate(baseTurn.getId());
+        if (hasInFlightDeepUnderstandingSession(turn.getId())) {
+            // 等待表单期间重复发消息会让同一 turn 并发多条 deep_understanding：这里单飞，
+            // 拒绝对已理解中的 turn 再派发 deep（不落用户消息，避免脏数据）。
+            throw new BusinessException(ApiCode.ASSIGNMENT_UNDERSTANDING_IN_PROGRESS);
+        }
         String normalizedChoice = normalizeClarifyChoice(userChoice);
         String messageText = buildContinueClarifyUserMessageText(normalizedChoice, text);
         VerlaMessage userMessage = VerlaMessage.builder()
@@ -1378,15 +1383,22 @@ public class VerlaTurnOrchestrator {
         // instead of waiting for the user to pick between the two clarify options.
         // justCompleted guard prevents duplicate spawning on event replay.
         if (justCompleted && declaresDeepUnderstandingHandoff(result)) {
-            VerlaConversation conv = conversationRepository.findById(turn.getConversationId());
-            String intent = isAssignmentIntent(turn.getResolvedIntent())
-                    ? turn.getResolvedIntent() : "ASSIGNMENT";
-            Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
-            boolean userUnderstood = resolveHandoffUserUnderstood(result);
-            log.info("[Verla] init completed declares deep_understanding hand-off, "
-                            + "auto-spawn turnId={} intent={} userUnderstood={}",
-                    turn.getId(), intent, userUnderstood);
-            spawnAssignmentDeepUnderstandingSession(conv, turn, intent, resolvedSlots, userUnderstood);
+            if (hasInFlightDeepUnderstandingSession(turn.getId())) {
+                // 用户消息在 init 完成前已派发过一条 deep_understanding：跳过自动 hand-off，
+                // 保证同一 turn 同时只有一条 deep，避免重复理解。
+                log.info("[Verla] skip auto deep hand-off, turn already has an in-flight "
+                        + "deep_understanding session turnId={}", turn.getId());
+            } else {
+                VerlaConversation conv = conversationRepository.findById(turn.getConversationId());
+                String intent = isAssignmentIntent(turn.getResolvedIntent())
+                        ? turn.getResolvedIntent() : "ASSIGNMENT";
+                Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
+                boolean userUnderstood = resolveHandoffUserUnderstood(result);
+                log.info("[Verla] init completed declares deep_understanding hand-off, "
+                                + "auto-spawn turnId={} intent={} userUnderstood={}",
+                        turn.getId(), intent, userUnderstood);
+                spawnAssignmentDeepUnderstandingSession(conv, turn, intent, resolvedSlots, userUnderstood);
+            }
         }
     }
 
@@ -1398,6 +1410,26 @@ public class VerlaTurnOrchestrator {
         return result != null
                 && result.get("nextActions") instanceof List<?> actions
                 && actions.stream().anyMatch(a -> "deep_understanding".equals(a));
+    }
+
+    /**
+     * 同一 turn 是否已有「在途」的 deep_understanding session。
+     * <p>
+     * 用于理解阶段的单飞保护：等待表单期间用户重复发消息时，不能再为同一 turn spawn 第二条
+     * deep_understanding（否则多条 deep 并发、抢网关、拖慢表单返回）。判定方式：该 turn 下存在
+     * 非终态 session，且该 session 的派发命令是 {@code cmd.assignment.deep_understanding}
+     * （session 的 kind/featureCode 无法区分 init/deep，派发命令动作才是唯一判据）。
+     * <p>
+     * 只挡「deep 在途」而非「任何 session 在途」：这样首个携带作业要求的 deepen 在 INIT 期间
+     * 仍可正常派发（避免丢掉用户输入），而重复的 deepen 会被拦下。合法的“填表后补充材料”
+     * 不受影响——此时上一轮 session 已终态（SUCCEEDED）。
+     */
+    private boolean hasInFlightDeepUnderstandingSession(Long turnId) {
+        String deepAction = VerlaCommandAction.CMD_ASSIGNMENT_DEEP_UNDERSTANDING.getCode();
+        return sessionRepository.findByTurn(turnId).stream()
+                .filter(s -> s.getStatus() != null && !SessionStatus.valueOf(s.getStatus()).isTerminal())
+                .anyMatch(s -> mqOutboxService.findLatestStatusBySessionIdAndActions(
+                        s.getId(), List.of(deepAction)) != null);
     }
 
     /**

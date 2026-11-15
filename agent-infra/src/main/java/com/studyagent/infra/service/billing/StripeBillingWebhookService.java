@@ -174,6 +174,7 @@ public class StripeBillingWebhookService {
                 || IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)
                 || "addon".equals(purchaseType)
                 || "study_pass".equals(purchaseType)
+                || com.studyagent.infra.service.simulation.SimulationPassService.PURCHASE_TYPE.equals(purchaseType)
                 || "subscription_upgrade_manual".equals(purchaseType);
     }
 

@@ -7,6 +7,7 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -30,8 +31,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,6 +51,7 @@ class VerlaSimulationControllerTest {
     private VerlaAttachmentRepository attachmentRepository;
     private JdbcTemplate jdbcTemplate;
     private SimulationPassService simulationPassService;
+    private BillingDomainService billingDomainService;
     private VerlaSimulationController controller;
 
     @BeforeEach
@@ -61,9 +65,11 @@ class VerlaSimulationControllerTest {
         attachmentRepository = mock(VerlaAttachmentRepository.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         simulationPassService = mock(SimulationPassService.class);
-        when(simulationPassService.access(anyString())).thenReturn(
+        billingDomainService = mock(BillingDomainService.class);
+        when(billingDomainService.isPaidMember(anyString())).thenReturn(false);
+        when(simulationPassService.access(anyString(), anyBoolean())).thenReturn(
                 new SimulationPassService.Access(
-                        true, false, true, "simulation_lab_7d", null, 199, "usd", 7));
+                        true, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
         controller = new VerlaSimulationController(
                 conversationService,
                 turnOrchestrator,
@@ -75,7 +81,8 @@ class VerlaSimulationControllerTest {
                 mock(OssStorageService.class),
                 new ObjectMapper(),
                 jdbcTemplate,
-                simulationPassService);
+                simulationPassService,
+                billingDomainService);
     }
 
     @Test
@@ -105,9 +112,9 @@ class VerlaSimulationControllerTest {
 
     @Test
     void createRequiresSimulationPass() {
-        when(simulationPassService.access("user_1")).thenReturn(
+        when(simulationPassService.access(eq("user_1"), anyBoolean())).thenReturn(
                 new SimulationPassService.Access(
-                        false, false, true, "simulation_lab_7d", null, 199, "usd", 7));
+                        false, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> controller.create("user_1",
@@ -115,6 +122,34 @@ class VerlaSimulationControllerTest {
 
         assertEquals(ApiCode.SIMULATION_PASS_REQUIRED.getCode(), error.getCode());
         verify(conversationService, never()).create(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void paidMemberGetsAccessWithoutPurchasingPass() {
+        when(billingDomainService.isPaidMember("member_1")).thenReturn(true);
+        when(simulationPassService.access(eq("member_1"), eq(true))).thenReturn(
+                new SimulationPassService.Access(
+                        true, false, false, "simulation_lab_7d", null, 199, "usd", 7, true));
+
+        Result<Map<String, Object>> result = controller.config("member_1");
+
+        assertEquals(Boolean.TRUE, result.getData().get("canCreate"));
+        Map<String, Object> pass = (Map<String, Object>) result.getData().get("pass");
+        assertEquals(Boolean.TRUE, pass.get("active"));
+        assertEquals(Boolean.FALSE, pass.get("purchasable"));
+        assertEquals(Boolean.TRUE, pass.get("membershipIncluded"));
+    }
+
+    @Test
+    void paidMemberCannotBuySimulationPass() {
+        when(billingDomainService.isPaidMember("member_1")).thenReturn(true);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.passCheckout("member_1"));
+
+        assertEquals(ApiCode.ILLEGAL_STATE.getCode(), error.getCode());
+        verify(simulationPassService, never()).createCheckout(anyString());
     }
 
     @Test

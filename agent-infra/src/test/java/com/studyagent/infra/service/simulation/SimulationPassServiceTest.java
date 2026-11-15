@@ -60,6 +60,18 @@ class SimulationPassServiceTest {
     }
 
     @Test
+    void paidMemberWithoutPassHasAccessAndCannotBuy() {
+        when(passMapper.selectOne(any())).thenReturn(null);
+        when(userMapper.selectIsAdmin(anyString())).thenReturn(false);
+
+        SimulationPassService.Access access = service.access("member_1", true);
+
+        assertTrue(access.active());
+        assertTrue(access.membershipIncluded());
+        assertFalse(access.purchasable());
+    }
+
+    @Test
     void fulfillGrantsSevenDaysAndSkipsDuplicateSession() {
         Session session = mock(Session.class);
         when(session.getId()).thenReturn("cs_test_sim");

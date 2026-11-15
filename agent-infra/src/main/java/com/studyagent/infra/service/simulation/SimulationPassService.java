@@ -50,22 +50,28 @@ public class SimulationPassService {
             LocalDateTime expiresAt,
             Integer amountCents,
             String currency,
-            Integer accessDays) {
+            Integer accessDays,
+            boolean membershipIncluded) {
     }
 
     public Access access(String clerkUserId) {
+        return access(clerkUserId, false);
+    }
+
+    public Access access(String clerkUserId, boolean membershipIncluded) {
         SimulationPassProductEntity product = activeProduct();
         SimulationPassEntity pass = activePass(clerkUserId, LocalDateTime.now());
         boolean admin = Boolean.TRUE.equals(userMapper.selectIsAdmin(clerkUserId));
         return new Access(
-                admin || pass != null,
+                admin || pass != null || membershipIncluded,
                 admin,
-                product != null,
+                product != null && !membershipIncluded,
                 PASS_CODE,
                 pass == null ? null : pass.getExpiresAt(),
                 product == null ? null : product.getAmountCents(),
                 product == null ? null : product.getCurrency(),
-                product == null ? null : product.getAccessDays());
+                product == null ? null : product.getAccessDays(),
+                membershipIncluded);
     }
 
     public String createCheckout(String clerkUserId) {

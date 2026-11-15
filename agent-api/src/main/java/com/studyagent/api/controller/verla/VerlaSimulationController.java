@@ -12,6 +12,7 @@ import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
+import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
@@ -83,6 +84,7 @@ public class VerlaSimulationController {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final SimulationPassService simulationPassService;
+    private final BillingDomainService billingDomainService;
 
     @org.springframework.beans.factory.annotation.Value("${frontend-url:https://verla.io}")
     private String frontendUrl;
@@ -91,11 +93,12 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> config(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        SimulationPassService.Access access = simulationPassService.access(clerkUserId);
+        SimulationPassService.Access access = access(clerkUserId);
         Map<String, Object> pass = new LinkedHashMap<>();
         pass.put("active", access.active());
         pass.put("admin", access.admin());
         pass.put("purchasable", access.purchasable());
+        pass.put("membershipIncluded", access.membershipIncluded());
         pass.put("passCode", access.passCode());
         pass.put("expiresAt", access.expiresAt() == null ? null : access.expiresAt().toString());
         pass.put("amountCents", access.amountCents());
@@ -118,12 +121,21 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> passCheckout(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
+        if (billingDomainService.isPaidMember(clerkUserId)) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
+                    "simulation lab is included in your membership");
+        }
         // Buying while a pass is active extends it from the current expiry.
         return Result.success(Map.of("url", simulationPassService.createCheckout(clerkUserId)));
     }
 
+    private SimulationPassService.Access access(String clerkUserId) {
+        return simulationPassService.access(
+                clerkUserId, billingDomainService.isPaidMember(clerkUserId));
+    }
+
     private void requirePass(String clerkUserId) {
-        if (!simulationPassService.access(clerkUserId).active()) {
+        if (!access(clerkUserId).active()) {
             throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
                     "simulation lab pass required");
         }

@@ -8,6 +8,7 @@ import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -150,6 +151,23 @@ class VerlaSimulationControllerTest {
 
         assertEquals(ApiCode.ILLEGAL_STATE.getCode(), error.getCode());
         verify(simulationPassService, never()).createCheckout(anyString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void compedPaidMemberWithoutStripeIdGetsAccess() {
+        when(billingDomainService.getCurrentSubscription("member_2")).thenReturn(
+                SubscriptionResult.builder().canConsumePaidEntitlements(true).build());
+        when(simulationPassService.access(eq("member_2"), eq(true))).thenReturn(
+                new SimulationPassService.Access(
+                        true, false, false, "simulation_lab_7d", null, 199, "usd", 7, true));
+
+        Result<Map<String, Object>> result = controller.config("member_2");
+
+        assertEquals(Boolean.TRUE, result.getData().get("canCreate"));
+        Map<String, Object> pass = (Map<String, Object>) result.getData().get("pass");
+        assertEquals(Boolean.TRUE, pass.get("membershipIncluded"));
+        assertEquals(Boolean.FALSE, pass.get("purchasable"));
     }
 
     @Test

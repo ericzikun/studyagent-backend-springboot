@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -87,6 +88,19 @@ class VerlaSimulationControllerTest {
         assertEquals(3, result.getData().get("maxFiles"));
         assertEquals(1, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
+    }
+
+    @Test
+    void hiddenGuardKeepsGeneratedFallbacksInvisible() {
+        String html = "<!DOCTYPE html><html><head>"
+                + "<style>.fallback{position:absolute;inset:0;display:flex}</style>"
+                + "</head><body><canvas></canvas>"
+                + "<div class=\"fallback\" hidden>3D 渲染不可用</div></body></html>";
+
+        String guarded = VerlaSimulationController.ensureHiddenGuard(html);
+
+        assertTrue(guarded.contains("[hidden]{display:none!important}"));
+        assertEquals(guarded, VerlaSimulationController.ensureHiddenGuard(guarded));
     }
 
     @Test

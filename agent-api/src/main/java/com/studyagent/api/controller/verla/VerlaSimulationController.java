@@ -44,6 +44,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Simulation Lab：单轮创建、状态与产物读取。
@@ -66,6 +68,9 @@ public class VerlaSimulationController {
     private static final int MAX_ATTACHMENTS_JSON_CHARS = 32 * 1024;
     private static final int MAX_ACTIVE_RUNS = 1;
     private static final int MAX_DAILY_RUNS = 50;
+    private static final Pattern HEAD_TAG = Pattern.compile("<head\\b[^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final String HIDDEN_GUARD =
+            "<style data-verla-hidden-guard>[hidden]{display:none!important}</style>";
 
     private final VerlaConversationService conversationService;
     private final VerlaTurnOrchestrator turnOrchestrator;
@@ -259,7 +264,7 @@ public class VerlaSimulationController {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), "simulation artifact not found");
         }
         response.setHeader("Cache-Control", "no-store");
-        String html = mirrorLibraries(readArtifactHtml(artifact));
+        String html = ensureHiddenGuard(mirrorLibraries(readArtifactHtml(artifact)));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactUid", artifact.getArtifactUid());
         body.put("title", conversation.getTitle());
@@ -486,6 +491,21 @@ public class VerlaSimulationController {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), "simulation content unavailable");
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Generated pages pair a hidden fallback overlay with a class rule that sets
+     * display, so the overlay covers a working 3D stage. Make the attribute win.
+     */
+    static String ensureHiddenGuard(String html) {
+        if (html == null || html.isEmpty() || html.contains("data-verla-hidden-guard")) {
+            return html;
+        }
+        Matcher head = HEAD_TAG.matcher(html);
+        if (!head.find()) {
+            return html;
+        }
+        return html.substring(0, head.end()) + "\n" + HIDDEN_GUARD + html.substring(head.end());
     }
 
     /**

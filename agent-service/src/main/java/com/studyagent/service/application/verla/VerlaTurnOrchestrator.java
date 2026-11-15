@@ -436,6 +436,12 @@ public class VerlaTurnOrchestrator {
         payload.put("contentRef", artifact.getContentRef());
         payload.put("summary", artifact.getSummary());
         payload.put("labBrief", readArtifactLabBrief(artifact));
+        // The tutor reads the complete page source as its ground truth. Prefer the
+        // inline copy; when the artifact lives in OSS the Python side downloads it
+        // through contentRef instead.
+        if (artifact.getBodyOrRef() != null && !artifact.getBodyOrRef().isBlank()) {
+            payload.put("html", artifact.getBodyOrRef());
+        }
         payload.put("outputLanguage", resolveOutputLanguage(conv));
         return baseEnvelope(VerlaCommandAction.CMD_SIMULATION_CHAT, conv, turn, session)
                 .payload(payload)
@@ -519,10 +525,68 @@ public class VerlaTurnOrchestrator {
                     .build());
             return;
         }
+        // Keep the reasoning trace gathered before the answer started.
+        Map<String, Object> meta = readMetaMap(existing.getMetaJson());
+        meta.put("scene", SIMULATION_CHAT_SCENE);
+        meta.put("streaming", true);
+        meta.remove("thinkingStreaming");
         existing.setTextContent(text);
-        existing.setMetaJson(serializeJson(Map.of(
-                "scene", SIMULATION_CHAT_SCENE, "streaming", true)));
+        existing.setMetaJson(serializeJson(meta));
         messageRepository.save(existing);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onSimulationChatThinkingDelta(Long agentSessionId, Map<String, Object> payload) {
+        VerlaSession s = sessionRepository.findByIdForUpdate(agentSessionId);
+        if (s == null) {
+            return;
+        }
+        VerlaTurn turn = turnRepository.findByIdForUpdate(s.getTurnId());
+        if (turn == null || TurnStatus.valueOf(turn.getStatus()) != TurnStatus.RUNNING_AGENT) {
+            return;
+        }
+        String thinking = payload == null || payload.get("text") == null
+                ? "" : String.valueOf(payload.get("text")).strip();
+        if (thinking.isEmpty()) {
+            return;
+        }
+        VerlaMessage existing = messageRepository.findByTurnRoleScene(
+                turn.getId(), "assistant", SIMULATION_CHAT_SCENE);
+        if (existing == null) {
+            messageRepository.save(VerlaMessage.builder()
+                    .conversationId(turn.getConversationId())
+                    .turnId(turn.getId())
+                    .role("assistant")
+                    .sourceSessionId(agentSessionId)
+                    .textContent("")
+                    .scene(SIMULATION_CHAT_SCENE)
+                    .metaJson(serializeJson(Map.of(
+                            "scene", SIMULATION_CHAT_SCENE,
+                            "streaming", true,
+                            "thinking", thinking,
+                            "thinkingStreaming", true)))
+                    .createdAt(LocalDateTime.now())
+                    .build());
+            return;
+        }
+        Map<String, Object> meta = readMetaMap(existing.getMetaJson());
+        meta.put("scene", SIMULATION_CHAT_SCENE);
+        meta.put("streaming", true);
+        meta.put("thinking", thinking);
+        meta.put("thinkingStreaming", true);
+        existing.setMetaJson(serializeJson(meta));
+        messageRepository.save(existing);
+    }
+
+    private Map<String, Object> readMetaMap(String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return new HashMap<>();
+        }
+        try {
+            return new HashMap<>(objectMapper.readValue(metaJson, MAP_STRING_OBJECT));
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -552,16 +616,29 @@ public class VerlaTurnOrchestrator {
         }
 
         String reply = safeResult.get("reply") == null ? "" : String.valueOf(safeResult.get("reply")).trim();
+        String thinking = safeResult.get("thinking") == null
+                ? "" : String.valueOf(safeResult.get("thinking")).trim();
         if (turn != null && !reply.isBlank()) {
             VerlaMessage existing = messageRepository.findByTurnRoleScene(
                     turn.getId(), "assistant", SIMULATION_CHAT_SCENE);
             if (existing != null) {
                 // Streaming deltas already created the row; finalize its text so
                 // the UI stops treating it as partial.
+                Map<String, Object> meta = readMetaMap(existing.getMetaJson());
+                meta.remove("streaming");
+                meta.remove("thinkingStreaming");
+                if (!thinking.isEmpty()) {
+                    meta.put("thinking", thinking);
+                }
                 existing.setTextContent(reply);
-                existing.setMetaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)));
+                existing.setMetaJson(serializeJson(meta));
                 messageRepository.save(existing);
             } else {
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("scene", SIMULATION_CHAT_SCENE);
+                if (!thinking.isEmpty()) {
+                    meta.put("thinking", thinking);
+                }
                 messageRepository.save(VerlaMessage.builder()
                         .conversationId(turn.getConversationId())
                         .turnId(turn.getId())
@@ -569,7 +646,7 @@ public class VerlaTurnOrchestrator {
                         .sourceSessionId(agentSessionId)
                         .textContent(reply)
                         .scene(SIMULATION_CHAT_SCENE)
-                        .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
+                        .metaJson(serializeJson(meta))
                         .createdAt(LocalDateTime.now())
                         .build());
             }
@@ -600,6 +677,19 @@ public class VerlaTurnOrchestrator {
             turn.setUpdatedAt(LocalDateTime.now());
             turnRepository.save(turn);
             conversationRepository.incrementVersion(turn.getConversationId());
+            // A failed turn may have streamed partial answer/thinking; clear the
+            // live flags so the UI stops showing a perpetual stream.
+            VerlaMessage existing = messageRepository.findByTurnRoleScene(
+                    turn.getId(), "assistant", SIMULATION_CHAT_SCENE);
+            if (existing != null) {
+                Map<String, Object> meta = readMetaMap(existing.getMetaJson());
+                boolean changed = meta.remove("streaming") != null;
+                changed |= meta.remove("thinkingStreaming") != null;
+                if (changed) {
+                    existing.setMetaJson(serializeJson(meta));
+                    messageRepository.save(existing);
+                }
+            }
         }
     }
 

@@ -68,6 +68,7 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.SIMULATION_CANCELLED,
             VerlaAgentEventType.SIMULATION_CHAT_STARTED,
             VerlaAgentEventType.SIMULATION_CHAT_DELTA,
+            VerlaAgentEventType.SIMULATION_CHAT_THINKING_DELTA,
             VerlaAgentEventType.SIMULATION_CHAT_COMPLETED,
             VerlaAgentEventType.SIMULATION_CHAT_FAILED,
             VerlaAgentEventType.SIMULATION_CHAT_CANCELLED);
@@ -149,6 +150,9 @@ public class VerlaAgentLifecycleEventHandler implements VerlaEventHandler {
             }
             case SIMULATION_CHAT_DELTA -> {
                 orchestrator.onSimulationChatDelta(sessionId, payload);
+            }
+            case SIMULATION_CHAT_THINKING_DELTA -> {
+                orchestrator.onSimulationChatThinkingDelta(sessionId, payload);
             }
             case SIMULATION_CHAT_COMPLETED -> {
                 log.info("[Verla/agent] {} sessionId={}", type, sessionId);

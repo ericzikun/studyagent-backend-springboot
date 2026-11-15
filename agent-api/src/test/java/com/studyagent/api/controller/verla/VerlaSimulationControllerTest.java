@@ -10,6 +10,7 @@ import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
+import com.studyagent.service.domain.verla.VerlaMessage;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
 import com.studyagent.service.domain.verla.repo.VerlaArtifactRepository;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -194,6 +196,32 @@ class VerlaSimulationControllerTest {
                 () -> controller.generate("user_1", 11L,
                         new VerlaSimulationController.GenerateSimulationRequest("make a lab", null, "en")));
         verify(turnOrchestrator, never()).onUserMessage(any());
+    }
+
+    @Test
+    void messagesExposeStreamingThinkingSnapshot() {
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(11L)
+                .userId("user_1")
+                .build();
+        when(conversationService.getOwned("user_1", 11L)).thenReturn(conversation);
+        VerlaMessage assistant = VerlaMessage.builder()
+                .id(21L)
+                .role("assistant")
+                .textContent("")
+                .scene("SIMULATION_CHAT")
+                .metaJson("{\"scene\":\"SIMULATION_CHAT\",\"streaming\":true,"
+                        + "\"thinking\":\"先看页面结构\",\"thinkingStreaming\":true}")
+                .createdAt(LocalDateTime.now())
+                .build();
+        when(messageRepository.findByCursor(11L, null, 100)).thenReturn(List.of(assistant));
+
+        Result<List<Map<String, Object>>> result = controller.messages("user_1", 11L);
+        Map<String, Object> row = result.getData().get(0);
+
+        assertEquals("先看页面结构", row.get("thinking"));
+        assertEquals(Boolean.TRUE, row.get("thinkingStreaming"));
+        assertEquals(Boolean.TRUE, row.get("streaming"));
     }
 
     @Test

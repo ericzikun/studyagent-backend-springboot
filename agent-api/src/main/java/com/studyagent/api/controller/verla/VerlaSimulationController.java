@@ -221,7 +221,10 @@ public class VerlaSimulationController {
                     item.put("role", m.getRole());
                     item.put("text", m.getTextContent() == null ? "" : m.getTextContent());
                     item.put("scene", m.getScene());
-                    item.put("streaming", "assistant".equals(m.getRole()) && isStreamingMessage(m));
+                    boolean assistant = "assistant".equals(m.getRole());
+                    item.put("streaming", assistant && isStreamingMessage(m));
+                    item.put("thinking", assistant ? messageMetaText(m, "thinking") : "");
+                    item.put("thinkingStreaming", assistant && messageMetaBoolean(m, "thinkingStreaming"));
                     item.put("createdAt", m.getCreatedAt() == null ? null : m.getCreatedAt().toString());
                     return item;
                 })
@@ -516,6 +519,30 @@ public class VerlaSimulationController {
             return objectMapper.readValue(metaJson, Map.class);
         } catch (Exception e) {
             return Map.of();
+        }
+    }
+
+    private String messageMetaText(VerlaMessage message, String field) {
+        String metaJson = message.getMetaJson();
+        if (metaJson == null || metaJson.isBlank()) {
+            return "";
+        }
+        try {
+            return objectMapper.readTree(metaJson).path(field).asText("");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private boolean messageMetaBoolean(VerlaMessage message, String field) {
+        String metaJson = message.getMetaJson();
+        if (metaJson == null || metaJson.isBlank()) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(metaJson).path(field).asBoolean(false);
+        } catch (Exception e) {
+            return false;
         }
     }
 

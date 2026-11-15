@@ -13,6 +13,7 @@ import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.domain.billing.BillingDomainService;
+import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
@@ -121,7 +122,7 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> passCheckout(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        if (billingDomainService.isPaidMember(clerkUserId)) {
+        if (isPaidMember(clerkUserId)) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "simulation lab is included in your membership");
         }
@@ -129,9 +130,19 @@ public class VerlaSimulationController {
         return Result.success(Map.of("url", simulationPassService.createCheckout(clerkUserId)));
     }
 
+    private boolean isPaidMember(String clerkUserId) {
+        if (billingDomainService.isPaidMember(clerkUserId)) {
+            return true;
+        }
+        // Test/comped memberships may not carry a Stripe subscription id; trust
+        // the paid-entitlement state so active/trialing/grace members still pass.
+        SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
+        return subscription != null
+                && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
+    }
+
     private SimulationPassService.Access access(String clerkUserId) {
-        return simulationPassService.access(
-                clerkUserId, billingDomainService.isPaidMember(clerkUserId));
+        return simulationPassService.access(clerkUserId, isPaidMember(clerkUserId));
     }
 
     private void requirePass(String clerkUserId) {

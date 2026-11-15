@@ -74,6 +74,11 @@ public class SimulationPassService {
                 membershipIncluded);
     }
 
+    /** True when the user has a paid 7-day pass that has not expired. */
+    public boolean hasActivePass(String clerkUserId) {
+        return activePass(clerkUserId, LocalDateTime.now()) != null;
+    }
+
     public String createCheckout(String clerkUserId) {
         SimulationPassProductEntity product = activeProduct();
         if (product == null || product.getStripePriceId() == null

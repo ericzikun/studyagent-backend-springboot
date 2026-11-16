@@ -1,6 +1,6 @@
 -- Simulation Lab one-time trial regrant.
 -- Existing users receive a lazy grant on their first entitlement check after
--- this release; successes before granted_at no longer consume the new trial.
+-- this release. Successes before granted_at no longer consume the new trial.
 CREATE TABLE IF NOT EXISTS simulation_lab_trial_grants (
     clerk_user_id VARCHAR(64) NOT NULL,
     granted_at DATETIME NOT NULL,

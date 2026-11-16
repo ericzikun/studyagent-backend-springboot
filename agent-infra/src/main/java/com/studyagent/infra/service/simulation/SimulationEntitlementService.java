@@ -18,7 +18,9 @@ import java.util.Objects;
  * <p>Order matters: admin/membership/pass take precedence over the one-time
  * free trial. Membership uses the plan's assignment quota as its per-period
  * count; usage is counted from successful SIMULATION sessions, so failed runs
- * do not consume a slot and no extra ledger table is needed.
+ * do not consume a slot. The free trial itself is tracked by
+ * {@link SimulationTrialGrantService} so historical labs do not consume the
+ * post-launch regrant.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class SimulationEntitlementService {
 
     private final BillingDomainService billingDomainService;
     private final SimulationPassService simulationPassService;
+    private final SimulationTrialGrantService simulationTrialGrantService;
     private final JdbcTemplate jdbcTemplate;
 
     public record Entitlement(
@@ -55,6 +58,7 @@ public class SimulationEntitlementService {
 
     public Entitlement resolve(String clerkUserId) {
         boolean member = isPaidMember(clerkUserId);
+        simulationTrialGrantService.ensureGrant(clerkUserId);
         SimulationPassService.Access passAccess =
                 simulationPassService.access(clerkUserId, member);
         boolean passActive = simulationPassService.hasActivePass(clerkUserId);
@@ -104,7 +108,7 @@ public class SimulationEntitlementService {
                     passAccess.purchasable());
         }
 
-        boolean everGenerated = countSucceeded(clerkUserId, null, null) > 0;
+        boolean everGenerated = simulationTrialGrantService.isUsed(clerkUserId);
         if (everGenerated) {
             return new Entitlement(false, true, ENTITLEMENT_FREE_TRIAL_USED, false,
                     1L, 1L, 0L, null, null,

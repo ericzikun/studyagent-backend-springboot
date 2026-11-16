@@ -23,6 +23,7 @@ class SimulationEntitlementServiceTest {
 
     private BillingDomainService billing;
     private SimulationPassService passService;
+    private SimulationTrialGrantService trialGrantService;
     private JdbcTemplate jdbcTemplate;
     private SimulationEntitlementService service;
 
@@ -30,8 +31,10 @@ class SimulationEntitlementServiceTest {
     void setUp() {
         billing = mock(BillingDomainService.class);
         passService = mock(SimulationPassService.class);
+        trialGrantService = mock(SimulationTrialGrantService.class);
         jdbcTemplate = mock(JdbcTemplate.class);
-        service = new SimulationEntitlementService(billing, passService, jdbcTemplate);
+        service = new SimulationEntitlementService(
+                billing, passService, trialGrantService, jdbcTemplate);
         when(billing.isPaidMember(anyString())).thenReturn(false);
         when(billing.getCurrentSubscription(anyString())).thenReturn(null);
         when(passService.access(anyString(), anyBoolean())).thenReturn(
@@ -42,8 +45,7 @@ class SimulationEntitlementServiceTest {
 
     @Test
     void freeUserGetsOneLifetimeTrialWhenNoSuccessfulLabExists() {
-        when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), anyString()))
-                .thenReturn(0L);
+        when(trialGrantService.isUsed("user_free")).thenReturn(false);
 
         SimulationEntitlementService.Entitlement entitlement = service.resolve("user_free");
 
@@ -56,8 +58,7 @@ class SimulationEntitlementServiceTest {
 
     @Test
     void freeUserIsLockedAfterFirstSuccessfulLab() {
-        when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), anyString()))
-                .thenReturn(1L);
+        when(trialGrantService.isUsed("user_free")).thenReturn(true);
 
         SimulationEntitlementService.Entitlement entitlement = service.resolve("user_free");
 

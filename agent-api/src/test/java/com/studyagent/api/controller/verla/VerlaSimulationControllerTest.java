@@ -149,6 +149,25 @@ class VerlaSimulationControllerTest {
     }
 
     @Test
+    void createStoresSimulationIntentSoHistoryIsNotListedAsAssignment() {
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(42L)
+                .userId("user_1")
+                .title("Pendulum lab")
+                .build();
+        when(conversationService.create(
+                eq("user_1"), anyString(), eq("{\"mode\":\"simulation\"}"), eq("SIMULATION")))
+                .thenReturn(conversation);
+
+        Result<Map<String, Object>> result = controller.create(
+                "user_1", new VerlaSimulationController.CreateSimulationRequest("make a pendulum lab"));
+
+        assertEquals("DRAFT", result.getData().get("status"));
+        verify(conversationService).create(
+                eq("user_1"), anyString(), eq("{\"mode\":\"simulation\"}"), eq("SIMULATION"));
+    }
+
+    @Test
     void createRequiresSimulationPass() {
         when(entitlementService.resolve("user_1")).thenReturn(
                 new SimulationEntitlementService.Entitlement(

@@ -158,7 +158,7 @@ public class VerlaSimulationController {
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         String title = titleFromPrompt(prompt);
         VerlaConversation conversation = conversationService.create(
-                clerkUserId, title, "{\"mode\":\"simulation\"}", null);
+                clerkUserId, title, "{\"mode\":\"simulation\"}", INTENT_SIMULATION);
         log.info("[Simulation] draft created cid={} user={}", conversation.getId(), clerkUserId);
         return Result.success(Map.of(
                 "conversationId", VerlaConversationVO.fromPublic(conversation).getConversationId(),

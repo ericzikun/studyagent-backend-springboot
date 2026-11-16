@@ -18,6 +18,7 @@ import com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper;
 import com.studyagent.service.domain.billing.BillingDomainException;
 import com.studyagent.service.domain.billing.ConvertedYearlyTrialMigrationOutcome;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
+import com.studyagent.service.domain.payment.CheckoutSessionResult;
 import com.studyagent.service.domain.quota.PlanQuotaService;
 import com.studyagent.service.domain.quota.QuotaVipAccessService;
 import com.studyagent.service.domain.user.UserRepository;
@@ -1814,6 +1815,57 @@ class BillingDomainServiceImplTest {
     }
 
     @Test
+    void quoteResumesOpenCheckoutForIncompleteSubscription() throws Exception {
+        UserSubscriptionEntity subscription = incompleteIntroTrialSubscription("user_pending_checkout");
+        SubscriptionPlanEntity trial = introTrialPlan();
+        SubscriptionPlanEntity monthly = conversionPlan();
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(trial, monthly);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        stubOpenResumableCheckout(service, subscription, trial, IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL);
+
+        var quote = service.getPurchaseQuote(
+                subscription.getClerkUserId(), "subscription", "pro_trial_to_monthly");
+
+        assertEquals("pro_trial_to_monthly", quote.getSkuCode());
+        assertEquals(299, quote.getAmountCents());
+        assertEquals("week", quote.getBillingInterval());
+        assertEquals(0, service.checkoutAttempts);
+        assertNull(service.expiredCheckoutSessionId);
+    }
+
+    @Test
+    void createSubscriptionCheckoutResumesOpenCheckoutForIncompleteSubscription() throws Exception {
+        UserSubscriptionEntity subscription = incompleteIntroTrialSubscription("user_pending_checkout");
+        SubscriptionPlanEntity trial = introTrialPlan();
+        SubscriptionPlanEntity monthly = conversionPlan();
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(trial, monthly);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_pending_checkout")).thenReturn(subscription);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        setStripeSecretKey(service, "sk_test_123");
+        stubOpenResumableCheckout(service, subscription, trial, IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL);
+
+        CheckoutSessionResult result = service.createSubscriptionCheckout(
+                subscription.getClerkUserId(),
+                "user@example.com",
+                "pro_trial_to_monthly",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                null);
+
+        assertEquals("cs_test_pending_resume", result.getSessionId());
+        assertEquals("https://checkout.stripe.test/resume", result.getCheckoutUrl());
+        assertEquals(0, service.checkoutAttempts);
+        assertNull(service.expiredCheckoutSessionId);
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
     void createSubscriptionCheckoutAllowsFreshCheckoutAfterIncompleteExpired() throws Exception {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(30L);
@@ -3422,6 +3474,74 @@ class BillingDomainServiceImplTest {
         plan.setBillingInterval(billingInterval);
         plan.setPriceCents(priceCents);
         return plan;
+    }
+
+    private UserSubscriptionEntity incompleteIntroTrialSubscription(String clerkUserId) {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(901L);
+        subscription.setClerkUserId(clerkUserId);
+        subscription.setTier("pro");
+        subscription.setPlanCode("pro_trial_to_monthly");
+        subscription.setStatus("incomplete");
+        subscription.setStripeCustomerId("cus_pending");
+        subscription.setStripeSubscriptionId("sub_pending");
+        return subscription;
+    }
+
+    private SubscriptionPlanEntity introTrialPlan() {
+        SubscriptionPlanEntity plan = plan("pro_trial_to_monthly", "pro", "month", 299);
+        plan.setCurrency("usd");
+        plan.setStripePriceId("price_trial");
+        plan.setStripeProductId("prod_trial");
+        plan.setIsActive(true);
+        plan.setOfferKind("pro_paid_trial");
+        plan.setTrialDays(7);
+        plan.setConvertsToPlanCode("pro_monthly");
+        return plan;
+    }
+
+    private SubscriptionPlanEntity conversionPlan() {
+        SubscriptionPlanEntity plan = plan("pro_monthly", "pro", "month", 2999);
+        plan.setCurrency("usd");
+        plan.setStripePriceId("price_monthly");
+        plan.setStripeProductId("prod_pro");
+        plan.setIsActive(true);
+        return plan;
+    }
+
+    private void stubOpenResumableCheckout(
+            TestBillingDomainService service,
+            UserSubscriptionEntity subscription,
+            SubscriptionPlanEntity plan,
+            String orderType) {
+        RechargeOrderEntity pending = new RechargeOrderEntity();
+        pending.setId(902L);
+        pending.setClerkUserId(subscription.getClerkUserId());
+        pending.setOrderType(orderType);
+        pending.setPlanCode(plan.getPlanCode());
+        pending.setStatus("pending");
+        pending.setStripeSessionId("cs_test_pending_resume");
+        pending.setPriceCents(plan.getPriceCents());
+        pending.setCurrency(plan.getCurrency());
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(pending);
+
+        Session session = new Session();
+        session.setId("cs_test_pending_resume");
+        session.setStatus("open");
+        session.setUrl("https://checkout.stripe.test/resume");
+        session.setExpiresAt(Instant.now().plusSeconds(1800).getEpochSecond());
+        session.setClientReferenceId(subscription.getClerkUserId());
+        session.setCurrency(plan.getCurrency());
+        session.setAmountSubtotal((long) plan.getPriceCents());
+        var price = new com.stripe.model.Price();
+        price.setId(plan.getStripePriceId());
+        var item = new com.stripe.model.LineItem();
+        item.setPrice(price);
+        item.setQuantity(1L);
+        var lines = new com.stripe.model.LineItemCollection();
+        lines.setData(List.of(item));
+        session.setLineItems(lines);
+        service.checkoutSnapshotToRetrieve = session;
     }
 
     private Subscription subscription(

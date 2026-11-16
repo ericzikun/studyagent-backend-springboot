@@ -512,8 +512,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             assertCurrentSubscriptionCannotBuyIntroTrial(current, plan);
             if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
                     && isRealStripeReference(current.getStripeSubscriptionId())) {
-                if (BillingEntitlementPolicy.requiresPaymentResolution(current.getStatus()))
+                if (BillingEntitlementPolicy.requiresPaymentResolution(current.getStatus())) {
+                    if (isIncompleteSubscription(current)) {
+                        SubscriptionPlanEntity pricedPlan = pricedPlanForSale(plan, true);
+                        if (reusableInitialCheckoutForIncomplete(user, pricedPlan, null) != null) {
+                            return initialPurchaseQuote(user, pricedPlan);
+                        }
+                    }
                     throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Resolve the current payment first");
+                }
                 String currency = currencyForMember(user);
                 SubscriptionPlanEntity source = pricedPlanForContract(current, requireCurrentPlan(current), false, currency);
                 plan = pricedPlanForContract(current, plan, true, currency);
@@ -643,6 +650,15 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
         if (BillingEntitlementPolicy.requiresPaymentResolution(userSubscription.getStatus())
                 && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
+            if (isIncompleteSubscription(userSubscription)) {
+                SubscriptionPlanEntity pricedPlan = pricedPlanForSale(plan, true);
+                CheckoutSessionResult reusable = reusableInitialCheckoutForIncomplete(
+                        clerkUserId, pricedPlan, resumeToken);
+                if (reusable != null) {
+                    confirmInitialPurchase(clerkUserId, pricedPlan);
+                    return reusable;
+                }
+            }
             throw new BillingDomainException(
                     "PAYMENT_RESOLUTION_REQUIRED",
                     "Resolve the existing subscription payment before changing plans");
@@ -852,6 +868,16 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SubscriptionPlanEntity plan,
             String resumeToken,
             String orderType) {
+        return findReusableInitialCheckout(clerkUserId, planCode, plan, resumeToken, orderType, true);
+    }
+
+    private CheckoutSessionResult findReusableInitialCheckout(
+            String clerkUserId,
+            String planCode,
+            SubscriptionPlanEntity plan,
+            String resumeToken,
+            String orderType,
+            boolean expireWhenUnusable) {
         RechargeOrderEntity pending = rechargeOrderMapper.selectOne(
                 new LambdaQueryWrapper<RechargeOrderEntity>()
                         .eq(RechargeOrderEntity::getClerkUserId, clerkUserId)
@@ -859,7 +885,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         .in(RechargeOrderEntity::getStatus,
                                 List.of("pending", "pending_checkout", "checkout_created"))
                         .orderByDesc(RechargeOrderEntity::getCreatedAt)
-                        .last("LIMIT 1 FOR UPDATE"));
+                        .last(expireWhenUnusable ? "LIMIT 1 FOR UPDATE" : "LIMIT 1"));
         if (pending == null || !hasText(pending.getStripeSessionId())) {
             return null;
         }
@@ -888,14 +914,40 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                         "SUBSCRIPTION_CHANGE_PENDING",
                         "The existing subscription payment is still being applied");
             }
-            if ("open".equals(session.getStatus())) {
-                expireStripeCheckoutSession(session);
+            if (expireWhenUnusable) {
+                if ("open".equals(session.getStatus())) {
+                    expireStripeCheckoutSession(session);
+                }
+                markCheckoutOrderExpired(pending.getId(), "stripe_session_not_reusable");
             }
-            markCheckoutOrderExpired(pending.getId(), "stripe_session_not_reusable");
             return null;
         } catch (StripeException e) {
             throw stripeFailure("Inspect existing subscription Checkout failed", e);
         }
+    }
+
+    /**
+     * An unpaid Checkout leaves the subscription incomplete and the member unable to buy anything,
+     * so resume that still-open session for the same plan before requiring a payment resolution.
+     */
+    private CheckoutSessionResult reusableInitialCheckoutForIncomplete(
+            String clerkUserId,
+            SubscriptionPlanEntity pricedPlan,
+            String resumeToken) {
+        String orderType;
+        if (introTrialEnabled && isOneTimeProTrialPlan(pricedPlan)) {
+            orderType = IntroTrialPlans.ORDER_TYPE_PRO_TRIAL_ONCE;
+        } else if (introTrialEnabled && isIntroTrialPlan(pricedPlan)) {
+            orderType = IntroTrialPlans.ORDER_TYPE_INTRO_TRIAL;
+        } else {
+            orderType = "subscription_initial";
+        }
+        return findReusableInitialCheckout(
+                clerkUserId, pricedPlan.getPlanCode(), pricedPlan, resumeToken, orderType, false);
+    }
+
+    private boolean isIncompleteSubscription(UserSubscriptionEntity subscription) {
+        return subscription != null && "incomplete".equalsIgnoreCase(subscription.getStatus());
     }
 
     private void markCheckoutOrderExpired(Long orderId, String reason) {

@@ -65,9 +65,17 @@ public class SimulationEntitlementService {
                     false, true, false, true, false, null, passAccess.purchasable());
         }
         if (passActive) {
-            return new Entitlement(true, false, ENTITLEMENT_PASS, true,
-                    null, 0, null, null, null,
-                    false, false, false, false, true, passAccess.expiresAt(),
+            LocalDateTime passEnd = passAccess.expiresAt();
+            LocalDateTime passStart = simulationPassService.activePassStartedAt(clerkUserId);
+            if (passStart == null) {
+                passStart = passEnd.minusDays(7);
+            }
+            long limit = SimulationPassService.PASS_MAX_GENERATIONS;
+            long used = countSucceeded(clerkUserId, passStart, passEnd);
+            long remaining = Math.max(0L, limit - used);
+            return new Entitlement(remaining > 0, false, ENTITLEMENT_PASS, false,
+                    limit, used, remaining, passStart, passEnd,
+                    false, false, false, false, true, passEnd,
                     passAccess.purchasable());
         }
         if (member) {

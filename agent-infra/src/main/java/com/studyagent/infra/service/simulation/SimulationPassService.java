@@ -30,6 +30,7 @@ import java.time.LocalDateTime;
 public class SimulationPassService {
 
     public static final String PASS_CODE = "simulation_lab_7d";
+    public static final int PASS_MAX_GENERATIONS = 3;
     public static final String PURCHASE_TYPE = "simulation_lab_pass";
 
     private final SimulationPassMapper passMapper;
@@ -77,6 +78,12 @@ public class SimulationPassService {
     /** True when the user has a paid 7-day pass that has not expired. */
     public boolean hasActivePass(String clerkUserId) {
         return activePass(clerkUserId, LocalDateTime.now()) != null;
+    }
+
+    /** Start of the currently active pass window, used for the 3-use quota. */
+    public LocalDateTime activePassStartedAt(String clerkUserId) {
+        SimulationPassEntity pass = activePass(clerkUserId, LocalDateTime.now());
+        return pass == null ? null : pass.getStartedAt();
     }
 
     public String createCheckout(String clerkUserId) {

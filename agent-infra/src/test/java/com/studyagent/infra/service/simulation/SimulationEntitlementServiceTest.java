@@ -97,17 +97,27 @@ class SimulationEntitlementServiceTest {
     }
 
     @Test
-    void activePassIsUnlimited() {
+    void activePassAllowsThreeGenerationsInItsWindow() {
+        LocalDateTime start = LocalDateTime.now().minusDays(1);
+        LocalDateTime end = start.plusDays(7);
         when(passService.hasActivePass("pass_user")).thenReturn(true);
+        when(passService.activePassStartedAt("pass_user")).thenReturn(start);
         when(passService.access(eq("pass_user"), eq(false))).thenReturn(
                 new SimulationPassService.Access(
                         true, false, true, "simulation_lab_7d",
-                        LocalDateTime.now().plusDays(2), 199, "usd", 7, false));
+                        end, 199, "usd", 7, false));
+        when(jdbcTemplate.queryForObject(
+                anyString(), eq(Long.class), anyString(),
+                any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(1L);
 
         SimulationEntitlementService.Entitlement entitlement = service.resolve("pass_user");
 
         assertTrue(entitlement.canCreate());
-        assertTrue(entitlement.unlimited());
+        assertFalse(entitlement.unlimited());
         assertEquals(SimulationEntitlementService.ENTITLEMENT_PASS, entitlement.entitlement());
+        assertEquals(3L, entitlement.limit());
+        assertEquals(1L, entitlement.used());
+        assertEquals(2L, entitlement.remaining());
     }
 }

@@ -15,7 +15,7 @@ import java.util.Objects;
  * Resolves whether a user may create a Simulation Lab and how many labs the
  * current membership period still allows.
  *
- * <p>Order matters: admin/pass/membership take precedence over the one-time
+ * <p>Order matters: admin/membership/pass take precedence over the one-time
  * free trial. Membership uses the plan's assignment quota as its per-period
  * count; usage is counted from successful SIMULATION sessions, so failed runs
  * do not consume a slot and no extra ledger table is needed.
@@ -64,20 +64,8 @@ public class SimulationEntitlementService {
                     null, 0, null, null, null,
                     false, true, false, true, false, null, passAccess.purchasable());
         }
-        if (passActive) {
-            LocalDateTime passEnd = passAccess.expiresAt();
-            LocalDateTime passStart = simulationPassService.activePassStartedAt(clerkUserId);
-            if (passStart == null) {
-                passStart = passEnd.minusDays(7);
-            }
-            long limit = SimulationPassService.PASS_MAX_GENERATIONS;
-            long used = countSucceeded(clerkUserId, passStart, passEnd);
-            long remaining = Math.max(0L, limit - used);
-            return new Entitlement(remaining > 0, false, ENTITLEMENT_PASS, false,
-                    limit, used, remaining, passStart, passEnd,
-                    false, false, false, false, true, passEnd,
-                    passAccess.purchasable());
-        }
+        // Membership supersedes a legacy pass: a pass-exhausted user who buys a
+        // membership must unlock immediately, without waiting for the pass to expire.
         if (member) {
             BillingPlan plan = billingDomainService.getEffectivePlanOrFree(clerkUserId);
             long limit = plan == null || plan.getAssignmentQuota() == null
@@ -100,6 +88,20 @@ public class SimulationEntitlementService {
             return new Entitlement(remaining > 0, false, ENTITLEMENT_MEMBERSHIP, false,
                     limit, used, remaining, periodStart, periodEnd,
                     false, false, true, false, false, null, false);
+        }
+        if (passActive) {
+            LocalDateTime passEnd = passAccess.expiresAt();
+            LocalDateTime passStart = simulationPassService.activePassStartedAt(clerkUserId);
+            if (passStart == null) {
+                passStart = passEnd.minusDays(7);
+            }
+            long limit = SimulationPassService.PASS_MAX_GENERATIONS;
+            long used = countSucceeded(clerkUserId, passStart, passEnd);
+            long remaining = Math.max(0L, limit - used);
+            return new Entitlement(remaining > 0, false, ENTITLEMENT_PASS, false,
+                    limit, used, remaining, passStart, passEnd,
+                    false, false, false, false, true, passEnd,
+                    passAccess.purchasable());
         }
 
         boolean everGenerated = countSucceeded(clerkUserId, null, null) > 0;

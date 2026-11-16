@@ -97,8 +97,7 @@ class SimulationEntitlementServiceTest {
     }
 
     @Test
-    void activePassAllowsThreeGenerationsInItsWindow() {
-        LocalDateTime start = LocalDateTime.now().minusDays(1);
+    void activePassAllowsThreeGenerationsInItsWindow() {        LocalDateTime start = LocalDateTime.now().minusDays(1);
         LocalDateTime end = start.plusDays(7);
         when(passService.hasActivePass("pass_user")).thenReturn(true);
         when(passService.activePassStartedAt("pass_user")).thenReturn(start);
@@ -119,5 +118,37 @@ class SimulationEntitlementServiceTest {
         assertEquals(3L, entitlement.limit());
         assertEquals(1L, entitlement.used());
         assertEquals(2L, entitlement.remaining());
+    }
+
+    @Test
+    void membershipSupersedesAnExhaustedActivePass() {
+        LocalDateTime start = LocalDateTime.of(2026, 11, 1, 0, 0);
+        LocalDateTime end = start.plusMonths(1);
+        when(billing.isPaidMember("member_with_pass")).thenReturn(true);
+        when(billing.getEffectivePlanOrFree("member_with_pass")).thenReturn(
+                BillingPlan.builder().assignmentQuota(16L).build());
+        when(billing.getCurrentSubscription("member_with_pass")).thenReturn(
+                SubscriptionResult.builder()
+                        .quotaPeriodStart(start)
+                        .quotaPeriodEnd(end)
+                        .build());
+        when(passService.hasActivePass("member_with_pass")).thenReturn(true);
+        when(passService.activePassStartedAt("member_with_pass")).thenReturn(start.minusDays(1));
+        when(passService.access(eq("member_with_pass"), eq(true))).thenReturn(
+                new SimulationPassService.Access(
+                        true, false, false, "simulation_lab_7d",
+                        end, 199, "usd", 7, true));
+        when(jdbcTemplate.queryForObject(
+                anyString(), eq(Long.class), anyString(),
+                any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(3L);
+
+        SimulationEntitlementService.Entitlement entitlement =
+                service.resolve("member_with_pass");
+
+        assertTrue(entitlement.canCreate());
+        assertEquals(SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, entitlement.entitlement());
+        assertEquals(16L, entitlement.limit());
+        assertEquals(13L, entitlement.remaining());
     }
 }

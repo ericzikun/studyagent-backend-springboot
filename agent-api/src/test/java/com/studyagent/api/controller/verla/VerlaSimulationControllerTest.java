@@ -4,11 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.api.common.Result;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.infra.service.simulation.SimulationEntitlementService;
 import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
-import com.studyagent.service.domain.billing.BillingDomainService;
-import com.studyagent.service.domain.billing.SubscriptionResult;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -52,7 +51,7 @@ class VerlaSimulationControllerTest {
     private VerlaAttachmentRepository attachmentRepository;
     private JdbcTemplate jdbcTemplate;
     private SimulationPassService simulationPassService;
-    private BillingDomainService billingDomainService;
+    private SimulationEntitlementService entitlementService;
     private VerlaSimulationController controller;
 
     @BeforeEach
@@ -66,11 +65,15 @@ class VerlaSimulationControllerTest {
         attachmentRepository = mock(VerlaAttachmentRepository.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         simulationPassService = mock(SimulationPassService.class);
-        billingDomainService = mock(BillingDomainService.class);
-        when(billingDomainService.isPaidMember(anyString())).thenReturn(false);
+        entitlementService = mock(SimulationEntitlementService.class);
         when(simulationPassService.access(anyString(), anyBoolean())).thenReturn(
                 new SimulationPassService.Access(
                         true, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
+        when(entitlementService.resolve(anyString())).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_PASS, true,
+                        null, 0, null, null, null,
+                        false, false, false, false, true, null, true));
         controller = new VerlaSimulationController(
                 conversationService,
                 turnOrchestrator,
@@ -83,7 +86,7 @@ class VerlaSimulationControllerTest {
                 new ObjectMapper(),
                 jdbcTemplate,
                 simulationPassService,
-                billingDomainService);
+                entitlementService);
     }
 
     @Test
@@ -96,6 +99,40 @@ class VerlaSimulationControllerTest {
         assertEquals(3, result.getData().get("maxFiles"));
         assertEquals(1, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void configExposesFreeTrialAndPreviewLock() {
+        when(entitlementService.resolve("free_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_FREE_TRIAL, false,
+                        1L, 0L, 1L, null, null,
+                        true, false, false, false, false, null, true));
+        when(simulationPassService.access(eq("free_1"), eq(false))).thenReturn(
+                new SimulationPassService.Access(
+                        false, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
+
+        Result<Map<String, Object>> free = controller.config("free_1");
+
+        assertEquals(Boolean.TRUE, free.getData().get("canCreate"));
+        assertEquals("free_trial", free.getData().get("entitlement"));
+        assertEquals(Boolean.FALSE, free.getData().get("previewLocked"));
+        Map<String, Object> pass = (Map<String, Object>) free.getData().get("pass");
+        assertEquals(Boolean.FALSE, pass.get("active"));
+        assertEquals(Boolean.TRUE, pass.get("freeTrialAvailable"));
+
+        when(entitlementService.resolve("free_2")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        false, true, SimulationEntitlementService.ENTITLEMENT_FREE_TRIAL_USED, false,
+                        1L, 1L, 0L, null, null,
+                        false, true, false, false, false, null, true));
+
+        Result<Map<String, Object>> used = controller.config("free_2");
+
+        assertEquals(Boolean.FALSE, used.getData().get("canCreate"));
+        assertEquals(Boolean.TRUE, used.getData().get("previewLocked"));
+        assertEquals("free_trial_used", used.getData().get("entitlement"));
     }
 
     @Test
@@ -112,10 +149,31 @@ class VerlaSimulationControllerTest {
     }
 
     @Test
+    void createStoresSimulationIntentSoHistoryIsNotListedAsAssignment() {
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(42L)
+                .userId("user_1")
+                .title("Pendulum lab")
+                .build();
+        when(conversationService.create(
+                eq("user_1"), anyString(), eq("{\"mode\":\"simulation\"}"), eq("SIMULATION")))
+                .thenReturn(conversation);
+
+        Result<Map<String, Object>> result = controller.create(
+                "user_1", new VerlaSimulationController.CreateSimulationRequest("make a pendulum lab"));
+
+        assertEquals("DRAFT", result.getData().get("status"));
+        verify(conversationService).create(
+                eq("user_1"), anyString(), eq("{\"mode\":\"simulation\"}"), eq("SIMULATION"));
+    }
+
+    @Test
     void createRequiresSimulationPass() {
-        when(simulationPassService.access(eq("user_1"), anyBoolean())).thenReturn(
-                new SimulationPassService.Access(
-                        false, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
+        when(entitlementService.resolve("user_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        false, false, SimulationEntitlementService.ENTITLEMENT_FREE_TRIAL_USED, false,
+                        1L, 1L, 0L, null, null,
+                        false, true, false, false, false, null, true));
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> controller.create("user_1",
@@ -128,7 +186,11 @@ class VerlaSimulationControllerTest {
     @Test
     @SuppressWarnings("unchecked")
     void paidMemberGetsAccessWithoutPurchasingPass() {
-        when(billingDomainService.isPaidMember("member_1")).thenReturn(true);
+        when(entitlementService.resolve("member_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, false,
+                        16L, 0L, 16L, LocalDateTime.now(), LocalDateTime.now().plusMonths(1),
+                        false, false, true, false, false, null, false));
         when(simulationPassService.access(eq("member_1"), eq(true))).thenReturn(
                 new SimulationPassService.Access(
                         true, false, false, "simulation_lab_7d", null, 199, "usd", 7, true));
@@ -144,7 +206,11 @@ class VerlaSimulationControllerTest {
 
     @Test
     void paidMemberCannotBuySimulationPass() {
-        when(billingDomainService.isPaidMember("member_1")).thenReturn(true);
+        when(entitlementService.resolve("member_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, false,
+                        16L, 0L, 16L, LocalDateTime.now(), LocalDateTime.now().plusMonths(1),
+                        false, false, true, false, false, null, false));
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> controller.passCheckout("member_1"));
@@ -156,8 +222,11 @@ class VerlaSimulationControllerTest {
     @Test
     @SuppressWarnings("unchecked")
     void compedPaidMemberWithoutStripeIdGetsAccess() {
-        when(billingDomainService.getCurrentSubscription("member_2")).thenReturn(
-                SubscriptionResult.builder().canConsumePaidEntitlements(true).build());
+        when(entitlementService.resolve("member_2")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, false,
+                        16L, 0L, 16L, LocalDateTime.now(), LocalDateTime.now().plusMonths(1),
+                        false, false, true, false, false, null, false));
         when(simulationPassService.access(eq("member_2"), eq(true))).thenReturn(
                 new SimulationPassService.Access(
                         true, false, false, "simulation_lab_7d", null, 199, "usd", 7, true));

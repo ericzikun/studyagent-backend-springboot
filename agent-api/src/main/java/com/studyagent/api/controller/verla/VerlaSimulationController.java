@@ -12,8 +12,7 @@ import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
-import com.studyagent.service.domain.billing.BillingDomainService;
-import com.studyagent.service.domain.billing.SubscriptionResult;
+import com.studyagent.infra.service.simulation.SimulationEntitlementService;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaAttachment;
@@ -85,7 +84,7 @@ public class VerlaSimulationController {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final SimulationPassService simulationPassService;
-    private final BillingDomainService billingDomainService;
+    private final SimulationEntitlementService simulationEntitlementService;
 
     @org.springframework.beans.factory.annotation.Value("${frontend-url:https://verla.io}")
     private String frontendUrl;
@@ -94,20 +93,33 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> config(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        SimulationPassService.Access access = access(clerkUserId);
+        SimulationEntitlementService.Entitlement entitlement =
+                simulationEntitlementService.resolve(clerkUserId);
+        SimulationPassService.Access access =
+                simulationPassService.access(clerkUserId, entitlement.membershipIncluded());
         Map<String, Object> pass = new LinkedHashMap<>();
         pass.put("active", access.active());
         pass.put("admin", access.admin());
         pass.put("purchasable", access.purchasable());
         pass.put("membershipIncluded", access.membershipIncluded());
+        pass.put("freeTrialAvailable", entitlement.freeTrialAvailable());
+        pass.put("freeTrialUsed", entitlement.freeTrialUsed());
         pass.put("passCode", access.passCode());
         pass.put("expiresAt", access.expiresAt() == null ? null : access.expiresAt().toString());
         pass.put("amountCents", access.amountCents());
         pass.put("currency", access.currency());
         pass.put("accessDays", access.accessDays());
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("createEnabled", access.active());
-        body.put("canCreate", access.active());
+        body.put("createEnabled", entitlement.canCreate());
+        body.put("canCreate", entitlement.canCreate());
+        body.put("previewLocked", entitlement.previewLocked());
+        body.put("entitlement", entitlement.entitlement());
+        body.put("unlimited", entitlement.unlimited());
+        body.put("limit", entitlement.limit());
+        body.put("used", entitlement.used());
+        body.put("remaining", entitlement.remaining());
+        body.put("periodStart", entitlement.periodStart() == null ? null : entitlement.periodStart().toString());
+        body.put("periodEnd", entitlement.periodEnd() == null ? null : entitlement.periodEnd().toString());
         body.put("attachmentsEnabled", true);
         body.put("maxFiles", MAX_FILES);
         body.put("maxFileBytes", MAX_FILE_BYTES);
@@ -122,7 +134,7 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> passCheckout(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        if (isPaidMember(clerkUserId)) {
+        if (simulationEntitlementService.resolve(clerkUserId).membershipIncluded()) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "simulation lab is included in your membership");
         }
@@ -130,23 +142,8 @@ public class VerlaSimulationController {
         return Result.success(Map.of("url", simulationPassService.createCheckout(clerkUserId)));
     }
 
-    private boolean isPaidMember(String clerkUserId) {
-        if (billingDomainService.isPaidMember(clerkUserId)) {
-            return true;
-        }
-        // Test/comped memberships may not carry a Stripe subscription id; trust
-        // the paid-entitlement state so active/trialing/grace members still pass.
-        SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
-        return subscription != null
-                && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
-    }
-
-    private SimulationPassService.Access access(String clerkUserId) {
-        return simulationPassService.access(clerkUserId, isPaidMember(clerkUserId));
-    }
-
-    private void requirePass(String clerkUserId) {
-        if (!access(clerkUserId).active()) {
+    private void requireCanCreate(String clerkUserId) {
+        if (!simulationEntitlementService.resolve(clerkUserId).canCreate()) {
             throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
                     "simulation lab pass required");
         }
@@ -157,11 +154,11 @@ public class VerlaSimulationController {
             @RequestAttribute("clerkUserId") String clerkUserId,
             @RequestBody(required = false) CreateSimulationRequest req) {
         ensureLogin(clerkUserId);
-        requirePass(clerkUserId);
+        requireCanCreate(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         String title = titleFromPrompt(prompt);
         VerlaConversation conversation = conversationService.create(
-                clerkUserId, title, "{\"mode\":\"simulation\"}", null);
+                clerkUserId, title, "{\"mode\":\"simulation\"}", INTENT_SIMULATION);
         log.info("[Simulation] draft created cid={} user={}", conversation.getId(), clerkUserId);
         return Result.success(Map.of(
                 "conversationId", VerlaConversationVO.fromPublic(conversation).getConversationId(),
@@ -174,7 +171,7 @@ public class VerlaSimulationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) GenerateSimulationRequest req) {
         ensureLogin(clerkUserId);
-        requirePass(clerkUserId);
+        requireCanCreate(clerkUserId);
         String prompt = normalizePrompt(req == null ? null : req.prompt());
         VerlaConversation conversation = conversationService.getOwned(clerkUserId, cid);
         if (conversation.getPrimaryIntent() != null
@@ -266,6 +263,10 @@ public class VerlaSimulationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) ChatSimulationRequest req) {
         ensureLogin(clerkUserId);
+        if (simulationEntitlementService.resolve(clerkUserId).previewLocked()) {
+            throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
+                    "simulation lab pass required");
+        }
         String message = normalizePrompt(req == null ? null : req.message());
         conversationService.getOwned(clerkUserId, cid);
         SendMessageResult result = turnOrchestrator.startSimulationChat(clerkUserId, cid, message);

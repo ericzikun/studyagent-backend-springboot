@@ -100,7 +100,8 @@ public class VerlaSimulationController {
         Map<String, Object> pass = new LinkedHashMap<>();
         pass.put("active", access.active());
         pass.put("admin", access.admin());
-        pass.put("purchasable", access.purchasable());
+        pass.put("purchasable", access.purchasable()
+                && !SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY.equals(entitlement.entitlement()));
         pass.put("membershipIncluded", access.membershipIncluded());
         pass.put("freeTrialAvailable", entitlement.freeTrialAvailable());
         pass.put("freeTrialUsed", entitlement.freeTrialUsed());

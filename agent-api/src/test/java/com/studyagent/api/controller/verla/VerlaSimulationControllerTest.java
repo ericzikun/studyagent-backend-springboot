@@ -220,6 +220,38 @@ class VerlaSimulationControllerTest {
     }
 
     @Test
+    void createUnderPaymentRecoveryReturnsTyped1033InsteadOfPassRequired() {
+        when(entitlementService.resolve("user_recovery")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        false, true, SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY, false,
+                        0L, 0L, 0L, null, null,
+                        false, false, false, false, false, null, false));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.create("user_recovery",
+                        new VerlaSimulationController.CreateSimulationRequest("make a lab")));
+
+        assertEquals(ApiCode.PAYMENT_RECOVERY_REQUIRED.getCode(), error.getCode());
+        assertTrue(error.getCode() != ApiCode.SIMULATION_PASS_REQUIRED.getCode());
+        verify(conversationService, never()).create(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void passCheckoutUnderPaymentRecoveryReturnsTyped1033() {
+        when(entitlementService.resolve("user_recovery")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        false, true, SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY, false,
+                        0L, 0L, 0L, null, null,
+                        false, false, false, false, true, null, false));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.passCheckout("user_recovery"));
+
+        assertEquals(ApiCode.PAYMENT_RECOVERY_REQUIRED.getCode(), error.getCode());
+        verify(simulationPassService, never()).createCheckout(anyString());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void compedPaidMemberWithoutStripeIdGetsAccess() {
         when(entitlementService.resolve("member_2")).thenReturn(

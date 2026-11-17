@@ -144,7 +144,7 @@ class BillingDomainServiceImplTest {
         for (Runnable action : List.<Runnable>of(() -> service.getPurchaseQuote("user_badge", "addon", "addon_1"),
                 () -> service.createAddonCheckout("user_badge", null, "addon_1", null, null, null))) {
             var error = assertThrows(com.studyagent.common.exception.BusinessException.class, action::run);
-            assertEquals(1031, error.getCode());
+            assertEquals(1033, error.getCode());
             var data = (com.studyagent.common.exception.CommercialBlockData) error.getData();
             assertEquals("payment_recovery_required", data.getReasonCode()); assertEquals("91", data.getPaymentRecoveryId());
         }

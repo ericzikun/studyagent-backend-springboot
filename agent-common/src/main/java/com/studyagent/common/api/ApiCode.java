@@ -66,7 +66,7 @@ public enum ApiCode {
             "Assignment understanding is still in progress. Please wait for it to finish before adding more material.",
             "正在理解材料，请稍候再补充"),
 
-    PAYMENT_RECOVERY_REQUIRED(1031, "Resolve the subscription payment to continue", "请先处理订阅付款问题"),
+    PAYMENT_RECOVERY_REQUIRED(1033, "Resolve the subscription payment to continue", "请先处理订阅付款问题"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

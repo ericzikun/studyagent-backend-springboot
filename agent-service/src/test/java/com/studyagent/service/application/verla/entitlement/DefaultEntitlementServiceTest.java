@@ -85,7 +85,7 @@ class DefaultEntitlementServiceTest {
     }
 
     @Test
-    void recoveryLockReturnsTyped1031BeforeNewUploadOrOutputAdmission() {
+    void recoveryLockReturnsTyped1033BeforeNewUploadOrOutputAdmission() {
         var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "OPEN_MANUAL", true,
                 "pro", "pro_monthly", 100L, 0L, 100L, "usd", null, null, null, List.of(), null, null, null);
         when(billingDomainService.getCurrentSubscription("locked_user")).thenReturn(
@@ -95,23 +95,23 @@ class DefaultEntitlementServiceTest {
         ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.assertCanReserveUserUpload("locked_user", 1L));
-        assertEquals(1031, ex.getCode());
+        assertEquals(1033, ex.getCode());
         var data = assertInstanceOf(CommercialBlockData.class, ex.getData());
         assertEquals("payment_recovery_required", data.getReasonCode());
         assertEquals("upload_sign", data.getBlockedAction());
         org.mockito.Mockito.verifyNoInteractions(attachmentRepository);
-        assertEquals(1031, assertThrows(BusinessException.class, () ->
+        assertEquals(1033, assertThrows(BusinessException.class, () ->
                 service.assertAssignmentOutputAllowed("locked_user", Map.of())).getCode());
     }
 
     @Test
-    void newFollowupDuringRecoveryLockReturnsTyped1031BeforeArtifactOrQuotaAdmission() {
+    void newFollowupDuringRecoveryLockReturnsTyped1033BeforeArtifactOrQuotaAdmission() {
         enableRecoveryLock();
 
         BusinessException failure = assertThrows(BusinessException.class,
                 () -> service.reserveFollowupEdit("locked_user", 74L, 902L, List.of("art_1")));
 
-        assertEquals(1031, failure.getCode());
+        assertEquals(1033, failure.getCode());
         CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, failure.getData());
         assertEquals("payment_recovery_required", data.getReasonCode());
         assertEquals("assignment_followup_edit", data.getBlockedAction());

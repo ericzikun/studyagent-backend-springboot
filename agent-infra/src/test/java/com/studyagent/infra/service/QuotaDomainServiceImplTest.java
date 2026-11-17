@@ -80,7 +80,7 @@ class QuotaDomainServiceImplTest {
         var service = service(); org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
         var error = assertThrows(com.studyagent.common.exception.BusinessException.class,
                 () -> service.canConsume("locked_user", "task_create", 1));
-        assertEquals(1031, error.getCode());
+        assertEquals(1033, error.getCode());
         verifyNoInteractions(planQuotaService, userAiQuotaMapper, aiFeatureDefsMapper);
     }
 
@@ -114,7 +114,7 @@ class QuotaDomainServiceImplTest {
         org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
         var failure = assertThrows(com.studyagent.common.exception.BusinessException.class, () ->
                 service.consume("locked_user", "task_create", 1, "task", "1", Map.of(), "new-key"));
-        assertEquals(1031, failure.getCode());
+        assertEquals(1033, failure.getCode());
         var order = org.mockito.Mockito.inOrder(userSubscriptionMapper, resolver);
         order.verify(userSubscriptionMapper).selectByUserForUpdate("locked_user");
         order.verify(resolver).resolveForUpdate("locked_user", "sub_locked");
@@ -155,7 +155,7 @@ class QuotaDomainServiceImplTest {
         // The same service must reject new work while allowing the old accepted debit to unwind.
         var blocked = assertThrows(com.studyagent.common.exception.BusinessException.class, () ->
                 service.consume("locked_user", "task_create", 1, "task", "701", Map.of()));
-        assertEquals(1031, blocked.getCode());
+        assertEquals(1033, blocked.getCode());
         verifyNoInteractions(userAiQuotaMapper, userAddonGrantMapper);
 
         var consumed = new QuotaLedgerEntity();

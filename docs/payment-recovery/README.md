@@ -4,7 +4,7 @@
 
 ## 数据库与部署
 
-启动新后端前，先备份目标测试库并执行 [095_subscription_payment_recovery.sql](../../sql/095_subscription_payment_recovery.sql)。它新增三张恢复表、`user_subscriptions.payment_recovery_id` 及索引，不回填历史账单。即使开关关闭，也需要先迁移。SQL 内指定 `USE studyagent;`。
+启动新后端前，先备份目标测试库并执行 [097_subscription_payment_recovery.sql](../../sql/097_subscription_payment_recovery.sql)。它新增三张恢复表、`user_subscriptions.payment_recovery_id` 及索引，不回填历史账单。即使开关关闭，也需要先迁移。SQL 内指定 `USE studyagent;`。
 
 默认关闭部署无需新增恢复环境变量。实际联调前需另行设置准入时间界限、指定测试用户、精确 caseKey、Portal 配置，并按验证范围控制自动重试及邮件开关。Stripe 保持测试密钥，SDK／API 版本不变；不要直接全量开启。
 

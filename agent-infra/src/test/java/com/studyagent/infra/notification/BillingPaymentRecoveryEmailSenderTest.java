@@ -135,4 +135,21 @@ class BillingPaymentRecoveryEmailSenderTest {
         assertEquals("UNKNOWN",sender.send("{\"to\":\"own@example.test\"}","saved-key").state());
     }
     private SubscriptionPaymentRecoveryEntity manual(){var r=new SubscriptionPaymentRecoveryEntity();r.setId(1L);r.setClerkUserId("user");r.setStatus("OPEN_MANUAL");r.setLatestDeclineCode("do_not_honor");r.setAmountPaidMinor(0L);r.setAmountRemainingMinor(2900L);r.setCurrency("usd");r.setDeadlineAt(com.studyagent.common.datetime.DateTimeFormats.now().plusDays(1));return r;}
+
+    /**
+     * The application context holds both {@code webClient} and {@code humanizerWebClient};
+     * an unqualified WebClient parameter fails the whole boot, not just this bean.
+     */
+    @Test
+    void wiringResolvesQualifiedWebClientWhenTwoCandidatesExist() {
+        try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
+            context.registerBean("webClient", WebClient.class, () -> WebClient.builder().build());
+            context.registerBean("humanizerWebClient", WebClient.class, () -> WebClient.builder().build());
+            context.registerBean(ClerkClient.class, () -> mock(ClerkClient.class));
+            context.registerBean(PaymentRecoveryProperties.class, PaymentRecoveryProperties::new);
+            context.register(BillingPaymentRecoveryEmailSender.class);
+            context.refresh();
+            assertNotNull(context.getBean(BillingPaymentRecoveryEmailSender.class));
+        }
+    }
 }

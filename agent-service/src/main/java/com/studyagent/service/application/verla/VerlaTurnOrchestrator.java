@@ -344,7 +344,7 @@ public class VerlaTurnOrchestrator {
     private static final int SIMULATION_CHAT_HISTORY_LIMIT = 12;
 
     @Transactional(propagation = Propagation.REQUIRED)
-    public SendMessageResult startSimulationChat(String userId, Long conversationId, String message) {
+    public SendMessageResult startSimulationChat(String userId, Long conversationId, String message, String attachmentsJson) {
         if (message == null || message.isBlank()) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "message required");
         }
@@ -367,7 +367,7 @@ public class VerlaTurnOrchestrator {
         refreshConversationVersion(conv,
                 conversationRepository.touchOnNewTurnAndGetVersion(conv.getId(), turn.getId()));
 
-        VerlaSession session = spawnSimulationChatSession(conv, turn, artifact, message, userMsg.getId());
+        VerlaSession session = spawnSimulationChatSession(conv, turn, artifact, message, attachmentsJson, userMsg.getId());
         return SendMessageResult.builder()
                 .turnId(turn.getId())
                 .userMessageId(userMsg.getId())
@@ -390,6 +390,7 @@ public class VerlaTurnOrchestrator {
 
     private VerlaSession spawnSimulationChatSession(VerlaConversation conv, VerlaTurn turn,
                                                     VerlaArtifact artifact, String message,
+                                                    String attachmentsJson,
                                                     Long userMessageId) {
         LocalDateTime now = LocalDateTime.now();
         VerlaSession s = VerlaSession.builder()
@@ -419,7 +420,8 @@ public class VerlaTurnOrchestrator {
         turn.setLastProgressAt(LocalDateTime.now());
         turnRepository.save(turn);
 
-        VerlaCommandEnvelope env = buildSimulationChatEnvelope(conv, turn, s, artifact, message, userMessageId);
+        VerlaCommandEnvelope env = buildSimulationChatEnvelope(
+                conv, turn, s, artifact, message, attachmentsJson, userMessageId);
         mqOutboxService.createVerlaCommand(env, commandExchange,
                 VerlaCommandAction.CMD_SIMULATION_CHAT.getCode());
         return s;
@@ -427,9 +429,13 @@ public class VerlaTurnOrchestrator {
 
     private VerlaCommandEnvelope buildSimulationChatEnvelope(VerlaConversation conv, VerlaTurn turn,
                                                              VerlaSession session, VerlaArtifact artifact,
-                                                             String message, Long userMessageId) {
+                                                             String message, String attachmentsJson,
+                                                             Long userMessageId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("message", message);
+        if (attachmentsJson != null && !attachmentsJson.isBlank()) {
+            payload.put("attachmentsJson", attachmentsJson);
+        }
         payload.put("title", conv.getTitle());
         payload.put("history", buildSimulationChatHistory(conv.getId(), userMessageId));
         payload.put("artifactUid", artifact.getArtifactUid());

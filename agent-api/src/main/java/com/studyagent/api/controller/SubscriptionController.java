@@ -93,6 +93,10 @@ public class SubscriptionController {
             if (e.getCode().startsWith("PRICING_")) return PricingErrors.result(e);
             return switch (e.getCode()) {
                 case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
+                case "PAYMENT_PROCESSING" -> Result.error(ApiCode.PAYMENT_PROCESSING);
+                case "BILLING_RECORD_NOT_FOUND" -> Result.error(ApiCode.BILLING_RECORD_NOT_FOUND);
+                case "BILLING_INVOICE_NOT_AVAILABLE" -> Result.error(ApiCode.BILLING_INVOICE_NOT_AVAILABLE);
+                case "STRIPE_NOT_CONFIGURED" -> Result.error(ApiCode.STRIPE_NOT_CONFIGURED);
                 case "INVALID_PLAN", "PLAN_PRICE_NOT_CONFIGURED" ->
                         Result.error(ApiCode.INVALID_PLAN, e.getMessage());
                 case "UPGRADE_REQUIRES_CHECKOUT" ->

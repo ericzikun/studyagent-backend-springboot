@@ -247,6 +247,26 @@ payment:
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/payment-canceled}
 
 billing:
+  # No cohort may be enabled until every P0 gate for its exact caseKey is PASS.
+  # A real deployment cutoff is required; no demonstration date is used as a default.
+  payment-recovery:
+    accept-new: ${BILLING_PAYMENT_RECOVERY_ACCEPT_NEW:false}
+    # Fail-closed sentinel: with no explicit cutoff nothing is admitted, even if
+    # accept-new is switched on by mistake. Set a real deployment instant.
+    accept-invoices-created-after: ${BILLING_PAYMENT_RECOVERY_CREATED_AFTER:2099-01-01T00:00:00Z}
+    automatic-pay-enabled: ${BILLING_PAYMENT_RECOVERY_AUTOMATIC_PAY_ENABLED:false}
+    allowed-user-ids: ${BILLING_PAYMENT_RECOVERY_ALLOWED_USER_IDS:}
+    verified-cohorts: ${BILLING_PAYMENT_RECOVERY_VERIFIED_COHORTS:}
+    dispatch-tolerance-seconds: ${BILLING_PAYMENT_RECOVERY_DISPATCH_TOLERANCE_SECONDS:3600}
+    batch-size: ${BILLING_PAYMENT_RECOVERY_BATCH_SIZE:100}
+    lease-seconds: ${BILLING_PAYMENT_RECOVERY_LEASE_SECONDS:120}
+    unknown-escalation-hours: ${BILLING_PAYMENT_RECOVERY_UNKNOWN_ESCALATION_HOURS:24}
+    portal-management-configuration-id: ${BILLING_PAYMENT_RECOVERY_PORTAL_MANAGEMENT_CONFIGURATION_ID:}
+    portal-method-only-configuration-id: ${BILLING_PAYMENT_RECOVERY_PORTAL_METHOD_ONLY_CONFIGURATION_ID:}
+    email-enabled: ${BILLING_PAYMENT_RECOVERY_EMAIL_ENABLED:false}
+    email-from: ${BILLING_PAYMENT_RECOVERY_EMAIL_FROM:}
+    review-assignee: ${BILLING_PAYMENT_RECOVERY_REVIEW_ASSIGNEE:}
+    reconciliation-cron: ${BILLING_PAYMENT_RECOVERY_RECONCILIATION_CRON:0 * * * * ?}
   portal:
     configuration-id: ${BILLING_PORTAL_CONFIGURATION_ID:}
   regional-pricing:

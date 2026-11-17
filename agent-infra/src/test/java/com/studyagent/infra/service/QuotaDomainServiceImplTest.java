@@ -72,6 +72,180 @@ class QuotaDomainServiceImplTest {
     private UserSubscriptionMapper userSubscriptionMapper;
 
     @Test
+    void taskSufficiencyPreflightReturnsTypedRecoveryBlockBeforeLegacyQuotaError() {
+        var subscription = new UserSubscriptionEntity(); subscription.setStripeSubscriptionId("sub_locked");
+        when(userSubscriptionMapper.selectByUser("locked_user")).thenReturn(subscription);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("locked_user", "sub_locked")).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var service = service(); org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var error = assertThrows(com.studyagent.common.exception.BusinessException.class,
+                () -> service.canConsume("locked_user", "task_create", 1));
+        assertEquals(1033, error.getCode());
+        verifyNoInteractions(planQuotaService, userAiQuotaMapper, aiFeatureDefsMapper);
+    }
+
+    @Test
+    void recoveryLockedBalanceHidesAllSpendablePoolsIncludingLegacyFreeCredits() {
+        var subscription = new UserSubscriptionEntity(); subscription.setStripeSubscriptionId("sub_locked"); subscription.setStatus("past_due");
+        when(userSubscriptionMapper.selectByUser("locked_user")).thenReturn(subscription);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("locked_user", "sub_locked")).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var feature = assignmentFeature(); feature.setFreeQuotaAmount(5L);
+        when(aiFeatureDefsMapper.selectOne(any(Wrapper.class))).thenReturn(feature);
+        var quota = new UserAiQuotaEntity(); quota.setClerkUserId("locked_user"); quota.setFeatureCode("task_create");
+        quota.setFreeBalance(5L); quota.setPlanBalance(10L); quota.setPaidBalance(0L);
+        quota.setFreePeriodStart(LocalDateTime.now().minusDays(1)); quota.setFreePeriodEnd(LocalDateTime.now().plusDays(29));
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        var service = service(); org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var balance = service.getUserQuota("locked_user", "task_create");
+        assertEquals(0L, balance.freeBalance()); assertEquals(0L, balance.paidBalance()); assertEquals(0L, balance.totalAvailable());
+        assertEquals(5L, quota.getFreeBalance()); assertEquals(10L, quota.getPlanBalance());
+    }
+
+    @Test
+    void newConsumptionRechecksRecoveryUnderUserLockBeforeQuotaLocks() {
+        var subscription = new UserSubscriptionEntity();
+        subscription.setStripeSubscriptionId("sub_locked");
+        when(userSubscriptionMapper.selectByUserForUpdate("locked_user")).thenReturn(subscription);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolveForUpdate("locked_user", "sub_locked")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var failure = assertThrows(com.studyagent.common.exception.BusinessException.class, () ->
+                service.consume("locked_user", "task_create", 1, "task", "1", Map.of(), "new-key"));
+        assertEquals(1033, failure.getCode());
+        var order = org.mockito.Mockito.inOrder(userSubscriptionMapper, resolver);
+        order.verify(userSubscriptionMapper).selectByUserForUpdate("locked_user");
+        order.verify(resolver).resolveForUpdate("locked_user", "sub_locked");
+        verify(resolver, never()).resolve(any(), any());
+        verifyNoInteractions(userAiQuotaMapper, planQuotaService, addonGrantService);
+    }
+
+    @Test
+    void idempotentConsumptionStillReturnsExistingResultDuringRecoveryLock() {
+        var ledger = new QuotaLedgerEntity(); ledger.setId(91L);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(ledger);
+        var service = service();
+        com.studyagent.service.domain.billing.PaymentRecoveryAccessService recoveryAccess =
+                (user, subscriptionId) -> new com.studyagent.service.domain.billing.PaymentRecoveryAccess(
+                        true, false, null, null, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", recoveryAccess);
+        assertEquals(91L, service.consume("locked_user", "task_create", 1, "task", "1", Map.of(), "existing-key").ledgerId());
+        verifyNoInteractions(userSubscriptionMapper, userAiQuotaMapper, planQuotaService, addonGrantService);
+    }
+
+    @Test
+    void refundDuringRecoveryLockRestoresOriginalPoolsExactlyOnce() {
+        assertRefundDuringRecoveryLockRestoresOriginalPoolsExactlyOnce(false);
+    }
+
+    @Test
+    void refundByTaskIdDuringRecoveryLockRestoresOriginalPoolsExactlyOnce() {
+        assertRefundDuringRecoveryLockRestoresOriginalPoolsExactlyOnce(true);
+    }
+
+    private void assertRefundDuringRecoveryLockRestoresOriginalPoolsExactlyOnce(boolean byTaskId) {
+        var service = service();
+        com.studyagent.service.domain.billing.PaymentRecoveryAccessService recoveryAccess =
+                (user, subscriptionId) -> new com.studyagent.service.domain.billing.PaymentRecoveryAccess(
+                        true, false, null, null, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", recoveryAccess);
+
+        // The same service must reject new work while allowing the old accepted debit to unwind.
+        var blocked = assertThrows(com.studyagent.common.exception.BusinessException.class, () ->
+                service.consume("locked_user", "task_create", 1, "task", "701", Map.of()));
+        assertEquals(1033, blocked.getCode());
+        verifyNoInteractions(userAiQuotaMapper, userAddonGrantMapper);
+
+        var consumed = new QuotaLedgerEntity();
+        consumed.setId(501L);
+        consumed.setClerkUserId("locked_user");
+        consumed.setFeatureCode("task_create");
+        consumed.setLedgerType("consume");
+        consumed.setAmount(-6L);
+        consumed.setSourceType("task");
+        consumed.setSourceId("700");
+
+        var quota = new UserAiQuotaEntity();
+        quota.setId(11L);
+        quota.setClerkUserId("locked_user");
+        quota.setFeatureCode("task_create");
+        quota.setFreeBalance(4L);
+        quota.setPlanBalance(5L);
+        quota.setPaidBalance(0L);
+        quota.setVersion(1);
+        var grant = new UserAddonGrantEntity();
+        grant.setId(99L);
+        grant.setGrantType("addon");
+        grant.setStatus("active");
+        grant.setRemainingAmount(7L);
+        grant.setExpiresAt(LocalDateTime.now().plusDays(7));
+
+        var free = new QuotaLedgerAllocationEntity();
+        free.setPoolType("free");
+        free.setAmount(1L);
+        var plan = new QuotaLedgerAllocationEntity();
+        plan.setPoolType("plan");
+        plan.setAmount(2L);
+        var addon = new QuotaLedgerAllocationEntity();
+        addon.setPoolType("addon");
+        addon.setGrantId(99L);
+        addon.setAmount(3L);
+        addon.setSourcePeriodEnd(grant.getExpiresAt());
+
+        var persistedRefund = new java.util.concurrent.atomic.AtomicReference<QuotaLedgerEntity>();
+        var lookups = new AtomicInteger();
+        when(quotaLedgerMapper.selectById(501L)).thenReturn(consumed);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenAnswer(invocation -> {
+            int lookup = lookups.getAndIncrement();
+            // refundByTaskId first resolves the accepted task debit, then refund checks its exact key.
+            return byTaskId && lookup % 2 == 0 ? consumed : persistedRefund.get();
+        });
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenAnswer(invocation -> {
+            QuotaLedgerEntity refund = invocation.getArgument(0);
+            refund.setId(601L);
+            persistedRefund.set(refund);
+            return 1;
+        });
+        when(quotaLedgerAllocationMapper.selectList(any(Wrapper.class))).thenReturn(List.of(free, plan, addon));
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectById(99L)).thenReturn(grant);
+        when(userAddonGrantMapper.updateById(any(UserAddonGrantEntity.class))).thenReturn(1);
+        when(userAddonGrantMapper.selectList(any(Wrapper.class))).thenReturn(List.of(grant));
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            if (byTaskId) {
+                service.refundByTaskId(700L, "task_failed");
+            } else {
+                service.refund(501L, "task_failed");
+            }
+            assertEquals(5L, quota.getFreeBalance());
+            assertEquals(7L, quota.getPlanBalance());
+            assertEquals(0L, quota.getPaidBalance());
+            assertEquals(10L, grant.getRemainingAmount());
+        }
+
+        verify(userAiQuotaMapper).updateById(quota);
+        verify(userAddonGrantMapper).updateById(grant);
+        QuotaLedgerEntity refund = captureOnlyLedger();
+        assertEquals("refund:501", refund.getIdempotencyKey());
+        assertEquals("refund", refund.getLedgerType());
+        assertEquals(6L, refund.getAmount());
+        assertEquals("task", refund.getSourceType());
+        assertEquals("700", refund.getSourceId());
+        assertEquals(10L, refund.getAddonBalanceAfter());
+        List<QuotaLedgerAllocationEntity> restored = captureAllocations(3);
+        assertEquals(List.of("free", "plan", "addon"), restored.stream().map(QuotaLedgerAllocationEntity::getPoolType).toList());
+        assertEquals(List.of(1L, 2L, 3L), restored.stream().map(QuotaLedgerAllocationEntity::getAmount).toList());
+        assertEquals(99L, restored.get(2).getGrantId());
+        assertTrue(restored.stream().allMatch(allocation -> Long.valueOf(601L).equals(allocation.getQuotaLedgerId())));
+        verify(userAddonGrantMapper, never()).insert(any(UserAddonGrantEntity.class));
+        verifyNoInteractions(planQuotaService, addonGrantService);
+    }
+
+    @Test
     void getLedgerPage_filtersAddonLifecycleRowsFromUsageHistory() {
         AiFeatureDefsEntity featureDef = assignmentFeature();
 

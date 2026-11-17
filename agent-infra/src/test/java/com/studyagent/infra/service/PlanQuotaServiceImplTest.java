@@ -56,6 +56,24 @@ class PlanQuotaServiceImplTest {
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Test
+    void explicitResetAndClearUseSnapshotTimeWithoutResolvingStripeTime() {
+        var service=org.mockito.Mockito.spy(new PlanQuotaServiceImpl(subscriptionPlanMapper,aiFeatureDefsMapper,userAiQuotaMapper,quotaLedgerMapper,userSubscriptionMapper));
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan("basic_monthly",3L,3L,2L));
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(
+                quota(11L,"task_create",0L,0L,0L),quota(12L,"ai_detection",0L,0L,0L),quota(13L,"humanizer",0L,0L,0L));
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        var business=Instant.parse("2026-12-09T02:00:00Z");
+        service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business.plusSeconds(86400),"in",business);
+        service.clearPlanQuotaAt("user","sub","basic_monthly","clear",business);
+        verify(service,never()).resolveRefreshTime(any(String.class),any());
+        var ledgers=ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper,times(3)).insert(ledgers.capture());
+        for(var ledger:ledgers.getAllValues())assertEquals(DateTimeFormats.fromInstant(business),ledger.getCreatedAt());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business,"in",null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.clearPlanQuotaAt("user","sub","basic_monthly","clear",null));
+    }
+
+    @Test
     void resetFromPaidInvoice_isIdempotent_perInvoiceAndFeature() {
         SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 0L, 0L);
@@ -403,6 +421,57 @@ class PlanQuotaServiceImplTest {
         assertEquals("subscription_renewal", analyticsCaptor.getValue().grantType());
         assertEquals("task_create", analyticsCaptor.getValue().featureCode());
         assertEquals(3L, analyticsCaptor.getValue().quotaAmount());
+    }
+
+    @Test
+    void quotaRefreshRechecksCurrentRecoveryAfterUserRowLockInsteadOfEarlierSnapshot() {
+        var subscription = subscription("user_recovery", "pro_yearly", "active", LocalDateTime.parse("2026-01-01T00:00:00"), LocalDateTime.parse("2027-01-01T00:00:00"));
+        subscription.setStripeSubscriptionId("sub_old");
+        when(userSubscriptionMapper.selectByUser("user_recovery")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_recovery")).thenReturn(subscription);
+        var quota = quota(11L, "task_create", 0L, 0L, 0L);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolveForUpdate("user_recovery", "sub_old")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var service = new PlanQuotaServiceImpl(subscriptionPlanMapper, aiFeatureDefsMapper, userAiQuotaMapper, quotaLedgerMapper, userSubscriptionMapper);
+        ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.refreshPlanQuotaIfNeeded("user_recovery", "task_create", LocalDateTime.parse("2026-03-20T00:00:00")));
+        verify(resolver).resolveForUpdate("user_recovery", "sub_old");
+        verifyNoQuotaGrantOrPlanLookup();
+    }
+
+    private void verifyNoQuotaGrantOrPlanLookup() {
+        org.mockito.Mockito.verifyNoInteractions(subscriptionPlanMapper, quotaLedgerMapper);
+        verify(userAiQuotaMapper, never()).updateById(any(UserAiQuotaEntity.class));
+    }
+
+    @Test
+    void recoveredAnnualPaymentRefreshesMonthlyQuotaDespitePastDueStripeStatus() {
+        var subscription = subscription("user_paid", "pro_yearly", "past_due", LocalDateTime.parse("2025-01-01T00:00:00"), LocalDateTime.parse("2026-01-01T00:00:00"));
+        subscription.setStripeSubscriptionId("sub_paid");
+        when(userSubscriptionMapper.selectByUser("user_paid")).thenReturn(subscription);
+        when(userSubscriptionMapper.selectByUserForUpdate("user_paid")).thenReturn(subscription);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false,
+                "pro", "pro_yearly", 100L, 100L, 0L, "usd", null, null, null, List.of(), "PENDING", null, null);
+        when(resolver.resolve("user_paid", "sub_paid")).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, true,
+                LocalDateTime.parse("2026-01-15T00:00:00").atZone(DateTimeFormats.APP_ZONE).toInstant(), LocalDateTime.parse("2027-01-15T00:00:00").atZone(DateTimeFormats.APP_ZONE).toInstant(), summary));
+        when(resolver.resolveForUpdate("user_paid", "sub_paid")).thenAnswer(call -> resolver.resolve("user_paid", "sub_paid"));
+        var annual = plan("pro_yearly", 3L, 3L, 2L); annual.setBillingInterval("year");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(annual);
+        var quota = quota(11L, "task_create", 0L, 0L, 0L);
+        quota.setPlanPeriodStart(LocalDateTime.parse("2026-01-15T00:00:00")); quota.setPlanPeriodEnd(LocalDateTime.parse("2026-02-15T00:00:00"));
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(quota);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+        var service = new PlanQuotaServiceImpl(subscriptionPlanMapper, aiFeatureDefsMapper, userAiQuotaMapper, quotaLedgerMapper, userSubscriptionMapper);
+        attachPublisher(service); ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        service.refreshPlanQuotaIfNeeded("user_paid", "task_create", LocalDateTime.parse("2026-03-20T00:00:00"));
+        assertEquals(3L, quota.getPlanBalance());
+        assertEquals(LocalDateTime.parse("2026-03-15T00:00:00"), quota.getPlanPeriodStart());
+        assertEquals(LocalDateTime.parse("2026-04-15T00:00:00"), quota.getPlanPeriodEnd());
+        assertEquals("past_due", subscription.getStatus());
     }
 
     @Test

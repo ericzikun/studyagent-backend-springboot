@@ -38,10 +38,19 @@ public class PaymentController {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
+        boolean recoveryIntent = "recovery_replacement".equals(request.getPurchaseIntent());
+        boolean hasRecovery = request.getRecoveryId() != null && !request.getRecoveryId().isBlank();
+        if (recoveryIntent != hasRecovery || (request.getPurchaseIntent() != null && !recoveryIntent))
+            return Result.error(ApiCode.PARAM_ERROR, "Replacement checkout requires purchaseIntent and recoveryId together");
         com.studyagent.service.domain.billing.BillingPricingContext.confirm(
                 request.getExpectedCurrency(), request.getExpectedAmountCents(), request.getQuoteVersion());
         try {
-            CheckoutSessionResult checkout = billingDomainService.createSubscriptionCheckout(
+            CheckoutSessionResult checkout = recoveryIntent ? billingDomainService.createRecoveryReplacementCheckout(
+                    clerkUserId, userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
+                    new com.studyagent.service.domain.billing.RecoveryReplacementCheckoutCommand(request.getRecoveryId(), request.getPlanCode(),
+                            request.getSuccessUrl(), request.getCancelUrl(), request.getResumeToken(), request.getQuoteVersion(),
+                            request.getExpectedCurrency(), request.getExpectedAmountCents()))
+                    : billingDomainService.createSubscriptionCheckout(
                     clerkUserId,
                     userInfo == null || !userInfo.emailVerified ? null : userInfo.email,
                     request.getPlanCode(),
@@ -66,6 +75,8 @@ public class PaymentController {
                     e.getMessage()
             );
             return mapBillingException(e);
+        } catch (com.studyagent.common.exception.BusinessException e) {
+            return PricingErrors.business(e);
         } catch (Exception e) {
             log.error("创建订阅支付会话失败: {}", e.getMessage(), e);
             captureCheckoutSessionFailed(
@@ -116,6 +127,8 @@ public class PaymentController {
                     e.getMessage()
             );
             return mapBillingException(e);
+        } catch (com.studyagent.common.exception.BusinessException e) {
+            return PricingErrors.business(e);
         } catch (Exception e) {
             log.error("创建加购支付会话失败: {}", e.getMessage(), e);
             captureCheckoutSessionFailed(
@@ -170,6 +183,8 @@ public class PaymentController {
                     e.getMessage()
             );
             return mapBillingException(e);
+        } catch (com.studyagent.common.exception.BusinessException e) {
+            return PricingErrors.business(e);
         } catch (Exception e) {
             log.error("创建题库通行证支付会话失败: {}", e.getMessage(), e);
             captureCheckoutSessionFailed(
@@ -248,6 +263,8 @@ public class PaymentController {
                 return Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
             }
             return mapDomainException(e);
+        } catch (com.studyagent.common.exception.BusinessException e) {
+            return PricingErrors.business(e);
         } catch (Exception e) {
             log.error("创建支付会话失败: {}", e.getMessage(), e);
 
@@ -289,6 +306,11 @@ public class PaymentController {
             data.put("status", result.getStatus());
             data.put("paymentStatus", result.getPaymentStatus());
             data.put("purchaseType", result.getPurchaseType());
+            if ("subscription_replacement".equals(result.getPurchaseType())) {
+                data.put("recoveryId", result.getRecoveryId());
+                data.put("orderNo", result.getOrderNo());
+                data.put("targetPlanCode", result.getTargetPlanCode());
+            }
             data.put("amountTotal", result.getAmountTotal());
             data.put("currency", result.getCurrency());
             data.put("createdAt", result.getCreatedAt());
@@ -298,6 +320,8 @@ public class PaymentController {
                 return Result.error(ApiCode.SESSION_QUERY_FAILED, e.getMessage());
             }
             return mapDomainException(e);
+        } catch (com.studyagent.common.exception.BusinessException e) {
+            return PricingErrors.business(e);
         } catch (Exception e) {
             log.error("查询会话失败: {}", e.getMessage());
             return Result.error(ApiCode.SESSION_QUERY_FAILED, e.getMessage());
@@ -319,6 +343,7 @@ public class PaymentController {
 
     private Map<String, Object> toCheckoutData(CheckoutSessionResult checkout) {
         Map<String, Object> data = new HashMap<>();
+        data.put("orderNo", checkout.getOrderNo());
         data.put("checkoutKind", checkout.getCheckoutKind());
         data.put("sessionId", checkout.getSessionId());
         data.put("referenceId", checkout.getReferenceId());
@@ -340,6 +365,9 @@ public class PaymentController {
             case "ADDON_REQUIRES_PAID_MEMBER" -> Result.error(ApiCode.ADDON_REQUIRES_PAID_MEMBER);
             case "SUBSCRIPTION_ALREADY_EXISTS" -> Result.error(ApiCode.SUBSCRIPTION_ALREADY_EXISTS);
             case "SUBSCRIPTION_CHANGE_PENDING" -> Result.error(ApiCode.SUBSCRIPTION_CHANGE_PENDING);
+            case "PAYMENT_PROCESSING", "RECOVERY_STALE", "RECOVERY_ACTION_PENDING" -> Result.error(ApiCode.PAYMENT_PROCESSING);
+            case "BILLING_RECORD_NOT_FOUND" -> Result.error(ApiCode.BILLING_RECORD_NOT_FOUND);
+            case "BILLING_INVOICE_NOT_AVAILABLE" -> Result.error(ApiCode.BILLING_INVOICE_NOT_AVAILABLE);
             case "PAYMENT_RESOLUTION_REQUIRED" -> Result.error(ApiCode.PAYMENT_RESOLUTION_REQUIRED);
             case "SUBSCRIPTION_NOT_FOUND" -> Result.error(ApiCode.SUBSCRIPTION_NOT_FOUND);
             case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
@@ -439,6 +467,8 @@ public class PaymentController {
 
     @Data
     static class SubscriptionCheckoutRequest {
+        private String purchaseIntent;
+        private String recoveryId;
         private String expectedCurrency;
         private Integer expectedAmountCents;
         private String quoteVersion;

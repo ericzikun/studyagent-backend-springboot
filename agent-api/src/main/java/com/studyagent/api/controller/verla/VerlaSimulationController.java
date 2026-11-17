@@ -100,7 +100,8 @@ public class VerlaSimulationController {
         Map<String, Object> pass = new LinkedHashMap<>();
         pass.put("active", access.active());
         pass.put("admin", access.admin());
-        pass.put("purchasable", access.purchasable());
+        pass.put("purchasable", access.purchasable()
+                && !SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY.equals(entitlement.entitlement()));
         pass.put("membershipIncluded", access.membershipIncluded());
         pass.put("freeTrialAvailable", entitlement.freeTrialAvailable());
         pass.put("freeTrialUsed", entitlement.freeTrialUsed());
@@ -134,7 +135,12 @@ public class VerlaSimulationController {
     public Result<Map<String, Object>> passCheckout(
             @RequestAttribute("clerkUserId") String clerkUserId) {
         ensureLogin(clerkUserId);
-        if (simulationEntitlementService.resolve(clerkUserId).membershipIncluded()) {
+        SimulationEntitlementService.Entitlement entitlement =
+                simulationEntitlementService.resolve(clerkUserId);
+        if (SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY.equals(entitlement.entitlement())) {
+            throw paymentRecoveryRequired("simulation_pass_purchase");
+        }
+        if (entitlement.membershipIncluded()) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "simulation lab is included in your membership");
         }
@@ -143,10 +149,24 @@ public class VerlaSimulationController {
     }
 
     private void requireCanCreate(String clerkUserId) {
-        if (!simulationEntitlementService.resolve(clerkUserId).canCreate()) {
+        SimulationEntitlementService.Entitlement entitlement =
+                simulationEntitlementService.resolve(clerkUserId);
+        if (SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY.equals(entitlement.entitlement())) {
+            throw paymentRecoveryRequired("simulation_create");
+        }
+        if (!entitlement.canCreate()) {
             throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
                     "simulation lab pass required");
         }
+    }
+
+    private BusinessException paymentRecoveryRequired(String blockedAction) {
+        return BusinessException.withData(ApiCode.PAYMENT_RECOVERY_REQUIRED,
+                com.studyagent.common.exception.CommercialBlockData.builder()
+                        .reasonCode("payment_recovery_required")
+                        .blockedAction(blockedAction)
+                        .purchaseProductId("simulation")
+                        .build());
     }
 
     @PostMapping
@@ -264,7 +284,12 @@ public class VerlaSimulationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid,
             @RequestBody(required = false) ChatSimulationRequest req) {
         ensureLogin(clerkUserId);
-        if (simulationEntitlementService.resolve(clerkUserId).previewLocked()) {
+        SimulationEntitlementService.Entitlement entitlement =
+                simulationEntitlementService.resolve(clerkUserId);
+        if (SimulationEntitlementService.ENTITLEMENT_PAYMENT_RECOVERY.equals(entitlement.entitlement())) {
+            throw paymentRecoveryRequired("simulation_chat");
+        }
+        if (entitlement.previewLocked()) {
             throw new BusinessException(ApiCode.SIMULATION_PASS_REQUIRED.getCode(),
                     "simulation lab pass required");
         }

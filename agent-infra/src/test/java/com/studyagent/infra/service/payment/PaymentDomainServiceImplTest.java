@@ -106,6 +106,50 @@ class PaymentDomainServiceImplTest {
         assertEquals("SESSION_OWNER_MISMATCH", error.getCode());
     }
     @Test
+    void replacementSessionContextRequiresLocalOrderReplacementAndCustomerMembership() {
+        var order = new RechargeOrderEntity(); order.setOrderNo("order_replacement"); order.setOrderType("subscription_replacement");
+        order.setClerkUserId("user_recovery"); order.setStripeSessionId("cs_replacement"); order.setTargetPlanCode("pro_monthly");
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(order);
+        var replacements = org.mockito.Mockito.mock(com.studyagent.infra.mapper.SubscriptionRecoveryReplacementMapper.class);
+        var recoveries = org.mockito.Mockito.mock(com.studyagent.infra.mapper.SubscriptionPaymentRecoveryMapper.class);
+        var replacement = new com.studyagent.infra.entity.SubscriptionRecoveryReplacementEntity();
+        replacement.setOrderNo("order_replacement"); replacement.setClerkUserId("user_recovery"); replacement.setCheckoutSessionId("cs_replacement");
+        replacement.setRecoveryId(91L); replacement.setOldSubscriptionId("sub_old"); replacement.setTargetPlanCode("pro_monthly");
+        var root = new com.studyagent.infra.entity.SubscriptionPaymentRecoveryEntity(); root.setId(91L);
+        root.setClerkUserId("user_recovery"); root.setStripeSubscriptionId("sub_old"); root.setStripeCustomerId("cus_recovery");
+        when(replacements.selectBySession("cs_replacement")).thenReturn(replacement);
+        when(recoveries.selectById(91L)).thenReturn(root);
+        var service = replacementSessionService();
+        ReflectionTestUtils.setField(service, "recoveryReplacementMapper", replacements);
+        ReflectionTestUtils.setField(service, "paymentRecoveryMapper", recoveries);
+        var result = service.getSessionStatus("cs_replacement");
+        assertEquals("subscription_replacement", result.getPurchaseType()); assertEquals("91", result.getRecoveryId());
+        assertEquals("order_replacement", result.getOrderNo()); assertEquals("pro_monthly", result.getTargetPlanCode());
+        root.setStripeCustomerId("cus_other");
+        assertEquals("SESSION_OWNER_MISMATCH", assertThrows(PaymentDomainException.class,
+                () -> service.getSessionStatus("cs_replacement")).getCode());
+    }
+
+    @Test
+    void replacementSessionRejectsUnvalidatedMetadataContext() {
+        var service = replacementSessionService();
+        assertEquals("SESSION_OWNER_MISMATCH", assertThrows(PaymentDomainException.class,
+                () -> service.getSessionStatus("cs_replacement")).getCode());
+    }
+
+    private PaymentDomainServiceImpl replacementSessionService() {
+        return new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
+                new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {
+            @Override Session retrieveStripeCheckoutSession(String id) {
+                var session = new Session(); session.setId(id); session.setCustomer("cus_recovery");
+                session.setMetadata(java.util.Map.of("purchase_type", "subscription_replacement", "clerk_user_id", "user_recovery",
+                        "recovery_id", "91", "old_subscription_id", "sub_old", "order_no", "order_replacement", "plan_code", "pro_monthly"));
+                return session;
+            }
+        };
+    }
+
+    @Test
     void sessionStatusReturnsAuthoritativeStudyPassPurchaseType() {
         PaymentDomainServiceImpl service = new PaymentDomainServiceImpl(aiFeaturePackageMapper, rechargeOrderMapper,
                     new com.studyagent.infra.service.billing.BillingPricingService(org.mockito.Mockito.mock(com.studyagent.infra.service.billing.StripePriceGateway.class), new com.studyagent.infra.service.billing.BillingRegionalPricingProperties()), org.mockito.Mockito.mock(com.studyagent.service.domain.user.ClerkClient.class)) {

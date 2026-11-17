@@ -27,6 +27,26 @@ class SubscriptionGraceExpirySchedulerTest {
     private BillingQuotaGateway quotaGateway;
 
     @Test
+    void currentPaidRecoverySurvivesLegacyGraceExpiry() {
+        var subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user_paid"); subscription.setStripeSubscriptionId("sub_paid");
+        subscription.setStatus("past_due"); subscription.setGraceEndAt(LocalDateTime.now().minusDays(1));
+        when(subscriptionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(subscription));
+        when(subscriptionMapper.selectByUserForUpdate("user_paid")).thenReturn(subscription);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolveForUpdate("user_paid", "sub_paid")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, true, null, null, null));
+        var scheduler = new SubscriptionGraceExpiryScheduler(subscriptionMapper, quotaGateway);
+        ReflectionTestUtils.setField(scheduler, "batchSize", 100);
+        ReflectionTestUtils.setField(scheduler, "paymentRecoveryAccessService", resolver);
+        scheduler.suspendExpiredGraceSubscriptions();
+        verify(resolver).resolveForUpdate("user_paid", "sub_paid");
+        verify(resolver, never()).resolve(any(), any());
+        org.mockito.Mockito.verifyNoInteractions(quotaGateway);
+        verify(subscriptionMapper, never()).update(isNull(), any(Wrapper.class));
+    }
+
+    @Test
     void expiredGraceClearsPlanPausesAddonsAndSuspendsSubscription() {
         UserSubscriptionEntity subscription = new UserSubscriptionEntity();
         subscription.setId(1L);

@@ -9,6 +9,7 @@ import lombok.Data;
 @Data
 @Builder
 public class CheckoutSessionResult {
+    private String orderNo;
     private String checkoutKind;
     private String sessionId;
     private String referenceId;

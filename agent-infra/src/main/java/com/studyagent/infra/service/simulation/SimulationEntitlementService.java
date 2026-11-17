@@ -2,6 +2,8 @@ package com.studyagent.infra.service.simulation;
 
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
+import com.studyagent.service.domain.billing.PaymentRecoveryAccess;
+import com.studyagent.service.domain.billing.PaymentRecoveryAccessService;
 import com.studyagent.service.domain.billing.SubscriptionResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,10 +33,13 @@ public class SimulationEntitlementService {
     public static final String ENTITLEMENT_MEMBERSHIP = "membership";
     public static final String ENTITLEMENT_FREE_TRIAL = "free_trial";
     public static final String ENTITLEMENT_FREE_TRIAL_USED = "free_trial_used";
+    /** Subscription payment recovery owns this account: paid access stays locked. */
+    public static final String ENTITLEMENT_PAYMENT_RECOVERY = "payment_recovery";
 
     private final BillingDomainService billingDomainService;
     private final SimulationPassService simulationPassService;
     private final SimulationTrialGrantService simulationTrialGrantService;
+    private final PaymentRecoveryAccessService paymentRecoveryAccessService;
     private final JdbcTemplate jdbcTemplate;
 
     public record Entitlement(
@@ -67,6 +72,13 @@ public class SimulationEntitlementService {
             return new Entitlement(true, false, ENTITLEMENT_ADMIN, true,
                     null, 0, null, null, null,
                     false, true, false, true, false, null, passAccess.purchasable());
+        }
+        // Payment recovery outranks membership and pass: paid access stays locked
+        // until the outstanding invoice is settled, and no new pass may be sold.
+        if (paymentRecoveryLocked(clerkUserId)) {
+            return new Entitlement(false, true, ENTITLEMENT_PAYMENT_RECOVERY, false,
+                    0L, 0L, 0L, null, null,
+                    false, false, false, false, passActive, passAccess.expiresAt(), false);
         }
         // Membership supersedes a legacy pass: a pass-exhausted user who buys a
         // membership must unlock immediately, without waiting for the pass to expire.
@@ -126,6 +138,17 @@ public class SimulationEntitlementService {
         SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
         return subscription != null
                 && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
+    }
+
+    /** Read-only recovery lock; admin and quota VIP keep their independent grant. */
+    private boolean paymentRecoveryLocked(String clerkUserId) {
+        if (paymentRecoveryAccessService == null) {
+            return false;
+        }
+        SubscriptionResult account = billingDomainService.getCurrentSubscription(clerkUserId);
+        PaymentRecoveryAccess access = paymentRecoveryAccessService.resolve(
+                clerkUserId, account == null ? null : account.getStripeSubscriptionId());
+        return access != null && access.locked();
     }
 
     private long countSucceeded(String clerkUserId, LocalDateTime start, LocalDateTime end) {

@@ -11,6 +11,13 @@ import java.util.Map;
 final class PricingErrors {
     private PricingErrors() {}
     @SuppressWarnings("unchecked")
+    static <T> Result<T> business(com.studyagent.common.exception.BusinessException exception) {
+        Result<T> result = Result.error(exception.getCode(), exception.getMessage());
+        result.setData((T) exception.getData());
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
     static <T> Result<T> result(BillingDomainException exception) {
         Result<T> result = Result.error(ApiCode.BAD_REQUEST, switch (exception.getCode()) {
             case "PRICING_CURRENCY_UNAVAILABLE" -> "This product is not available in your billing currency";

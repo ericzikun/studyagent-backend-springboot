@@ -30,6 +30,40 @@ class PaymentControllerTest {
     }
 
     @Test
+    void addonRecoveryBlockPreservesTyped1033Data() {
+        var request = new PaymentController.AddonCheckoutRequest(); request.setAddonCode("addon_1");
+        var data = com.studyagent.common.exception.CommercialBlockData.builder().reasonCode("payment_recovery_required")
+                .paymentRecoveryId("91").blockedAction("addon_purchase").build();
+        when(billingDomainService.createAddonCheckout("user_a", null, "addon_1", null, null, null))
+                .thenThrow(com.studyagent.common.exception.BusinessException.withData(ApiCode.PAYMENT_RECOVERY_REQUIRED, data));
+        var result = controller.createAddonCheckout(request, "user_a", null);
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(1033);
+        assertThat((Object) result.getData()).isSameAs(data);
+    }
+
+    @Test
+    void replacementCheckoutRequiresPairedIntentAndRoutesDedicatedCommand() {
+        var request = new PaymentController.SubscriptionCheckoutRequest(); request.setPlanCode("pro_monthly");
+        request.setRecoveryId("91");
+        assertThat(controller.createSubscriptionCheckout(request, "user_a", null).getMeta().getStatusCode()).isEqualTo(ApiCode.PARAM_ERROR.getCode());
+        verifyNoInteractions(billingDomainService);
+        request.setPurchaseIntent("recovery_replacement");
+        when(billingDomainService.createRecoveryReplacementCheckout(org.mockito.ArgumentMatchers.eq("user_a"), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(com.studyagent.service.domain.payment.CheckoutSessionResult.builder().orderNo("order_91").sessionId("cs_91").build());
+        assertThat(controller.createSubscriptionCheckout(request, "user_a", null).getData()).containsEntry("orderNo", "order_91");
+        org.mockito.Mockito.verify(billingDomainService, org.mockito.Mockito.never()).createSubscriptionCheckout(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void replacementStatusReturnsTrustedRecoveryContextAfterBrowserStorageExpires() {
+        when(paymentDomainService.getSessionStatus("cs_91")).thenReturn(SessionStatusResult.builder()
+                .sessionId("cs_91").clerkUserId("user_a").purchaseType("subscription_replacement")
+                .recoveryId("91").orderNo("order_91").targetPlanCode("pro_monthly").build());
+        assertThat(controller.getSessionStatus("cs_91", "user_a").getData()).containsEntry("recoveryId", "91")
+                .containsEntry("orderNo", "order_91").containsEntry("targetPlanCode", "pro_monthly");
+    }
+
+    @Test
     void legacyCheckoutRejectsBodyUserThatDiffersFromAuthenticatedUser() {
         PaymentController.CreateCheckoutSessionRequest request =
                 new PaymentController.CreateCheckoutSessionRequest();

@@ -56,16 +56,25 @@ public class BillingController {
         return Result.success(billingDomainService.getCurrentSubscription(clerkUserId));
     }
 
+    /** Retains direct Java callers of the legacy quote signature. */
+    public Result<com.studyagent.service.domain.billing.BillingQuote> quote(String kind, String skuCode, String clerkUserId) {
+        return quote(kind, skuCode, null, clerkUserId);
+    }
+
     @GetMapping("/quote")
     public Result<com.studyagent.service.domain.billing.BillingQuote> quote(
             @RequestParam String kind, @RequestParam String skuCode,
+            @RequestParam(value = "recoveryId", required = false) String recoveryId,
             @RequestAttribute(value = "clerkUserId", required = false) String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         try {
+            if ("subscription_replacement".equals(kind))
+                return Result.success(billingDomainService.getRecoveryReplacementQuote(clerkUserId, recoveryId, skuCode));
             return Result.success("credit_pack".equals(kind)
                     ? paymentDomainService.getPurchaseQuote(clerkUserId, skuCode)
                     : billingDomainService.getPurchaseQuote(clerkUserId, kind, skuCode));
-        } catch (BillingDomainException e) { return PricingErrors.result(e); }
+        } catch (BillingDomainException e) { return mapBillingException(e); }
+        catch (com.studyagent.common.exception.BusinessException e) { return PricingErrors.business(e); }
     }
 
     @GetMapping("/records")
@@ -91,9 +100,9 @@ public class BillingController {
             return Result.error(ApiCode.USER_NOT_LOGGED_IN);
         }
         try {
-            BillingPortalSessionResult portalSession = billingDomainService.createBillingPortalSession(
-                    clerkUserId,
-                    request == null ? null : request.getReturnUrl());
+            BillingPortalSessionResult portalSession = request == null || request.getPurpose() == null
+                    ? billingDomainService.createBillingPortalSession(clerkUserId, request == null ? null : request.getReturnUrl())
+                    : billingDomainService.createRecoveryAwarePortalSession(clerkUserId, request.getReturnUrl(), request.getPurpose());
             Map<String, Object> data = new HashMap<>();
             data.put("url", portalSession.getUrl());
             return Result.success(data);
@@ -121,6 +130,34 @@ public class BillingController {
         }
     }
 
+    @PostMapping("/recoveries/{id}/hosted-invoice")
+    public Result<Map<String, Object>> recoveryHostedInvoice(
+            @PathVariable String id,
+            @RequestAttribute(value = "clerkUserId", required = false) String user) {
+        if (user == null || user.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        try { return Result.success(Map.of("url", billingDomainService.createRecoveryHostedInvoice(user, id).getUrl())); }
+        catch (BillingDomainException error) { return mapBillingException(error); }
+    }
+
+    @PostMapping("/recoveries/{id}/reconcile")
+    public Result<com.studyagent.service.domain.billing.PaymentRecoverySummary> reconcileRecovery(
+            @PathVariable String id,
+            @RequestAttribute(value = "clerkUserId", required = false) String user) {
+        if (user == null || user.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        try { return Result.success(billingDomainService.reconcilePaymentRecovery(user, id)); }
+        catch (BillingDomainException error) { return mapBillingException(error); }
+    }
+
+    @PostMapping("/recoveries/{id}/replacement/exit")
+    public Result<com.studyagent.service.domain.billing.PaymentRecoverySummary> exitReplacement(
+            @PathVariable String id, @RequestBody RecoveryReplacementExitRequest request,
+            @RequestAttribute(value = "clerkUserId", required = false) String user) {
+        if (user == null || user.isBlank()) return Result.error(ApiCode.USER_NOT_LOGGED_IN);
+        if (request == null || request.getOrderNo() == null || request.getOrderNo().isBlank()) return Result.error(ApiCode.PARAM_ERROR);
+        try { return Result.success(billingDomainService.exitRecoveryReplacement(user, id, request.getOrderNo())); }
+        catch (BillingDomainException error) { return mapBillingException(error); }
+    }
+
     private <T> Result<T> mapBillingException(BillingDomainException e) {
         if (e.getCode().startsWith("PRICING_")) return PricingErrors.result(e);
         return switch (e.getCode()) {
@@ -128,6 +165,8 @@ public class BillingController {
             case "STRIPE_CUSTOMER_NOT_FOUND" -> Result.error(ApiCode.BILLING_CUSTOMER_NOT_FOUND);
             case "BILLING_RECORD_NOT_FOUND" -> Result.error(ApiCode.BILLING_RECORD_NOT_FOUND);
             case "BILLING_INVOICE_NOT_AVAILABLE" -> Result.error(ApiCode.BILLING_INVOICE_NOT_AVAILABLE);
+            case "PAYMENT_PROCESSING", "RECOVERY_STALE", "RECOVERY_ACTION_PENDING" -> Result.error(ApiCode.PAYMENT_PROCESSING);
+            case "INVALID_PORTAL_PURPOSE" -> Result.error(ApiCode.PARAM_ERROR, e.getMessage());
             case "INVALID_BILLING_RECORD_CURSOR" -> Result.error(ApiCode.PARAM_ERROR, e.getMessage());
             case "INVALID_RETURN_URL" -> Result.error(ApiCode.INVALID_CHECKOUT_RETURN_URL, e.getMessage());
             case "STRIPE_ERROR" -> Result.error(ApiCode.STRIPE_API_ERROR, e.getMessage());
@@ -138,5 +177,11 @@ public class BillingController {
     @Data
     static class BillingPortalSessionRequest {
         private String returnUrl;
+        private String purpose;
+    }
+
+    @Data
+    static class RecoveryReplacementExitRequest {
+        private String orderNo;
     }
 }

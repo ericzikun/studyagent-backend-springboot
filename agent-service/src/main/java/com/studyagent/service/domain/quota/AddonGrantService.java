@@ -32,6 +32,16 @@ public interface AddonGrantService {
 
     void resumeEligible(String clerkUserId, String subscriptionId, String idempotencyKey);
 
+    /** Local lifecycle entry point; businessNow must be supplied by the verified billing snapshot. */
+    default void pauseAllAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time add-on pause is not implemented");
+    }
+
+    /** Local lifecycle entry point; never resolves Stripe/Test Clock time. */
+    default void resumeEligibleAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time add-on resume is not implemented");
+    }
+
     default void adjustForRefund(
             String paymentIntentId,
             String adjustmentId,

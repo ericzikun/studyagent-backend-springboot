@@ -13,6 +13,9 @@ public interface UserSubscriptionMapper extends BaseMapper<UserSubscriptionEntit
     @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1")
     UserSubscriptionEntity selectByUser(@Param("clerkUserId") String clerkUserId);
 
+    @Select("SELECT * FROM user_subscriptions WHERE stripe_subscription_id = #{subscriptionId} LIMIT 1")
+    UserSubscriptionEntity selectByStripeSubscriptionId(@Param("subscriptionId") String subscriptionId);
+
     @Select("SELECT * FROM user_subscriptions WHERE clerk_user_id = #{clerkUserId} LIMIT 1 FOR UPDATE")
     UserSubscriptionEntity selectByUserForUpdate(@Param("clerkUserId") String clerkUserId);
 

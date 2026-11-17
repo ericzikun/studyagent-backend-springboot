@@ -61,6 +61,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     private final QuotaLedgerMapper quotaLedgerMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
+
     @Autowired
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
@@ -68,7 +71,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Transactional(rollbackFor = Exception.class)
     public void refreshPlanQuotaIfNeeded(String clerkUserId, String featureCode) {
         LocalDateTime fallbackNow = DateTimeFormats.now();
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        UserSubscriptionEntity subscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUser(clerkUserId));
         refreshPlanQuotaIfNeeded(clerkUserId, featureCode, resolveRefreshTime(subscription, fallbackNow));
     }
 
@@ -76,7 +79,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Transactional(rollbackFor = Exception.class)
     public void refreshAllPlanQuotasIfNeeded(String clerkUserId) {
         LocalDateTime fallbackNow = DateTimeFormats.now();
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        UserSubscriptionEntity subscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUser(clerkUserId));
         refreshAllPlanQuotasIfNeeded(clerkUserId, resolveRefreshTime(subscription, fallbackNow));
     }
 
@@ -119,6 +122,16 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 LEDGER_TYPE_PLAN_RESET,
                 false,
                 normalizeResetGrantType(grantType));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetFromPaidInvoiceAt(String clerkUserId, String subscriptionId, String planCode,
+            Instant quotaPeriodStart, Instant quotaPeriodEnd, String invoiceId, Instant businessNow) {
+        if (businessNow == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
+        applyPlanGrantFromSource(clerkUserId, subscriptionId, planCode, quotaPeriodStart, quotaPeriodEnd,
+                invoiceId, "invoice", "invoice", LEDGER_TYPE_PLAN_RESET, false, GRANT_TYPE_SUBSCRIPTION_RENEWAL,
+                DateTimeFormats.fromInstant(businessNow));
     }
 
     @Override
@@ -168,6 +181,16 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey) {
+        clearPlanQuotaAt(clerkUserId, subscriptionId, planCode, idempotencyKey,
+                resolveRefreshTime(subscriptionId, DateTimeFormats.now()).atZone(DateTimeFormats.APP_ZONE).toInstant());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void clearPlanQuotaAt(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, Instant businessNow) {
+        if (businessNow == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
+        LocalDateTime now = DateTimeFormats.fromInstant(businessNow);
         List<UserAiQuotaEntity> quotas = userAiQuotaMapper.selectList(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
@@ -175,7 +198,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                                 FeatureCode.TASK_CREATE.getCode(),
                                 FeatureCode.AI_DETECTION.getCode(),
                                 FeatureCode.HUMANIZER.getCode())));
-        LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
         UserSubscriptionEntity subscription = findSubscriptionForPlanLifecycle(clerkUserId, subscriptionId);
         String effectivePlanCode = resolveLifecyclePlanCode(planCode, subscription);
         for (UserAiQuotaEntity quota : quotas) {
@@ -222,7 +244,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        UserSubscriptionEntity subscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUser(clerkUserId));
         if (subscription == null
                 || !BillingEntitlementPolicy.allowsPlanRefresh(subscription.getStatus())
                 || subscription.getPlanCode() == null
@@ -239,7 +261,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        UserSubscriptionEntity lockedSubscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUserForUpdate(clerkUserId), true);
         if (lockedSubscription == null
                 || !BillingEntitlementPolicy.allowsPlanRefresh(lockedSubscription.getStatus())
                 || lockedSubscription.getPlanCode() == null
@@ -276,7 +298,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
+        UserSubscriptionEntity subscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUser(clerkUserId));
         if (subscription == null
                 || !BillingEntitlementPolicy.allowsPlanRefresh(subscription.getStatus())
                 || subscription.getPlanCode() == null
@@ -292,7 +314,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             return;
         }
 
-        UserSubscriptionEntity lockedSubscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+        UserSubscriptionEntity lockedSubscription = recoveryQuotaProjection(userSubscriptionMapper.selectByUserForUpdate(clerkUserId), true);
         if (lockedSubscription == null
                 || !BillingEntitlementPolicy.allowsPlanRefresh(lockedSubscription.getStatus())
                 || lockedSubscription.getPlanCode() == null
@@ -312,6 +334,30 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             }
             refreshResolvedPlanQuotaIfNeeded(clerkUserId, featureCode, now, lockedSubscription, plan, billingInterval, quota);
         }
+    }
+
+    private UserSubscriptionEntity recoveryQuotaProjection(UserSubscriptionEntity subscription) {
+        return recoveryQuotaProjection(subscription, false);
+    }
+
+    private UserSubscriptionEntity recoveryQuotaProjection(UserSubscriptionEntity subscription, boolean userLocked) {
+        if (subscription == null || paymentRecoveryAccessService == null) return subscription;
+        var access = userLocked
+                ? paymentRecoveryAccessService.resolveForUpdate(subscription.getClerkUserId(), subscription.getStripeSubscriptionId())
+                : paymentRecoveryAccessService.resolve(subscription.getClerkUserId(), subscription.getStripeSubscriptionId());
+        if (access == null) return subscription;
+        if (access.locked() || (access.summary() != null && "PAID".equals(access.summary().state()) && !access.paidCycleValid())) return null;
+        if (!access.paidCycleValid()) return subscription;
+        var paid = new UserSubscriptionEntity();
+        org.springframework.beans.BeanUtils.copyProperties(subscription, paid);
+        paid.setStatus("active");
+        paid.setPlanCode(access.summary().displayPlanCode());
+        paid.setTier(access.summary().displayTier());
+        paid.setCurrentPeriodStart(DateTimeFormats.fromInstant(access.paidPeriodStart()));
+        paid.setCurrentPeriodEnd(DateTimeFormats.fromInstant(access.paidPeriodEnd()));
+        paid.setQuotaPeriodStart(paid.getCurrentPeriodStart());
+        paid.setQuotaPeriodEnd(paid.getCurrentPeriodEnd());
+        return paid;
     }
 
     private Map<String, UserAiQuotaEntity> quotasByFeatureCode(String clerkUserId) {
@@ -454,10 +500,17 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             String ledgerType,
             boolean additive,
             String grantType) {
+        applyPlanGrantFromSource(clerkUserId, subscriptionId, planCode, quotaPeriodStart, quotaPeriodEnd,
+                sourceId, sourceType, idempotencyPrefix, ledgerType, additive, grantType,
+                resolveRefreshTime(subscriptionId, DateTimeFormats.now()));
+    }
+
+    private void applyPlanGrantFromSource(String clerkUserId, String subscriptionId, String planCode,
+            Instant quotaPeriodStart, Instant quotaPeriodEnd, String sourceId, String sourceType,
+            String idempotencyPrefix, String ledgerType, boolean additive, String grantType, LocalDateTime now) {
         SubscriptionPlanEntity plan = requirePlan(planCode);
         LocalDateTime periodStart = DateTimeFormats.fromInstant(quotaPeriodStart);
         LocalDateTime periodEnd = DateTimeFormats.fromInstant(quotaPeriodEnd);
-        LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
 
         for (FeatureGrant featureGrant : featureGrants(plan)) {
             String idempotencyKey = idempotencyPrefix + ":" + sourceId + ":"
@@ -530,6 +583,14 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             windowStart = windowStart.plusMonths(1);
         }
         LocalDateTime windowEnd = windowStart.plusMonths(1);
+        if (paymentRecoveryAccessService != null) {
+            var access = paymentRecoveryAccessService.resolveForUpdate(clerkUserId, subscription.getStripeSubscriptionId());
+            if (access != null && access.paidCycleValid()) {
+                var paidEnd = DateTimeFormats.fromInstant(access.paidPeriodEnd());
+                if (!now.isBefore(paidEnd)) return;
+                if (windowEnd.isAfter(paidEnd)) windowEnd = paidEnd;
+            }
+        }
 
         syncAnnualSubscriptionQuotaWindow(subscription, windowStart, windowEnd, now);
 

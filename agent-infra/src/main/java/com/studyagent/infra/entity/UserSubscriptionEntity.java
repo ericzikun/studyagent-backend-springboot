@@ -42,6 +42,8 @@ public class UserSubscriptionEntity extends BaseEntity {
     private String pendingUpgradeOrderNo;
     @TableField("pending_upgrade_expires_at")
     private LocalDateTime pendingUpgradeExpiresAt;
+    @TableField("payment_recovery_id")
+    private Long paymentRecoveryId;
     @TableField("grace_end_at")
     private LocalDateTime graceEndAt;
     @TableField("intro_trial_used_at")

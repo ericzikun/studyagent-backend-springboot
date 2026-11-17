@@ -1,0 +1,1014 @@
+{
+  "archiveRoot": "/Users/alf/Projects/SA/Backend/Task/Task1104/payment-recovery-evidence-archive/20261117-details",
+  "fileCount": 167,
+  "totalBytes": 6140462,
+  "purpose": "Detailed test results, source manifests, generated logs and migration rehearsal snapshots; original bytes preserved; no change to test conclusions",
+  "retainedEvidenceFiles": [
+    "index.json",
+    "raw-evidence-archive.json"
+  ],
+  "files": [
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-final-integration-20261117.json",
+      "archiveRelativePath": "annual-refresh-final-integration-20261117.json",
+      "sha256": "0a24e342e70baa8c5cb2bc77ca584fc0683a9ca96c2a9ee14b1b82a7363a8e05",
+      "bytes": 7244
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-final-source-manifest-20261117.json",
+      "archiveRelativePath": "annual-refresh-final-source-manifest-20261117.json",
+      "sha256": "75e4e190210e37d0da958a4993920281e385293537a9cda79b701ab8db3f196d",
+      "bytes": 151752
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-final-unit-20261117.json",
+      "archiveRelativePath": "annual-refresh-final-unit-20261117.json",
+      "sha256": "f2788e6128c0c4302f640ad857218570617c07424acc758173b096e80b01f144",
+      "bytes": 7400
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-final2-source-manifest-20261117.json",
+      "archiveRelativePath": "annual-refresh-final2-source-manifest-20261117.json",
+      "sha256": "b76615be4a9c71fb4eba201846ae773fc6d87939dc1da22b89f6251d5da1999a",
+      "bytes": 151752
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-final2-unit-20261117.json",
+      "archiveRelativePath": "annual-refresh-final2-unit-20261117.json",
+      "sha256": "078653e05758f7e622de7f20ce3f96201a689e04d3a34915e2c5e9f7ebbd8372",
+      "bytes": 7401
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-mysql-final-20261117.json",
+      "archiveRelativePath": "annual-refresh-mysql-final-20261117.json",
+      "sha256": "4ef6cf23d2bb5e1e8ed0036649f9c66d61ac6b13d231af452fbe233b9418e52c",
+      "bytes": 409
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-mysql-final-20261117.log",
+      "archiveRelativePath": "annual-refresh-mysql-final-20261117.log",
+      "sha256": "856d1518660b24abcbd485c51ee864741aef69fa203218c1dcd2cf8932dbfccc",
+      "bytes": 69233
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-source-manifest-20261117.json",
+      "archiveRelativePath": "annual-refresh-source-manifest-20261117.json",
+      "sha256": "8fdc82702b8527a96d0d31daf4b8a6abf3d9d8d8bd9768c56bf69dd4c5d482e5",
+      "bytes": 151752
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-tools-20261117.log",
+      "archiveRelativePath": "annual-refresh-tools-20261117.log",
+      "sha256": "8927d906c77931448dc630cb76d66aa6f88d60314e2ff8e6ba2ab651f693a7aa",
+      "bytes": 3709
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/annual-refresh-unit-20261117.json",
+      "archiveRelativePath": "annual-refresh-unit-20261117.json",
+      "sha256": "cee9c88bf83d2a4d89a163a693a14bfc86350bbd297f1585e16576445da9f86b",
+      "bytes": 7393
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/basic-plus-native-20261117.json",
+      "archiveRelativePath": "basic-plus-native-20261117.json",
+      "sha256": "5685efa177e10d08e956e367faf7e61b381f9823c6db10a22c425d64cf76184b",
+      "bytes": 4612
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/basic-plus-source-manifest-20261117.json",
+      "archiveRelativePath": "basic-plus-source-manifest-20261117.json",
+      "sha256": "690f8c44d10db358660c4db403d2b1e629ab4590c5ae060f94b6e053c0a2cbfc",
+      "bytes": 151579
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-integration-20261116.json",
+      "archiveRelativePath": "close-variants-integration-20261116.json",
+      "sha256": "67b1b634944cc71765fd000e0e9add5770d492efe46172bf07e1372c1b261c4b",
+      "bytes": 5443
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-mysql-20261116.json",
+      "archiveRelativePath": "close-variants-mysql-20261116.json",
+      "sha256": "cac49312a97663683637f6ae23c0e2ec4e8853b944764b1dea48c9e4b37a170e",
+      "bytes": 118
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-source-manifest-20261116.json",
+      "archiveRelativePath": "close-variants-source-manifest-20261116.json",
+      "sha256": "5beb6bfa6ce70f50986bff232dd2b3c54c1c02abb5f3b63b612eefd2d61a88e6",
+      "bytes": 151222
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-strict-integration-20261116.json",
+      "archiveRelativePath": "close-variants-strict-integration-20261116.json",
+      "sha256": "e2f5c23a723cba425177a52242fc69e88df25507e35f83991c35aae52936b960",
+      "bytes": 7216
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-strict-mysql-20261116.json",
+      "archiveRelativePath": "close-variants-strict-mysql-20261116.json",
+      "sha256": "cac49312a97663683637f6ae23c0e2ec4e8853b944764b1dea48c9e4b37a170e",
+      "bytes": 118
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-strict-source-manifest-20261116.json",
+      "archiveRelativePath": "close-variants-strict-source-manifest-20261116.json",
+      "sha256": "ee8c04a2adce93540a6622c599ac6ca663af5cf6aaa0d1e1e9f698bf48999132",
+      "bytes": 151398
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-strict-unit-20261116.json",
+      "archiveRelativePath": "close-variants-strict-unit-20261116.json",
+      "sha256": "0f969d06a7464e256349e10aa6885832f3398a32ba6f7ceba26efae62ef992e1",
+      "bytes": 5784
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/close-variants-unit-20261116.json",
+      "archiveRelativePath": "close-variants-unit-20261116.json",
+      "sha256": "8a7dccbc255ce744a6a6eec4dbd2c4b0f68db7e57f5ab2af5e514ed1bcd53175",
+      "bytes": 5589
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/contract-inventory.json",
+      "archiveRelativePath": "contract-inventory.json",
+      "sha256": "29e6eb5a02798a0197c96acc100c0890f80b767da06c2ca300c61a09e25641b0",
+      "bytes": 211444
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-application-integration-20261117.json",
+      "archiveRelativePath": "controlled-mail-application-integration-20261117.json",
+      "sha256": "a9041f5b97ac46ea7004f961b5fcf2bb3d81cc254b359f0a02c7c4aae31e1341",
+      "bytes": 1539
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-final-source-manifest-20261117.json",
+      "archiveRelativePath": "controlled-mail-final-source-manifest-20261117.json",
+      "sha256": "b4a53cd6dedd20cca15a7a67a7c2c7aa5003de0d692a6de19da89ceaa37ecedc",
+      "bytes": 152446
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-final-unit-20261117.json",
+      "archiveRelativePath": "controlled-mail-final-unit-20261117.json",
+      "sha256": "dc329eb0ac37b83ccba2ce306dfa70a465923b7afee5172827dccd3ff6dad238",
+      "bytes": 7887
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-json-final-source-manifest-20261117.json",
+      "archiveRelativePath": "controlled-mail-json-final-source-manifest-20261117.json",
+      "sha256": "ba663d80eb2ab871f53a13e2cccc78a84021c58e9f9d5715c80a9f9a9205f79a",
+      "bytes": 152446
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-json-final-unit-20261117.json",
+      "archiveRelativePath": "controlled-mail-json-final-unit-20261117.json",
+      "sha256": "1c96b23204b0c19a4ddf99868ece7469006802a018c135398c6a1a13901222a9",
+      "bytes": 7892
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-provider-readback-20261117.json",
+      "archiveRelativePath": "controlled-mail-provider-readback-20261117.json",
+      "sha256": "b9e037088b2a5304ccca6806fcd86d4a9c5af0a62ef602cb81aa6b2e8fb30b19",
+      "bytes": 566
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-send-guard-20261117.json",
+      "archiveRelativePath": "controlled-mail-send-guard-20261117.json",
+      "sha256": "407e09d02cfb2e0a41829d33d0a4f9a66300c671f7060d65aa36ed1134de5282",
+      "bytes": 1111
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-source-manifest-20261117.json",
+      "archiveRelativePath": "controlled-mail-source-manifest-20261117.json",
+      "sha256": "54ca83bb8908a4b982d3d441b38d415ffce718b44e2b97cbf14307c442dd530d",
+      "bytes": 152446
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/controlled-mail-unit-20261117.json",
+      "archiveRelativePath": "controlled-mail-unit-20261117.json",
+      "sha256": "8279cc25f18409d72d405d2e24b0c57f2fbca8943c813d914c8ba00875818c6a",
+      "bytes": 7834
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/d30-worker-integration-20261116.json",
+      "archiveRelativePath": "d30-worker-integration-20261116.json",
+      "sha256": "88b5e029ae06c727d6ccda16edd639cbbda923dab64578bcb2d2a18fa2060cc8",
+      "bytes": 3186
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/d30-worker-mysql-20261116.json",
+      "archiveRelativePath": "d30-worker-mysql-20261116.json",
+      "sha256": "cac49312a97663683637f6ae23c0e2ec4e8853b944764b1dea48c9e4b37a170e",
+      "bytes": 118
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/d30-worker-source-manifest-20261116.json",
+      "archiveRelativePath": "d30-worker-source-manifest-20261116.json",
+      "sha256": "2b7ba966a78c7352c2798e6a4afcac5117b6ee6d6215654aa2efe1129e287da8",
+      "bytes": 151222
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/d30-worker-unit-20261116.json",
+      "archiveRelativePath": "d30-worker-unit-20261116.json",
+      "sha256": "af1626b97e5d146ddd457cacca3ae7dfffa34ec9cc08c3ae29bdb0e81b5274e8",
+      "bytes": 5585
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064058Z-0170b743.log",
+      "archiveRelativePath": "expanded-api-20261116T064058Z-0170b743.log",
+      "sha256": "140b51ecf46a1f6936d2044647c0a4108172e6cfb51db33dc0887cde7706f915",
+      "bytes": 29459
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064209Z-ab93ce6c.log",
+      "archiveRelativePath": "expanded-api-20261116T064209Z-ab93ce6c.log",
+      "sha256": "ea0018b021d655e619b8a6aeefe7148c5433f8c5307bed80f5eae6dbbf443865",
+      "bytes": 29179
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064323Z-6e14f60f.log",
+      "archiveRelativePath": "expanded-api-20261116T064323Z-6e14f60f.log",
+      "sha256": "58a7f5c82aede39c898484f18429f2173ed699569507951ef59fa743aae99ba4",
+      "bytes": 29541
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064447Z-676d2f6e.log",
+      "archiveRelativePath": "expanded-api-20261116T064447Z-676d2f6e.log",
+      "sha256": "3bcad1d1cd7216d37e04b92f3eaa0e336572a4a63ea234d8a7e23273c789636f",
+      "bytes": 29218
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064606Z-1a6c699a.log",
+      "archiveRelativePath": "expanded-api-20261116T064606Z-1a6c699a.log",
+      "sha256": "586c040d067e0f285969093e41ed30faa0b90a886069f6ed1ca1df46c065020e",
+      "bytes": 34002
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064723Z-ebe82641.log",
+      "archiveRelativePath": "expanded-api-20261116T064723Z-ebe82641.log",
+      "sha256": "61b5a67c8e425378ad83906dd7333ecc6ec09255c675fa7525813e6b9b396191",
+      "bytes": 33428
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064843Z-40a5f272.log",
+      "archiveRelativePath": "expanded-api-20261116T064843Z-40a5f272.log",
+      "sha256": "c41f21057c5a02e626e6279e53b3d88652d38417cc8584b0bd8a0c0ccf446ab2",
+      "bytes": 33358
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-20261116T064957Z-05e3ee40.log",
+      "archiveRelativePath": "expanded-api-20261116T064957Z-05e3ee40.log",
+      "sha256": "5b80cf66372eeb000934c76fb5b1dc9ee258edf687c5c658e1b0ee38cb140f48",
+      "bytes": 24670
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/expanded-api-batch-20261116.json",
+      "archiveRelativePath": "expanded-api-batch-20261116.json",
+      "sha256": "171a944ecb4552e639b96957886c9e9a074e10ff5866fe00edca6cdf6bc3d469",
+      "bytes": 4844
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/formal-contract-batch-plan-20261117.json",
+      "archiveRelativePath": "formal-contract-batch-plan-20261117.json",
+      "sha256": "a9b330882d999a6159aab4f999b70c74ae2feb2a7ad5ddd66923fd9b24059994",
+      "bytes": 2705
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/formal-contract-batch-result-20261117.json",
+      "archiveRelativePath": "formal-contract-batch-result-20261117.json",
+      "sha256": "563f8f8d54cb978da8cf20f6c3c32dd39ecc361245c2c78d3de983e98d8d5dfa",
+      "bytes": 6545
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/formal-funds-integration-20261117.json",
+      "archiveRelativePath": "formal-funds-integration-20261117.json",
+      "sha256": "1267a1d78a9c3bbed61af8ed5350790a786e966274d51bbe18b9be8e0e1db0f1",
+      "bytes": 8521
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/formal-no-schedule-coverage-20261117.json",
+      "archiveRelativePath": "formal-no-schedule-coverage-20261117.json",
+      "sha256": "0d1448b97e7806ac95a5364c8f1afbc13f2e6c193e12b65fe0762835e3bbf9a0",
+      "bytes": 6659
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/frontend-runtime-20261116.json",
+      "archiveRelativePath": "frontend-runtime-20261116.json",
+      "sha256": "ac11fb64bef10ea7dde4353d0e1d1c3762f9b5a32c242e22c42252e1db4af326",
+      "bytes": 1659
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/frontend-runtime-source-manifest-20261116.json",
+      "archiveRelativePath": "frontend-runtime-source-manifest-20261116.json",
+      "sha256": "d53ebd56ea4da65e407c3af921201790dbe34025caf0dd3d6d06988a1c978a39",
+      "bytes": 423244
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-d30-native-readback-20261116.json",
+      "archiveRelativePath": "funds-d30-native-readback-20261116.json",
+      "sha256": "f4957d3a9fd2f4db4c7bb172096b006ecbb73793eef2cc58cff86822a9d27d13",
+      "bytes": 4431
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-d30-strict-readback-20261116.json",
+      "archiveRelativePath": "funds-d30-strict-readback-20261116.json",
+      "sha256": "24944a8f04fdd39d390343db93d2e43fab3520554e3c57b132f353c05c470a29",
+      "bytes": 4725
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-integration-20261116.json",
+      "archiveRelativePath": "funds-integration-20261116.json",
+      "sha256": "740ef247d8062ffd076e40f1097da74f2bd28c8b56af59b0e5d973d3bfd551b9",
+      "bytes": 5165
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-native-readback-20261116.json",
+      "archiveRelativePath": "funds-native-readback-20261116.json",
+      "sha256": "04045b8672274a7abfce710c01be16d7004ce4c4ced5e72ee8d1b23c708a407c",
+      "bytes": 4644
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-probe-20261116-maven.log",
+      "archiveRelativePath": "funds-probe-20261116-maven.log",
+      "sha256": "d4ed16d2d636fe31db7837fc1795db462cdb9fbfe1119c6fa54bdbd8e17ac74d",
+      "bytes": 18835
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-probe-20261116-on-session-maven.log",
+      "archiveRelativePath": "funds-probe-20261116-on-session-maven.log",
+      "sha256": "48eb9caa2d26e2adedecbadff1a160c75eac34b641a1ea1d847ac20c139aebb9",
+      "bytes": 8976
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T120939Z-087fc5a9.json",
+      "archiveRelativePath": "funds-saved-20261116T120939Z-087fc5a9.json",
+      "sha256": "d8527e56432cc05fb84b3f29fc6d42d3888b1ad9a73fdd0dddca2dff2fb68910",
+      "bytes": 413
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T120939Z-087fc5a9.log",
+      "archiveRelativePath": "funds-saved-20261116T120939Z-087fc5a9.log",
+      "sha256": "95fb828736ae046366d9f9411e423cbeba8da22b90b6d8f378e99ad5a1b11c26",
+      "bytes": 26190
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T121849Z-ece9225a.json",
+      "archiveRelativePath": "funds-saved-20261116T121849Z-ece9225a.json",
+      "sha256": "fbc696a9bb0f05846498057f230a3d2a6508c5cd98b0075dd09c77f69ce2bb16",
+      "bytes": 413
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T121849Z-ece9225a.log",
+      "archiveRelativePath": "funds-saved-20261116T121849Z-ece9225a.log",
+      "sha256": "dc76154512b64d3452b874c5de2c2369d7753f051b11b88f976624cc28e70928",
+      "bytes": 29192
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T123223Z-60050ea8.json",
+      "archiveRelativePath": "funds-saved-20261116T123223Z-60050ea8.json",
+      "sha256": "9cdac0929959ea872202ae8480e99422fa6305da613bd5eccfdc3120ec78fa0f",
+      "bytes": 566
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-saved-20261116T123223Z-60050ea8.log",
+      "archiveRelativePath": "funds-saved-20261116T123223Z-60050ea8.log",
+      "sha256": "27f6ff1c904708f79177c31a9ea1ca8f31c0c54c5f06f2b2b66b02495f53c8b7",
+      "bytes": 43117
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-worker-mysql-20261116.json",
+      "archiveRelativePath": "funds-worker-mysql-20261116.json",
+      "sha256": "cac49312a97663683637f6ae23c0e2ec4e8853b944764b1dea48c9e4b37a170e",
+      "bytes": 118
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-worker-source-manifest-20261116.json",
+      "archiveRelativePath": "funds-worker-source-manifest-20261116.json",
+      "sha256": "13a0108f4a5beff70be78a2ce9d97a0074da01684d7c564904870be6899c846a",
+      "bytes": 151222
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/funds-worker-unit-20261116.json",
+      "archiveRelativePath": "funds-worker-unit-20261116.json",
+      "sha256": "763cd4a7ea54f6ab8d4aad8a87d2f2fa6d5b1e38307c03a35ccbc6ea857dcc3b",
+      "bytes": 5587
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/hosted-payment-user-confirmation-20261117.json",
+      "archiveRelativePath": "hosted-payment-user-confirmation-20261117.json",
+      "sha256": "491fe6c9f596005a2e42423c532453876fad571f352f864edac9818b045556e4",
+      "bytes": 586
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-20261113-validation.json",
+      "archiveRelativePath": "local-20261113-validation.json",
+      "sha256": "99a720feb4065ee588f01cced5dd3230634a1a228abf7e0ecea3359ddb972e51",
+      "bytes": 775
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-20261114-validation.json",
+      "archiveRelativePath": "local-20261114-validation.json",
+      "sha256": "5c6687439003e77ffb4f17d276a1a4a005f71cf925e451051d7dbf50156e8401",
+      "bytes": 16977
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-20261115-validation.json",
+      "archiveRelativePath": "local-20261115-validation.json",
+      "sha256": "84cef2129893ed6a31b2ff9575cbb960f845d12d719be461cea7786ce79edd38",
+      "bytes": 81822
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-20261116-source-manifest.json",
+      "archiveRelativePath": "local-20261116-source-manifest.json",
+      "sha256": "d99ec13b5feae3a6bf98193b296c5f7b2e69af96cceb75d30cd789cb7bd48a5d",
+      "bytes": 150014
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-20261116-validation.json",
+      "archiveRelativePath": "local-20261116-validation.json",
+      "sha256": "bc514a9b249d208cd8daba1299316e4c51ccbadc5e63b32199d53ebb59a03b7e",
+      "bytes": 11755
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/local-native-schema-cleanup-20261116.json",
+      "archiveRelativePath": "local-native-schema-cleanup-20261116.json",
+      "sha256": "1ef4366072bb167c462fe50676763983c3af6211f458a2622ccc9600d171608a",
+      "bytes": 212
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/mail-inbox-confirmation-20261117.json",
+      "archiveRelativePath": "mail-inbox-confirmation-20261117.json",
+      "sha256": "a618049d7b2b83db0a214ad5a64ebfa69f7d85cad7af8c6d2f557bcf41ea42e0",
+      "bytes": 779
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/mail-json-canonicalization-20261117.json",
+      "archiveRelativePath": "mail-json-canonicalization-20261117.json",
+      "sha256": "b6e74405f635a6c4d8e9a51ef83343bae5b00bd84331a2242d5c8b9022f06d53",
+      "bytes": 398
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261114T134503Z-2d0aa08b.log",
+      "archiveRelativePath": "maven-20261114T134503Z-2d0aa08b.log",
+      "sha256": "3cbd76153db5c1aa3722a097f1f5fc1a1e760f2b559cced3e316107f4f1c9208",
+      "bytes": 24384
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261114T135136Z-465e53aa.log",
+      "archiveRelativePath": "maven-20261114T135136Z-465e53aa.log",
+      "sha256": "af115a7b550d3366a7ab45880b8da5c3701205f2ad547b552ba846fda8d7ea9d",
+      "bytes": 24078
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T122107Z-87fd98dc.log",
+      "archiveRelativePath": "maven-20261115T122107Z-87fd98dc.log",
+      "sha256": "2e9f6cf956cc35637acaf3e3ee8a64523d11d3a80fcb0bed957020e2571cbd21",
+      "bytes": 24338
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T122345Z-1427eedc.log",
+      "archiveRelativePath": "maven-20261115T122345Z-1427eedc.log",
+      "sha256": "c5107d7fd4d7580ca227987f1f3f71581c7e49566bd7bf61d9147583230a94b3",
+      "bytes": 24368
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T124208Z-a4d08393.log",
+      "archiveRelativePath": "maven-20261115T124208Z-a4d08393.log",
+      "sha256": "a298cdb2fa42cf1a3548fb028773f2961138fb5a6d3882aa026e7340d2d4fa40",
+      "bytes": 22473
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T125315Z-65aad638.log",
+      "archiveRelativePath": "maven-20261115T125315Z-65aad638.log",
+      "sha256": "2aa37deea15a72f7373896f1c538a9baebd244faa39d1516a0b835a20938080b",
+      "bytes": 27520
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T130111Z-430cfe43.log",
+      "archiveRelativePath": "maven-20261115T130111Z-430cfe43.log",
+      "sha256": "c8be9fd15dd574c8bb6fa1b54ed93fbf098b8f205bfb2a7b148957c31000109a",
+      "bytes": 32440
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T130553Z-3b677d48.log",
+      "archiveRelativePath": "maven-20261115T130553Z-3b677d48.log",
+      "sha256": "f2f7cce9f1945531d0b407a5f25cb6702bbb606df2fdccada53304ec7b3e5664",
+      "bytes": 20419
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T130657Z-5f28dd52.log",
+      "archiveRelativePath": "maven-20261115T130657Z-5f28dd52.log",
+      "sha256": "9206eeb86e70919750734d3aa7bb2ad895e8bd47f826f4e24a84189574a43287",
+      "bytes": 32706
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T132304Z-908921b9.log",
+      "archiveRelativePath": "maven-20261115T132304Z-908921b9.log",
+      "sha256": "e731fa0c9febf3d9bb12587f524cfa16fbfeb2f84fb6b449da2cd5d5650c90e8",
+      "bytes": 41332
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/maven-20261115T132539Z-6a04ed49.log",
+      "archiveRelativePath": "maven-20261115T132539Z-6a04ed49.log",
+      "sha256": "a1f624017e45bd569d8c118662fc492bf1d3454618b00f9d59310e49143c501a",
+      "bytes": 34099
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/migration-rehearsal-20261117-b/result.json",
+      "archiveRelativePath": "migration-rehearsal-20261117-b/result.json",
+      "sha256": "8aa62d3517025b0cc5ae376b497bde74f258aa1369a7a63213ad40b647ccfa05",
+      "bytes": 885
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/migration-rehearsal-20261117-b/schema-after-first.sql",
+      "archiveRelativePath": "migration-rehearsal-20261117-b/schema-after-first.sql",
+      "sha256": "fbaa2debbe04831f70941c5d07ebf062c908af189859877a3b8a2f7cce80a835",
+      "bytes": 10399
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/migration-rehearsal-20261117-b/schema-after-second.sql",
+      "archiveRelativePath": "migration-rehearsal-20261117-b/schema-after-second.sql",
+      "sha256": "fbaa2debbe04831f70941c5d07ebf062c908af189859877a3b8a2f7cce80a835",
+      "bytes": 10399
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-active-cancel-20261116T132932Z-21083899.log",
+      "archiveRelativePath": "native-active-cancel-20261116T132932Z-21083899.log",
+      "sha256": "7f8aa5e251862f83632eb45407aa438c0b0e1a11753d9b76ac01db344d1ff553",
+      "bytes": 29778
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-active-cancel-20261116T135307Z-74f2fe94.log",
+      "archiveRelativePath": "native-active-cancel-20261116T135307Z-74f2fe94.log",
+      "sha256": "73a2702b39ad22a98f838528b1f3f83233676d3f1154045d61608ef78305df96",
+      "bytes": 26275
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-annual-monthly-refresh-20261117T024738Z-8bddc9a7.log",
+      "archiveRelativePath": "native-annual-monthly-refresh-20261117T024738Z-8bddc9a7.log",
+      "sha256": "366c83a6f5393106650886261e284f04218d2846f8febda41a6aeccb06171b0c",
+      "bytes": 41425
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-annual-monthly-refresh-20261117T025721Z-5d520e35.log",
+      "archiveRelativePath": "native-annual-monthly-refresh-20261117T025721Z-5d520e35.log",
+      "sha256": "ac848438c5022b3f2da6d546fc1c9b862df5a6be89b753ed6ca7375b83b5f0b6",
+      "bytes": 16413
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-annual-monthly-refresh-20261117T031048Z-2c3fff4e.log",
+      "archiveRelativePath": "native-annual-monthly-refresh-20261117T031048Z-2c3fff4e.log",
+      "sha256": "876cc090a7c7cc0f2a448d4c52fdeaa510d9ac8f08fd18fedc1941ca41dff63e",
+      "bytes": 36504
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T062057Z-9bd2545b.log",
+      "archiveRelativePath": "native-application-20261116T062057Z-9bd2545b.log",
+      "sha256": "dc1d6df90902a7d20d863e0ea85aaf836354d91be5b1e04aa193c8f3841551c8",
+      "bytes": 38284
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T062441Z-76a28cbc.log",
+      "archiveRelativePath": "native-application-20261116T062441Z-76a28cbc.log",
+      "sha256": "b4e2f0e5f798e92849dc1aea825dad1bee929374e8ed42eaf95f40a2cee27fc5",
+      "bytes": 43144
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T062945Z-c3654932.log",
+      "archiveRelativePath": "native-application-20261116T062945Z-c3654932.log",
+      "sha256": "153f8a421b9db8a867bd6310db9125917a6718432dc033f25e027f5f6b3eadbc",
+      "bytes": 44282
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T065141Z-f76d1953.log",
+      "archiveRelativePath": "native-application-20261116T065141Z-f76d1953.log",
+      "sha256": "b88215ee4975fc96fcae2eef9bdb2eeddbdbb97ac68498360024e74e01b9243a",
+      "bytes": 35556
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T115701Z-13405074.log",
+      "archiveRelativePath": "native-application-20261116T115701Z-13405074.log",
+      "sha256": "5e89eb6a870aa3afe1045a2cbc0e023f3abd2b5680795c9f4ea984f80df89653",
+      "bytes": 31348
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T122705Z-b8004b73.log",
+      "archiveRelativePath": "native-application-20261116T122705Z-b8004b73.log",
+      "sha256": "ff698bf4711055c0d3f9d084900e917ac4b6614ebc6360cff687e28b0f80c54e",
+      "bytes": 40791
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261116T123641Z-609f040d.log",
+      "archiveRelativePath": "native-application-20261116T123641Z-609f040d.log",
+      "sha256": "c804e801adcba64cce286d521b441c78d5f44e6559dd027b8a7f041efa4400bc",
+      "bytes": 31366
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-application-20261117T033104Z-ad5d23c3.log",
+      "archiveRelativePath": "native-application-20261117T033104Z-ad5d23c3.log",
+      "sha256": "3b547de58acac12cea56bb7f3a715db9f882b7a77a0c97f045c7c870f7d0ff70",
+      "bytes": 32979
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-d30-worker-20261116T130810Z-69086e1d.log",
+      "archiveRelativePath": "native-d30-worker-20261116T130810Z-69086e1d.log",
+      "sha256": "5aeeb418edc5d29f495bcb87e48c39a11c66036111a82f89bb28d3f05765dcd4",
+      "bytes": 25386
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-funds-worker-20261116T150848Z-bf3de827.log",
+      "archiveRelativePath": "native-formal-funds-worker-20261116T150848Z-bf3de827.log",
+      "sha256": "3ba17765d1778cf1711279669cf503b0e44e9671514324192db17850b772831e",
+      "bytes": 24697
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-funds-worker-20261117T022026Z-8304d016.log",
+      "archiveRelativePath": "native-formal-funds-worker-20261117T022026Z-8304d016.log",
+      "sha256": "52c43d3204eac2baed0bb4d015e415f01b62499a17f0cf7253768e66d991fe1f",
+      "bytes": 34585
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261116T144455Z-03ed3022.log",
+      "archiveRelativePath": "native-formal-renewal-20261116T144455Z-03ed3022.log",
+      "sha256": "6147b50d1999e370df62ee6ffe86ff4ac6afbe52f00065b8e8abc039b139ddc9",
+      "bytes": 30482
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261116T150016Z-ef00f98d.log",
+      "archiveRelativePath": "native-formal-renewal-20261116T150016Z-ef00f98d.log",
+      "sha256": "801d83941f718fc826568cd4dfdf4c58958d1d87ae5c58b23ccfc01c6e93db0c",
+      "bytes": 30506
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261116T150406Z-2bb1be67.log",
+      "archiveRelativePath": "native-formal-renewal-20261116T150406Z-2bb1be67.log",
+      "sha256": "57ea00a727e009e33e603afcfc07b73b791984b7ea3ef10df3c6d1bc4867590e",
+      "bytes": 30490
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T023409Z-617035d8.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T023409Z-617035d8.log",
+      "sha256": "8da4fae879a447c7f8edf6fc7ac8112b9382c8ade6e49c67d0bffd636ad64a7f",
+      "bytes": 30526
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T023727Z-b94e50fb.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T023727Z-b94e50fb.log",
+      "sha256": "d593f493a5f01676d30bee0864148955d62b4b198800cb28a2b81a46b4793b5e",
+      "bytes": 30999
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T033649Z-0f34a415.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T033649Z-0f34a415.log",
+      "sha256": "54cf7bc82dca4b27b19330c231b8847486e7a5e93332a1d61421d7f43bbccac6",
+      "bytes": 30976
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T033822Z-b03049a4.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T033822Z-b03049a4.log",
+      "sha256": "38af768dace79c594f39b074ccb62939bdd15c425e021ef5dab4ac795507ae6e",
+      "bytes": 30976
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T033954Z-735a34c8.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T033954Z-735a34c8.log",
+      "sha256": "c3aef85561f0c30902d3d36e8c69efc36c712c9fda53e6b1cc59c9f1f3b24ae4",
+      "bytes": 16368
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T034441Z-9c484b2c.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T034441Z-9c484b2c.log",
+      "sha256": "150393dc2f4cf89690d7112eb328b07a1e0d786d486b681c2dc78c0557fab5c8",
+      "bytes": 30519
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T034609Z-5d326600.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T034609Z-5d326600.log",
+      "sha256": "17049b410075e7c5419af6aa74f2bb5fc10553f0dee91aa2e7ff687c352e8514",
+      "bytes": 30513
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T034742Z-23df79d6.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T034742Z-23df79d6.log",
+      "sha256": "bb96ff5754e2792c9c5d395b55d0a350d7e0ba43bd03ab77354e74898cd8a389",
+      "bytes": 30493
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T034909Z-270ade6c.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T034909Z-270ade6c.log",
+      "sha256": "a3c91eca1466d97a265227fb16f18982217d9315f6f9f9ebd7f48442f6865ff7",
+      "bytes": 30513
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-formal-renewal-20261117T035046Z-6edc6a0b.log",
+      "archiveRelativePath": "native-formal-renewal-20261117T035046Z-6edc6a0b.log",
+      "sha256": "3937470d34512f47fff85a9edf5d14deca659cdb9a7ccfcef3c00db48836eb9e",
+      "bytes": 30545
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-funds-d30-20261116T133256Z-38f3999b.log",
+      "archiveRelativePath": "native-funds-d30-20261116T133256Z-38f3999b.log",
+      "sha256": "c6b56bdf4c50c99b97f2bf7fb75b93b0883b1d4eb767f728f9ae361b6aeccdcd",
+      "bytes": 34857
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-funds-d30-20261116T135520Z-96782516.log",
+      "archiveRelativePath": "native-funds-d30-20261116T135520Z-96782516.log",
+      "sha256": "a9652163bb154b1655dbc8c8961740a0996530cf9fba475ed63680d76fb733f4",
+      "bytes": 34929
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-funds-worker-20261116T125019Z-e9eca4a3.log",
+      "archiveRelativePath": "native-funds-worker-20261116T125019Z-e9eca4a3.log",
+      "sha256": "7398b6e608a981639f291193c91308233c10adc5ef62c7e8436f9a09d7c93b16",
+      "bytes": 38941
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-integration-20261116.json",
+      "archiveRelativePath": "native-integration-20261116.json",
+      "sha256": "6609ab678375523b1a49bb30fc95075f3d313cce9bc6687c6ca7fae88e7c4fdc",
+      "bytes": 30057
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-integration-local-cleanup-final-20261116.json",
+      "archiveRelativePath": "native-integration-local-cleanup-final-20261116.json",
+      "sha256": "e40fd0f4484141659bed5d9763ed2381e3fb7ea713102d623179dbaa523de03a",
+      "bytes": 212
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-integration-source-manifest-20261116.json",
+      "archiveRelativePath": "native-integration-source-manifest-20261116.json",
+      "sha256": "1f6ed5656f2e640433e00371827ae424705b5459de631c9acb8bcca02af52461",
+      "bytes": 150717
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-integration-unit-20261116.json",
+      "archiveRelativePath": "native-integration-unit-20261116.json",
+      "sha256": "08458ef1432c840278c10f8728a2ccf628f1193a95363f469153b978137efa04",
+      "bytes": 8571
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-integration-unit-source-manifest-20261116.json",
+      "archiveRelativePath": "native-integration-unit-source-manifest-20261116.json",
+      "sha256": "1f6ed5656f2e640433e00371827ae424705b5459de631c9acb8bcca02af52461",
+      "bytes": 150717
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-yearly-trial-20261116T143045Z-5ffbacbc.log",
+      "archiveRelativePath": "native-yearly-trial-20261116T143045Z-5ffbacbc.log",
+      "sha256": "6d183274f0a1e2b8e1d574bca3bd81b393e23f697401fb0a7a942c0632b0ba18",
+      "bytes": 31618
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/native-yearly-trial-20261116T150559Z-b1ad9783.log",
+      "archiveRelativePath": "native-yearly-trial-20261116T150559Z-b1ad9783.log",
+      "sha256": "ea49fea405ed8f99bba25621aa1a1fc1d24aad683e13486d47dc0a46aecaae7e",
+      "bytes": 31712
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-hosted-application-integration-20261117.json",
+      "archiveRelativePath": "portal-hosted-application-integration-20261117.json",
+      "sha256": "0136f7abc60a218597b451ab0b6e0be4232d07ae9292cb57c89c479bf7718e0a",
+      "bytes": 2188
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-hosted-live-state-20261117.json",
+      "archiveRelativePath": "portal-hosted-live-state-20261117.json",
+      "sha256": "e12a86285b2185bb1d78986a649917947962641975d66f47179a9cd305042937",
+      "bytes": 718
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-hosted-source-manifest-20261117.json",
+      "archiveRelativePath": "portal-hosted-source-manifest-20261117.json",
+      "sha256": "a7115a533de6e162154f83e66b3f1c3af71c045402f759df7b64c2aae078a102",
+      "bytes": 152788
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-hosted-timeout-20261117.json",
+      "archiveRelativePath": "portal-hosted-timeout-20261117.json",
+      "sha256": "0f29feb274f1c53e0a56d4419ecc5591a3d1ba01b6f532373486dedeaffdb46a",
+      "bytes": 519
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-hosted-unit-20261117.json",
+      "archiveRelativePath": "portal-hosted-unit-20261117.json",
+      "sha256": "20e87ad8fa1e79186a1235024e4d2c92683138bd0b2c1d0b51cfa96353b64c39",
+      "bytes": 8231
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/portal-method-user-confirmation-20261117.json",
+      "archiveRelativePath": "portal-method-user-confirmation-20261117.json",
+      "sha256": "51ca9bbf2a02dd07df2c88281977c608ab39bb85732c1d8ff69b0e0e6c9d7ff2",
+      "bytes": 721
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-integration-20261116.json",
+      "archiveRelativePath": "renewal-contract-integration-20261116.json",
+      "sha256": "bfc0a67d499bd083876c4153e9cd1dd71e7101db9371b6e9de62cc1dc4fa4af9",
+      "bytes": 8250
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-mysql-20261117.json",
+      "archiveRelativePath": "renewal-contract-mysql-20261117.json",
+      "sha256": "7d2080fbd7ddddf42f79eb98a37267d740c2439e34151b469d457d7d315a8b0a",
+      "bytes": 541
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-mysql-20261117.log",
+      "archiveRelativePath": "renewal-contract-mysql-20261117.log",
+      "sha256": "ada816791c9d15fe394f38eebf2d18f507f34be9f15a96d9b79bb83a56c66fbc",
+      "bytes": 69233
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-source-manifest-20261116.json",
+      "archiveRelativePath": "renewal-contract-source-manifest-20261116.json",
+      "sha256": "690f8c44d10db358660c4db403d2b1e629ab4590c5ae060f94b6e053c0a2cbfc",
+      "bytes": 151579
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-tools-20261117.log",
+      "archiveRelativePath": "renewal-contract-tools-20261117.log",
+      "sha256": "0d15f1a891a574474026f5d386f088628e139f5b0bdbe9a276891279f28f005c",
+      "bytes": 3705
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/renewal-contract-unit-20261116.json",
+      "archiveRelativePath": "renewal-contract-unit-20261116.json",
+      "sha256": "f2f9673dd279c52e5e49c2da628e37752019308cf18bf517dc6f857005d37e65",
+      "bytes": 5963
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-checkout-user-confirmation-20261117.json",
+      "archiveRelativePath": "replacement-checkout-user-confirmation-20261117.json",
+      "sha256": "a3b722ce5840b58cb459b8f39f0dfbc4ce2d75f0234c25af3e15ba599f704b61",
+      "bytes": 615
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-application-integration-20261117.json",
+      "archiveRelativePath": "replacement-double-application-integration-20261117.json",
+      "sha256": "bd008fb7d462c471d5585bcf82c7f95b8a3821dcb1b3a04e01b7a1534e3f97c7",
+      "bytes": 4609
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-live-state-20261117.json",
+      "archiveRelativePath": "replacement-double-live-state-20261117.json",
+      "sha256": "b323b39ac5e226639f1c3026ba3d828ae9b8ae4e6f224438413e3e1c2e93f956",
+      "bytes": 631
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-old-user-confirmation-20261117.json",
+      "archiveRelativePath": "replacement-double-old-user-confirmation-20261117.json",
+      "sha256": "62cc8cc07bd27a56578fa53e15145fda297893cfe19fbcbf38fa3d21393eec91",
+      "bytes": 673
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-receipts-readback-20261117.json",
+      "archiveRelativePath": "replacement-double-receipts-readback-20261117.json",
+      "sha256": "833d41f7ee112f70b059cd6ac98e8b949d7c972b243ac999b89f671c324075d1",
+      "bytes": 3545
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-source-manifest-20261117.json",
+      "archiveRelativePath": "replacement-double-source-manifest-20261117.json",
+      "sha256": "81a5e0ebdb4b15e474728f0287d524b1e64e541a176c726aeb0d752d5e1c5a08",
+      "bytes": 153128
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-unit-20261117.json",
+      "archiveRelativePath": "replacement-double-unit-20261117.json",
+      "sha256": "2b68d8baa8af735881e756005154f717bb7ece0a53a1760bab94c69cd8b54dc6",
+      "bytes": 6995
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-double-user-confirmation-20261117.json",
+      "archiveRelativePath": "replacement-double-user-confirmation-20261117.json",
+      "sha256": "61d5305fc730b12d2b5b9814313935128c4be5bb1bd551e6076ed545865d5f2a",
+      "bytes": 534
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-native-application-integration-20261117.json",
+      "archiveRelativePath": "replacement-native-application-integration-20261117.json",
+      "sha256": "3d67cacf64a141e0610133d1cd4c605be4c41685a05201ca9a816d9aeb88621f",
+      "bytes": 2978
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-native-live-state-20261117.json",
+      "archiveRelativePath": "replacement-native-live-state-20261117.json",
+      "sha256": "7ea2b890afb329d59ea9bbd830d7296bc43f489d09b5e9c0930161e5f45a5f39",
+      "bytes": 707
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-native-source-manifest-20261117.json",
+      "archiveRelativePath": "replacement-native-source-manifest-20261117.json",
+      "sha256": "8bb2ded5595ad87672ade67a659ce92a5e1482f51b485377a2a41370ecc5a983",
+      "bytes": 153128
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-native-unit-20261117.json",
+      "archiveRelativePath": "replacement-native-unit-20261117.json",
+      "sha256": "959e7490063b968c1292ba720733bb68c31f0aa5121cd4b0e9d3eb752a01bad9",
+      "bytes": 9096
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-owned-receipts-readback-20261117.json",
+      "archiveRelativePath": "replacement-owned-receipts-readback-20261117.json",
+      "sha256": "4b58570425e99b189d65b31e209f8b92ec484cb218f2fba205544f18572333e0",
+      "bytes": 2409
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/replacement-scope-index-fix-20261117.json",
+      "archiveRelativePath": "replacement-scope-index-fix-20261117.json",
+      "sha256": "01d944a9db1dce75700679ceba266641a60a95c4da46ed96d4b998b956cbdb8a",
+      "bytes": 838
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/sandbox-20261116-20261116T041336Z-95aff374.log",
+      "archiveRelativePath": "sandbox-20261116-20261116T041336Z-95aff374.log",
+      "sha256": "50512110ab00343e6a69c2443fdf0796744a04294963c599b572be9acf58391b",
+      "bytes": 40547
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/sandbox-20261116-20261116T041507Z-4f31c010.log",
+      "archiveRelativePath": "sandbox-20261116-20261116T041507Z-4f31c010.log",
+      "sha256": "3145713b012ef9f1fff49c6183c8b176748e424f97867a8ae6fb60d0852bb4c8",
+      "bytes": 36753
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/sandbox-batch-20261116.json",
+      "archiveRelativePath": "sandbox-batch-20261116.json",
+      "sha256": "edb2233b37c1a5a13b0ebb495c3e145d4e3a7ec315e0816387c820ee84ad161b",
+      "bytes": 1293
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-integration-20261117.json",
+      "archiveRelativePath": "shift-loss-integration-20261117.json",
+      "sha256": "1189427f4fe5ce3a300bed5c5468813f92f476a9012a8d252e01a268cad32074",
+      "bytes": 4939
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-mysql-final-20261117.json",
+      "archiveRelativePath": "shift-loss-mysql-final-20261117.json",
+      "sha256": "4083ec2889bfe61ee2be2e39cd081b3d427b2a5670cbaa863423459bd18d9586",
+      "bytes": 293
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-mysql-final-20261117.log",
+      "archiveRelativePath": "shift-loss-mysql-final-20261117.log",
+      "sha256": "c18dd32f03751a1562c2a4d97bebea4f3c670bf0d2d5453b6d742792dd873400",
+      "bytes": 69233
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-source-manifest-20261117.json",
+      "archiveRelativePath": "shift-loss-source-manifest-20261117.json",
+      "sha256": "7d7f1491c68773efdddddc294f2f9a09ba7253a154ef0adabd5551a6af467b24",
+      "bytes": 152104
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-tools-20261117.log",
+      "archiveRelativePath": "shift-loss-tools-20261117.log",
+      "sha256": "b7731cef8cc7a6f89e8ff98fc4fc451682e80a4afb904dffc7c4a69da9878bc2",
+      "bytes": 3712
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/shift-loss-unit-20261117.json",
+      "archiveRelativePath": "shift-loss-unit-20261117.json",
+      "sha256": "565ab64c0d434f6bea17e9212ab7d929701514fc42919bd490fc2b462510e47a",
+      "bytes": 7619
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/test-key-readonly-check-20261116.json",
+      "archiveRelativePath": "test-key-readonly-check-20261116.json",
+      "sha256": "01835e852b5560d2acafa99051df03dfc1262182c80e72f698dc8b2f0d2f283b",
+      "bytes": 678
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/test-server-mail-config-readonly-20261117.json",
+      "archiveRelativePath": "test-server-mail-config-readonly-20261117.json",
+      "sha256": "b89aad3459515b6c79d16279ccef6babc47a9b05a527493885df312cd1c5b025",
+      "bytes": 1049
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/trial-scope-fix-20261116.json",
+      "archiveRelativePath": "trial-scope-fix-20261116.json",
+      "sha256": "61afd13c83f3444b22634ead133981a3c2027e262fd95ddb56ea0a573e511abd",
+      "bytes": 1312
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/trial-scope-fix-mysql-20261116.json",
+      "archiveRelativePath": "trial-scope-fix-mysql-20261116.json",
+      "sha256": "c2dbea0450e89cc04639b365f02ab01b9aa2bad8cb803878c737051d8bd9ef06",
+      "bytes": 126
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/trial-scope-fix-source-manifest-20261116.json",
+      "archiveRelativePath": "trial-scope-fix-source-manifest-20261116.json",
+      "sha256": "2a0ef9ef420b8e9c3f8ad0c88aa5ddf50087e22501752e761dcef90d5d0704cd",
+      "bytes": 151222
+    },
+    {
+      "originalRepositoryPath": "docs/payment-recovery/evidence/trial-scope-fix-unit-20261116.json",
+      "archiveRelativePath": "trial-scope-fix-unit-20261116.json",
+      "sha256": "939c1cfc2c8a31985a87f4e80bd560fd23751e7016f48d4e74612e2b56edab8b",
+      "bytes": 5580
+    }
+  ]
+}

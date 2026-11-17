@@ -5,6 +5,14 @@ import com.studyagent.service.domain.payment.CheckoutSessionResult;
 public interface BillingDomainService {
     BillingCatalogResult getCatalog();
 
+    BillingQuote getRecoveryReplacementQuote(String user, String recoveryId, String targetPlanCode);
+    CheckoutSessionResult createRecoveryReplacementCheckout(String user, String email, RecoveryReplacementCheckoutCommand command);
+    BillingHostedInvoiceResult createRecoveryHostedInvoice(String user, String recoveryId);
+    PaymentRecoverySummary reconcilePaymentRecovery(String user, String recoveryId);
+    PaymentRecoverySummary exitRecoveryReplacement(String user, String recoveryId, String orderNo);
+    BillingPortalSessionResult createRecoveryAwarePortalSession(String user, String returnUrl, String purpose);
+
+
     BillingQuote getPurchaseQuote(String clerkUserId, String kind, String skuCode);
 
     CheckoutSessionResult createSubscriptionCheckout(

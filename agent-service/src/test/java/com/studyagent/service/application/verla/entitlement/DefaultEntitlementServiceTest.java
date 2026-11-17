@@ -85,6 +85,113 @@ class DefaultEntitlementServiceTest {
     }
 
     @Test
+    void recoveryLockReturnsTyped1031BeforeNewUploadOrOutputAdmission() {
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "OPEN_MANUAL", true,
+                "pro", "pro_monthly", 100L, 0L, 100L, "usd", null, null, null, List.of(), null, null, null);
+        when(billingDomainService.getCurrentSubscription("locked_user")).thenReturn(
+                com.studyagent.service.domain.billing.SubscriptionResult.builder().paymentRecovery(summary).build());
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("locked_user", null)).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, summary));
+        ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.assertCanReserveUserUpload("locked_user", 1L));
+        assertEquals(1031, ex.getCode());
+        var data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals("payment_recovery_required", data.getReasonCode());
+        assertEquals("upload_sign", data.getBlockedAction());
+        org.mockito.Mockito.verifyNoInteractions(attachmentRepository);
+        assertEquals(1031, assertThrows(BusinessException.class, () ->
+                service.assertAssignmentOutputAllowed("locked_user", Map.of())).getCode());
+    }
+
+    @Test
+    void newFollowupDuringRecoveryLockReturnsTyped1031BeforeArtifactOrQuotaAdmission() {
+        enableRecoveryLock();
+
+        BusinessException failure = assertThrows(BusinessException.class,
+                () -> service.reserveFollowupEdit("locked_user", 74L, 902L, List.of("art_1")));
+
+        assertEquals(1031, failure.getCode());
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, failure.getData());
+        assertEquals("payment_recovery_required", data.getReasonCode());
+        assertEquals("assignment_followup_edit", data.getBlockedAction());
+        assertEquals("membership", data.getPurchaseProductId());
+        verify(followupEditUsageRepository).findByUserMessageId(902L);
+        org.mockito.Mockito.verifyNoMoreInteractions(followupEditUsageRepository);
+        org.mockito.Mockito.verifyNoInteractions(artifactRepository, sessionRepository);
+        org.mockito.Mockito.verify(billingDomainService, org.mockito.Mockito.never()).getEffectivePlanOrFree(any());
+    }
+
+    @Test
+    void reservedFollowupRetryDuringRecoveryLockReturnsExistingAcceptance() {
+        InMemoryFollowupEditUsageRepository repository = useInMemoryFollowupRepository();
+        FollowupEditUsage accepted = reserveFollowupBeforeRecoveryLock();
+
+        FollowupEditUsage retried = service.reserveFollowupEdit("locked_user", 74L, 901L, List.of("art_1"));
+
+        org.junit.jupiter.api.Assertions.assertSame(accepted, retried);
+        assertEquals(FollowupEditUsage.STATE_RESERVED, retried.getState());
+        assertEquals(1L, repository.countActiveByAssignmentSessionId(700L));
+        org.mockito.Mockito.verify(billingDomainService, org.mockito.Mockito.never()).getCurrentSubscription(any());
+    }
+
+    @Test
+    void reservedFollowupDuringRecoveryLockCanBindAndComplete() {
+        InMemoryFollowupEditUsageRepository repository = useInMemoryFollowupRepository();
+        FollowupEditUsage accepted = reserveFollowupBeforeRecoveryLock();
+
+        service.bindFollowupEditSession(901L, 801L);
+        service.markFollowupEditCompleted(801L);
+
+        FollowupEditUsage completed = repository.findByAssignmentChatSessionId(801L);
+        org.junit.jupiter.api.Assertions.assertSame(accepted, completed);
+        assertEquals(FollowupEditUsage.STATE_COMPLETED, completed.getState());
+        assertEquals(801L, completed.getAssignmentChatSessionId());
+        assertEquals(1L, repository.countActiveByAssignmentSessionId(700L));
+        org.mockito.Mockito.verify(billingDomainService, org.mockito.Mockito.never()).getCurrentSubscription(any());
+    }
+
+    @Test
+    void reservedFollowupDuringRecoveryLockCanRelease() {
+        InMemoryFollowupEditUsageRepository repository = useInMemoryFollowupRepository();
+        FollowupEditUsage accepted = reserveFollowupBeforeRecoveryLock();
+
+        service.bindFollowupEditSession(901L, 801L);
+        service.releaseFollowupEdit(801L, "task_failed");
+
+        FollowupEditUsage released = repository.findByAssignmentChatSessionId(801L);
+        org.junit.jupiter.api.Assertions.assertSame(accepted, released);
+        assertEquals(FollowupEditUsage.STATE_RELEASED, released.getState());
+        assertEquals("task_failed", released.getReleaseReason());
+        assertEquals(0L, repository.countActiveByAssignmentSessionId(700L));
+        org.mockito.Mockito.verify(billingDomainService, org.mockito.Mockito.never()).getCurrentSubscription(any());
+    }
+
+    private InMemoryFollowupEditUsageRepository useInMemoryFollowupRepository() {
+        var repository = new InMemoryFollowupEditUsageRepository();
+        service = new DefaultEntitlementService(billingDomainService, attachmentRepository, artifactRepository,
+                repository, sessionRepository, userRepository, quotaVipAccessService, new ObjectMapper());
+        return repository;
+    }
+
+    private FollowupEditUsage reserveFollowupBeforeRecoveryLock() {
+        when(artifactRepository.findByUids(List.of("art_1"))).thenReturn(List.of(
+                VerlaArtifact.builder().artifactUid("art_1").sessionId(700L).build()));
+        when(billingDomainService.getEffectivePlanOrFree("locked_user")).thenReturn(freePlan());
+        FollowupEditUsage accepted = service.reserveFollowupEdit("locked_user", 74L, 901L, List.of("art_1"));
+        assertEquals(FollowupEditUsage.STATE_RESERVED, accepted.getState());
+        enableRecoveryLock();
+        return accepted;
+    }
+
+    private void enableRecoveryLock() {
+        com.studyagent.service.domain.billing.PaymentRecoveryAccessService recoveryAccess =
+                (user, subscriptionId) -> new com.studyagent.service.domain.billing.PaymentRecoveryAccess(
+                        true, false, null, null, null);
+        ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", recoveryAccess);
+    }
+
+    @Test
     void assertAssignmentOutputAllowedRejectsPptForFree() {
         when(billingDomainService.getEffectivePlanOrFree("free_user"))
                 .thenReturn(freePlan());

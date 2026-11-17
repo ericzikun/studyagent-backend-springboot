@@ -204,7 +204,18 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_PAUSE, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = resolveNow(clerkUserId, DateTimeFormats.now());
+        pauseAllAt(clerkUserId, subscriptionId, idempotencyKey,
+                resolveNow(clerkUserId, DateTimeFormats.now()).atZone(DateTimeFormats.APP_ZONE).toInstant());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void pauseAllAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        if (businessNow == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
+        LocalDateTime now = DateTimeFormats.fromInstant(businessNow);
+        if (hasLedger(LEDGER_TYPE_ADDON_PAUSE, idempotencyKey)) {
+            return;
+        }
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -230,7 +241,18 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         if (hasLedger(LEDGER_TYPE_ADDON_RESUME, idempotencyKey)) {
             return;
         }
-        LocalDateTime now = resolveNow(clerkUserId, DateTimeFormats.now());
+        resumeEligibleAt(clerkUserId, subscriptionId, idempotencyKey,
+                resolveNow(clerkUserId, DateTimeFormats.now()).atZone(DateTimeFormats.APP_ZONE).toInstant());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resumeEligibleAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        if (businessNow == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
+        LocalDateTime now = DateTimeFormats.fromInstant(businessNow);
+        if (hasLedger(LEDGER_TYPE_ADDON_RESUME, idempotencyKey)) {
+            return;
+        }
         List<UserAddonGrantEntity> grants = userAddonGrantMapper.selectList(
                 new LambdaQueryWrapper<UserAddonGrantEntity>()
                         .eq(UserAddonGrantEntity::getClerkUserId, clerkUserId)
@@ -429,7 +451,12 @@ public class AddonGrantServiceImpl implements AddonGrantService {
         grant.setStatus("expired");
         grant.setPausedAt(null);
         grant.setUpdatedAt(now);
-        updateGrantOrThrow(grant, "expire add-on grant");
+        // The entity's default NOT_NULL strategy cannot persist paused_at=NULL.
+        UpdateWrapper<UserAddonGrantEntity> clearPause = new UpdateWrapper<UserAddonGrantEntity>()
+                .eq("id", grant.getId()).set("paused_at", null);
+        if (userAddonGrantMapper.update(grant, clearPause) != 1) {
+            throw new IllegalStateException("Addon grant update conflict during expire: grantId=" + grant.getId());
+        }
 
         long expiredAmount = defaultLong(grant.getRemainingAmount());
         if (expiredAmount <= 0 || hasLedger(LEDGER_TYPE_ADDON_EXPIRED, expireIdempotencyKey(grant))) {

@@ -2326,6 +2326,7 @@ class StripeBillingWebhookServiceTest {
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
 
         Session session = new Session();
+        session.setObject("checkout.session");
         session.setId("cs_test_addon_paid");
         session.setPaymentIntent("pi_test_addon_paid");
         session.setPaymentStatus("paid");
@@ -2337,7 +2338,28 @@ class StripeBillingWebhookServiceTest {
                 "clerk_user_id", "user_1",
                 "addon_code", "addon_assignment_3"));
 
-        invokeHandleCheckoutCompleted(service(), session);
+        var notification = org.mockito.Mockito.mock(BillingRobotNotifyGateway.class);
+        when(billingRobotNotifyGatewayProvider.getIfAvailable()).thenReturn(notification);
+        var event = com.stripe.net.ApiResource.GSON.fromJson(
+                "{\"id\":\"evt_normal_paid\",\"object\":\"event\",\"api_version\":\"2023-10-16\",\"type\":\"checkout.session.completed\",\"data\":{\"object\":"
+                        + session.toJson() + "}}", Event.class);
+        var states = prepareRoutedInbox(event);
+        var recovery = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(recovery.tryProcessEvent(event)).thenReturn(false);
+        var handler = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        assertTrue(handler.supports(event));
+        assertTrue(handler.process(event));
+        verify(recovery).tryProcessEvent(event);
+        assertTrue(states.contains("succeeded"));
+        verify(billingQuotaGateway).grantAddonFromCheckout(eq("user_1"),any(AddonGrantSnapshot.class),eq(session.getId()),eq(session.getPaymentIntent()),any());
+        var success = ArgumentCaptor.forClass(com.studyagent.service.domain.billing.BillingCheckoutNotifyRequest.class);
+        verify(notification).notifyCheckoutSucceeded(success.capture());
+        assertEquals("evt_normal_paid",success.getValue().getStripeEventId());
+        assertEquals("addon",success.getValue().getPurchaseType());
+        assertEquals(9900,success.getValue().getPriceCents());
+        verify(notification,never()).notifyPaymentFailed(any());
 
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.PAYMENT_COMPLETED), any());
         verify(analyticsService).capture(eq("user_1"), eq(AnalyticsEvents.BILLING_PAYMENT_SUCCEEDED), any());
@@ -2824,6 +2846,122 @@ class StripeBillingWebhookServiceTest {
                 "sub_123",
                 "basic_monthly",
                 "subscription:sub_123:deleted");
+    }
+
+    @Test
+    void recoveryReadTimeoutMarksInboxFailedWithoutEnteringLegacyTransaction() {
+        assertRecoveryRetryFailure("RECOVERY_ADMISSION_READ_TIMEOUT:in_old",1,"failed");
+    }
+    @Test
+    void persistentUnknownScheduleReachesDeadLetterWithoutCreatingRecoveryLocks() {
+        assertRecoveryRetryFailure("RECOVERY_ADMISSION_UNKNOWN_SCHEDULE:sub_old",8,"dead_letter");
+    }
+    @Test
+    void recoveryStateEventsAndReplacementCheckoutAreSupported() {
+        for(String type:List.of("invoice.finalized","invoice.voided","invoice.marked_uncollectible","customer.updated","customer.subscription.trial_will_end")) {
+            var event=new Event();event.setType(type);assertTrue(service().supports(event),type);
+        }
+    }
+
+    // Dispatcher contract only: recovery ownership/evidence classification is exercised in RecoveryServiceTest.
+    static java.util.stream.Stream<String> recoveryRoutedEvents() {
+        return java.util.stream.Stream.of(
+                "invoice.payment_failed","invoice.payment_action_required","invoice.paid","invoice.payment_succeeded","invoice_payment.paid",
+                "invoice.finalized","invoice.voided","invoice.marked_uncollectible",
+                "customer.subscription.created","customer.subscription.updated","customer.subscription.deleted",
+                "subscription_schedule.updated","subscription_schedule.released","subscription_schedule.canceled","subscription_schedule.aborted","subscription_schedule.completed",
+                "checkout.session.completed","checkout.session.expired","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed",
+                "charge.refunded","charge.dispute.created","charge.dispute.funds_withdrawn","charge.dispute.funds_reinstated","charge.dispute.closed",
+                "credit_note.created","credit_note.updated","credit_note.voided","customer.updated","customer.subscription.trial_will_end");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("recoveryRoutedEvents")
+    void ownedRecoveryEventCompletesInboxWithoutRunningLegacyEffects(String type) {
+        var event = recoveryRouteEvent(type);var states = prepareRoutedInbox(event);
+        var recovery = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(recovery.tryProcessEvent(event)).thenReturn(true);
+        var handler = service();org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        assertTrue(handler.supports(event),type);assertTrue(handler.process(event),type);
+        verify(recovery).tryProcessEvent(event);assertTrue(states.contains("succeeded"));assertFalse(states.contains("failed"));
+        org.mockito.Mockito.verifyNoInteractions(transactionManager,userSubscriptionMapper,subscriptionPlanMapper,addonPackageDefMapper,rechargeOrderMapper,
+                analyticsService,billingQuotaGateway,quotaGatewayProvider,billingRobotNotifyGatewayProvider,billingDomainServiceProvider);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("recoveryRoutedEvents")
+    void knownRecoveryWithMissingEvidenceFailsInboxInsteadOfFallingBackToLegacy(String type) {
+        var event = recoveryRouteEvent(type);var states = prepareRoutedInbox(event);
+        var recovery = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        String reason = "RECOVERY_ADMISSION_INCOMPLETE_EVIDENCE:obj_test";
+        when(recovery.tryProcessEvent(event)).thenThrow(new IllegalStateException(reason));
+        var handler = service();org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        assertTrue(handler.supports(event),type);
+        assertEquals(reason,org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->handler.process(event)).getMessage());
+        verify(recovery).tryProcessEvent(event);assertTrue(states.contains("failed"));assertTrue(states.contains(reason));assertFalse(states.contains("succeeded"));
+        assertTrue(states.stream().anyMatch(LocalDateTime.class::isInstance));
+        org.mockito.Mockito.verifyNoInteractions(transactionManager,userSubscriptionMapper,subscriptionPlanMapper,addonPackageDefMapper,rechargeOrderMapper,
+                analyticsService,billingQuotaGateway,quotaGatewayProvider,billingRobotNotifyGatewayProvider,billingDomainServiceProvider);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
+    void technicalTrialIsConsumedAndOrdinaryTrialRetainsExistingLegacySupport(boolean technical) {
+        var event = recoveryRouteEvent("customer.subscription.trial_will_end");var states = prepareRoutedInbox(event);
+        var recovery = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(recovery.tryProcessEvent(event)).thenReturn(technical);
+        var handler = service();org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        if(!technical)when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        assertTrue(handler.supports(event));assertTrue(handler.process(event));assertTrue(states.contains("succeeded"));
+        verify(recovery).tryProcessEvent(event);
+        if(technical)org.mockito.Mockito.verifyNoInteractions(transactionManager);
+        else verify(transactionManager).commit(transactionStatus);
+        // Legacy currently ignores ordinary trial_will_end; no application reminder is invented by this test.
+        org.mockito.Mockito.verifyNoInteractions(analyticsService,billingQuotaGateway,billingRobotNotifyGatewayProvider,rechargeOrderMapper,userSubscriptionMapper);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"addon","study_pass","pro_trial_once"})
+    void unrelatedUnpaidProductsStillReachLegacyWithoutPrematureGrantOrSuccessNotification(String purchaseType) {
+        var event=event("checkout.session.completed","checkout.session",purchaseType);var states=prepareRoutedInbox(event);
+        var recovery=org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(recovery.tryProcessEvent(event)).thenReturn(false);
+        var handler=service();org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        assertTrue(handler.supports(event));assertTrue(handler.process(event));assertTrue(states.contains("succeeded"));
+        verify(recovery).tryProcessEvent(event);verify(transactionManager).commit(transactionStatus);
+        org.mockito.Mockito.verifyNoInteractions(analyticsService,billingQuotaGateway,billingRobotNotifyGatewayProvider,billingDomainServiceProvider,rechargeOrderMapper,userSubscriptionMapper);
+    }
+
+    private Event recoveryRouteEvent(String type) {
+        String object = type.startsWith("checkout.")?"checkout.session":type.startsWith("invoice_payment.")?"invoice_payment":
+                type.startsWith("invoice.")?"invoice":type.startsWith("subscription_schedule.")?"subscription_schedule":
+                type.startsWith("charge.dispute.")?"dispute":type.startsWith("charge.")?"charge":
+                type.startsWith("credit_note.")?"credit_note":"customer.updated".equals(type)?"customer":"subscription";
+        return event(type,object,type.startsWith("checkout.")?"subscription_replacement":null);
+    }
+
+    private List<Object> prepareRoutedInbox(Event event) {
+        var received=webhookEvent(event,"received");var processing=webhookEvent(event,"processing");processing.setAttemptCount(1);
+        when(webhookEventMapper.selectById(event.getId())).thenReturn(null,received,processing);
+        List<Object> values=new ArrayList<>();
+        when(webhookEventMapper.update(isNull(),any())).thenAnswer(call->{
+            LambdaUpdateWrapper<?> wrapper=call.getArgument(1);values.addAll(wrapper.getParamNameValuePairs().values());return 1;
+        });
+        return values;
+    }
+    private void assertRecoveryRetryFailure(String error,int attempts,String state) {
+        var event=com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"evt_recovery_read\",\"type\":\"customer.updated\",\"data\":{\"object\":{\"id\":\"cus_old\",\"object\":\"customer\"}}}",Event.class);
+        var received=webhookEvent(event,"received");var processing=webhookEvent(event,"processing");processing.setAttemptCount(attempts);
+        when(webhookEventMapper.selectById(event.getId())).thenReturn(null,received,processing);
+        List<Object> values=new ArrayList<>();when(webhookEventMapper.update(isNull(),any())).thenAnswer(i->{LambdaUpdateWrapper<?> w=i.getArgument(1);values.addAll(w.getParamNameValuePairs().values());return 1;});
+        org.mockito.Mockito.lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        var recovery=org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);when(recovery.tryProcessEvent(event)).thenThrow(new IllegalStateException(error));
+        var handler=service();org.springframework.test.util.ReflectionTestUtils.setField(handler,"paymentRecoveryService",recovery);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->handler.process(event));
+        assertTrue(values.contains(state));assertFalse(values.contains("succeeded"));
+        if("failed".equals(state))assertTrue(values.stream().anyMatch(v->v instanceof LocalDateTime));
+        org.mockito.Mockito.verifyNoInteractions(transactionManager,userSubscriptionMapper,billingQuotaGateway);
     }
 
     private void assertReviewRequired(Event event) {

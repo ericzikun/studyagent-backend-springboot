@@ -43,3 +43,8 @@ docker-compose.yml
 Dockerfile
 .dockerignore
 
+# Generated payment-recovery evidence is not needed in the build context
+docs/payment-recovery/evidence/
+
+# Optional payment-recovery acceptance tools are not part of the build
+scripts/payment-recovery/

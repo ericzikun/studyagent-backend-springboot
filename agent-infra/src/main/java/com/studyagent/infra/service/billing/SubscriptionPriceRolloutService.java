@@ -41,6 +41,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -59,6 +60,7 @@ import java.util.TreeSet;
 @Service
 @RequiredArgsConstructor
 public class SubscriptionPriceRolloutService {
+    @org.springframework.beans.factory.annotation.Autowired private SubscriptionContractMutationCoordinator contractMutations;
 
     public static final String KIND_SUBSCRIPTION = "subscription";
     public static final String KIND_STUDY_PASS = "study_pass";
@@ -84,6 +86,9 @@ public class SubscriptionPriceRolloutService {
     private final RechargeOrderMapper rechargeOrderMapper;
     private final ZonePricingCatalog catalog;
     private final ZonePricingSelectionService zonePricing;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -314,8 +319,12 @@ public class SubscriptionPriceRolloutService {
         int superseded = 0;
         int noop = 0;
         for (SubscriptionPriceRolloutEntity row : rows) {
+            var call=new MutationCall();
             try {
-                ApplyOutcome outcome = applySingle(row);
+                if(contractMutations!=null && !contractMutations.reserveRollout(row,"apply")){
+                    markRow(row,STATUS_CONFLICT,"payment_recovery_or_contract_mutation_pending",row.getSnapshotJson());conflict++;continue;
+                }
+                ApplyOutcome outcome = applySingle(row,call);
                 switch (outcome) {
                     case SCHEDULED -> scheduled++;
                     case CONFLICT -> conflict++;
@@ -324,11 +333,12 @@ public class SubscriptionPriceRolloutService {
                     case NOOP -> noop++;
                 }
             } catch (StripeException e) {
-                markRow(row, STATUS_FAILED, "stripe_error:" + e.getMessage(), null);
+                if(e instanceof com.stripe.exception.InvalidRequestException)call.pendingWrite=false;
+                markRow(row, mutationFailureStatus(row,call), "stripe_error:" + e.getMessage(), null);
                 failed++;
                 log.warn("rollout apply failed: batch={}, sub={}", batchId, row.getStripeSubscriptionId(), e);
             } catch (RuntimeException e) {
-                markRow(row, STATUS_FAILED, e.getClass().getSimpleName() + ":" + e.getMessage(), null);
+                markRow(row, mutationFailureStatus(row,call), e.getClass().getSimpleName() + ":" + e.getMessage(), null);
                 failed++;
                 log.warn("rollout apply failed: batch={}, sub={}", batchId, row.getStripeSubscriptionId(), e);
             }
@@ -340,7 +350,28 @@ public class SubscriptionPriceRolloutService {
         SCHEDULED, CONFLICT, FAILED, SUPERSEDED, NOOP
     }
 
-    private ApplyOutcome applySingle(SubscriptionPriceRolloutEntity row) throws StripeException {
+    private static final class MutationCall { boolean pendingWrite; }
+    private static String mutationFailureStatus(SubscriptionPriceRolloutEntity row,MutationCall call) {
+        return SubscriptionContractMutationCoordinator.MUTATING.equals(row.getStatus()) && call.pendingWrite?SubscriptionContractMutationCoordinator.UNKNOWN:STATUS_FAILED;
+    }
+    private boolean recoveryPreventsRollout(SubscriptionPriceRolloutEntity row) {
+        if (!KIND_SUBSCRIPTION.equals(row.getContractKind()) || paymentRecoveryAccessService == null) return false;
+        var user = userSubscriptionMapper.selectByUser(row.getClerkUserId());
+        if (user == null || !Objects.equals(user.getStripeSubscriptionId(), row.getStripeSubscriptionId())) return false;
+        var access = paymentRecoveryAccessService.resolve(row.getClerkUserId(), user.getStripeSubscriptionId());
+        if (access == null) return false;
+        var summary = access.summary();
+        boolean closedHistory = summary != null && Set.of("EXPIRED", "CANCELED", "SWITCHED").contains(Objects.toString(summary.state(), ""));
+        return access.locked() || (summary != null && (summary.replacement() != null
+                || !closedHistory && Set.of("PENDING", "REVIEW").contains(Objects.toString(summary.renewalSyncState(), ""))
+                || !Set.of("PAID", "EXPIRED", "CANCELED", "SWITCHED").contains(Objects.toString(summary.state(), ""))));
+    }
+
+    private ApplyOutcome applySingle(SubscriptionPriceRolloutEntity row,MutationCall call) throws StripeException {
+        if (recoveryPreventsRollout(row)) {
+            markRow(row, STATUS_CONFLICT, "payment_recovery_pending", null);
+            return ApplyOutcome.CONFLICT;
+        }
         Subscription subscription = retrieveRolloutSubscription(row.getStripeSubscriptionId());
         SubscriptionItem item = singleItemOrNull(subscription);
         String livePriceId = item == null || item.getPrice() == null ? null : item.getPrice().getId();
@@ -384,8 +415,10 @@ public class SubscriptionPriceRolloutService {
                 row.getStripeSubscriptionId(), row.getTargetPriceId(), effectiveEpoch);
         Long quantity = item.getQuantity() == null ? 1L : item.getQuantity();
         if (schedule == null) {
+            call.pendingWrite=true;
             schedule = createRolloutSchedule(subscription.getId(),
                     "rollout-create:" + row.getBatchId() + ":" + row.getStripeSubscriptionId() + ":" + effectiveEpoch);
+            call.pendingWrite=false;
         }
         List<PhaseSpec> preimage = schedulePhases(schedule);
         if (schedule.getPhases() != null && !schedule.getPhases().isEmpty() && preimage.isEmpty()) {
@@ -421,7 +454,13 @@ public class SubscriptionPriceRolloutService {
         }
         SubscriptionScheduleUpdateParams params = buildScheduleUpdateParams(merged, metadata,
                 row.getCurrency(), row.getTargetPriceId());
+        if (recoveryPreventsRollout(row)) {
+            markRow(row, STATUS_CONFLICT, "payment_recovery_pending", null);
+            return ApplyOutcome.CONFLICT;
+        }
+        call.pendingWrite=true;
         SubscriptionSchedule updated = updateRolloutSchedule(schedule, params, idempotencyKey);
+        call.pendingWrite=false;
         Map<String, Object> preimageSnapshot = new LinkedHashMap<>();
         preimageSnapshot.put("schedule_id", updated.getId());
         preimageSnapshot.put("preimage_phases", preimage);
@@ -697,17 +736,26 @@ public class SubscriptionPriceRolloutService {
         int failed = 0;
         int noop = 0;
         for (SubscriptionPriceRolloutEntity row : rows) {
+            var call=new MutationCall();
             if (!STATUS_SCHEDULED.equals(row.getStatus())) {
                 markRow(row, STATUS_CANCELLED, "never_written", row.getSnapshotJson());
                 cancelled++;
                 continue;
             }
             try {
+                if(contractMutations!=null && !contractMutations.reserveRollout(row,"cancel")){
+                    markRow(row,STATUS_SCHEDULED,"payment_recovery_or_contract_mutation_pending",row.getSnapshotJson());noop++;continue;
+                }
+                if (recoveryPreventsRollout(row)) {
+                    markRow(row, STATUS_SCHEDULED, "payment_recovery_pending", row.getSnapshotJson());
+                    noop++;
+                    continue;
+                }
                 Map<String, Object> preimage = row.getSnapshotJson() == null
                         ? null
                         : GSON.fromJson(row.getSnapshotJson(), Map.class);
                 if (preimage == null || !preimage.containsKey("preimage_phases")) {
-                    markRow(row, STATUS_FAILED, "preimage_missing", row.getSnapshotJson());
+                    markRow(row, mutationFailureStatus(row,call), "preimage_missing", row.getSnapshotJson());
                     failed++;
                     continue;
                 }
@@ -736,16 +784,24 @@ public class SubscriptionPriceRolloutService {
                 }
                 SubscriptionScheduleUpdateParams params = buildScheduleUpdateParams(
                         phases, metadata, null, "");
+                if (recoveryPreventsRollout(row)) {
+                    markRow(row, STATUS_SCHEDULED, "payment_recovery_pending", row.getSnapshotJson());
+                    noop++;
+                    continue;
+                }
+                call.pendingWrite=true;
                 updateRolloutSchedule(schedule, params,
                         "rollout-cancel:" + row.getBatchId() + ":" + row.getStripeSubscriptionId());
+                call.pendingWrite=false;
                 markRow(row, STATUS_CANCELLED, null, row.getSnapshotJson());
                 cancelled++;
             } catch (StripeException e) {
-                markRow(row, STATUS_FAILED, "stripe_error:" + e.getMessage(), row.getSnapshotJson());
+                if(e instanceof com.stripe.exception.InvalidRequestException)call.pendingWrite=false;
+                markRow(row, mutationFailureStatus(row,call), "stripe_error:" + e.getMessage(), row.getSnapshotJson());
                 failed++;
                 log.warn("rollout cancel failed: batch={}, sub={}", batchId, row.getStripeSubscriptionId(), e);
             } catch (RuntimeException e) {
-                markRow(row, STATUS_FAILED, e.getClass().getSimpleName() + ":" + e.getMessage(), row.getSnapshotJson());
+                markRow(row, mutationFailureStatus(row,call), e.getClass().getSimpleName() + ":" + e.getMessage(), row.getSnapshotJson());
                 failed++;
                 log.warn("rollout cancel failed: batch={}, sub={}", batchId, row.getStripeSubscriptionId(), e);
             }

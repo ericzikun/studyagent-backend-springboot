@@ -50,6 +50,9 @@ public class DefaultEntitlementService implements EntitlementService {
     private final QuotaVipAccessService quotaVipAccessService;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
+
     @Value("${verla.attachment.sign-ttl-seconds:3600}")
     private long signTtlSeconds;
 
@@ -76,6 +79,18 @@ public class DefaultEntitlementService implements EntitlementService {
                 allowedOutputTypes(plan));
     }
 
+    private void assertRecoveryAdmission(String user, String action) {
+        if (paymentRecoveryAccessService == null || isUnlimitedProductAccess(user)) return;
+        var account = billingDomainService.getCurrentSubscription(user);
+        var access = paymentRecoveryAccessService.resolve(user, account == null ? null : account.getStripeSubscriptionId());
+        if (access != null && access.locked()) {
+            throw BusinessException.withData(ApiCode.PAYMENT_RECOVERY_REQUIRED, CommercialBlockData.builder()
+                    .reasonCode("payment_recovery_required")
+                    .paymentRecoveryId(access.summary() == null ? null : access.summary().recoveryId())
+                    .blockedAction(action).purchaseProductId("membership").build());
+        }
+    }
+
     private boolean isUnlimitedProductAccess(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return false;
@@ -97,6 +112,7 @@ public class DefaultEntitlementService implements EntitlementService {
 
     @Override
     public void assertAssignmentOutputAllowed(String clerkUserId, Map<String, Object> requirementForm) {
+        assertRecoveryAdmission(clerkUserId, "assignment_generate");
         assertAssignmentOutputAllowed(getEffectiveEntitlements(clerkUserId), requirementForm);
     }
 
@@ -126,6 +142,7 @@ public class DefaultEntitlementService implements EntitlementService {
         if (conversationId == null) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
         }
+        assertRecoveryAdmission(clerkUserId, "upload_sign");
         // 无限套餐（Pro/admin/quotaVip）在签名期不设上限，与既有行为一致。
         if (getEffectiveEntitlements(clerkUserId).maxFiles() == null) {
             return;
@@ -180,6 +197,7 @@ public class DefaultEntitlementService implements EntitlementService {
             return existing;
         }
 
+        assertRecoveryAdmission(clerkUserId, "assignment_followup_edit");
         Long assignmentSessionId = resolveAssignmentScopeSessionId(conversationId, artifactUids);
         sessionRepository.findByIdForUpdate(assignmentSessionId);
         EffectiveEntitlements entitlements = getEffectiveEntitlements(clerkUserId);

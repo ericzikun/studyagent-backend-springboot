@@ -250,6 +250,7 @@ public class VerlaSimulationController {
                     item.put("streaming", assistant && isStreamingMessage(m));
                     item.put("thinking", assistant ? messageMetaText(m, "thinking") : "");
                     item.put("thinkingStreaming", assistant && messageMetaBoolean(m, "thinkingStreaming"));
+                    item.put("attachmentsJson", m.getAttachmentsJson());
                     item.put("createdAt", m.getCreatedAt() == null ? null : m.getCreatedAt().toString());
                     return item;
                 })

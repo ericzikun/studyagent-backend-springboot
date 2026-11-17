@@ -268,8 +268,11 @@ public class VerlaSimulationController {
                     "simulation lab pass required");
         }
         String message = normalizePrompt(req == null ? null : req.message());
+        String attachmentsJson = req == null ? null : req.attachmentsJson();
+        validateAttachments(attachmentsJson, cid, clerkUserId);
         conversationService.getOwned(clerkUserId, cid);
-        SendMessageResult result = turnOrchestrator.startSimulationChat(clerkUserId, cid, message);
+        SendMessageResult result = turnOrchestrator.startSimulationChat(
+                clerkUserId, cid, message, attachmentsJson);
         return Result.success(Map.of(
                 "turnId", result.getTurnId(),
                 "sessionId", result.getAgentSessionId(),
@@ -605,7 +608,7 @@ public class VerlaSimulationController {
     public record CreateSimulationRequest(String prompt) {
     }
 
-    public record ChatSimulationRequest(String message) {
+    public record ChatSimulationRequest(String message, String attachmentsJson) {
     }
 
     public record GenerateSimulationRequest(

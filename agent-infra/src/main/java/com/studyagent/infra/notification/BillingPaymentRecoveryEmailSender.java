@@ -5,7 +5,7 @@ import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.SubscriptionPaymentRecoveryEntity;
 import com.studyagent.infra.service.billing.PaymentRecoveryProperties;
 import com.studyagent.service.domain.user.ClerkClient;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -16,14 +16,21 @@ import java.util.*;
 
 /** Synchronous provider acknowledgement; caller persists the frozen body and outcome under its action lease. */
 @Component
-@RequiredArgsConstructor
 public class BillingPaymentRecoveryEmailSender {
     public record SendResult(String state,String messageId,String error){}
     private final ClerkClient clerk;
-    private final WebClient web;
+    /** Two WebClient beans exist (webClient, humanizerWebClient); the qualifier is mandatory. */
+    private final WebClient webClient;
     private final PaymentRecoveryProperties config;
     @Value("${notification.email.resend-api-key:}") private String apiKey;
     private static final ObjectMapper JSON=new ObjectMapper();
+
+    public BillingPaymentRecoveryEmailSender(ClerkClient clerk,
+            @Qualifier("webClient") WebClient webClient, PaymentRecoveryProperties config) {
+        this.clerk = clerk;
+        this.webClient = webClient;
+        this.config = config;
+    }
 
     public static boolean eligible(SubscriptionPaymentRecoveryEntity row){
         return row!=null&&row.getOwnerRecoveryId()==null&&"OPEN_MANUAL".equals(row.getStatus())
@@ -47,7 +54,7 @@ public class BillingPaymentRecoveryEmailSender {
     public SendResult send(String frozen,String key){
         outsideTransaction();if(apiKey==null||apiKey.isBlank())return new SendResult("FAILED",null,"Resend is not configured");
         try{
-            Map<?,?> result=web.post().uri("https://api.resend.com/emails").header("Authorization","Bearer "+apiKey).header("Content-Type","application/json")
+            Map<?,?> result=webClient.post().uri("https://api.resend.com/emails").header("Authorization","Bearer "+apiKey).header("Content-Type","application/json")
                     .header("Idempotency-Key",key).bodyValue(frozen).retrieve().bodyToMono(Map.class).block(Duration.ofSeconds(10));
             Object id=result==null?null:result.get("id");
             return id instanceof String value&&!value.isBlank()?new SendResult("SUCCEEDED",value,null):new SendResult("UNKNOWN",null,"Provider acknowledgement missing message id");

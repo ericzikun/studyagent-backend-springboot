@@ -29,6 +29,9 @@ import com.stripe.param.SubscriptionScheduleUpdateParams;
 import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import com.studyagent.service.domain.billing.BasicTrialAccount;
+import com.studyagent.service.domain.billing.PaymentRecoveryAccess;
+import com.studyagent.service.domain.billing.PaymentRecoverySummary;
+import com.studyagent.service.domain.billing.RecoveryReplacementCheckoutCommand;
 import com.studyagent.service.domain.billing.IntroTrialPlans;
 import com.studyagent.infra.entity.AddonPackageDefEntity;
 import com.studyagent.infra.entity.RechargeOrderEntity;
@@ -93,6 +96,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class BillingDomainServiceImpl implements BillingDomainService {
+    @org.springframework.beans.factory.annotation.Autowired private SubscriptionContractMutationCoordinator contractMutations;
     private record UpgradeCreditBasis(int netPaidCents, String sourceInvoiceId) {
     }
 
@@ -131,6 +135,19 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private final ZonePricingSelectionService zonePricing;
     private final SubscriptionPriceRolloutService rolloutService;
     private final ClerkClient clerkClient;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private SubscriptionPaymentRecoveryService paymentRecoveryService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private SubscriptionRecoveryStripeGateway recoveryStripeGateway;
+    @org.springframework.beans.factory.annotation.Autowired
+    private PaymentRecoveryProperties paymentRecoveryProperties;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+
 
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
@@ -424,7 +441,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     private String currencyForMember(String userId) {
         UserSubscriptionEntity current = hasText(userId) ? findByUser(userId) : null;
-        if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
+        if (current != null && (BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus()) || recoveryAccess(current).paidCycleValid())
                 && isRealStripeReference(current.getStripeSubscriptionId())) {
             // 合同币种列（webhook 回填）：免一次 Stripe retrieve，也是 zone 合同的真值。
             if (hasText(current.getCurrency())) {
@@ -503,6 +520,151 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 current.getCurrentPeriodEnd());
     }
 
+    private long recoveryId(String value) {
+        try {
+            long id = Long.parseLong(value);
+            if (id > 0) return id;
+        } catch (NumberFormatException ignored) { }
+        throw new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Recovery record not found");
+    }
+
+    private SubscriptionPlanEntity recoveryReplacementPlan(String target) {
+        SubscriptionPlanEntity plan = requirePlan(target, false);
+        if (isIntroTrialPlan(plan) || isOneTimeProTrialPlan(plan) || "free".equals(plan.getTier())
+                || (plan.getTrialDays() != null && plan.getTrialDays() > 0)
+                || !("month".equals(plan.getBillingInterval()) || "year".equals(plan.getBillingInterval()))) {
+            throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Choose a current formal subscription plan");
+        }
+        SubscriptionPlanEntity selected = pricedPlanForSale(plan, true);
+        if (!hasText(selected.getStripePriceId()))
+            throw new BillingDomainException("PLAN_PRICE_NOT_CONFIGURED", "Stripe Price is not configured for the formal target");
+        return selected;
+    }
+
+    private BillingQuote recoveryReplacementQuote(String user, long id, SubscriptionPlanEntity plan, UserSubscriptionEntity current) {
+        return simpleQuote(user, "subscription_replacement", plan.getPlanCode(), plan.getCurrency(), plan.getPriceCents(),
+                plan.getBillingInterval(), null, plan.getPriceCents(),
+                zoneQuoteContext(plan.getStripePriceId(), "recovery:" + id + ":" + current.getStripeSubscriptionId() + ":" + plan.getStripePriceId()));
+    }
+
+    @Override
+    public BillingQuote getRecoveryReplacementQuote(String user, String recovery, String target) {
+        long id = recoveryId(recovery);
+        SubscriptionPlanEntity plan = recoveryReplacementPlan(target);
+        paymentRecoveryService.assertReplacementEligible(user, id);
+        UserSubscriptionEntity current = findByUser(user);
+        if (current == null) throw new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Recovery record not found");
+        return recoveryReplacementQuote(user, id, plan, current);
+    }
+
+    @Override
+    public CheckoutSessionResult createRecoveryReplacementCheckout(String user, String email, RecoveryReplacementCheckoutCommand command) {
+        try (BillingPricingContext ignored = BillingPricingContext.open(BillingPricingContext.country())) {
+            BillingPricingContext.confirm(command.expectedCurrency(), command.expectedAmountCents(), command.quoteVersion());
+            return createRecoveryReplacementCheckoutConfirmed(user, command);
+        }
+    }
+
+    private CheckoutSessionResult createRecoveryReplacementCheckoutConfirmed(String user, RecoveryReplacementCheckoutCommand command) {
+        requireStripeConfigured();
+        long id = recoveryId(command.recoveryId());
+        SubscriptionPlanEntity plan = recoveryReplacementPlan(command.targetPlanCode());
+        paymentRecoveryService.assertReplacementEligible(user, id);
+        UserSubscriptionEntity current = findByUser(user);
+        if (current == null || !hasText(current.getStripeCustomerId()))
+            throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "Recovery billing customer is unavailable");
+        BillingQuote quote = recoveryReplacementQuote(user, id, plan, current);
+        if (!hasText(command.quoteVersion()) || !hasText(command.expectedCurrency()) || command.expectedAmountCents() == null)
+            throw new com.studyagent.service.domain.billing.BillingPricingException("PRICING_QUOTE_REQUIRED", quote);
+        pricingService.assertConfirmed(quote);
+        var active = paymentRecoveryService.activeReplacement(user, id);
+        if (active != null) {
+            if (!plan.getPlanCode().equals(active.getTargetPlanCode()) || !"OPEN".equals(active.getState())
+                    || !hasText(active.getCheckoutSessionId()))
+                throw new BillingDomainException("PAYMENT_PROCESSING", "The existing replacement checkout must be verified first");
+            RechargeOrderEntity order = rechargeOrderMapper.selectOne(new LambdaQueryWrapper<RechargeOrderEntity>()
+                    .eq(RechargeOrderEntity::getOrderNo, active.getOrderNo())
+                    .eq(RechargeOrderEntity::getClerkUserId, user).last("LIMIT 1"));
+            return recoveryCheckoutResult(user, id, current, plan, quote, active, order, command.resumeToken());
+        }
+        PaymentRecoverySummary summary = paymentRecoveryService.summary(user, id);
+        Instant expires = Instant.now().plusSeconds(31 * 60);
+        if (summary.deadlineAt() == null) throw new BillingDomainException("PAYMENT_PROCESSING", "Recovery deadline is being verified");
+        Instant deadline = summary.deadlineAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant();
+        if (expires.isAfter(deadline)) expires = deadline;
+        if (expires.isBefore(Instant.now().plusSeconds(1800)))
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Not enough recovery time remains for checkout");
+        RechargeOrderEntity order = new RechargeOrderEntity();
+        order.setOrderNo(generateOrderNo()); order.setOrderType("subscription_replacement"); order.setClerkUserId(user);
+        order.setFeatureCode("subscription"); order.setPackageCode(plan.getPlanCode()); order.setPlanCode(plan.getPlanCode());
+        order.setTargetPlanCode(plan.getPlanCode()); order.setQuotaAmount(0L); order.setPriceCents(plan.getPriceCents());
+        order.setQuotedAmountCents(plan.getPriceCents()); order.setCurrency(plan.getCurrency()); order.setStatus("pending");
+        order.setCreatedAt(LocalDateTime.now()); order.setUpdatedAt(order.getCreatedAt());
+        order.setBizContext(GSON.toJson(Map.of("recovery_id", id, "old_subscription_id", current.getStripeSubscriptionId(),
+                "stripe_price_id", plan.getStripePriceId(), "quote_version", quote.getQuoteVersion())));
+        Map<String, String> metadata = Map.of("purchase_type", "subscription_replacement", "recovery_id", String.valueOf(id),
+                "old_subscription_id", current.getStripeSubscriptionId(), "order_no", order.getOrderNo(), "clerk_user_id", user,
+                "plan_code", plan.getPlanCode());
+        var subscriptionData = SessionCreateParams.SubscriptionData.builder().putAllMetadata(metadata).build();
+        SessionCreateParams params = buildSubscriptionCheckoutParams(user, current.getStripeCustomerId(), plan.getPlanCode(), plan,
+                resolveCheckoutSuccessUrl(command.successUrl(), command.resumeToken()), resolveCheckoutCancelUrl(command.cancelUrl()),
+                subscriptionData, "subscription_replacement", null, metadata, expires.getEpochSecond());
+        var reservation = paymentRecoveryService.reserveReplacement(user, id, order, params, expires);
+        paymentRecoveryService.runDueAction(reservation.actionId());
+        var saved = paymentRecoveryService.replacement(user, reservation.orderNo());
+        return recoveryCheckoutResult(user, id, current, plan, quote, saved, order, command.resumeToken());
+    }
+
+    private CheckoutSessionResult recoveryCheckoutResult(String user, long id, UserSubscriptionEntity current,
+            SubscriptionPlanEntity plan, BillingQuote quote,
+            com.studyagent.infra.entity.SubscriptionRecoveryReplacementEntity replacement, RechargeOrderEntity order, String resumeToken) {
+        if (replacement == null || !"OPEN".equals(replacement.getState()) || !hasText(replacement.getCheckoutSessionId()))
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Checkout creation is being verified");
+        Session session = recoveryStripeGateway.readCheckout(replacement.getCheckoutSessionId());
+        Map<String, String> metadata = session == null ? null : session.getMetadata();
+        if (session == null || !"open".equals(session.getStatus()) || !"unpaid".equals(session.getPaymentStatus())
+                || metadata == null || !"subscription_replacement".equals(metadata.get("purchase_type"))
+                || !String.valueOf(id).equals(metadata.get("recovery_id")) || !user.equals(metadata.get("clerk_user_id"))
+                || !replacement.getOrderNo().equals(metadata.get("order_no"))
+                || !current.getStripeSubscriptionId().equals(metadata.get("old_subscription_id"))
+                || !current.getStripeCustomerId().equals(session.getCustomer())
+                || session.getExpiresAt() == null || session.getExpiresAt() <= Instant.now().getEpochSecond() || !hasText(session.getUrl()))
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Checkout status must be verified");
+        if (order == null || !"subscription_replacement".equals(order.getOrderType())
+                || !matchesCheckoutSnapshot(session, order, plan.getPriceCents(), plan.getCurrency(), plan.getStripePriceId()))
+            throw new com.studyagent.service.domain.billing.BillingPricingException("PRICING_QUOTE_CHANGED", quote);
+        try {
+            paymentRecoveryService.assertReplacementEligible(user, id);
+        } catch (BillingDomainException noLongerEligible) {
+            paymentRecoveryService.requestReplacementExit(user, id, replacement.getOrderNo());
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Refresh the current payment status");
+        }
+        return CheckoutSessionResult.builder().orderNo(replacement.getOrderNo()).checkoutKind("session")
+                .sessionId(session.getId()).referenceId(session.getId()).checkoutUrl(session.getUrl()).expiresAt(session.getExpiresAt())
+                .resumeToken(resumeToken).quotedAmountCents(order.getPriceCents()).targetPlanCode(plan.getPlanCode()).build();
+    }
+
+    @Override
+    public BillingHostedInvoiceResult createRecoveryHostedInvoice(String user, String recovery) {
+        return paymentRecoveryService.createHostedInvoice(user, recoveryId(recovery));
+    }
+
+    @Override
+    public PaymentRecoverySummary reconcilePaymentRecovery(String user, String recovery) {
+        long id = recoveryId(recovery);
+        paymentRecoveryService.summary(user, id); // Validate ownership before any reconciliation intent.
+        paymentRecoveryService.requestReconcile(id);
+        paymentRecoveryService.reconcile(id);
+        return paymentRecoveryService.summary(user, id);
+    }
+
+    @Override
+    public PaymentRecoverySummary exitRecoveryReplacement(String user, String recovery, String orderNo) {
+        long id = recoveryId(recovery);
+        paymentRecoveryService.requestReplacementExit(user, id, orderNo);
+        return paymentRecoveryService.summary(user, id);
+    }
+
     @Override
     public BillingQuote getPurchaseQuote(String user, String kind, String sku) {
         if (!hasText(user)) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "Login is required");
@@ -510,6 +672,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SubscriptionPlanEntity plan = requirePlan(sku);
             assertSellableIntroTrialPlan(plan);
             UserSubscriptionEntity current = findByUser(user);
+            assertRecoveryMutationAllowed(current);
             assertCurrentSubscriptionCannotBuyIntroTrial(current, plan);
             if (current != null && BLOCKING_SUBSCRIPTION_STATUSES.contains(current.getStatus())
                     && isRealStripeReference(current.getStripeSubscriptionId())) {
@@ -533,6 +696,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             return initialPurchaseQuote(user, pricedPlanForSale(plan, true));
         }
         if ("addon".equals(kind)) {
+            assertRecoveryFeatureAllowed(findByUser(user), "addon_purchase");
             if (!isPaidMember(user)) throw new BillingDomainException("PRICING_NOT_ELIGIBLE", "A paid membership is required");
             AddonPackageDefEntity addon = pricedAddonForContract(findByUser(user), requireAddon(sku), currencyForMember(user));
             return simpleQuote(user, kind, sku, addon.getCurrency(), addon.getPriceCents(), null, null, null,
@@ -627,6 +791,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         SubscriptionPlanEntity plan = requirePlan(planCode, !mockCheckout);
         assertSellableIntroTrialPlan(plan);
         UserSubscriptionEntity userSubscription = getOrCreateUserSubscription(clerkUserId);
+        assertRecoveryMutationAllowed(userSubscription);
         assertCurrentSubscriptionCannotBuyIntroTrial(userSubscription, plan);
         if (mockCheckout) {
             plan = pricedPlanForSale(plan, true);
@@ -642,6 +807,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (lockedSubscription != null) {
             userSubscription = lockedSubscription;
         }
+        assertRecoveryMutationAllowed(userSubscription, true);
         if (BillingEntitlementPolicy.requiresPaymentResolution(userSubscription.getStatus())
                 && isRealStripeReference(userSubscription.getStripeSubscriptionId())) {
             throw new BillingDomainException(
@@ -783,6 +949,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             SessionCreateParams.SubscriptionData subscriptionData,
             String purchaseType,
             String conversionPlanCode) {
+        return buildSubscriptionCheckoutParams(clerkUserId, customerId, planCode, plan, finalSuccessUrl, finalCancelUrl,
+                subscriptionData, purchaseType, conversionPlanCode, Map.of(), null);
+    }
+
+    private SessionCreateParams buildSubscriptionCheckoutParams(
+            String clerkUserId, String customerId, String planCode, SubscriptionPlanEntity plan,
+            String finalSuccessUrl, String finalCancelUrl, SessionCreateParams.SubscriptionData subscriptionData,
+            String purchaseType, String conversionPlanCode, Map<String, String> metadata, Long expiresAt) {
         SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                 .setCurrency(plan.getCurrency())
@@ -801,6 +975,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .putMetadata("plan_code", planCode)
                 .setSubscriptionData(subscriptionData);
         putAllMetadata(builder, zoneMetadata(plan.getStripePriceId()));
+        putAllMetadata(builder, metadata);
+        if (expiresAt != null) builder.setExpiresAt(expiresAt);
         applyCheckoutProductDescription(builder, plan.getStripeProductId(), plan.getPlanCode(), plan.getCurrency());
         if (IntroTrialPlans.PURCHASE_TYPE_INTRO_TRIAL.equals(purchaseType)) {
             builder.putMetadata("conversion_plan_code", conversionPlanCode)
@@ -1019,6 +1195,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             String requestedCancelUrl,
             String resumeToken) {
         requireStripeConfigured();
+        assertRecoveryFeatureAllowed(findByUser(clerkUserId), "addon_purchase");
         if (!isPaidMember(clerkUserId)) {
             throw new BillingDomainException("ADDON_REQUIRES_PAID_MEMBER", "A paid subscription is required");
         }
@@ -1973,6 +2150,70 @@ public class BillingDomainServiceImpl implements BillingDomainService {
 
     @Override
     public BillingPortalSessionResult createBillingPortalSession(String clerkUserId, String requestedReturnUrl) {
+        return createRecoveryAwarePortalSession(clerkUserId, requestedReturnUrl, "manage");
+    }
+
+    @Override
+    public BillingPortalSessionResult createRecoveryAwarePortalSession(String clerkUserId, String requestedReturnUrl, String requestedPurpose) {
+        String purpose = hasText(requestedPurpose) ? requestedPurpose : "manage";
+        if (!Set.of("manage", "payment_method_update").contains(purpose))
+            throw new BillingDomainException("INVALID_PORTAL_PURPOSE", "Unsupported billing portal purpose");
+        UserSubscriptionEntity current = findByUser(clerkUserId);
+        if (current == null || !hasText(current.getStripeCustomerId()))
+            throw new BillingDomainException("STRIPE_CUSTOMER_NOT_FOUND", "No Stripe billing customer found for user");
+        if (current.getPaymentRecoveryId() != null) {
+            requireStripeConfigured();
+            boolean methodOnly = "payment_method_update".equals(purpose)
+                    || paymentRecoveryService.requiresMethodOnlyPortal(clerkUserId, current.getPaymentRecoveryId());
+            String configuration = paymentRecoveryProperties == null ? null : methodOnly
+                    ? paymentRecoveryProperties.getPortalMethodOnlyConfigurationId()
+                    : paymentRecoveryProperties.getPortalManagementConfigurationId();
+            verifyRecoveryPortalConfiguration(configuration, methodOnly);
+            var builder = com.stripe.param.billingportal.SessionCreateParams.builder()
+                    .setCustomer(current.getStripeCustomerId()).setConfiguration(configuration)
+                    .setReturnUrl(resolveBillingPortalReturnUrl(requestedReturnUrl));
+            if (methodOnly) builder.setFlowData(com.stripe.param.billingportal.SessionCreateParams.FlowData.builder()
+                    .setType(com.stripe.param.billingportal.SessionCreateParams.FlowData.Type.PAYMENT_METHOD_UPDATE)
+                    .setAfterCompletion(com.stripe.param.billingportal.SessionCreateParams.FlowData.AfterCompletion.builder()
+                            .setType(com.stripe.param.billingportal.SessionCreateParams.FlowData.AfterCompletion.Type.REDIRECT)
+                            .setRedirect(com.stripe.param.billingportal.SessionCreateParams.FlowData.AfterCompletion.Redirect.builder()
+                                    .setReturnUrl(resolveBillingPortalReturnUrl(requestedReturnUrl)).build()).build()).build());
+            return paymentRecoveryService.createPortalSession(clerkUserId, current.getPaymentRecoveryId(), purpose, builder.build().toMap());
+        }
+        if ("payment_method_update".equals(purpose)) {
+            requireStripeConfigured();
+            String configuration = paymentRecoveryProperties == null ? null : paymentRecoveryProperties.getPortalMethodOnlyConfigurationId();
+            verifyRecoveryPortalConfiguration(configuration, true);
+            var params = com.stripe.param.billingportal.SessionCreateParams.builder().setCustomer(current.getStripeCustomerId())
+                    .setConfiguration(configuration).setReturnUrl(resolveBillingPortalReturnUrl(requestedReturnUrl))
+                    .setFlowData(com.stripe.param.billingportal.SessionCreateParams.FlowData.builder()
+                            .setType(com.stripe.param.billingportal.SessionCreateParams.FlowData.Type.PAYMENT_METHOD_UPDATE).build()).build();
+            try { return BillingPortalSessionResult.builder().url(createStripeBillingPortalSession(params).getUrl()).build(); }
+            catch (StripeException error) { throw stripeFailure("Create billing portal session failed", error); }
+        }
+        return createOrdinaryBillingPortalSession(clerkUserId, requestedReturnUrl);
+    }
+
+    private void verifyRecoveryPortalConfiguration(String id, boolean methodOnly) {
+        if (!hasText(id)) throw new BillingDomainException("BILLING_INVOICE_NOT_AVAILABLE", "Verified restricted portal configuration is required");
+        try {
+            var configuration = retrieveStripePortalConfiguration(id);
+            var features = configuration == null ? null : configuration.getFeatures();
+            boolean safe = configuration != null && id.equals(configuration.getId()) && Boolean.TRUE.equals(configuration.getActive())
+                    && Boolean.TRUE.equals(configuration.getLivemode()) == stripeSecretKey.startsWith("sk_live_")
+                    && features != null && features.getInvoiceHistory() != null && Boolean.FALSE.equals(features.getInvoiceHistory().getEnabled())
+                    && features.getSubscriptionUpdate() != null && Boolean.FALSE.equals(features.getSubscriptionUpdate().getEnabled())
+                    && features.getSubscriptionPause() != null && Boolean.FALSE.equals(features.getSubscriptionPause().getEnabled());
+            if (methodOnly) safe = safe && features.getPaymentMethodUpdate() != null && Boolean.TRUE.equals(features.getPaymentMethodUpdate().getEnabled())
+                    && features.getSubscriptionCancel() != null && Boolean.FALSE.equals(features.getSubscriptionCancel().getEnabled())
+                    && features.getCustomerUpdate() != null && Boolean.FALSE.equals(features.getCustomerUpdate().getEnabled());
+            if (!safe) throw new BillingDomainException("BILLING_INVOICE_NOT_AVAILABLE", "Restricted portal configuration cannot be verified");
+        } catch (StripeException error) {
+            throw new BillingDomainException("BILLING_INVOICE_NOT_AVAILABLE", "Restricted portal configuration cannot be verified");
+        }
+    }
+
+    private BillingPortalSessionResult createOrdinaryBillingPortalSession(String clerkUserId, String requestedReturnUrl) {
         UserSubscriptionEntity current = findByUser(clerkUserId);
         if (current == null || !hasText(current.getStripeCustomerId())) {
             throw new BillingDomainException(
@@ -2164,6 +2405,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return "subscription_initial".equals(orderType)
                 || "subscription_upgrade".equals(orderType)
                 || "subscription_upgrade_manual".equals(orderType)
+                || "subscription_replacement".equals(orderType)
                 || "addon".equals(orderType);
     }
 
@@ -2553,15 +2795,26 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult cancelAtPeriodEnd(String clerkUserId) {
-        return setCancelAtPeriodEnd(clerkUserId, true);
+        return setCancellationPreference(clerkUserId, true);
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult resumeSubscription(String clerkUserId) {
-        return setCancelAtPeriodEnd(clerkUserId, false);
+        return setCancellationPreference(clerkUserId, false);
+    }
+
+    private SubscriptionResult setCancellationPreference(String user, boolean cancel) {
+        requireStripeConfigured();
+        UserSubscriptionEntity current = findByUser(user);
+        if (current != null && hasText(current.getStripeSubscriptionId()) && current.getPaymentRecoveryId() != null) {
+            // Recovery owns the durable preference action; never release a Schedule or change its Price here.
+            paymentRecoveryService.setCancellationPreference(user, current.getPaymentRecoveryId(), cancel);
+            return getCurrentSubscription(user);
+        }
+        if (transactionManager == null) return setCancelAtPeriodEnd(user, cancel);
+        return new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                .execute(status -> setCancelAtPeriodEnd(user, cancel));
     }
 
     @Override
@@ -2571,6 +2824,7 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
         SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        assertRecoveryMutationAllowed(current, true);
         if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
@@ -2594,11 +2848,13 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public SubscriptionResult downgradeSubscription(String clerkUserId, String targetPlanCode) {
         requireStripeConfigured();
         String normalizedTargetPlanCode = normalizePlanCode(targetPlanCode);
         SubscriptionPlanEntity targetPlan = requirePlan(normalizedTargetPlanCode);
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        assertRecoveryMutationAllowed(current, true);
         if (normalizedTargetPlanCode.equals(current.getPlanCode())) {
             return toResult(current);
         }
@@ -2653,6 +2909,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     @Override
     public BillingPlan getEffectivePlanOrFree(String clerkUserId) {
         UserSubscriptionEntity entity = findByUser(clerkUserId);
+        PaymentRecoveryAccess recovery = recoveryAccess(entity);
+        if (recovery.locked() || hasExpiredRecoveryPaidCycle(recovery)) return introTrialEnabled ? BillingPlan.lapsedPlan() : BillingPlan.freePlan();
+        if (recovery.paidCycleValid()) return toPlan(requireRuntimePlan(recovery.summary().displayPlanCode()));
         if (entity != null
                 && entity.getPlanCode() != null
                 && ("active".equals(entity.getStatus()) || "trialing".equals(entity.getStatus()))) {
@@ -2671,6 +2930,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (entity == null) {
             return false;
         }
+        PaymentRecoveryAccess recovery = recoveryAccess(entity);
+        if (recovery.locked() || hasExpiredRecoveryPaidCycle(recovery)) return false;
+        if (recovery.paidCycleValid()) return true;
         if (!"active".equals(entity.getStatus()) && !"trialing".equals(entity.getStatus())) {
             return false;
         }
@@ -3117,6 +3379,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     private SubscriptionResult setCancelAtPeriodEnd(String clerkUserId, boolean cancel) {
         requireStripeConfigured();
         UserSubscriptionEntity current = requireCurrentSubscription(clerkUserId);
+        if (current.getPaymentRecoveryId() != null)
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Refresh the current recovery before changing its cancellation preference");
+        assertRecoveryMutationAllowed(current, true);
         try {
             Subscription subscription = Subscription.retrieve(current.getStripeSubscriptionId());
             String scheduleId = firstNonBlank(current.getStripeScheduleId(), subscription.getSchedule());
@@ -3748,7 +4013,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
     }
 
     private UserSubscriptionEntity requireCurrentSubscription(String clerkUserId) {
-        UserSubscriptionEntity entity = findByUser(clerkUserId);
+        UserSubscriptionEntity entity = paymentRecoveryAccessService == null ? findByUser(clerkUserId)
+                : userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
         if (entity == null || entity.getStripeSubscriptionId() == null) {
             throw new BillingDomainException("SUBSCRIPTION_NOT_FOUND", "Active subscription not found");
         }
@@ -4084,13 +4350,55 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         return "time";
     }
 
+    private PaymentRecoveryAccess recoveryAccess(UserSubscriptionEntity entity) {
+        if (entity == null || paymentRecoveryAccessService == null) return PaymentRecoveryAccess.none();
+        PaymentRecoveryAccess result = paymentRecoveryAccessService.resolve(entity.getClerkUserId(), entity.getStripeSubscriptionId());
+        return result == null ? PaymentRecoveryAccess.none() : result;
+    }
+
+    private boolean hasExpiredRecoveryPaidCycle(PaymentRecoveryAccess access) {
+        return access.summary() != null && "PAID".equals(access.summary().state()) && !access.paidCycleValid();
+    }
+
+    private void assertRecoveryFeatureAllowed(UserSubscriptionEntity current, String action) {
+        PaymentRecoveryAccess access = recoveryAccess(current);
+        if (access.locked()) throw com.studyagent.common.exception.BusinessException.withData(
+                com.studyagent.common.api.ApiCode.PAYMENT_RECOVERY_REQUIRED,
+                com.studyagent.common.exception.CommercialBlockData.builder().reasonCode("payment_recovery_required")
+                        .paymentRecoveryId(access.summary() == null ? null : access.summary().recoveryId())
+                        .blockedAction(action).purchaseProductId("membership").build());
+    }
+
+    private void assertRecoveryMutationAllowed(UserSubscriptionEntity current) {
+        assertRecoveryMutationAllowed(current, false);
+    }
+
+    private void assertRecoveryMutationAllowed(UserSubscriptionEntity current, boolean userLocked) {
+        PaymentRecoveryAccess access = userLocked && current != null && paymentRecoveryAccessService != null
+                ? paymentRecoveryAccessService.resolveForUpdate(current.getClerkUserId(), current.getStripeSubscriptionId())
+                : recoveryAccess(current);
+        if (access == null) access = PaymentRecoveryAccess.none();
+        PaymentRecoverySummary summary = access.summary();
+        if(current!=null && contractMutations!=null && contractMutations.inFlight(current.getStripeSubscriptionId(),userLocked))
+            throw new BillingDomainException("PAYMENT_PROCESSING","A subscription contract update is being reconciled");
+        boolean closedHistory = summary != null && Set.of("EXPIRED", "CANCELED", "SWITCHED").contains(java.util.Objects.toString(summary.state(), ""));
+        if (access.locked() || (summary != null && (summary.replacement() != null
+                || !closedHistory && ("PENDING".equals(summary.renewalSyncState()) || "REVIEW".equals(summary.renewalSyncState()))
+                || !Set.of("PAID", "EXPIRED", "CANCELED", "SWITCHED").contains(summary.state())))) {
+            throw new BillingDomainException("PAYMENT_PROCESSING", "Payment recovery must be reconciled before changing this subscription");
+        }
+    }
+
     private SubscriptionResult toResult(UserSubscriptionEntity entity) {
         String status = entity.getStatus();
         String tier = entity.getTier();
+        PaymentRecoveryAccess recovery = recoveryAccess(entity);
+        PaymentRecoverySummary summary = recovery.summary();
+        boolean recoveryControlsAccess = recovery.locked() || recovery.paidCycleValid() || hasExpiredRecoveryPaidCycle(recovery);
         // Frontend unpaid contract uses free (not lapsed), even after Free hard-cut.
-        if ("canceled".equalsIgnoreCase(status)
+        if (summary == null && ("canceled".equalsIgnoreCase(status)
                 || "free".equalsIgnoreCase(status)
-                || "lapsed".equalsIgnoreCase(status)) {
+                || "lapsed".equalsIgnoreCase(status))) {
             status = "free";
             tier = "free";
         }
@@ -4115,10 +4423,23 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         boolean onIntroTrial = !expiredOneTimeTrial
                 && (IntroTrialPlans.isIntroTrialPlanCode(entity.getPlanCode())
                 || IntroTrialPlans.PHASE_INTRO.equalsIgnoreCase(entity.getSubscriptionPhase()));
-        BasicTrialAccount basicTrial = resolveBasicTrialAccount(entity, canConsume, onIntroTrial, introTrialUsed);
+        if (recoveryControlsAccess) {
+            tier = summary.displayTier();
+            status = entity.getStatus();
+            canConsume = !recovery.locked() && recovery.paidCycleValid();
+            canRefresh = canConsume;
+            canPurchaseAddon = canConsume;
+            accessState = recovery.locked() ? BillingAccessState.SUSPENDED
+                    : !recovery.paidCycleValid() ? BillingAccessState.TERMINATED : (Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()) || "canceled".equals(status)
+                    ? BillingAccessState.ACTIVE_ENDING : BillingAccessState.ACTIVE);
+            onIntroTrial = false;
+        }
+        BasicTrialAccount basicTrial = recoveryControlsAccess ? null
+                : resolveBasicTrialAccount(entity, canConsume, onIntroTrial, introTrialUsed);
         return SubscriptionResult.builder()
+                .paymentRecovery(summary)
                 .tier(tier)
-                .planCode(entity.getPlanCode())
+                .planCode(recoveryControlsAccess ? summary.displayPlanCode() : entity.getPlanCode())
                 .legacyPro(isLegacyPro(entity, canConsume, onIntroTrial, LocalDateTime.now()))
                 .status(status)
                 .accessState(accessState)
@@ -4129,8 +4450,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stripeCustomerId(entity.getStripeCustomerId())
                 .stripeSubscriptionId(entity.getStripeSubscriptionId())
                 .stripeScheduleId(entity.getStripeScheduleId())
-                .currentPeriodStart(entity.getCurrentPeriodStart())
-                .currentPeriodEnd(entity.getCurrentPeriodEnd())
+                .currentPeriodStart(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodStart()) : entity.getCurrentPeriodStart())
+                .currentPeriodEnd(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodEnd()) : entity.getCurrentPeriodEnd())
                 .quotaPeriodStart(entity.getQuotaPeriodStart())
                 .quotaPeriodEnd(entity.getQuotaPeriodEnd())
                 .cancelAtPeriodEnd(Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()))
@@ -4431,6 +4752,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         if (current == null || !hasText(current.getStripeSubscriptionId())) {
             return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
         }
+        if (paymentRecoveryAccessService != null) {
+            current = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+            if (current == null || !hasText(current.getStripeSubscriptionId())) return ConvertedYearlyTrialMigrationOutcome.SKIPPED;
+        }
+        assertRecoveryMutationAllowed(current, true);
         // Only subscriptions that actually came out of the retired yearly Pro Trial SKU: a plain
         // annual purchase must never be touched by this remediation.
         if (!hasCompletedYearlyProTrialOrder(clerkUserId)) {

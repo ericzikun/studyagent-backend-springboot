@@ -52,3 +52,15 @@ humanizer_aidetect/
 
 application-local.yml
 agent-start/src/main/resources/application-local.yml
+
+# Generated payment-recovery evidence is archived outside the repository
+/docs/payment-recovery/evidence/**
+!/docs/payment-recovery/evidence/index.json
+!/docs/payment-recovery/evidence/raw-evidence-archive.json
+!/docs/payment-recovery/evidence/detailed-evidence-archive.json
+
+# Local payment-recovery working notes and optional acceptance tools
+/docs/payment-recovery/*.md
+!/docs/payment-recovery/README.md
+/scripts/payment-recovery/
+/docs/superpowers/plans/2026-11-04-stripe-payment-recovery-*.md

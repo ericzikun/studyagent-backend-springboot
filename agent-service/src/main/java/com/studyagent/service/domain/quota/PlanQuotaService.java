@@ -40,6 +40,17 @@ public interface PlanQuotaService {
                 clerkUserId, subscriptionId, planCode, quotaPeriodStart, quotaPeriodEnd, invoiceId);
     }
 
+    /** Local grant using business time already verified outside the billing transaction. */
+    default void resetFromPaidInvoiceAt(String clerkUserId, String subscriptionId, String planCode,
+            Instant quotaPeriodStart, Instant quotaPeriodEnd, String invoiceId, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time plan reset is not implemented");
+    }
+
+    default void clearPlanQuotaAt(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time plan clear is not implemented");
+    }
+
     void addFullPlanForUpgrade(
             String clerkUserId,
             String subscriptionId,

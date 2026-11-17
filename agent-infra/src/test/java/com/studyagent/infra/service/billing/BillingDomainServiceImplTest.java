@@ -116,6 +116,421 @@ class BillingDomainServiceImplTest {
     private final SubscriptionPriceRolloutService rolloutService = org.mockito.Mockito.mock(SubscriptionPriceRolloutService.class);
 
     @Test
+    void expiredRecoveryPaidPeriodDoesNotFallBackToTechnicalTrialRights() {
+        var current = stubLegacyProBadgeAccount(); current.setStatus("trialing");
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false,
+                "pro", "pro_monthly", 100L, 100L, 0L, "usd", null, null, null, List.of(), "PENDING", null, null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_badge", current.getStripeSubscriptionId())).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, false, null, null, summary));
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        assertFalse(service.isPaidMember("user_badge"));
+        assertFalse(service.getCurrentSubscription("user_badge").getCanRefreshPlan());
+        assertEquals("free", service.getEffectivePlanOrFree("user_badge").getTier());
+    }
+
+    @Test
+    void lockedRecoveryBlocksAddonQuoteAndActualCheckoutWithTypedData() throws Exception {
+        var current = stubLegacyProBadgeAccount(); current.setStatus("past_due");
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "OPEN_MANUAL", true,
+                "pro", "pro_monthly", 100L, 0L, 100L, "usd", null, null, null, List.of(), null, null, null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_badge", current.getStripeSubscriptionId())).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, summary));
+        var service = service(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        for (Runnable action : List.<Runnable>of(() -> service.getPurchaseQuote("user_badge", "addon", "addon_1"),
+                () -> service.createAddonCheckout("user_badge", null, "addon_1", null, null, null))) {
+            var error = assertThrows(com.studyagent.common.exception.BusinessException.class, action::run);
+            assertEquals(1031, error.getCode());
+            var data = (com.studyagent.common.exception.CommercialBlockData) error.getData();
+            assertEquals("payment_recovery_required", data.getReasonCode()); assertEquals("91", data.getPaymentRecoveryId());
+        }
+        org.mockito.Mockito.verifyNoInteractions(addonPackageDefMapper);
+    }
+
+    @Test
+    void terminalRecoveryHistoryAllowsNormalNewPurchaseDespiteStaleAnchorSync() throws Exception {
+        for (String state : List.of("EXPIRED", "CANCELED", "SWITCHED")) {
+            for (String anchor : List.of("PENDING", "REVIEW")) {
+                var service = historicalRecoveryPurchaseService(state, anchor, null);
+                var quote = service.getPurchaseQuote("user_history", "subscription", "pro_monthly");
+                assertEquals("subscription", quote.getKind(), state + ":" + anchor);
+                var checkout = service.createSubscriptionCheckout("user_history", null, "pro_monthly",
+                        "http://localhost:3001/payment-success", "http://localhost:3001/payment-canceled", null);
+                assertTrue(checkout.getSessionId().startsWith("mock_cs_"), state + ":" + anchor);
+            }
+        }
+    }
+
+    @Test
+    void terminalHistoryStillBlocksActiveReplacementAndUnknownRecoveryFacts() throws Exception {
+        for (String replacementState : List.of("OPEN", "UNKNOWN")) {
+            var replacement = new com.studyagent.service.domain.billing.PaymentRecoverySummary.Replacement("order_pending", replacementState, null);
+            var service = historicalRecoveryPurchaseService("CANCELED", "REVIEW", replacement);
+            assertEquals("PAYMENT_PROCESSING", assertThrows(BillingDomainException.class,
+                    () -> service.getPurchaseQuote("user_history", "subscription", "pro_monthly")).getCode());
+        }
+        var unknown = historicalRecoveryPurchaseService("UNKNOWN", "CONFIRMED", null);
+        assertEquals("PAYMENT_PROCESSING", assertThrows(BillingDomainException.class,
+                () -> unknown.getPurchaseQuote("user_history", "subscription", "pro_monthly")).getCode());
+    }
+
+    @Test
+    void currentPaidRecoveryStillBlocksOrdinaryPurchaseUntilRenewalSyncIsConfirmed() throws Exception {
+        for (String anchor : List.of("PENDING", "REVIEW")) {
+            var service = historicalRecoveryPurchaseService("PAID", anchor, null);
+            assertEquals("PAYMENT_PROCESSING", assertThrows(BillingDomainException.class,
+                    () -> service.getPurchaseQuote("user_history", "subscription", "pro_monthly")).getCode());
+        }
+    }
+
+    private BillingDomainServiceImpl historicalRecoveryPurchaseService(String state, String anchor,
+            com.studyagent.service.domain.billing.PaymentRecoverySummary.Replacement replacement) throws Exception {
+        var current = new UserSubscriptionEntity(); current.setId(91L); current.setClerkUserId("user_history");
+        current.setTier("free"); current.setPlanCode("free"); current.setStatus("free"); current.setPaymentRecoveryId(91L);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var formal = plan("pro_monthly", "pro", "month", 7999); formal.setStripePriceId("price_formal_current");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(formal);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", state, false,
+                "pro", "pro_monthly", 100L, 100L, 0L, "usd", null, null, null, List.of(), anchor, "OPEN", replacement);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_history", null)).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, false, null, null, summary));
+        var service = service(); setStripeSecretKey(service, "sk_test_xxx"); setBillingCheckoutMockEnabled(service, true);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        return service;
+    }
+
+    @Test
+    void lockedRecoveryPreservesExistingCancelAndResumeThroughDurablePreferenceAction() throws Exception {
+        assertRecoveryCancellationChannel("OPEN_MANUAL", true, false);
+    }
+
+    @Test
+    void paidSyncRecoveryPreservesCancelAndResumeWithoutChangingSavedPaidPeriod() throws Exception {
+        assertRecoveryCancellationChannel("PAID", false, true);
+    }
+
+    private void assertRecoveryCancellationChannel(String state, boolean locked, boolean paid) throws Exception {
+        var current = stubLegacyProBadgeAccount(); current.setStatus("past_due"); current.setPaymentRecoveryId(91L);
+        current.setStripeScheduleId("sub_sched_preserved");
+        org.mockito.Mockito.lenient().when(userSubscriptionMapper.selectByUserForUpdate("user_badge")).thenReturn(current);
+        var start = Instant.now().minusSeconds(60); var end = start.plusSeconds(30 * 86400);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", state, locked,
+                "pro", "pro_monthly", 100L, paid ? 100L : 0L, paid ? 0L : 100L, "usd", null, null, null, List.of(), "PENDING", null, null);
+        var access = new com.studyagent.service.domain.billing.PaymentRecoveryAccess(locked, paid, paid ? start : null, paid ? end : null, summary);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        org.mockito.Mockito.lenient().when(resolver.resolve("user_badge", "sub_badge")).thenReturn(access);
+        org.mockito.Mockito.lenient().when(resolver.resolveForUpdate("user_badge", "sub_badge")).thenReturn(access);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        var transactionManager = org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class);
+        var service = new TestBillingDomainService(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "transactionManager", transactionManager);
+        var result = org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.cancelAtPeriodEnd("user_badge"));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.resumeSubscription("user_badge"));
+        verify(coordinator).setCancellationPreference("user_badge", 91L, true);
+        verify(coordinator).setCancellationPreference("user_badge", 91L, false);
+        org.mockito.Mockito.verifyNoInteractions(transactionManager);
+        assertNull(service.releasedScheduleId); assertNull(service.lastSubscriptionUpdateParams);
+        assertEquals("sub_sched_preserved", current.getStripeScheduleId()); assertEquals("pro_monthly", current.getPlanCode());
+        if (paid) {
+            assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(start), result.getCurrentPeriodStart());
+            assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(end), result.getCurrentPeriodEnd());
+        }
+    }
+
+    @Test
+    void subscriptionMutationUsesCurrentRecoveryReadAfterUserRowLock() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setPlanCode("pro_monthly"); current.setStatus("active");
+        when(userSubscriptionMapper.selectByUserForUpdate("user_recovery")).thenReturn(current);
+        var formal = plan("pro_monthly", "pro", "month", 7999); formal.setStripePriceId("price_formal_current");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(formal);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        // The plain read still represents the earlier RR snapshot; current read sees the new recovery lock.
+        when(resolver.resolveForUpdate("user_recovery", "sub_old")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var service = service(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var error = assertThrows(BillingDomainException.class, () -> service.changeSubscription("user_recovery", "pro_monthly"));
+        assertEquals("PAYMENT_PROCESSING", error.getCode());
+        var order = org.mockito.Mockito.inOrder(userSubscriptionMapper, resolver);
+        order.verify(userSubscriptionMapper).selectByUserForUpdate("user_recovery");
+        order.verify(resolver).resolveForUpdate("user_recovery", "sub_old");
+    }
+
+    @Test
+    void replacementRequiresCompleteQuoteWhenRegionalPricingIsDisabled() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setStripeCustomerId("cus_recovery");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var formal = plan("pro_monthly", "pro", "month", 7999); formal.setStripePriceId("price_formal_current");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(formal);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        // A pending replacement must not weaken the earlier mandatory quote admission.
+        org.mockito.Mockito.lenient().when(coordinator.activeReplacement("user_recovery", 91L))
+                .thenReturn(new com.studyagent.infra.entity.SubscriptionRecoveryReplacementEntity());
+        var service = service(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        var error = assertThrows(com.studyagent.service.domain.billing.BillingPricingException.class,
+                () -> service.createRecoveryReplacementCheckout("user_recovery", null,
+                        new com.studyagent.service.domain.billing.RecoveryReplacementCheckoutCommand("91", "pro_monthly", null, null, null, null, null, null)));
+        assertEquals("PRICING_QUOTE_REQUIRED", error.getCode());
+        assertEquals("subscription_replacement", error.getQuote().getKind());
+        verify(coordinator, never()).reserveReplacement(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void recoveryPortalRejectsSubscriptionPauseEvenWhenOtherMethodOnlyFeaturesAreSafe() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setStripeCustomerId("cus_recovery"); current.setPaymentRecoveryId(91L);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        var config = com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"bpc_method\",\"active\":true,\"livemode\":false,\"features\":{\"invoice_history\":{\"enabled\":false},\"subscription_update\":{\"enabled\":false},\"subscription_cancel\":{\"enabled\":false},\"customer_update\":{\"enabled\":false},\"payment_method_update\":{\"enabled\":true},\"subscription_pause\":{\"enabled\":true}}}", com.stripe.model.billingportal.Configuration.class);
+        var service = new TestBillingDomainService() {
+            @Override com.stripe.model.billingportal.Configuration retrieveStripePortalConfiguration(String id) { return config; }
+        };
+        var properties = new PaymentRecoveryProperties(); properties.setPortalMethodOnlyConfigurationId("bpc_method");
+        setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryProperties", properties);
+        var error = assertThrows(BillingDomainException.class,
+                () -> service.createRecoveryAwarePortalSession("user_recovery", "http://localhost:3000/account", "payment_method_update"));
+        assertEquals("BILLING_INVOICE_NOT_AVAILABLE", error.getCode());
+        verify(coordinator, never()).createPortalSession(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
+    }
+
+    @Test
+    void legacyPortalCallerUsesVerifiedMethodOnlyFlowDuringActiveReplacement() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setStripeCustomerId("cus_recovery"); current.setPaymentRecoveryId(91L);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(coordinator.requiresMethodOnlyPortal("user_recovery", 91L)).thenReturn(true);
+        when(coordinator.createPortalSession(eq("user_recovery"), eq(91L), eq("manage"), any())).thenReturn(
+                com.studyagent.service.domain.billing.BillingPortalSessionResult.builder().url("https://billing.stripe.com/p/recovery").build());
+        var config = com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"bpc_method\",\"active\":true,\"livemode\":false,\"features\":{\"invoice_history\":{\"enabled\":false},\"subscription_update\":{\"enabled\":false},\"subscription_cancel\":{\"enabled\":false},\"customer_update\":{\"enabled\":false},\"payment_method_update\":{\"enabled\":true},\"subscription_pause\":{\"enabled\":false}}}", com.stripe.model.billingportal.Configuration.class);
+        var service = new TestBillingDomainService() {
+            @Override com.stripe.model.billingportal.Configuration retrieveStripePortalConfiguration(String id) { return config; }
+        };
+        var properties = new PaymentRecoveryProperties(); properties.setPortalMethodOnlyConfigurationId("bpc_method");
+        properties.setPortalManagementConfigurationId("bpc_manage");
+        setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryProperties", properties);
+        assertEquals("https://billing.stripe.com/p/recovery", service.createBillingPortalSession("user_recovery", "http://localhost:3000/account").getUrl());
+        var params = ArgumentCaptor.forClass(Map.class);
+        verify(coordinator).createPortalSession(eq("user_recovery"), eq(91L), eq("manage"), params.capture());
+        assertEquals("bpc_method", params.getValue().get("configuration"));
+        assertEquals("cus_recovery", params.getValue().get("customer"));
+        assertEquals("payment_method_update", ((Map<?, ?>) params.getValue().get("flow_data")).get("type"));
+        assertEquals("http://localhost:3000/account", params.getValue().get("return_url"));
+    }
+
+    @Test
+    void recoveryPortalNeverFallsBackToOrdinaryPortalWhenRestrictedConfigurationIsMissing() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setStripeCustomerId("cus_recovery"); current.setPaymentRecoveryId(91L);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var service = service(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryProperties", new PaymentRecoveryProperties());
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class));
+        var error = assertThrows(BillingDomainException.class,
+                () -> service.createRecoveryAwarePortalSession("user_recovery", "http://localhost:3000/", "payment_method_update"));
+        assertEquals("BILLING_INVOICE_NOT_AVAILABLE", error.getCode());
+    }
+
+    @Test
+    void replacementCheckoutReservesFrozenSubscriptionParametersAndReturnsSavedOrder() throws Exception {
+        var fixture = recoveryCheckoutFixture();
+        var service = fixture.service(); var coordinator = fixture.coordinator();
+        var savedOrder = fixture.order(); var frozen = fixture.params();
+        var result = service.createRecoveryReplacementCheckout("user_recovery", null,
+                fixture.command("resume"));
+        assertEquals(savedOrder.get().getOrderNo(), result.getOrderNo());
+        assertEquals("subscription_replacement", savedOrder.get().getOrderType());
+        assertEquals(SessionCreateParams.Mode.SUBSCRIPTION, frozen.get().getMode());
+        assertEquals(Boolean.TRUE, frozen.get().getAllowPromotionCodes());
+        assertTrue(frozen.get().getExpiresAt() >= Instant.now().plusSeconds(1800).getEpochSecond());
+        for (var metadata : List.of(frozen.get().getMetadata(), frozen.get().getSubscriptionData().getMetadata())) {
+            assertEquals("subscription_replacement", metadata.get("purchase_type"));
+            assertEquals("91", metadata.get("recovery_id")); assertEquals("sub_old", metadata.get("old_subscription_id"));
+            assertEquals(result.getOrderNo(), metadata.get("order_no")); assertEquals("user_recovery", metadata.get("clerk_user_id"));
+        }
+        verify(coordinator).runDueAction(93L);
+        verify(rechargeOrderMapper, never()).insert(any(RechargeOrderEntity.class));
+
+        var active = coordinator.replacement("user_recovery", result.getOrderNo());
+        when(coordinator.activeReplacement("user_recovery", 91L)).thenReturn(active);
+        when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(savedOrder.get());
+        var resumed = service.createRecoveryReplacementCheckout("user_recovery", null,
+                fixture.command("resume"));
+        assertEquals(result.getOrderNo(), resumed.getOrderNo()); assertEquals(result.getSessionId(), resumed.getSessionId());
+        verify(coordinator, times(1)).reserveReplacement(eq("user_recovery"), eq(91L), any(), any(), any());
+        verify(coordinator, times(1)).runDueAction(93L);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"CREATING","PROCESSING","UNKNOWN","OTHER_TARGET"})
+    void anUnresolvedOrDifferentReplacementCannotCreateAnotherCheckout(String state) throws Exception {
+        var fixture=recoveryCheckoutFixture();var first=fixture.service().createRecoveryReplacementCheckout("user_recovery",null,fixture.command("resume"));
+        var active=fixture.coordinator().replacement("user_recovery",first.getOrderNo());active.setState("OTHER_TARGET".equals(state)?"OPEN":state);if("OTHER_TARGET".equals(state))active.setTargetPlanCode("pro_yearly");
+        when(fixture.coordinator().activeReplacement("user_recovery",91L)).thenReturn(active);
+        var error=assertThrows(BillingDomainException.class,()->fixture.service().createRecoveryReplacementCheckout("user_recovery",null,fixture.command("resume")));assertEquals("PAYMENT_PROCESSING",error.getCode());
+        verify(fixture.coordinator(),times(1)).reserveReplacement(eq("user_recovery"),eq(91L),any(),any(),any());verify(fixture.coordinator(),times(1)).runDueAction(93L);verify(fixture.coordinator(),never()).requestReplacementExit(anyString(),org.mockito.ArgumentMatchers.anyLong(),anyString());
+        var gateway=(SubscriptionRecoveryStripeGateway)org.springframework.test.util.ReflectionTestUtils.getField(fixture.service(),"recoveryStripeGateway");verify(gateway,times(1)).readCheckout("cs_recovery");verify(rechargeOrderMapper,never()).insert(any(RechargeOrderEntity.class));
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"open_paid","complete_paid","expired_unpaid"})
+    void cachedReplacementOnlyReturnsAUrlAfterFreshProviderConfirmsOpenAndUnpaid(String state) throws Exception {
+        var fixture=recoveryCheckoutFixture();var first=fixture.service().createRecoveryReplacementCheckout("user_recovery",null,fixture.command("resume"));
+        var active=fixture.coordinator().replacement("user_recovery",first.getOrderNo());when(fixture.coordinator().activeReplacement("user_recovery",91L)).thenReturn(active);when(rechargeOrderMapper.selectOne(any(Wrapper.class))).thenReturn(fixture.order().get());
+        var gateway=(SubscriptionRecoveryStripeGateway)org.springframework.test.util.ReflectionTestUtils.getField(fixture.service(),"recoveryStripeGateway");var stale=gateway.readCheckout("cs_recovery");String[] status=state.split("_");stale.setStatus(status[0]);stale.setPaymentStatus(status[1]);when(gateway.readCheckout("cs_recovery")).thenReturn(stale);
+        var error=assertThrows(BillingDomainException.class,()->fixture.service().createRecoveryReplacementCheckout("user_recovery",null,fixture.command("resume")));assertEquals("PAYMENT_PROCESSING",error.getCode());
+        verify(fixture.coordinator(),times(1)).reserveReplacement(eq("user_recovery"),eq(91L),any(),any(),any());verify(fixture.coordinator(),times(1)).runDueAction(93L);verify(rechargeOrderMapper,never()).insert(any(RechargeOrderEntity.class));
+    }
+
+    @Test
+    void originalInvoicePaidDuringReplacementCreationNeverExposesNewCheckoutUrl() throws Exception {
+        var fixture = recoveryCheckoutFixture();
+        org.mockito.Mockito.doNothing().doThrow(new BillingDomainException("PAYMENT_PROCESSING", "Old invoice paid"))
+                .when(fixture.coordinator()).assertReplacementEligible("user_recovery", 91L);
+        var error = assertThrows(BillingDomainException.class, () -> fixture.service().createRecoveryReplacementCheckout("user_recovery", null,
+                fixture.command(null)));
+        assertEquals("PAYMENT_PROCESSING", error.getCode());
+        verify(fixture.coordinator()).requestReplacementExit("user_recovery", 91L, fixture.order().get().getOrderNo());
+    }
+
+    private record RecoveryCheckoutFixture(BillingDomainServiceImpl service, SubscriptionPaymentRecoveryService coordinator,
+            java.util.concurrent.atomic.AtomicReference<RechargeOrderEntity> order,
+            java.util.concurrent.atomic.AtomicReference<SessionCreateParams> params,
+            com.studyagent.service.domain.billing.BillingQuote quote) {
+        com.studyagent.service.domain.billing.RecoveryReplacementCheckoutCommand command(String resume) {
+            return new com.studyagent.service.domain.billing.RecoveryReplacementCheckoutCommand("91", "pro_monthly",
+                    "http://localhost:3000/success", "http://localhost:3000/cancel", resume,
+                    quote.getQuoteVersion(), quote.getCurrency(), quote.getAmountCents());
+        }
+    }
+
+    private RecoveryCheckoutFixture recoveryCheckoutFixture() throws Exception {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old"); current.setStripeCustomerId("cus_recovery");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var formal = plan("pro_monthly", "pro", "month", 7999); formal.setStripePriceId("price_formal_current");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(formal);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        var gateway = org.mockito.Mockito.mock(SubscriptionRecoveryStripeGateway.class);
+        var savedOrder = new java.util.concurrent.atomic.AtomicReference<RechargeOrderEntity>();
+        var frozen = new java.util.concurrent.atomic.AtomicReference<SessionCreateParams>();
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "OPEN_MANUAL", true,
+                "pro", "pro_monthly", 7999L, 0L, 7999L, "usd", null, LocalDateTime.now().plusDays(2), null, List.of(), null, null, null);
+        when(coordinator.summary("user_recovery", 91L)).thenReturn(summary);
+        when(coordinator.reserveReplacement(eq("user_recovery"), eq(91L), any(), any(), any())).thenAnswer(call -> {
+            savedOrder.set(call.getArgument(2)); frozen.set(call.getArgument(3));
+            return new SubscriptionPaymentRecoveryService.ReplacementReservation(91L, 92L, 93L, savedOrder.get().getOrderNo(), call.getArgument(4));
+        });
+        when(coordinator.replacement(eq("user_recovery"), anyString())).thenAnswer(call -> {
+            var replacement = new com.studyagent.infra.entity.SubscriptionRecoveryReplacementEntity();
+            replacement.setCheckoutSessionId("cs_recovery"); replacement.setOrderNo(call.getArgument(1));
+            replacement.setRecoveryId(91L); replacement.setState("OPEN"); replacement.setTargetPlanCode("pro_monthly");
+            return replacement;
+        });
+        when(gateway.readCheckout("cs_recovery")).thenAnswer(call -> {
+            var session = new Session(); session.setId("cs_recovery"); session.setUrl("https://checkout.stripe.com/c/recovery");
+            session.setStatus("open"); session.setPaymentStatus("unpaid"); session.setCustomer("cus_recovery");
+            session.setClientReferenceId("user_recovery"); session.setCurrency("usd"); session.setAmountSubtotal(7999L); session.setAmountTotal(6999L);
+            session.setExpiresAt(frozen.get().getExpiresAt()); session.setMetadata(frozen.get().getMetadata());
+            var item = new com.stripe.model.LineItem(); item.setQuantity(1L); var price = new Price(); price.setId(formal.getStripePriceId()); item.setPrice(price);
+            var items = new com.stripe.model.LineItemCollection(); items.setData(List.of(item)); session.setLineItems(items);
+            return session;
+        });
+        var service = service(); setStripeSecretKey(service, "sk_test_123");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "recoveryStripeGateway", gateway);
+        return new RecoveryCheckoutFixture(service, coordinator, savedOrder, frozen,
+                service.getRecoveryReplacementQuote("user_recovery", "91", "pro_monthly"));
+    }
+
+    @Test
+    void recoveryReplacementQuoteAllowsSameFormalTierAndBindsRootToSignature() {
+        var current = new UserSubscriptionEntity(); current.setClerkUserId("user_recovery");
+        current.setStripeSubscriptionId("sub_old");
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(current);
+        var formal = plan("pro_monthly", "pro", "month", 7999); formal.setStripePriceId("price_formal_current");
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(formal);
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        var quote = service.getRecoveryReplacementQuote("user_recovery", "91", "pro_monthly");
+        var other = service.getRecoveryReplacementQuote("user_recovery", "92", "pro_monthly");
+        assertEquals("subscription_replacement", quote.getKind());
+        assertEquals(7999, quote.getAmountCents());
+        assertNotEquals(quote.getQuoteVersion(), other.getQuoteVersion());
+        verify(coordinator).assertReplacementEligible("user_recovery", 91L);
+    }
+
+    @Test
+    void recoveryReplacementRejectsIntroTrialSkuBeforeAnyReservation() {
+        var coordinator = org.mockito.Mockito.mock(SubscriptionPaymentRecoveryService.class);
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan("pro_trial_to_monthly", "pro", "month", 299));
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryService", coordinator);
+        var error = assertThrows(BillingDomainException.class, () -> service.getRecoveryReplacementQuote("user_recovery", "91", "pro_trial_to_monthly"));
+        assertEquals("PRICING_NOT_ELIGIBLE", error.getCode());
+        verify(coordinator, never()).reserveReplacement(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void lockedRecoveryOverridesLegacyGraceAndPreservesFormalDisplayPlan() {
+        var member = stubLegacyProBadgeAccount();
+        member.setPlanCode("pro_trial_to_monthly");
+        member.setStatus("past_due");
+        member.setGraceEndAt(LocalDateTime.now().plusDays(3));
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "OPEN_MANUAL", true,
+                "pro", "pro_monthly", 100L, 0L, 100L, "usd", null, null, null, List.of(), null, null, null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_badge", member.getStripeSubscriptionId())).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, summary));
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var result = service.getCurrentSubscription("user_badge");
+        assertEquals(com.studyagent.service.domain.billing.BillingAccessState.SUSPENDED, result.getAccessState());
+        assertFalse(result.getCanConsumePaidEntitlements());
+        assertFalse(result.getCanRefreshPlan());
+        assertFalse(result.getCanPurchaseAddon());
+        assertEquals("pro_monthly", result.getPlanCode());
+        assertEquals(summary, result.getPaymentRecovery());
+        assertFalse(service.isPaidMember("user_badge"));
+    }
+
+    @Test
+    void recoveredPaidCycleSurvivesTechnicalCancellationAndKeepsFullPeriod() {
+        var member = stubLegacyProBadgeAccount();
+        member.setStatus("canceled");
+        var start = Instant.now().minusSeconds(60);
+        var end = start.plusSeconds(30 * 86400);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false,
+                "pro", "pro_monthly", 100L, 100L, 0L, "usd", null, null, null, List.of(), "PENDING", null, null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_badge", member.getStripeSubscriptionId())).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, true, start, end, summary));
+        var service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var result = service.getCurrentSubscription("user_badge");
+        assertEquals("canceled", result.getStatus());
+        assertTrue(result.getCanConsumePaidEntitlements());
+        assertTrue(result.getCanRefreshPlan());
+        assertTrue(result.getCanPurchaseAddon());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(start), result.getCurrentPeriodStart());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(end), result.getCurrentPeriodEnd());
+        assertTrue(service.isPaidMember("user_badge"));
+        assertEquals("pro", service.getEffectivePlanOrFree("user_badge").getTier());
+    }
+
+    @Test
     void legacyProBadgeSurvivesCycleSelectionCancellationAndScheduledPriceChange() {
         UserSubscriptionEntity member = stubLegacyProBadgeAccount();
         var change = com.studyagent.service.domain.billing.NextCyclePriceChange.builder()
@@ -203,7 +618,7 @@ class BillingDomainServiceImplTest {
         member.setCurrentPeriodStart(LocalDateTime.now().minusDays(1));
         member.setCurrentPeriodEnd(LocalDateTime.now().plusDays(29));
         when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(member);
-        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenAnswer(call -> {
+        org.mockito.Mockito.lenient().when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenAnswer(call -> {
             SubscriptionPlanEntity plan = new SubscriptionPlanEntity();
             plan.setPlanCode(member.getPlanCode());
             plan.setTier(member.getTier());
@@ -2344,6 +2759,68 @@ class BillingDomainServiceImplTest {
                 IntroTrialPlans.PRO_CONVERSION_PLAN_CODE_MONTHLY,
                 current.getPendingPlanCode());
         assertNotNull(current.getStripeSubscriptionId());
+    }
+
+    @Test
+    void recoveredPaidCycleAllowsAddonQuoteAndActualCheckoutEvenWhenTechnicallyCanceled() throws Exception {
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setId(19L);
+        subscription.setClerkUserId("user_5");
+        subscription.setTier("basic");
+        subscription.setStatus("canceled");
+        subscription.setCurrency("usd");
+        subscription.setStripeCustomerId("cus_123");
+        subscription.setStripeSubscriptionId("sub_123");
+
+        AddonPackageDefEntity addon = new AddonPackageDefEntity();
+        addon.setAddonCode("addon_detection_5");
+        addon.setFeatureCode("ai_detection");
+        addon.setStripePriceId("price_addon_detection_5");
+        addon.setQuotaAmount(20000L);
+        addon.setValidityMonths(2);
+        addon.setPriceCents(499);
+        addon.setCurrency("usd");
+        addon.setIsActive(true);
+
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+        when(addonPackageDefMapper.selectOne(any(Wrapper.class))).thenReturn(addon);
+
+        TestBillingDomainService service = new TestBillingDomainService();
+        service.checkoutAttempts = 1;
+        setStripeSecretKey(service, "sk_test_123");
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false,
+                "pro", "pro_monthly", 100L, 100L, 0L, "usd", null, null, null, List.of(), "PENDING", null, null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve("user_5", "sub_123")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, true, Instant.now().minusSeconds(60), Instant.now().plusSeconds(86400), summary));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        assertEquals(499, service.getPurchaseQuote("user_5", "addon", "addon_detection_5").getAmountCents());
+
+
+        var result = service.createAddonCheckout(
+                "user_5",
+                "user@example.com",
+                "addon_detection_5",
+                "http://localhost:3001/payment-success",
+                "http://localhost:3001/payment-canceled",
+                "resume_tok_5");
+
+        assertEquals("cs_test_retried", result.getSessionId());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getEnabled());
+        assertTrue(service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getDescription()
+                .contains("addon_detection_5"));
+        assertEquals("addon",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("purchase_type"));
+        assertEquals("addon_detection_5",
+                service.lastCheckoutParams.getInvoiceCreation().getInvoiceData().getMetadata().get("addon_code"));
+
+        ArgumentCaptor<RechargeOrderEntity> orderCaptor = ArgumentCaptor.forClass(RechargeOrderEntity.class);
+        verify(rechargeOrderMapper).insert(orderCaptor.capture());
+        RechargeOrderEntity order = orderCaptor.getValue();
+        assertEquals("addon", order.getOrderType());
+        assertEquals("pending", order.getStatus());
+        assertEquals("cs_test_retried", order.getStripeSessionId());
+        assertEquals("sub_123", order.getStripeSubscriptionId());
     }
 
     @Test

@@ -384,6 +384,80 @@ class SubscriptionPriceRolloutServiceTest {
     // ------------------------------------------------------------------
 
     @Test
+    void aReadFailureBeforeAnyWriteReleasesTheReservationAsKnownFailed() {
+        var row=ledgerRow("read_failure","sub_guard",SOURCE_PRICE,TARGET_PRICE,"preview",LocalDateTime.now().plusDays(30));when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row),List.of());
+        var service=service();var guard=org.mockito.Mockito.mock(SubscriptionContractMutationCoordinator.class);when(guard.reserveRollout(row,"apply")).thenAnswer(i->{row.setStatus(SubscriptionContractMutationCoordinator.MUTATING);return true;});org.springframework.test.util.ReflectionTestUtils.setField(service,"contractMutations",guard);
+        var result=service.apply("read_failure");assertEquals(1,result.failed());assertEquals("failed",row.getStatus());assertTrue(service.schedules.isEmpty());assertTrue(service.updateParams.isEmpty());
+    }
+    @Test
+    void cancelWithMissingPreimageNeverLeavesAnUnknownWriteReservation() {
+        var row=ledgerRow("missing_preimage","sub_guard",SOURCE_PRICE,TARGET_PRICE,"scheduled",LocalDateTime.now().plusDays(30));when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row),List.of());
+        var service=service();var guard=org.mockito.Mockito.mock(SubscriptionContractMutationCoordinator.class);when(guard.reserveRollout(row,"cancel")).thenAnswer(i->{row.setStatus(SubscriptionContractMutationCoordinator.MUTATING);return true;});org.springframework.test.util.ReflectionTestUtils.setField(service,"contractMutations",guard);
+        var result=service.cancel("missing_preimage");assertEquals(1,result.failed());assertEquals("failed",row.getStatus());assertTrue(service.updateParams.isEmpty());
+    }
+    @Test
+    void missingContractReservationPreventsEveryStripeReadAndWrite() {
+        var row=ledgerRow("guard_batch","sub_guard",SOURCE_PRICE,TARGET_PRICE,"preview",LocalDateTime.now().plusDays(30));when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row),List.of());
+        var service=service();var guard=org.mockito.Mockito.mock(SubscriptionContractMutationCoordinator.class);when(guard.reserveRollout(row,"apply")).thenReturn(false);org.springframework.test.util.ReflectionTestUtils.setField(service,"contractMutations",guard);
+        var result=service.apply("guard_batch");assertEquals(1,result.conflict());assertTrue(service.schedules.isEmpty());assertTrue(service.updateParams.isEmpty());org.mockito.Mockito.verify(guard).reserveRollout(row,"apply");
+    }
+
+    @Test
+    void terminalHistoricalAnchorReviewDoesNotBlockNormalPriceRollout() throws Exception {
+        long start = Instant.now().getEpochSecond(); long end = start + 30L * 86400;
+        var row = ledgerRow("history_batch", "sub_zone1", SOURCE_PRICE, TARGET_PRICE, "preview",
+                LocalDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC));
+        when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row), List.of());
+        var user = new UserSubscriptionEntity(); user.setClerkUserId(row.getClerkUserId()); user.setStripeSubscriptionId("sub_zone1");
+        when(userSubscriptionMapper.selectByUser(row.getClerkUserId())).thenReturn(user);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "CANCELED", false,
+                "pro", "pro_monthly", 100L, 100L, 0L, "brl", null, null, null, List.of(), "REVIEW", "OPEN", null);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve(row.getClerkUserId(), "sub_zone1")).thenReturn(new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, false, null, null, summary));
+        var service = service(); org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var live = subscription("sub_zone1", SOURCE_PRICE, "brl", end, false); live.setCurrentPeriodStart(start); live.setSchedule("sub_sched_history");
+        service.subscriptions.put("sub_zone1", live);
+        service.schedules.put("sub_sched_history", schedule("sub_sched_history", Map.of(), new SubscriptionPriceRolloutService.PhaseSpec(start, end, SOURCE_PRICE, 1L)));
+        var result = service.apply("history_batch");
+        assertEquals(1, result.scheduled()); assertEquals(1, service.updateParams.size());
+    }
+
+    @Test
+    void cancelDefersScheduleRestorationWhileRecoveryShiftIsPending() {
+        var row = ledgerRow("recovery_batch", "sub_zone1", SOURCE_PRICE, TARGET_PRICE, "scheduled", LocalDateTime.now().plusDays(30));
+        when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row));
+        var user = new UserSubscriptionEntity(); user.setClerkUserId(row.getClerkUserId()); user.setStripeSubscriptionId("sub_zone1");
+        when(userSubscriptionMapper.selectByUser(row.getClerkUserId())).thenReturn(user);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        when(resolver.resolve(row.getClerkUserId(), "sub_zone1")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(true, false, null, null, null));
+        var service = service(); org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var result = service.cancel("recovery_batch");
+        assertEquals(1, result.noop()); assertEquals(0, result.cancelled()); assertEquals(0, result.failed());
+        assertTrue(service.updateParams.isEmpty());
+        assertEquals("scheduled", row.getStatus()); assertEquals("payment_recovery_pending", row.getStatusReason());
+    }
+
+    @Test
+    void applyDefersPriceMutationWhilePaidRecoveryRenewalIsPending() throws Exception {
+        var row = ledgerRow("recovery_batch", "sub_zone1", SOURCE_PRICE, TARGET_PRICE, "preview", LocalDateTime.now().plusDays(30));
+        when(rolloutMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row));
+        var user = new UserSubscriptionEntity(); user.setClerkUserId(row.getClerkUserId()); user.setStripeSubscriptionId("sub_zone1");
+        when(userSubscriptionMapper.selectByUser(row.getClerkUserId())).thenReturn(user);
+        var resolver = org.mockito.Mockito.mock(com.studyagent.service.domain.billing.PaymentRecoveryAccessService.class);
+        var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false, "pro", "pro_monthly",
+                100L, 100L, 0L, "brl", null, null, null, List.of(), "PENDING", null, null);
+        when(resolver.resolve(row.getClerkUserId(), "sub_zone1")).thenReturn(
+                new com.studyagent.service.domain.billing.PaymentRecoveryAccess(false, true, Instant.now().minusSeconds(1), Instant.now().plusSeconds(86400), summary));
+        var service = service();
+        service.subscriptions.put("sub_zone1", subscription("sub_zone1", SOURCE_PRICE, "brl", Instant.now().plusSeconds(30 * 86400).getEpochSecond(), false));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "paymentRecoveryAccessService", resolver);
+        var result = service.apply("recovery_batch");
+        assertEquals(1, result.conflict()); assertTrue(service.updateParams.isEmpty());
+        assertEquals("payment_recovery_pending", row.getStatusReason());
+    }
+
+    @Test
     void applyMergesScheduleAtPeriodEndAndStoresPreimage() throws Exception {
         long periodStart = Instant.now().getEpochSecond();
         long periodEnd = periodStart + 30L * 24 * 3600;

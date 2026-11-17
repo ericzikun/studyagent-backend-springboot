@@ -38,6 +38,12 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
     private final com.studyagent.infra.service.billing.BillingPricingService pricingService;
     private final com.studyagent.service.domain.user.ClerkClient clerkClient;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.infra.mapper.SubscriptionRecoveryReplacementMapper recoveryReplacementMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.infra.mapper.SubscriptionPaymentRecoveryMapper paymentRecoveryMapper;
+
+
     @Value("${stripe.secret-key:}")
     private String stripeSecretKey;
 
@@ -204,8 +210,32 @@ public class PaymentDomainServiceImpl implements PaymentDomainService {
                     "Stripe Checkout owner does not match the local billing order");
         }
         String verifiedOwner = hasText(localOwner) ? localOwner : metadataOwner;
+        String purchaseType = session.getMetadata() == null ? null : session.getMetadata().get("purchase_type");
+        String recoveryId = null, orderNo = null, targetPlanCode = null;
+        if ("subscription_replacement".equals(purchaseType)) {
+            var replacement = recoveryReplacementMapper == null ? null : recoveryReplacementMapper.selectBySession(sessionId);
+            var root = replacement == null || paymentRecoveryMapper == null || replacement.getRecoveryId() == null
+                    ? null : paymentRecoveryMapper.selectById(replacement.getRecoveryId());
+            Map<String, String> metadata = session.getMetadata();
+            String target = localOrder == null ? null : hasText(localOrder.getTargetPlanCode())
+                    ? localOrder.getTargetPlanCode() : localOrder.getPlanCode();
+            boolean valid = localOrder != null && replacement != null && root != null && root.getOwnerRecoveryId() == null
+                    && "subscription_replacement".equals(localOrder.getOrderType()) && hasText(localOwner)
+                    && localOwner.equals(metadataOwner) && localOwner.equals(replacement.getClerkUserId()) && localOwner.equals(root.getClerkUserId())
+                    && sessionId.equals(session.getId()) && sessionId.equals(localOrder.getStripeSessionId()) && sessionId.equals(replacement.getCheckoutSessionId())
+                    && hasText(root.getStripeCustomerId()) && root.getStripeCustomerId().equals(session.getCustomer())
+                    && String.valueOf(root.getId()).equals(metadata.get("recovery_id"))
+                    && root.getStripeSubscriptionId() != null && root.getStripeSubscriptionId().equals(replacement.getOldSubscriptionId())
+                    && root.getStripeSubscriptionId().equals(metadata.get("old_subscription_id"))
+                    && hasText(localOrder.getOrderNo()) && localOrder.getOrderNo().equals(replacement.getOrderNo())
+                    && localOrder.getOrderNo().equals(metadata.get("order_no")) && hasText(target)
+                    && target.equals(replacement.getTargetPlanCode()) && target.equals(metadata.get("plan_code"));
+            if (!valid) throw new PaymentDomainException("SESSION_OWNER_MISMATCH", "Checkout recovery membership cannot be verified");
+            recoveryId = String.valueOf(root.getId()); orderNo = localOrder.getOrderNo(); targetPlanCode = target;
+        }
         return SessionStatusResult.builder()
-                .purchaseType(session.getMetadata() == null ? null : session.getMetadata().get("purchase_type"))
+                .recoveryId(recoveryId).orderNo(orderNo).targetPlanCode(targetPlanCode)
+                .purchaseType(purchaseType)
                 .sessionId(session.getId())
                 .status(session.getStatus())
                 .paymentStatus(session.getPaymentStatus())

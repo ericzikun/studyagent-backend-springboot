@@ -126,6 +126,9 @@ public class StripeBillingWebhookService {
             "missing_addon_order_snapshot"
     );
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private SubscriptionPaymentRecoveryService paymentRecoveryService;
+
     private final StripeWebhookEventMapper webhookEventMapper;
     private final UserSubscriptionMapper userSubscriptionMapper;
     private final SubscriptionPlanMapper subscriptionPlanMapper;
@@ -149,6 +152,7 @@ public class StripeBillingWebhookService {
     private long webhookProcessingTimeoutMinutes = 5L;
 
     public boolean supports(Event event) {
+        if (Set.of("invoice.finalized","invoice.voided","invoice.marked_uncollectible","customer.updated","customer.subscription.trial_will_end").contains(event.getType())) return true;
         if (SUBSCRIPTION_EVENTS.contains(event.getType())) {
             return true;
         }
@@ -171,7 +175,8 @@ public class StripeBillingWebhookService {
                 || IntroTrialPlans.PURCHASE_TYPE_PRO_TRIAL_ONCE.equals(purchaseType)
                 || "addon".equals(purchaseType)
                 || "study_pass".equals(purchaseType)
-                || "subscription_upgrade_manual".equals(purchaseType);
+                || "subscription_upgrade_manual".equals(purchaseType)
+                || "subscription_replacement".equals(purchaseType);
     }
 
     public boolean process(Event event) {
@@ -181,7 +186,9 @@ public class StripeBillingWebhookService {
         }
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         try {
-            transaction.executeWithoutResult(status -> handle(event));
+            if (paymentRecoveryService == null || !paymentRecoveryService.tryProcessEvent(event)) {
+                transaction.executeWithoutResult(status -> handle(event));
+            }
             markSucceeded(event.getId());
             return true;
         } catch (ReviewRequiredException e) {

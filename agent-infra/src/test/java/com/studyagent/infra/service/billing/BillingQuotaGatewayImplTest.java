@@ -19,6 +19,21 @@ class BillingQuotaGatewayImplTest {
     private AddonGrantService addonGrantService;
 
     @Test
+    void forwardsExplicitBusinessTimeWithoutUsingLegacyLifecycleEntrypoints() {
+        var now=Instant.parse("2026-11-11T02:00:00Z");var end=now.plusSeconds(86400);
+        var gateway=new BillingQuotaGatewayImpl(planQuotaService,addonGrantService);
+        gateway.resetFromPaidInvoiceAt("user","sub","pro_monthly",now,end,"in",now);
+        gateway.clearPlanQuotaAt("user","sub","pro_monthly","clear",now);
+        gateway.pauseAddonsAt("user","sub","pause",now);
+        gateway.resumeEligibleAddonsAt("user","sub","resume",now);
+        verify(planQuotaService).resetFromPaidInvoiceAt("user","sub","pro_monthly",now,end,"in",now);
+        verify(planQuotaService).clearPlanQuotaAt("user","sub","pro_monthly","clear",now);
+        verify(addonGrantService).pauseAllAt("user","sub","pause",now);
+        verify(addonGrantService).resumeEligibleAt("user","sub","resume",now);
+        org.mockito.Mockito.verifyNoMoreInteractions(planQuotaService,addonGrantService);
+    }
+
+    @Test
     void delegatesPlanResetToPlanQuotaService() {
         Instant start = Instant.parse("2026-06-15T00:00:00Z");
         Instant end = Instant.parse("2026-07-15T00:00:00Z");

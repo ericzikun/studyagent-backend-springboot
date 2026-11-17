@@ -35,6 +35,25 @@ public interface BillingQuotaGateway {
                 clerkUserId, subscriptionId, planCode, periodStart, periodEnd, invoiceId);
     }
 
+    /** Recovery-only local operations with business time from the verified Stripe snapshot. */
+    default void resetFromPaidInvoiceAt(String clerkUserId, String subscriptionId, String planCode,
+            Instant periodStart, Instant periodEnd, String invoiceId, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time plan reset is not implemented");
+    }
+
+    default void clearPlanQuotaAt(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time plan clear is not implemented");
+    }
+
+    default void pauseAddonsAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time add-on pause is not implemented");
+    }
+
+    default void resumeEligibleAddonsAt(String clerkUserId, String subscriptionId, String idempotencyKey, Instant businessNow) {
+        throw new UnsupportedOperationException("Explicit-time add-on resume is not implemented");
+    }
+
     void addFullPlanForUpgrade(
             String clerkUserId,
             String subscriptionId,

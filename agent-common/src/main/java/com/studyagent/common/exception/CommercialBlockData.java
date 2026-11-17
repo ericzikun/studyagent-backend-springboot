@@ -17,6 +17,7 @@ public class CommercialBlockData {
 
     private CurrentPlanData currentPlan;
     private String reasonCode;
+    private String paymentRecoveryId;
     private String purchaseProductId;
     private String blockedAction;
 

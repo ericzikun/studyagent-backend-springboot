@@ -30,6 +30,20 @@ class SubscriptionControllerTest {
     }
 
     @Test
+    void recoveryCancellationProcessingUses1018InsteadOfInternalError() {
+        when(billingDomainService.cancelAtPeriodEnd("user_1"))
+                .thenThrow(new BillingDomainException("PAYMENT_PROCESSING", "Preference is being verified"));
+        assertThat(controller.cancel("user_1").getMeta().getStatusCode()).isEqualTo(1018);
+    }
+
+    @Test
+    void recoveryResumeOwnershipFailureUses1026InsteadOfInternalError() {
+        when(billingDomainService.resumeSubscription("user_1"))
+                .thenThrow(new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Recovery record not found"));
+        assertThat(controller.resume("user_1").getMeta().getStatusCode()).isEqualTo(1026);
+    }
+
+    @Test
     void upgrade_shouldReturnDeprecatedErrorWithoutCallingBillingService() {
         SubscriptionController.ChangePlanRequest request = new SubscriptionController.ChangePlanRequest();
         request.setPlanCode("plus_yearly");

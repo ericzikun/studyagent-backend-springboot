@@ -20,6 +20,9 @@ public class SubscriptionGraceExpiryScheduler {
     private final UserSubscriptionMapper subscriptionMapper;
     private final BillingQuotaGateway quotaGateway;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
+
     @Value("${billing.grace-expiry.batch-size:100}")
     private int batchSize;
 
@@ -46,6 +49,9 @@ public class SubscriptionGraceExpiryScheduler {
                     || subscription.getGraceEndAt().isAfter(now)) {
                 continue;
             }
+            var recovery = paymentRecoveryAccessService == null ? null
+                    : paymentRecoveryAccessService.resolveForUpdate(subscription.getClerkUserId(), subscription.getStripeSubscriptionId());
+            if (recovery != null && (recovery.locked() || recovery.paidCycleValid())) continue;
             String key = "grace-expired:" + subscription.getStripeSubscriptionId()
                     + ":" + subscription.getGraceEndAt();
             quotaGateway.clearPlanQuota(

@@ -69,6 +69,9 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     private final AddonGrantService addonGrantService;
     private final UserSubscriptionMapper userSubscriptionMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccessService paymentRecoveryAccessService;
+
     private static final String LEDGER_TYPE_CONSUME = "consume";
     private static final String LEDGER_TYPE_REFUND = "refund";
     private static final String LEDGER_TYPE_RECHARGE = "recharge";
@@ -122,6 +125,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             planQuotaService.refreshPlanQuotaIfNeeded(clerkUserId, featureCode);
         }
 
+        boolean recoveryLocked = paymentRecoveryAccessService != null
+                && recoveryAccess(clerkUserId, userSubscriptionMapper.selectByUser(clerkUserId)).locked();
         long freeQuotaAmount = featureDef.getFreeQuotaAmount() != null ? featureDef.getFreeQuotaAmount() : 0L;
 
         UserAiQuotaEntity quota = userAiQuotaMapper.selectOne(
@@ -131,7 +136,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         .last("LIMIT 1"));
 
         if (quota == null) {
-            long freeBalance = freeQuotaAmount;
+            long freeBalance = recoveryLocked ? 0L : freeQuotaAmount;
             long nonFreeBalance = 0L;
             LocalDateTime periodEnd = computePeriodEnd(
                     resolveQuotaNow(clerkUserId, DateTimeFormats.now()),
@@ -157,7 +162,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         migrateLegacyBalanceToAddonIfNeeded(quota, now);
         addonGrantService.expireEligible(clerkUserId, featureCode, "balance_query");
 
-        long freeBalance = quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
+        long freeBalance = !recoveryLocked && quota.getFreeBalance() != null ? quota.getFreeBalance() : 0L;
         PaidEntitlementScope paidScope = resolvePaidEntitlementScope(clerkUserId, now);
         long planBalance = paidScope == PaidEntitlementScope.ALL && quota.getPlanBalance() != null
                 ? quota.getPlanBalance()
@@ -197,6 +202,8 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
 
     @Override
     public boolean canConsume(String clerkUserId, String featureCode, long amount) {
+        if (paymentRecoveryAccessService != null)
+            assertRecoveryConsumptionAllowed(clerkUserId, userSubscriptionMapper.selectByUser(clerkUserId), featureCode);
         QuotaBalance quota = getUserQuota(clerkUserId, featureCode);
         return quota.totalAvailable() >= amount;
     }
@@ -256,6 +263,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                         clerkUserId, featureCode, normalizedIdempotencyKey, existingLedger.getId());
                 return new ConsumeResult(existingLedger.getId());
             }
+        }
+
+        // Recovery admission shares the same user row lock as invoice and replacement mutations.
+        // Idempotent results above remain readable after the account becomes locked.
+        if (paymentRecoveryAccessService != null) {
+            UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUserForUpdate(clerkUserId);
+            assertRecoveryConsumptionAllowed(clerkUserId, subscription, featureCode, true);
         }
 
         // 1. 获取功能定义和用户额度（需在事务内刷新周期）
@@ -1241,11 +1255,37 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         return newAllocation(POOL_TYPE_ADDON, grant.getId(), amount, now, grant.getExpiresAt());
     }
 
+    private void assertRecoveryConsumptionAllowed(String user, UserSubscriptionEntity subscription, String action) {
+        assertRecoveryConsumptionAllowed(user, subscription, action, false);
+    }
+
+    private void assertRecoveryConsumptionAllowed(String user, UserSubscriptionEntity subscription, String action, boolean userLocked) {
+        var access = userLocked && paymentRecoveryAccessService != null
+                ? paymentRecoveryAccessService.resolveForUpdate(user, subscription == null ? null : subscription.getStripeSubscriptionId())
+                : recoveryAccess(user, subscription);
+        if (access == null) access = com.studyagent.service.domain.billing.PaymentRecoveryAccess.none();
+        if (access.locked()) throw com.studyagent.common.exception.BusinessException.withData(
+                com.studyagent.common.api.ApiCode.PAYMENT_RECOVERY_REQUIRED,
+                com.studyagent.common.exception.CommercialBlockData.builder().reasonCode("payment_recovery_required")
+                        .paymentRecoveryId(access.summary() == null ? null : access.summary().recoveryId())
+                        .blockedAction(action).purchaseProductId("membership").build());
+    }
+
+    private com.studyagent.service.domain.billing.PaymentRecoveryAccess recoveryAccess(
+            String user, UserSubscriptionEntity subscription) {
+        if (paymentRecoveryAccessService == null) return com.studyagent.service.domain.billing.PaymentRecoveryAccess.none();
+        var result = paymentRecoveryAccessService.resolve(user, subscription == null ? null : subscription.getStripeSubscriptionId());
+        return result == null ? com.studyagent.service.domain.billing.PaymentRecoveryAccess.none() : result;
+    }
+
     private PaidEntitlementScope resolvePaidEntitlementScope(String clerkUserId, LocalDateTime now) {
         UserSubscriptionEntity subscription = userSubscriptionMapper.selectByUser(clerkUserId);
         if (subscription == null) {
             return PaidEntitlementScope.LEGACY_ONLY;
         }
+        var recovery = recoveryAccess(clerkUserId, subscription);
+        if (recovery.locked() || (recovery.summary() != null && "PAID".equals(recovery.summary().state()) && !recovery.paidCycleValid())) return PaidEntitlementScope.NONE;
+        if (recovery.paidCycleValid()) return PaidEntitlementScope.ALL;
         return BillingEntitlementPolicy.allowsPaidEntitlementConsumption(
                 subscription.getStatus(),
                 subscription.getGraceEndAt(),

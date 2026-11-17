@@ -34,6 +34,33 @@ class BillingControllerTest {
     }
 
     @Test
+    void replacementQuoteRoutesWithRecoveryIdAndCurrentTarget() {
+        var quote = com.studyagent.service.domain.billing.BillingQuote.builder().kind("subscription_replacement").skuCode("pro_monthly").build();
+        when(billingDomainService.getRecoveryReplacementQuote("user_1", "91", "pro_monthly")).thenReturn(quote);
+        assertThat(controller.quote("subscription_replacement", "pro_monthly", "91", "user_1").getData()).isEqualTo(quote);
+    }
+
+    @Test
+    void recoveryActionsMapOwnershipAndProcessingToStableBusinessCodes() {
+        when(billingDomainService.createRecoveryHostedInvoice("user_1", "91"))
+                .thenThrow(new BillingDomainException("BILLING_RECORD_NOT_FOUND", "Not found"));
+        assertThat(controller.recoveryHostedInvoice("91", "user_1").getMeta().getStatusCode()).isEqualTo(1026);
+        when(billingDomainService.reconcilePaymentRecovery("user_1", "91"))
+                .thenThrow(new BillingDomainException("PAYMENT_PROCESSING", "Reconciling"));
+        assertThat(controller.reconcileRecovery("91", "user_1").getMeta().getStatusCode()).isEqualTo(1018);
+        var request = new BillingController.RecoveryReplacementExitRequest(); request.setOrderNo("order_91");
+        assertThat(controller.exitReplacement("91", request, null).getMeta().getStatusCode()).isEqualTo(ApiCode.USER_NOT_LOGGED_IN.getCode());
+    }
+
+    @Test
+    void portalPurposeRoutesToRecoveryAwareDomainMethod() {
+        var request = new BillingController.BillingPortalSessionRequest(); request.setPurpose("payment_method_update");
+        when(billingDomainService.createRecoveryAwarePortalSession("user_1", null, "payment_method_update"))
+                .thenReturn(BillingPortalSessionResult.builder().url("https://billing.stripe.com/p/method").build());
+        assertThat(controller.portalSession(request, "user_1").getData()).containsEntry("url", "https://billing.stripe.com/p/method");
+    }
+
+    @Test
     void portalSessionRequiresLogin() {
         BillingController.BillingPortalSessionRequest request =
                 new BillingController.BillingPortalSessionRequest();

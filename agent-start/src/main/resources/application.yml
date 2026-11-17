@@ -243,6 +243,23 @@ payment:
   cancel-url: ${PAYMENT_CANCEL_URL:http://localhost:3000/payment-canceled}
 
 billing:
+  # No cohort may be enabled until every P0 gate for its exact caseKey is PASS.
+  # A real deployment cutoff is required; no demonstration date is used as a default.
+  payment-recovery:
+    accept-new: ${BILLING_PAYMENT_RECOVERY_ACCEPT_NEW:false}
+    accept-invoices-created-after: ${BILLING_PAYMENT_RECOVERY_CREATED_AFTER:}
+    automatic-pay-enabled: ${BILLING_PAYMENT_RECOVERY_AUTOMATIC_PAY_ENABLED:false}
+    allowed-user-ids: []
+    verified-cohorts: []
+    dispatch-tolerance-seconds: 3600
+    batch-size: 100
+    lease-seconds: 120
+    unknown-escalation-hours: 24
+    portal-management-configuration-id: ""
+    portal-method-only-configuration-id: ""
+    email-enabled: false
+    email-from: ""
+    reconciliation-cron: "0 * * * * ?"
   portal:
     configuration-id: ${BILLING_PORTAL_CONFIGURATION_ID:}
   regional-pricing:

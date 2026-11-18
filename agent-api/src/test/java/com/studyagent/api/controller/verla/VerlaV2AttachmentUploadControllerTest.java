@@ -10,6 +10,7 @@ import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.file.OssStorageService;
+import com.studyagent.service.domain.verla.VerlaAttachment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -20,8 +21,10 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -134,5 +137,49 @@ class VerlaV2AttachmentUploadControllerTest {
                 .andExpect(jsonPath("$.data.currentPlan.isPaid").value(false))
                 .andExpect(jsonPath("$.data.resumeToken").value("resume_upload_legacy"))
                 .andExpect(jsonPath("$.data.scene").value("upload"));
+    }
+
+    @Test
+    void uploadContent_usesUploadTicketWithoutClerkLogin() throws Exception {
+        mockMvc.perform(put("/v1/verla/v2/uploads/att_1/content")
+                        .header("X-Verla-Upload-Token", "tok_1")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content(new byte[] {1, 2, 3}))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0));
+
+        verify(attachmentService).uploadContentForInternal(
+                org.mockito.ArgumentMatchers.eq("att_1"),
+                org.mockito.ArgumentMatchers.eq("tok_1"),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void finalizeUpload_usesUploadTicketWithoutClerkLogin() throws Exception {
+        when(attachmentService.finalizeUploadForInternal(
+                org.mockito.ArgumentMatchers.eq("att_1"),
+                org.mockito.ArgumentMatchers.eq("tok_1"),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("abc123"),
+                org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(VerlaAttachment.builder()
+                        .objectId("att_1")
+                        .conversationId(74L)
+                        .filename("image.png")
+                        .mime("image/png")
+                        .sizeBytes(3L)
+                        .status("UPLOADED")
+                        .build());
+
+        mockMvc.perform(post("/v1/verla/v2/uploads/att_1/finalize")
+                        .header("X-Verla-Upload-Token", "tok_1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"checksumSha256": "abc123"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.statusCode").value(0))
+                .andExpect(jsonPath("$.data.objectId").value("att_1"))
+                .andExpect(jsonPath("$.data.kind").value("image"));
     }
 }

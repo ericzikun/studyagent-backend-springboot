@@ -89,7 +89,7 @@ class SubscriptionPaymentRecoveryMysqlIT {
         factory.getConfiguration().addMapper(SubscriptionPriceRolloutMapper.class);
     }
     private static void migrate() throws Exception {
-        Path file = Path.of("../sql/095_subscription_payment_recovery.sql");
+        Path file = Path.of("../sql/097_subscription_payment_recovery.sql");
         String sql = Files.readString(file).replace("USE studyagent;", "USE " + schema + ";");
         try(Connection c=ds.getConnection();Statement s=c.createStatement()) {
             for(String part:sql.split(";")) if(!part.isBlank()) s.execute(part);
@@ -179,7 +179,7 @@ class SubscriptionPaymentRecoveryMysqlIT {
         clearAdmissionFixture();var template=new org.mybatis.spring.SqlSessionTemplate(factory);var actual=template.getMapper(SubscriptionRecoveryActionMapper.class);
         var failing=org.mockito.Mockito.mock(SubscriptionRecoveryActionMapper.class,org.mockito.AdditionalAnswers.delegatesTo(actual));
         var inserts=new java.util.concurrent.atomic.AtomicInteger();
-        org.mockito.Mockito.doAnswer(call->{if(inserts.incrementAndGet()==3)throw new IllegalStateException("TEST_OUTBOX_INSERT_FAILURE");return actual.insert(call.getArgument(0));}).when(failing).insert(org.mockito.ArgumentMatchers.any(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity.class));
+        org.mockito.Mockito.doAnswer(call->{if(inserts.incrementAndGet()==3)throw new IllegalStateException("TEST_OUTBOX_INSERT_FAILURE");return actual.insert((com.studyagent.infra.entity.SubscriptionRecoveryActionEntity)call.getArgument(0));}).when(failing).insert(org.mockito.ArgumentMatchers.any(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity.class));
         var stripe=org.mockito.Mockito.mock(SubscriptionRecoveryStripeGateway.class);var service=admissionService(stripe,failing);
         assertEquals("TEST_OUTBOX_INSERT_FAILURE",assertThrows(IllegalStateException.class,()->service.tryProcessEvent(admissionEvent())).getMessage());
         try(Connection c=ds.getConnection();Statement q=c.createStatement()){

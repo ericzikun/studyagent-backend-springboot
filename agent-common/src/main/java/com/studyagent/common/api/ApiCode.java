@@ -58,7 +58,10 @@ public enum ApiCode {
             "Get 7 days of Verla Pro for $2.99. After 7 days, your selected monthly or annual plan starts automatically at the regular price unless you cancel before the trial ends. Cancel anytime.",
             "以 $2.99 获得 7 天 Verla Pro。7 天后将按您选择的月付或年付方案以正价自动开始，除非您在试用结束前取消。可随时取消。"),
 
-    PAYMENT_RECOVERY_REQUIRED(1031, "Resolve the subscription payment to continue", "请先处理订阅付款问题"),
+    PAYMENT_RECOVERY_REQUIRED(
+            1033,
+            "Resolve the subscription payment to continue",
+            "请先处理订阅付款问题"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

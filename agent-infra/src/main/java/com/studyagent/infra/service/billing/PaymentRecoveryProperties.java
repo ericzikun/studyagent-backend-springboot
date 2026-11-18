@@ -27,10 +27,26 @@ public class PaymentRecoveryProperties {
     private Set<java.time.LocalDate> reviewHolidays = Set.of();
     private Set<java.time.LocalDate> reviewWorkingDates = Set.of();
 
+    public void setAllowedUserIds(Set<String> ids) {
+        allowedUserIds = clean(ids);
+    }
+
     public void setVerifiedCohorts(Set<String> keys) {
         if (keys == null) throw new IllegalArgumentException("verified-cohorts cannot be null");
-        keys.forEach(RecoveryCaseKey::parse);
-        verifiedCohorts = Set.copyOf(keys);
+        Set<String> cleaned = clean(keys);
+        cleaned.forEach(RecoveryCaseKey::parse);
+        verifiedCohorts = Set.copyOf(cleaned);
+    }
+
+    /** Empty env placeholders arrive as a single blank entry; never treat that as a cohort. */
+    private static Set<String> clean(Set<String> values) {
+        if (values == null) {
+            return Set.of();
+        }
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
     public boolean admits(String userId, RecoveryCaseKey key, Instant invoiceCreated, Instant eventCreated) {
         return acceptNew && acceptInvoicesCreatedAfter != null && userId != null && allowedUserIds.contains(userId)

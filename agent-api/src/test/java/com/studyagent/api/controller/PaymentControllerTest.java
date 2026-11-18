@@ -30,14 +30,14 @@ class PaymentControllerTest {
     }
 
     @Test
-    void addonRecoveryBlockPreservesTyped1031Data() {
+    void addonRecoveryBlockPreservesTyped1033Data() {
         var request = new PaymentController.AddonCheckoutRequest(); request.setAddonCode("addon_1");
         var data = com.studyagent.common.exception.CommercialBlockData.builder().reasonCode("payment_recovery_required")
                 .paymentRecoveryId("91").blockedAction("addon_purchase").build();
         when(billingDomainService.createAddonCheckout("user_a", null, "addon_1", null, null, null))
                 .thenThrow(com.studyagent.common.exception.BusinessException.withData(ApiCode.PAYMENT_RECOVERY_REQUIRED, data));
         var result = controller.createAddonCheckout(request, "user_a", null);
-        assertThat(result.getMeta().getStatusCode()).isEqualTo(1031);
+        assertThat(result.getMeta().getStatusCode()).isEqualTo(1033);
         assertThat((Object) result.getData()).isSameAs(data);
     }
 

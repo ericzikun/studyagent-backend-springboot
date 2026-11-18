@@ -33,7 +33,11 @@ public class WebConfig implements WebMvcConfigurer {
                 "/v1/webhook/**",           // Stripe Webhook，使用签名验证
                 "/v1/public/email-leads",  // 公开邮箱留资，使用蜜罐 + Redis 限流保护
                 "/v1/internal/reports/**",   // 数据报表手动触发，使用 X-Report-Token
-                "/v1/internal/**"            // Verla 内部 API（Python -> Java），使用 IP 白名单 + Token + HMAC
+                "/v1/internal/**",           // Verla 内部 API（Python -> Java），使用 IP 白名单 + Token + HMAC
+                // 附件内容上传：使用 upload ticket（绑定 user + objectId，TTL 1h）鉴权。
+                // 慢上传耗时可能超过 Clerk JWT 的 60s 有效期，鉴权必须发生在 ticket 层。
+                "/v1/verla/v2/uploads/*/content",
+                "/v1/verla/v2/uploads/*/finalize"
             );
     }
 

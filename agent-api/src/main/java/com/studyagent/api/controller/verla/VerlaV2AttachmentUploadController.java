@@ -90,13 +90,13 @@ public class VerlaV2AttachmentUploadController {
 
     @PutMapping(value = "/{objectId}/content", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public Result<Void> uploadContent(
-            @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable String objectId,
             @RequestHeader(VerlaAttachmentService.HDR_UPLOAD_TOKEN) String uploadToken,
             HttpServletRequest request) {
-        ensureLogin(clerkUserId);
+        // 上传 ticket 即凭证：绑定 user + objectId、TTL 1h。慢上传（>60s）会越过
+        // Clerk JWT 的 60s 有效期，因此这里不再依赖 Clerk 登录态。
         try {
-            attachmentService.uploadContent(clerkUserId, objectId, uploadToken, request.getInputStream());
+            attachmentService.uploadContentForInternal(objectId, uploadToken, request.getInputStream());
         } catch (IOException e) {
             log.warn("[verla/v2/uploads] IO failed objectId={}: {}", objectId, e.getMessage());
             throw new BusinessException(ApiCode.INTERNAL_ERROR, "upload failed");
@@ -106,16 +106,14 @@ public class VerlaV2AttachmentUploadController {
 
     @PostMapping("/{objectId}/finalize")
     public Result<VerlaAttachmentVO> finalizeUpload(
-            @RequestAttribute("clerkUserId") String clerkUserId,
             @PathVariable String objectId,
             @RequestHeader(VerlaAttachmentService.HDR_UPLOAD_TOKEN) String uploadToken,
             @RequestBody(required = false) VerlaUploadFinalizeRequest body) {
-        ensureLogin(clerkUserId);
         Long turnId = body == null ? null : body.getTurnId();
         String chk = body == null ? null : body.getChecksumSha256();
         boolean skipParse = body != null && Boolean.TRUE.equals(body.getSkipAttachmentParse());
-        VerlaAttachment saved = attachmentService.finalizeUpload(
-                clerkUserId, objectId, uploadToken, turnId, chk, skipParse);
+        VerlaAttachment saved = attachmentService.finalizeUploadForInternal(
+                objectId, uploadToken, turnId, chk, skipParse);
         VerlaAttachmentVO vo = VerlaAttachmentVO.fromUser(saved);
         if (saved.getOssKey() != null && !saved.getOssKey().isBlank()
                 && ("DOCUMENT_EDITOR_IMAGE".equalsIgnoreCase(saved.getAttachmentOrigin())

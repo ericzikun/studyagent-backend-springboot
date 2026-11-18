@@ -354,7 +354,7 @@ public class VerlaTurnOrchestrator {
             throw new BusinessException(ApiCode.ILLEGAL_STATE, "simulation is not ready");
         }
 
-        VerlaMessage userMsg = insertSimulationChatUserMessage(conversationId, message);
+        VerlaMessage userMsg = insertSimulationChatUserMessage(conversationId, message, attachmentsJson);
         VerlaTurn turn = createTurn(conversationId, userMsg.getId());
         TurnStatus afterSkip = turnStateMachine.next(TurnStatus.valueOf(turn.getStatus()), TurnEvent.SKIP_PLAN);
         turn.setStatus(afterSkip.name());
@@ -375,12 +375,17 @@ public class VerlaTurnOrchestrator {
                 .build();
     }
 
-    private VerlaMessage insertSimulationChatUserMessage(Long conversationId, String text) {
+    private VerlaMessage insertSimulationChatUserMessage(
+            Long conversationId, String text, String attachmentsJson) {
         VerlaMessage m = VerlaMessage.builder()
                 .conversationId(conversationId)
                 .turnId(0L)
                 .role("user")
                 .textContent(text)
+                .attachmentsJson(
+                        attachmentsJson == null || attachmentsJson.isBlank()
+                                ? null
+                                : attachmentsJson)
                 .scene(SIMULATION_CHAT_SCENE)
                 .metaJson(serializeJson(Map.of("scene", SIMULATION_CHAT_SCENE)))
                 .createdAt(LocalDateTime.now())

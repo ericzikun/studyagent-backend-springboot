@@ -128,6 +128,25 @@ class SubscriptionPaymentRecoveryServiceTest {
         verify(stripe,times(1)).execute(any());verifyNoInteractions(quota);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"invoice.paid","invoice.finalized"})
+    void succeededShiftStillDefersItsTechnicalInvoiceUntilRegistration(String type) {
+        var paid=paidSnapshot();var root=confirmedPaidRoot(paid);ownedFixture(root,paid);var quota=injectQuota();
+        var account=users.selectByUserForUpdate("user");when(users.selectByStripeSubscriptionId("sub_old")).thenReturn(account);
+        var technical=ApiResource.GSON.fromJson(paid.invoice().toJson(),Invoice.class);technical.setId("in_technical");
+        technical.setStatus("invoice.paid".equals(type)?"paid":"draft");technical.setAmountDue(0L);technical.setAmountPaid(0L);technical.setAmountRemaining(0L);
+        technical.setPaymentIntent(null);technical.setCharge(null);technical.setBillingReason("subscription_update");
+        when(stripe.readInvoice("in_technical")).thenReturn(new SubscriptionRecoveryStripeGateway.Snapshot(technical,paid.subscription(),null,paid.lines(),null,null,now));
+        var shift=readyAction("SHIFT_RENEWAL","sub_old");shift.setStatus("SUCCEEDED");
+        shift.setResultJson("{\"latest_invoice\":\"in_technical\",\"before_latest_invoice\":\"in_old\"}");when(actions.selectByRecovery(1L)).thenReturn(List.of(shift));
+        var event=invoiceSequenceEvent("evt_succeeded_shift_technical",type,"in_technical");
+        assertTrue(assertThrows(IllegalStateException.class,()->service.tryProcessEvent(event)).getMessage().contains("TECHNICAL_INVOICE_PENDING"));
+        verify(recoveries,never()).insert(any(SubscriptionPaymentRecoveryEntity.class));verifyNoInteractions(orders,quota);
+        assertEquals("PAID",root.getStatus());assertEquals("GRANTED",root.getGrantState());assertNull(root.getTechnicalInvoiceIds());
+        root.setTechnicalInvoiceIds("[\"in_technical\"]");assertTrue(service.tryProcessEvent(event));
+        verify(recoveries,never()).insert(any(SubscriptionPaymentRecoveryEntity.class));verifyNoInteractions(orders,quota);
+    }
+
     @Test void earlyTechnicalDraftIsDiscoveredWithoutFinalizedWhileAnOrdinaryZeroCycleStaysOrdinary() {
         var paid=paidSnapshot();var root=confirmedPaidRoot(paid);root.setContractSnapshot("{\"price_id\":\"price_old\",\"quantity\":1,\"recovery_admission\":{\"sourceKey\":\"formal\",\"cancelMode\":\"RENEW\",\"silentCleanupVerified\":true}}");ownedFixture(root,paid);var quota=injectQuota();
         var user=users.selectByUserForUpdate("user");when(users.selectByStripeSubscriptionId("sub_old")).thenReturn(user);var first=root.getEntitlementStartAt();var end=root.getEntitlementEndAt();
@@ -984,6 +1003,41 @@ class SubscriptionPaymentRecoveryServiceTest {
         var snap=snapshot();snap.subscription().setSchedule("sched_old");snap.subscription().setDefaultPaymentMethod("pm_new");snap.invoice().setDefaultPaymentMethod("pm_new");var pause=new Subscription.PauseCollection();pause.setBehavior("keep_as_draft");snap.subscription().setPauseCollection(pause);var schedule=ApiResource.GSON.fromJson("{\"id\":\"sched_old\",\"subscription\":\"sub_old\",\"status\":\"active\",\"current_phase\":{\"start_date\":1794362400,\"end_date\":1796954400},\"phases\":[{\"start_date\":1794362400,\"end_date\":1796954400},{\"start_date\":1796954400,\"end_date\":1799546400,\"default_payment_method\":\"pm_obsolete\"}]}",SubscriptionSchedule.class);var current=new SubscriptionRecoveryStripeGateway.Snapshot(snap.invoice(),snap.subscription(),schedule,snap.lines(),snap.paymentIntent(),snap.charge(),now);var root=existingRoot();ownedFixture(root,current);
         var customer=new Customer();customer.setId("cus_old");var defaults=new Customer.InvoiceSettings();defaults.setDefaultPaymentMethod("pm_new");customer.setInvoiceSettings(defaults);when(stripe.readCustomer("cus_old")).thenReturn(customer);var method=new PaymentMethod();method.setCustomer("cus_old");when(stripe.readPaymentMethod("pm_new")).thenReturn(method);var ledger=failureLedger();service.reconcile(1L);
         assertTrue(ledger.stream().anyMatch(a->"UPDATE_METHOD".equals(a.getActionType()) && "REVIEW".equals(a.getStatus())));verify(stripe,never()).execute(any());
+    }
+    @Test void compatibleScheduleOnlyNeedsTheOpenInvoiceOverrideSynchronized() {
+        var snap=compatibleScheduleMethodSnapshot();var root=existingRoot();ownedFixture(root,snap);confirmedCustomerMethod();var ledger=failureLedger();
+        service.reconcile(1L);
+        var methods=ledger.stream().filter(a->"UPDATE_METHOD".equals(a.getActionType())).toList();assertEquals(1,methods.size());
+        var action=methods.get(0);assertEquals("READY",action.getStatus());assertEquals("in_old",action.getTargetId());
+        assertEquals(Map.of("resource","invoice","default_payment_method","pm_new"),SubscriptionRecoveryStripeGateway.thaw(action.getPayloadJson()));
+        assertNotEquals("OPEN",root.getReviewState());verify(stripe,never()).execute(any());
+    }
+    @Test void compatibleScheduleAllowsOnlyThePersistedInvoiceMethodWrite() {
+        var snap=compatibleScheduleMethodSnapshot();var root=existingRoot();ownedFixture(root,snap);confirmedCustomerMethod();
+        var action=methodAction("pm_new");action.setTargetId("in_old");action.setPayloadJson("{\"resource\":\"invoice\",\"default_payment_method\":\"pm_new\"}");
+        when(actions.selectByRecovery(1L)).thenReturn(List.of(action));service.runDueAction(10L);
+        verify(stripe).execute(action);assertEquals("in_old",action.getTargetId());
+    }
+    @Test void invoiceMethodWriteStillStopsWhenTheFutureScheduleMethodConflicts() {
+        var snap=compatibleScheduleMethodSnapshot();snap.schedule().getDefaultSettings().setDefaultPaymentMethod("pm_future_override");
+        var root=existingRoot();ownedFixture(root,snap);confirmedCustomerMethod();var action=methodAction("pm_new");action.setTargetId("in_old");
+        action.setPayloadJson("{\"resource\":\"invoice\",\"default_payment_method\":\"pm_new\"}");when(actions.selectByRecovery(1L)).thenReturn(List.of(action));
+        service.runDueAction(10L);verify(stripe,never()).execute(any());assertEquals("SKIPPED",action.getStatus());assertEquals("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW",root.getReviewReason());
+    }
+    private void confirmedCustomerMethod(){
+        var customer=new Customer();customer.setId("cus_old");var defaults=new Customer.InvoiceSettings();defaults.setDefaultPaymentMethod("pm_new");customer.setInvoiceSettings(defaults);
+        when(stripe.readCustomer("cus_old")).thenReturn(customer);var method=new PaymentMethod();method.setCustomer("cus_old");when(stripe.readPaymentMethod("pm_new")).thenReturn(method);
+    }
+    private SubscriptionRecoveryStripeGateway.Snapshot compatibleScheduleMethodSnapshot(){
+        var snap=snapshot();snap.subscription().setSchedule("sched_old");snap.subscription().setDefaultPaymentMethod("pm_new");snap.invoice().setDefaultPaymentMethod(null);
+        var pause=new Subscription.PauseCollection();pause.setBehavior("keep_as_draft");snap.subscription().setPauseCollection(pause);
+        var schedule=ApiResource.GSON.fromJson("""
+            {"id":"sched_old","subscription":"sub_old","status":"active","end_behavior":"release",
+             "default_settings":{"collection_method":"charge_automatically","default_payment_method":"pm_new"},
+             "current_phase":{"start_date":1794362400,"end_date":1796954400},
+             "phases":[{"start_date":1794362400,"end_date":1796954400,"items":[{"price":"price_old","quantity":1}]}]}
+            """,SubscriptionSchedule.class);
+        return new SubscriptionRecoveryStripeGateway.Snapshot(snap.invoice(),snap.subscription(),schedule,snap.lines(),snap.paymentIntent(),snap.charge(),now);
     }
     private SubscriptionRecoveryActionEntity methodAction(String method){
         var action=readyAction("UPDATE_METHOD","sub_old");action.setPayloadJson("{\"resource\":\"subscription\",\"default_payment_method\":\""+method+"\"}");

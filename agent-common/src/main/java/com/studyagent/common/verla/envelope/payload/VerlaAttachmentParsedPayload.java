@@ -45,7 +45,13 @@ public class VerlaAttachmentParsedPayload {
     /** PARSED 时主产物（markdown 全文）的 artifact_uid */
     private String primaryArtifactUid;
 
-    /** PARSED 时所有产出 artifact_uid 列表（含 markdown / 图片切片 / 大纲等） */
+    /**
+     * PARSED 时所有产出 artifact_uid 列表（含 markdown / 图片切片 / 大纲等）。
+     *
+     * @deprecated Python 当前不产出此字段，Java 侧也无任何读取方；勿依赖。
+     *             保留仅用于两侧演进兼容，待确认后删除。
+     */
+    @Deprecated
     private List<String> artifactUids;
 
     private String errorCode;

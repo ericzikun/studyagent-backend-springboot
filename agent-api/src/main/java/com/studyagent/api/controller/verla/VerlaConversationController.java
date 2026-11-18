@@ -34,12 +34,14 @@ import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaConversationDashboardStatusService;
 import com.studyagent.api.service.VerlaEditorPreviewService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
+import com.studyagent.service.application.verla.VerlaAttachmentParseGate;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
+import com.studyagent.service.domain.verla.repo.VerlaTurnRepository;
 import com.studyagent.service.domain.verla.state.ConversationStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,6 +66,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.Duration;
 
 /**
  * Verla Conversation REST 控制器
@@ -84,6 +87,8 @@ public class VerlaConversationController {
     private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
     private final AiWritingRuntimeSnapshotService aiWritingRuntimeSnapshotService;
     private final VerlaTurnOrchestrator turnOrchestrator;
+    private final VerlaAttachmentParseGate attachmentParseGate;
+    private final VerlaTurnRepository turnRepository;
     private final ObjectMapper objectMapper;
     private final LegacyTaskAdapter legacyTaskAdapter;
 
@@ -310,6 +315,7 @@ public class VerlaConversationController {
                 .forceIntent(req.getForceIntent())
                 .outputLanguage(req.getOutputLanguage())
                 .build();
+        attachmentParseGate.awaitRelease(null, extractObjectIds(req.getAttachments()), Duration.ofSeconds(180));
         SendMessageResult result = turnOrchestrator.onUserMessage(cmd);
         return Result.success(SendMessageResponseVO.from(result));
     }
@@ -324,6 +330,9 @@ public class VerlaConversationController {
             @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
         ensureLogin(clerkUserId);
         rejectIfLegacy(cid);
+        Long latestTurnId = turnRepository.findRecentByConversation(cid, 1).stream()
+                .findFirst().map(t -> t.getId()).orElse(null);
+        attachmentParseGate.awaitRelease(latestTurnId, List.of(), Duration.ofSeconds(180));
         SendMessageResult result = turnOrchestrator.startAssignmentClarifyFromLatestPlan(clerkUserId, cid);
         return Result.success(SendMessageResponseVO.from(result));
     }
@@ -662,5 +671,18 @@ public class VerlaConversationController {
         } catch (JsonProcessingException e) {
             throw new BusinessException(ApiCode.PARAM_ERROR, "attachments must be JSON-serializable");
         }
+    }
+
+    private List<String> extractObjectIds(List<Map<String, Object>> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        return attachments.stream()
+                .map(a -> a == null ? null : a.get("objectId"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(id -> !id.isBlank())
+                .distinct()
+                .toList();
     }
 }

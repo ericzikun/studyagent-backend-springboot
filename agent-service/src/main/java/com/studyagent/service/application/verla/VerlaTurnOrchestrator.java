@@ -120,6 +120,10 @@ public class VerlaTurnOrchestrator {
      * 命令 exchange，与 RabbitMQConfig.COMMAND_EXCHANGE / VerlaRabbitConfig.COMMAND_EXCHANGE 保持一致。
      */
     private static final String DEFAULT_COMMAND_EXCHANGE = "studyagent.command";
+    /**
+     * 并行派发时 init 结果不可用，true 是让 DU 正常开工的安全缺省，与原缺省行为一致。
+     */
+    private static final boolean DEFAULT_DU_USER_UNDERSTOOD = true;
 
     @Value("${verla.mq.command-exchange:" + DEFAULT_COMMAND_EXCHANGE + "}")
     private String commandExchange;
@@ -1183,7 +1187,7 @@ public class VerlaTurnOrchestrator {
 
         VerlaSession agentSession;
         if (isAssignmentIntent(intent)) {
-            agentSession = spawnAssignmentClarifyInitialSession(conv, turn, intent, Map.of());
+            agentSession = spawnAssignmentInitAndDeepUnderstanding(conv, turn, intent, Map.of());
         } else {
             VerlaCommandAction action = "AI_DETECTION".equals(intent)
                     ? VerlaCommandAction.CMD_DETECTION_RUN
@@ -1364,7 +1368,7 @@ public class VerlaTurnOrchestrator {
         // task_name session 已在 onUserMessage → spawnPlanSession 中创建（首轮时 turnCount 内存旧值==0），
         // 此处无需重复 dispatch，否则第二个 session 的 userText 依赖 DB 查询，可能拿到空值。
 
-        VerlaSession agentSession = spawnAssignmentClarifyInitialSession(
+        VerlaSession agentSession = spawnAssignmentInitAndDeepUnderstanding(
                 conv,
                 turn,
                 intent,
@@ -2111,38 +2115,6 @@ public class VerlaTurnOrchestrator {
 
         conversationRepository.incrementVersion(turn.getConversationId());
 
-        // Auto-advance: init completion declares a hand-off to deep_understanding
-        // (nextActions), so dispatch CMD_ASSIGNMENT_DEEP_UNDERSTANDING immediately
-        // instead of waiting for the user to pick between the two clarify options.
-        // justCompleted guard prevents duplicate spawning on event replay.
-        if (justCompleted && declaresDeepUnderstandingHandoff(result)) {
-            if (hasInFlightDeepUnderstandingSession(turn.getId())) {
-                // 用户消息在 init 完成前已派发过一条 deep_understanding：跳过自动 hand-off，
-                // 保证同一 turn 同时只有一条 deep，避免重复理解。
-                log.info("[Verla] skip auto deep hand-off, turn already has an in-flight "
-                        + "deep_understanding session turnId={}", turn.getId());
-            } else {
-                VerlaConversation conv = conversationRepository.findById(turn.getConversationId());
-                String intent = isAssignmentIntent(turn.getResolvedIntent())
-                        ? turn.getResolvedIntent() : "ASSIGNMENT";
-                Map<String, Object> resolvedSlots = parseSlotsJson(turn.getResolvedSlotsJson());
-                boolean userUnderstood = resolveHandoffUserUnderstood(result);
-                log.info("[Verla] init completed declares deep_understanding hand-off, "
-                                + "auto-spawn turnId={} intent={} userUnderstood={}",
-                        turn.getId(), intent, userUnderstood);
-                spawnAssignmentDeepUnderstandingSession(conv, turn, intent, resolvedSlots, userUnderstood);
-            }
-        }
-    }
-
-    /**
-     * Whether an init/clarify completion payload declares an automatic hand-off to the
-     * deep-understanding phase via {@code nextActions: ["deep_understanding", ...]}.
-     */
-    private boolean declaresDeepUnderstandingHandoff(Map<String, Object> result) {
-        return result != null
-                && result.get("nextActions") instanceof List<?> actions
-                && actions.stream().anyMatch(a -> "deep_understanding".equals(a));
     }
 
     /**
@@ -2163,21 +2135,6 @@ public class VerlaTurnOrchestrator {
                 .filter(s -> s.getStatus() != null && !SessionStatus.valueOf(s.getStatus()).isTerminal())
                 .anyMatch(s -> mqOutboxService.findLatestStatusBySessionIdAndActions(
                         s.getId(), List.of(deepAction)) != null);
-    }
-
-    /**
-     * Resolve the {@code userUnderstood} flag the hand-off should dispatch with, read from
-     * {@code nextActionParams.userUnderstood}. Defaults to {@code true} (the original
-     * "start the assignment setup" choice) when unspecified.
-     */
-    private boolean resolveHandoffUserUnderstood(Map<String, Object> result) {
-        if (result != null && result.get("nextActionParams") instanceof Map<?, ?> params) {
-            Object value = params.get("userUnderstood");
-            if (value != null) {
-                return Boolean.TRUE.equals(value) || "true".equals(String.valueOf(value));
-            }
-        }
-        return true;
     }
 
     /**
@@ -2547,6 +2504,16 @@ public class VerlaTurnOrchestrator {
         return s;
     }
 
+    /** 派发 assignment init 与 DU；先 init 后 DU，两个 session/correlationId 各自独立。 */
+    private VerlaSession spawnAssignmentInitAndDeepUnderstanding(VerlaConversation conv, VerlaTurn turn,
+                                                                  String intent,
+                                                                  Map<String, Object> resolvedSlots) {
+        VerlaSession initSession = spawnAssignmentClarifyInitialSession(conv, turn, intent, resolvedSlots);
+        spawnAssignmentDeepUnderstandingSession(conv, turn, intent, resolvedSlots,
+                DEFAULT_DU_USER_UNDERSTOOD);
+        return initSession;
+    }
+
     private VerlaSession spawnAssignmentDeepUnderstandingSession(VerlaConversation conv, VerlaTurn turn,
                                                                   String intent,
                                                                   Map<String, Object> resolvedSlots,
@@ -2578,12 +2545,6 @@ public class VerlaTurnOrchestrator {
             TurnStatus next = turnStateMachine.next(curTurn, TurnEvent.START_AGENT);
             turn.setStatus(next.name());
         }
-        turn.setActiveSessionId(s.getId());
-        turn.setAgentSessionId(s.getId());
-        turn.setUpdatedAt(LocalDateTime.now());
-        turn.setLastProgressAt(LocalDateTime.now());
-        turnRepository.save(turn);
-
         VerlaCommandEnvelope env = buildAssignmentDeepUnderstandingEnvelope(
                 conv, turn, s, intent, resolvedSlots, userUnderstood);
         mqOutboxService.createVerlaCommand(env, commandExchange,

@@ -601,6 +601,42 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
     }
 
     @Override
+    public Long recordUsageLedger(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            String sourceType,
+            String sourceId,
+            Map<String, Object> bizContext,
+            String idempotencyKey) {
+        if (clerkUserId == null || clerkUserId.isBlank()) {
+            return null;
+        }
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            QuotaLedgerEntity existing = quotaLedgerMapper.selectOne(
+                    new LambdaQueryWrapper<QuotaLedgerEntity>()
+                            .eq(QuotaLedgerEntity::getIdempotencyKey, idempotencyKey)
+                            .last("LIMIT 1"));
+            if (existing != null) {
+                return existing.getId();
+            }
+        }
+        QuotaLedgerEntity ledger = new QuotaLedgerEntity();
+        ledger.setLedgerNo(generateLedgerNo());
+        ledger.setClerkUserId(clerkUserId);
+        ledger.setFeatureCode(featureCode);
+        ledger.setLedgerType(LEDGER_TYPE_CONSUME);
+        ledger.setAmount(-Math.abs(amount));
+        ledger.setSourceType(sourceType);
+        ledger.setSourceId(sourceId);
+        ledger.setIdempotencyKey(idempotencyKey);
+        ledger.setBizContext(bizContext == null ? null : GSON.toJson(bizContext));
+        ledger.setCreatedAt(LocalDateTime.now());
+        quotaLedgerMapper.insert(ledger);
+        return ledger.getId();
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public QuotaLedgerPageResult getLedgerPage(String clerkUserId, String featureCode, int page, int pageSize) {
         LambdaQueryWrapper<QuotaLedgerEntity> wrapper = new LambdaQueryWrapper<QuotaLedgerEntity>()
@@ -849,6 +885,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             case "task_create" -> "Assignment";
             case "ai_detection" -> "AI Detection";
             case "humanizer" -> "Humanizer";
+            case "simulation" -> "Simulation Lab";
             default -> featureCode;
         };
     }

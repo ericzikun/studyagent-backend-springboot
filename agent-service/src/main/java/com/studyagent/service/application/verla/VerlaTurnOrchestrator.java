@@ -1421,6 +1421,24 @@ public class VerlaTurnOrchestrator {
             sessionRepository.save(s);
         }
 
+        if (VerlaSessionKind.SIMULATION.name().equals(s.getKind())
+                && s.getQuotaLedgerId() == null) {
+            VerlaConversation simulationConversation =
+                    conversationRepository.findById(s.getConversationId());
+            if (simulationConversation != null) {
+                Long simulationLedgerId = verlaQuotaService.recordSimulationUsage(
+                        simulationConversation.getUserId(),
+                        s.getId(),
+                        simulationConversation.getTitle());
+                if (simulationLedgerId != null) {
+                    s.setQuotaLedgerId(simulationLedgerId);
+                    s.setQuotaAmount(1L);
+                    s.setUpdatedAt(LocalDateTime.now());
+                    sessionRepository.save(s);
+                }
+            }
+        }
+
         TurnStatus curTurn = TurnStatus.valueOf(turn.getStatus());
         boolean agentTurnJustFinished = (curTurn == TurnStatus.RUNNING_AGENT);
         if (curTurn == TurnStatus.RUNNING_AGENT) {

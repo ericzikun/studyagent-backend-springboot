@@ -83,4 +83,23 @@ public interface QuotaDomainService {
      * @param pageSize    每页条数
      */
     QuotaLedgerPageResult getLedgerPage(String clerkUserId, String featureCode, int page, int pageSize);
+
+    /**
+     * 仅写入一条展示用消费流水，不改动任何额度余额。
+     * <p>
+     * 适用于「按成功次数计量、余额按会话动态统计」的功能（如 simulation）。
+     * 豁免账号也照常记录，便于使用记录完整呈现。
+     *
+     * @param idempotencyKey 幂等键，相同键只写一次
+     * @return 流水 ID；已存在时返回既有 ID
+     */
+    Long recordUsageLedger(
+            String clerkUserId,
+            String featureCode,
+            long amount,
+            String sourceType,
+            String sourceId,
+            Map<String, Object> bizContext,
+            String idempotencyKey
+    );
 }

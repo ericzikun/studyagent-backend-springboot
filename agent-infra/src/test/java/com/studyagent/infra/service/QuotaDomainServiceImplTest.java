@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -1597,6 +1598,47 @@ class QuotaDomainServiceImplTest {
                 Map.of()));
 
         verify(quotaLedgerMapper, never()).insert(any(QuotaLedgerEntity.class));
+    }
+
+    @Test
+    void recordUsageLedgerStoresNegativeConsumeAndIsIdempotent() {
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        QuotaDomainServiceImpl service = service();
+
+        Long ledgerId = service.recordUsageLedger(
+                "user_sim",
+                "simulation",
+                1,
+                "simulation_session",
+                "42",
+                Map.of("title", "Pendulum lab"),
+                "simulation_session:42");
+
+        ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor =
+                ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper).insert(ledgerCaptor.capture());
+        QuotaLedgerEntity ledger = ledgerCaptor.getValue();
+        assertEquals(-1L, ledger.getAmount());
+        assertEquals("simulation", ledger.getFeatureCode());
+        assertEquals("consume", ledger.getLedgerType());
+        assertEquals("simulation_session", ledger.getSourceType());
+        assertEquals("42", ledger.getSourceId());
+        assertEquals("simulation_session:42", ledger.getIdempotencyKey());
+        assertTrue(ledger.getBizContext().contains("Pendulum lab"));
+        assertNull(ledgerId);
+
+        QuotaLedgerEntity existing = new QuotaLedgerEntity();
+        existing.setId(77L);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(existing);
+        assertEquals(77L, service.recordUsageLedger(
+                "user_sim",
+                "simulation",
+                1,
+                "simulation_session",
+                "42",
+                Map.of(),
+                "simulation_session:42"));
+        verify(quotaLedgerMapper, times(1)).insert(any(QuotaLedgerEntity.class));
     }
 
     private QuotaDomainServiceImpl service() {

@@ -62,4 +62,15 @@ public interface VerlaQuotaService {
      * 同 turn 已扣费时直接放行，与 {@link #consumeForAssignmentRun} 的 ledger 复用规则一致。
      */
     void assertSufficientForAssignmentRun(String clerkUserId, Long turnId);
+
+    /**
+     * Simulation 成功会话的使用流水（仅写入展示用 consume 流水，不扣减任何余额）。
+     * 豁免账号（admin / Quota VIP / 白名单）同样记录，保证使用记录完整。
+     *
+     * @param clerkUserId 会话归属用户
+     * @param sessionId   verla agent session id（幂等键来源）
+     * @param title       会话标题（可为空）
+     * @return 写入的 quota_ledger.id；失败返回 null，不阻断 agent 终态
+     */
+    Long recordSimulationUsage(String clerkUserId, Long sessionId, String title);
 }

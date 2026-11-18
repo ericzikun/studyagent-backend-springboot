@@ -44,6 +44,7 @@ import java.util.Optional;
 public class VerlaQuotaServiceImpl implements VerlaQuotaService {
 
     private static final String SOURCE_TYPE_VERLA_SESSION = "verla_session";
+    private static final String SOURCE_TYPE_SIMULATION_SESSION = "simulation_session";
 
     private final QuotaDomainService quotaDomainService;
     private final UserRepository userRepository;
@@ -350,5 +351,30 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         if (ctx.userMessageId() != null) biz.put("user_message_id", ctx.userMessageId());
         if (ctx.intent() != null && !ctx.intent().isBlank()) biz.put("intent", ctx.intent());
         return biz;
+    }
+
+    @Override
+    public Long recordSimulationUsage(String clerkUserId, Long sessionId, String title) {
+        if (clerkUserId == null || clerkUserId.isBlank() || sessionId == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> bizContext = new HashMap<>();
+            bizContext.put("session_id", sessionId);
+            if (title != null && !title.isBlank()) {
+                bizContext.put("title", title);
+            }
+            return quotaDomainService.recordUsageLedger(
+                    clerkUserId,
+                    FeatureCode.SIMULATION.getCode(),
+                    1L,
+                    SOURCE_TYPE_SIMULATION_SESSION,
+                    String.valueOf(sessionId),
+                    bizContext,
+                    SOURCE_TYPE_SIMULATION_SESSION + ":" + sessionId);
+        } catch (Exception e) {
+            log.warn("Simulation 使用流水写入失败: sessionId={}, clerkUserId={}", sessionId, clerkUserId, e);
+            return null;
+        }
     }
 }

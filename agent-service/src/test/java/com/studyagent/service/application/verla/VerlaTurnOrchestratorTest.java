@@ -2648,6 +2648,11 @@ class VerlaTurnOrchestratorTest {
         @Override
         public void inheritAssignmentQuotaLedger(Long targetSessionId, Long turnId) {
         }
+
+        @Override
+        public Long recordSimulationUsage(String clerkUserId, Long sessionId, String title) {
+            return null;
+        }
     }
 
     private static final class FakeMqOutboxRepository implements MqOutboxRepository {

@@ -438,4 +438,41 @@ class VerlaQuotaServiceImplTest {
         assertEquals(0L, wordCounter.countWords("   "));
         assertEquals(0L, wordCounter.countWords(null));
     }
+
+    @Test
+    void recordSimulationUsageWritesDisplayOnlyConsumeRow() {
+        when(quotaDomainService.recordUsageLedger(
+                eq("user_sim"),
+                eq("simulation"),
+                eq(1L),
+                eq("simulation_session"),
+                eq("42"),
+                any(),
+                eq("simulation_session:42"))).thenReturn(99L);
+
+        Long ledgerId = service.recordSimulationUsage("user_sim", 42L, "Pendulum lab");
+
+        assertEquals(99L, ledgerId);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> ctxCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(quotaDomainService).recordUsageLedger(
+                eq("user_sim"),
+                eq("simulation"),
+                eq(1L),
+                eq("simulation_session"),
+                eq("42"),
+                ctxCaptor.capture(),
+                eq("simulation_session:42"));
+        assertEquals("Pendulum lab", ctxCaptor.getValue().get("title"));
+        assertEquals(42L, ctxCaptor.getValue().get("session_id"));
+    }
+
+    @Test
+    void recordSimulationUsageSwallowsLedgerFailures() {
+        when(quotaDomainService.recordUsageLedger(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), any(), anyString()))
+                .thenThrow(new RuntimeException("ledger down"));
+
+        assertNull(service.recordSimulationUsage("user_sim", 7L, null));
+    }
 }

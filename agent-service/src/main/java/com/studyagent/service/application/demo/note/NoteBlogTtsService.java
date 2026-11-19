@@ -20,6 +20,9 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +44,8 @@ public class NoteBlogTtsService {
     private static final Pattern BLANK_LINES = Pattern.compile("\\n\\s*\\n");
     private static final Pattern SENTENCE = Pattern.compile("(?<=[。！？!?；;])");
     private static final Pattern FILE_NAME = Pattern.compile("^[a-f0-9]{64}\\.wav$");
+    /** 首次合成并发度：一段 1-3s，串行 20 段要等 40s+；并发后首播等待显著缩短。 */
+    private static final int SYNTH_CONCURRENCY = 4;
 
     private final VideoTutorTtsService tts;
     private final NoteBlogAudioProperties props;
@@ -84,29 +89,59 @@ public class NoteBlogTtsService {
             throw new TtsUnavailable("语音缓存目录不可写");
         }
 
-        List<Segment> segments = new ArrayList<>();
-        long total = 0;
+        List<String> chunkTexts = new ArrayList<>();
+        List<Integer> chunkParagraphs = new ArrayList<>();
+        List<String> fileNames = new ArrayList<>();
         for (int paragraphIndex = 0; paragraphIndex < paragraphs.size(); paragraphIndex += 1) {
-            if (segments.size() >= props.getMaxSegments()) {
-                break;
-            }
             for (String chunk : chunkText(paragraphs.get(paragraphIndex))) {
-                if (segments.size() >= props.getMaxSegments()) {
+                if (chunkTexts.size() >= props.getMaxSegments()) {
                     break;
                 }
-                String fileName = sha256(chunk + "|" + voice + "|" + sampleRate) + ".wav";
-                Path file = dir.resolve(fileName);
-                long durationMs;
-                if (Files.isRegularFile(file) && Files.isReadable(file)) {
-                    durationMs = readDurationMs(file, sampleRate);
-                } else {
-                    durationMs = synthesizeToFile(chunk, file, sampleRate);
-                }
-                segments.add(new Segment(
-                        segments.size(), paragraphIndex, chunk,
-                        signedUrl(conversationId, fileName), durationMs));
-                total += durationMs;
+                chunkTexts.add(chunk);
+                chunkParagraphs.add(paragraphIndex);
+                fileNames.add(sha256(chunk + "|" + voice + "|" + sampleRate) + ".wav");
             }
+            if (chunkTexts.size() >= props.getMaxSegments()) {
+                break;
+            }
+        }
+
+        long[] durations = new long[chunkTexts.size()];
+        List<Integer> missing = new ArrayList<>();
+        for (int i = 0; i < chunkTexts.size(); i += 1) {
+            Path file = dir.resolve(fileNames.get(i));
+            if (Files.isRegularFile(file) && Files.isReadable(file)) {
+                durations[i] = readDurationMs(file, sampleRate);
+            } else {
+                missing.add(i);
+            }
+        }
+        if (!missing.isEmpty()) {
+            ExecutorService pool = Executors.newFixedThreadPool(SYNTH_CONCURRENCY);
+            try {
+                List<Future<Long>> futures = new ArrayList<>();
+                for (int index : missing) {
+                    Path file = dir.resolve(fileNames.get(index));
+                    String chunk = chunkTexts.get(index);
+                    futures.add(pool.submit(() -> synthesizeToFile(chunk, file, sampleRate)));
+                }
+                for (int i = 0; i < futures.size(); i += 1) {
+                    durations[missing.get(i)] = futures.get(i).get();
+                }
+            } catch (Exception e) {
+                throw new TtsUnavailable("语音合成失败，请稍后重试");
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+
+        List<Segment> segments = new ArrayList<>();
+        long total = 0;
+        for (int i = 0; i < chunkTexts.size(); i += 1) {
+            segments.add(new Segment(
+                    i, chunkParagraphs.get(i), chunkTexts.get(i),
+                    signedUrl(conversationId, fileNames.get(i)), durations[i]));
+            total += durations[i];
         }
         if (segments.isEmpty()) {
             throw new TtsUnavailable("博客还没有可朗读的内容");

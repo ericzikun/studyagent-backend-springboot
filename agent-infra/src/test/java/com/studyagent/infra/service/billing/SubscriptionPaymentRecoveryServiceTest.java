@@ -641,6 +641,55 @@ class SubscriptionPaymentRecoveryServiceTest {
         var snap=paidSnapshot();var root=confirmedPaidRoot(snap);ownedFixture(root,snap);stubConfirmedShift(root,snap,100L);service.reconcile(1L);
         assertEquals("REVIEW",root.getAnchorSyncState());assertEquals("GRANTED",root.getGrantState());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"invoice.paid","invoice.payment_succeeded","invoice.finalized"})
+    void newerInvoiceEnvelopeStillIsolatesRegisteredTechnicalInvoices(String type) {
+        var snap=paidSnapshot();var root=confirmedPaidRoot(snap);
+        ownedFixture(root,snap);var quota=injectQuota();
+        var account=users.selectByUserForUpdate("user");when(users.selectByStripeSubscriptionId("sub_old")).thenReturn(account);
+        var header=new Invoice();header.setId("in_technical");header.setSubscription("sub_old");when(stripe.readInvoiceHeader("in_technical")).thenReturn(header);
+        var shift=readyAction("SHIFT_RENEWAL","sub_old");shift.setStatus("SUCCEEDED");shift.setResultJson("{\"latest_invoice\":\"in_technical\",\"before_latest_invoice\":\"in_old\"}");when(actions.selectByRecovery(1L)).thenReturn(List.of(shift));
+        var event=ApiResource.GSON.fromJson("{\"id\":\"evt_new_schema\",\"api_version\":\"2025-12-15.clover\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"in_technical\",\"object\":\"invoice\",\"parent\":{\"type\":\"subscription_details\",\"subscription_details\":{\"subscription\":\"sub_old\"}}}}}",Event.class);
+        assertTrue(assertThrows(IllegalStateException.class,()->service.tryProcessEvent(event)).getMessage().contains("TECHNICAL_INVOICE_PENDING"));
+        verifyNoInteractions(orders,quota);root.setTechnicalInvoiceIds("[\"in_technical\"]");
+        assertTrue(service.tryProcessEvent(event));verifyNoInteractions(orders,quota);
+        assertEquals("PAID",root.getStatus());assertEquals("GRANTED",root.getGrantState());
+    }
+    @Test void missingInvoiceSubscriptionCannotFallBackWhenItsHeaderReadFails() {
+        var event=ApiResource.GSON.fromJson("{\"id\":\"evt_missing_subscription\",\"type\":\"invoice.paid\",\"data\":{\"object\":{\"id\":\"in_technical\",\"object\":\"invoice\"}}}",Event.class);
+        when(stripe.readInvoiceHeader("in_technical")).thenThrow(new IllegalStateException("TEST_HEADER_READ_UNKNOWN"));
+        assertEquals("TEST_HEADER_READ_UNKNOWN",assertThrows(IllegalStateException.class,()->service.tryProcessEvent(event)).getMessage());
+        verifyNoInteractions(orders);
+    }
+    @Test void anExplicitLegacyNonSubscriptionInvoiceStillUsesItsOriginalHandler() {
+        var event=ApiResource.GSON.fromJson("{\"id\":\"evt_one_off\",\"type\":\"invoice.paid\",\"data\":{\"object\":{\"id\":\"in_one_off\",\"object\":\"invoice\",\"subscription\":null}}}",Event.class);
+        assertFalse(service.tryProcessEvent(event));verifyNoInteractions(stripe,orders);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"1,3499,3499,true,true","2,6998,6998,true,true","1,3499,3599,true,false","1,3499,2999,true,false","1,3499,3499,false,false"})
+    void regionalRenewalChecksTheSelectedCurrencyAmountInsteadOfThePriceDefault(int quantity,long originalAmount,long previewAmount,boolean originalAmountKnown,boolean confirmed) {
+        var snap=paidSnapshot();var root=confirmedPaidRoot(snap);root.setCurrency("sgd");
+        root.setContractSnapshot("{\"price_id\":\"price_old\",\"quantity\":"+quantity+",\"recovery_admission\":{\"cancelMode\":\"RENEW\"}}");
+        snap.invoice().setCurrency("sgd");snap.invoice().setAmountDue(originalAmount);snap.invoice().setAmountPaid(originalAmount);
+        snap.paymentIntent().setCurrency("sgd");snap.paymentIntent().setAmountReceived(originalAmount);
+        snap.charge().setCurrency("sgd");snap.charge().setAmount(originalAmount);snap.charge().setAmountCaptured(originalAmount);
+        var original=snap.lines().get(0);original.setCurrency("sgd");original.setAmount(originalAmountKnown?originalAmount:null);original.setQuantity((long)quantity);
+        original.getPrice().setCurrency("usd");original.getPrice().setUnitAmount(2999L);
+        snap.subscription().setCurrency("sgd");snap.subscription().getItems().getData().get(0).setQuantity((long)quantity);
+        ownedFixture(root,snap);stubConfirmedShift(root,snap,previewAmount);
+        var next=new Invoice();next.setCurrency("sgd");next.setStartingBalance(0L);next.setAmountDue(previewAmount);
+        var line=ApiResource.GSON.fromJson(original.toJson(),InvoiceLineItem.class);line.setAmount(previewAmount);line.getPeriod().setStart(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(root.getEntitlementEndAt()));
+        when(stripe.preview("sub_old")).thenReturn(new SubscriptionRecoveryStripeGateway.Preview(next,List.of(line)));
+        service.reconcile(1L);
+        assertEquals(confirmed?"CONFIRMED":"REVIEW",root.getAnchorSyncState());assertEquals("GRANTED",root.getGrantState());
+        verify(stripe,never()).execute(any());
+    }
+    @Test void renewalCannotReleaseProtectionWhileItsAlignedSubscriptionIsStillPaused() {
+        var snap=paidSnapshot();var root=confirmedPaidRoot(snap);ownedFixture(root,snap);stubConfirmedShift(root,snap,2900L);
+        var pause=new Subscription.PauseCollection();pause.setBehavior("keep_as_draft");snap.subscription().setPauseCollection(pause);
+        service.reconcile(1L);
+        assertEquals("REVIEW",root.getAnchorSyncState());assertEquals("ACTIVE",root.getProtectionState());assertEquals("GRANTED",root.getGrantState());
+    }
     @Test void completedRenewalChecksFormalPriceCurrencyAndExpectedInvoice() {
         var snap=paidSnapshot();var root=confirmedPaidRoot(snap);ownedFixture(root,snap);stubConfirmedShift(root,snap,2900L);service.reconcile(1L);
         verify(stripe).preview("sub_old");assertEquals("CONFIRMED",root.getAnchorSyncState());

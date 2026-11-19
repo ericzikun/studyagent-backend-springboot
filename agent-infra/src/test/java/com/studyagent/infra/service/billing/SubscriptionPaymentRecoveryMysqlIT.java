@@ -310,6 +310,32 @@ class SubscriptionPaymentRecoveryMysqlIT {
             }
         }
     }
+    @Test void modernTechnicalInvoiceCallbacksWaitForRegistrationAndNeverGrantAgain() throws Exception {
+        var fixture=paymentFixture(false);var paid=paidSnapshot("in_test","hkd",18900,false);
+        paymentReads(fixture.stripe(),java.util.Map.of("in_test",paid),false);
+        assertTrue(fixture.service().tryProcessEvent(paidEvent("in_test")));assertGranted("in_test",1,1,false);
+        var technical=com.stripe.net.ApiResource.GSON.fromJson(paid.invoice().toJson(),com.stripe.model.Invoice.class);
+        technical.setId("in_technical");technical.setBillingReason("subscription_update");technical.setAmountDue(0L);technical.setAmountPaid(0L);technical.setAmountRemaining(0L);
+        org.mockito.Mockito.when(fixture.stripe().readInvoiceHeader("in_technical")).thenReturn(technical);
+        org.mockito.Mockito.when(fixture.stripe().readInvoice("in_technical")).thenReturn(new SubscriptionRecoveryStripeGateway.Snapshot(technical,paid.subscription(),null,java.util.List.of(),null,null,paid.businessNow()));
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()) {
+            assertEquals(1,q.executeUpdate("UPDATE subscription_payment_recovery_actions SET status='SUCCEEDED',result_json='{\"latest_invoice\":\"in_technical\",\"before_latest_invoice\":\"in_test\"}' WHERE recovery_id=1 AND action_type='SHIFT_RENEWAL'"));
+        }
+        for(String type:java.util.List.of("invoice.paid","invoice.payment_succeeded","invoice.finalized")) {
+            var event=com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"evt_modern_"+type+"\",\"api_version\":\"2025-12-15.clover\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"in_technical\",\"object\":\"invoice\",\"parent\":{\"type\":\"subscription_details\",\"subscription_details\":{\"subscription\":\"sub_test\"}}}}}",com.stripe.model.Event.class);
+            assertTrue(assertThrows(IllegalStateException.class,()->fixture.service().tryProcessEvent(event)).getMessage().contains("TECHNICAL_INVOICE_PENDING"));
+        }
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()) {
+            assertEquals(1,q.executeUpdate("UPDATE subscription_payment_recoveries SET technical_invoice_ids='[\"in_technical\"]' WHERE id=1"));
+        }
+        for(String type:java.util.List.of("invoice.paid","invoice.payment_succeeded","invoice.finalized")) {
+            var event=com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"evt_registered_"+type+"\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"in_technical\",\"object\":\"invoice\",\"parent\":{\"type\":\"subscription_details\",\"subscription_details\":{\"subscription\":\"sub_test\"}}}}}",com.stripe.model.Event.class);
+            assertTrue(fixture.service().tryProcessEvent(event));
+        }
+        assertEquals(1,scalar("SELECT COUNT(*) FROM recharge_orders"));assertEquals(3,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='plan_reset'"));
+        assertEquals(0,scalar("SELECT COUNT(*) FROM quota_ledger WHERE invoice_id='in_technical'"));
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+    }
     @Test void duplicatePaidCallbacksCommitOneOrderOneQuotaGrantAndOneAnchorIntent() throws Exception {
         var fixture=paymentFixture(false);var paid=paidSnapshot("in_test","hkd",18900,false);var service=fixture.service();
         paymentReads(fixture.stripe(),java.util.Map.of("in_test",paid),true);

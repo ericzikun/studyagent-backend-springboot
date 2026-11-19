@@ -51,7 +51,7 @@ class VerlaAttachmentParsedEventHandlerTest {
     }
 
     @Test
-    void handle_parsed_shouldPersistSummaryIntoFileChatAnalysisAndQuestions() {
+    void handle_parsed_persists_summary_but_skips_file_chat_state() {
         VerlaEventInbox row = VerlaEventInbox.builder()
                 .conversationId(CONVERSATION_ID)
                 .turnId(10L)
@@ -78,12 +78,15 @@ class VerlaAttachmentParsedEventHandlerTest {
 
         VerlaAttachment saved = attachmentRepository.saved;
         assertThat(saved.getSummary()).isEqualTo("这是当前作业直接相关的题目文件，适合先提取格式要求和比较题目差异。");
-        assertThat(VerlaFileChatMetadataHelper.readAttachmentState(saved).getAnalysis().getText())
-                .isEqualTo("这是当前作业直接相关的题目文件，适合先提取格式要求和比较题目差异。");
+        // req:CHAT-002 chat with file 下线：payload 里的 summary / suggestedQuestions
+        // 仍会落 summary 列与顶层 meta，但不再组装 meta_json.fileChat。
+        assertThat(saved.getMetaJson()).contains("page_count");
+        assertThat(saved.getMetaJson()).doesNotContain("fileChat");
+        // helper 对缺失 fileChat 的 meta 返回默认 PENDING 空面板，正文为空即"没写过"。
         assertThat(VerlaFileChatMetadataHelper.readAttachmentState(saved).getAnalysis().getStatus().name())
-                .isEqualTo("READY");
-        assertThat(VerlaFileChatMetadataHelper.readAttachmentState(saved).getSuggestedQuestions())
-                .containsExactly("帮我提取格式要求", "比较四个题目的差异", "我该先选哪一道题");
+                .isEqualTo("PENDING");
+        assertThat(VerlaFileChatMetadataHelper.readAttachmentState(saved).getAnalysis().getText())
+                .isEmpty();
         assertThat(conversationRepository.incrementedConversationId).isEqualTo(CONVERSATION_ID);
     }
 

@@ -10,6 +10,7 @@ import com.studyagent.common.verla.id.VerlaPublicIdType;
 import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.application.verla.dto.SendMessageCommand;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import com.studyagent.infra.service.simulation.SimulationEntitlementService;
@@ -64,7 +65,6 @@ public class VerlaSimulationController {
     private static final String KIND_SIMULATION_HTML = "simulation_html";
     private static final String INTENT_SIMULATION = "SIMULATION";
     private static final int MAX_PROMPT_CHARS = 6000;
-    private static final int MAX_FILES = 3;
     private static final long MAX_FILE_BYTES = 32L * 1024 * 1024;
     private static final int MAX_ATTACHMENTS_JSON_CHARS = 32 * 1024;
     private static final int MAX_ACTIVE_RUNS = 1;
@@ -85,6 +85,7 @@ public class VerlaSimulationController {
     private final JdbcTemplate jdbcTemplate;
     private final SimulationPassService simulationPassService;
     private final SimulationEntitlementService simulationEntitlementService;
+    private final EntitlementService planEntitlementService;
 
     @org.springframework.beans.factory.annotation.Value("${frontend-url:https://verla.io}")
     private String frontendUrl;
@@ -121,7 +122,7 @@ public class VerlaSimulationController {
         body.put("periodStart", entitlement.periodStart() == null ? null : entitlement.periodStart().toString());
         body.put("periodEnd", entitlement.periodEnd() == null ? null : entitlement.periodEnd().toString());
         body.put("attachmentsEnabled", true);
-        body.put("maxFiles", MAX_FILES);
+        body.put("maxFiles", planEntitlementService.getEffectiveEntitlements(clerkUserId).maxFiles());
         body.put("maxFileBytes", MAX_FILE_BYTES);
         body.put("maxExtractedChars", 30000);
         body.put("maxActiveRuns", MAX_ACTIVE_RUNS);
@@ -359,8 +360,11 @@ public class VerlaSimulationController {
             if (!node.isArray()) {
                 throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "attachmentsJson must be an array");
             }
-            if (node.size() > MAX_FILES) {
-                throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "at most " + MAX_FILES + " attachments");
+            Integer maxFiles = planEntitlementService
+                    .getEffectiveEntitlements(clerkUserId)
+                    .maxFiles();
+            if (maxFiles != null && node.size() > maxFiles) {
+                throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "at most " + maxFiles + " attachments");
             }
             for (var item : node) {
                 String objectId = item.path("objectId").asText("");

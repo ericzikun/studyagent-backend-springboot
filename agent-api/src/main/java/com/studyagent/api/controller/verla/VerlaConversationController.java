@@ -622,6 +622,7 @@ public class VerlaConversationController {
         String k = artifactKind.toLowerCase();
         if (k.contains("slides_editor_json")) return "slides";
         if (k.contains("slides_pptxgenjs")) return null;
+        if ("assignment_ppt".equals(k)) return null;
         if (k.contains("code") || k.endsWith(".py")) return "code";
         if (k.contains("document_md") || k.contains("assignment")
                 || k.contains("document") || k.contains("markdown") || k.contains("card")) return "document";

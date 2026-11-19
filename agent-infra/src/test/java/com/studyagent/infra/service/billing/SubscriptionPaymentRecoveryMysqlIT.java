@@ -289,6 +289,27 @@ class SubscriptionPaymentRecoveryMysqlIT {
         try(var session=factory.openSession(true)){var user=session.getMapper(UserSubscriptionMapper.class).selectByUser("test_user");assertNull(user.getPaymentRecoveryId());assertEquals(java.time.LocalDateTime.of(2026,11,30,10,0),user.getGraceEndAt());assertNull(user.getCurrentPeriodEnd());}
     }
 
+    @Test void paidCallbacksRespectLegacyOrderNotNullConstraintsAndGrantOnce() throws Exception {
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()) {
+            q.execute("ALTER TABLE recharge_orders MODIFY feature_code VARCHAR(64) NOT NULL, MODIFY package_code VARCHAR(64) NOT NULL, MODIFY quota_amount BIGINT NOT NULL");
+        }
+        try {
+            var fixture=paymentFixture(false);var paid=paidSnapshot("in_test","hkd",18900,false);
+            paymentReads(fixture.stripe(),java.util.Map.of("in_test",paid),false);
+            assertTrue(fixture.service().tryProcessEvent(paidEvent("in_test")));
+            assertTrue(fixture.service().tryProcessEvent(paidEvent("in_test")));
+            assertGranted("in_test",1,1,false);
+            try(Connection c=ds.getConnection();Statement q=c.createStatement();ResultSet row=q.executeQuery("SELECT feature_code,package_code,quota_amount,price_cents,status FROM recharge_orders WHERE stripe_invoice_id='in_test'")) {
+                assertTrue(row.next());assertEquals("subscription",row.getString(1));assertEquals("pro_monthly",row.getString(2));
+                assertEquals(0L,row.getLong(3));assertEquals(18900,row.getInt(4));assertEquals("completed",row.getString(5));assertFalse(row.next());
+            }
+            org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+        } finally {
+            try(Connection c=ds.getConnection();Statement q=c.createStatement()) {
+                q.execute("ALTER TABLE recharge_orders MODIFY feature_code VARCHAR(64) NULL, MODIFY package_code VARCHAR(64) NULL, MODIFY quota_amount BIGINT NULL");
+            }
+        }
+    }
     @Test void duplicatePaidCallbacksCommitOneOrderOneQuotaGrantAndOneAnchorIntent() throws Exception {
         var fixture=paymentFixture(false);var paid=paidSnapshot("in_test","hkd",18900,false);var service=fixture.service();
         paymentReads(fixture.stripe(),java.util.Map.of("in_test",paid),true);

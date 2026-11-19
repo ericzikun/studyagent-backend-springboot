@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla.handler;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -53,6 +54,7 @@ public class NoteEventHandler implements VerlaEventHandler {
     private final DemoNoteService demoNoteService;
     private final VerlaSessionRepository sessionRepository;
     private final SessionStateMachine sessionStateMachine;
+    private final VerlaQuotaService verlaQuotaService;
 
     @Override
     public Set<VerlaAgentEventType> supportedTypes() {
@@ -80,6 +82,7 @@ public class NoteEventHandler implements VerlaEventHandler {
                 log.warn("[Notes] turn failed sessionId={} error={}",
                         row.getSessionId(), payload.get("errorMessage"));
                 demoNoteService.markFailed(row.getConversationId());
+                verlaQuotaService.refundBySessionId(row.getSessionId(), "note_failed");
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_FAILED);
             }
             case NOTE_CANCELLED -> {
@@ -87,6 +90,7 @@ public class NoteEventHandler implements VerlaEventHandler {
                         row.getSessionId(), payload.get("reason"));
                 // 取消按「未完成」收口：前端据此提示可重试，不落 failed 事件语义
                 demoNoteService.markFailed(row.getConversationId());
+                verlaQuotaService.refundBySessionId(row.getSessionId(), "note_cancelled");
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_CANCELLED);
             }
             default -> log.debug("[Notes] ignored event {} sessionId={}", type, row.getSessionId());

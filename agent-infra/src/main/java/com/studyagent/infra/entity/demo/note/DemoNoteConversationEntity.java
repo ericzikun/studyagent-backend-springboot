@@ -47,9 +47,10 @@ public class DemoNoteConversationEntity {
      */
     @TableField(value = "pending_proposal_json", updateStrategy = FieldStrategy.ALWAYS)
     private String pendingProposalJson;
-    @TableField("mindmap_json")
+    /** 重新生成时必须能写回 NULL：默认 updateById 跳过 null，旧导图会一直残留。 */
+    @TableField(value = "mindmap_json", updateStrategy = FieldStrategy.ALWAYS)
     private String mindmapJson;
-    @TableField("blog_md")
+    @TableField(value = "blog_md", updateStrategy = FieldStrategy.ALWAYS)
     private String blogMd;
     private String status;
     @TableField("created_at")

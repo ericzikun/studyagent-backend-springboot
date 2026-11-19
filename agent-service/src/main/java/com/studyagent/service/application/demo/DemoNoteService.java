@@ -245,6 +245,9 @@ public class DemoNoteService {
         c.setLearningGoal(normalizeLearningGoal(learningGoal));
         c.setOutputLanguage(truncateToNull(outputLanguage, OUTPUT_LANGUAGE_MAX_LENGTH));
         c.setNoteMd(null);
+        // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
+        c.setMindmapJson(null);
+        c.setBlogMd(null);
         // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
         c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);

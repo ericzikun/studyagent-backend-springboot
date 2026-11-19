@@ -8,6 +8,8 @@ import com.studyagent.infra.service.simulation.SimulationEntitlementService;
 import com.studyagent.infra.service.simulation.SimulationPassService;
 import com.studyagent.service.application.verla.VerlaConversationService;
 import com.studyagent.service.application.verla.VerlaTurnOrchestrator;
+import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
+import com.studyagent.service.application.verla.entitlement.EntitlementService;
 import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
@@ -26,8 +28,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,6 +56,7 @@ class VerlaSimulationControllerTest {
     private JdbcTemplate jdbcTemplate;
     private SimulationPassService simulationPassService;
     private SimulationEntitlementService entitlementService;
+    private EntitlementService planEntitlementService;
     private VerlaSimulationController controller;
 
     @BeforeEach
@@ -66,6 +71,9 @@ class VerlaSimulationControllerTest {
         jdbcTemplate = mock(JdbcTemplate.class);
         simulationPassService = mock(SimulationPassService.class);
         entitlementService = mock(SimulationEntitlementService.class);
+        planEntitlementService = mock(EntitlementService.class);
+        when(planEntitlementService.getEffectiveEntitlements(anyString())).thenReturn(
+                new EffectiveEntitlements("free", "free", 3, 0, Set.of("writing")));
         when(simulationPassService.access(anyString(), anyBoolean())).thenReturn(
                 new SimulationPassService.Access(
                         true, false, true, "simulation_lab_7d", null, 199, "usd", 7, false));
@@ -86,7 +94,8 @@ class VerlaSimulationControllerTest {
                 new ObjectMapper(),
                 jdbcTemplate,
                 simulationPassService,
-                entitlementService);
+                entitlementService,
+                planEntitlementService);
     }
 
     @Test
@@ -99,6 +108,35 @@ class VerlaSimulationControllerTest {
         assertEquals(3, result.getData().get("maxFiles"));
         assertEquals(1, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
+    }
+
+    @Test
+    void configUsesPlanEntitlementFileLimit() {
+        when(planEntitlementService.getEffectiveEntitlements("plus_1")).thenReturn(
+                new EffectiveEntitlements("plus_monthly", "plus", 10, 3, Set.of("writing")));
+        when(planEntitlementService.getEffectiveEntitlements("pro_1")).thenReturn(
+                new EffectiveEntitlements("pro_monthly", "pro", null, 3, Set.of("writing")));
+
+        assertEquals(10, controller.config("plus_1").getData().get("maxFiles"));
+        assertNull(controller.config("pro_1").getData().get("maxFiles"));
+    }
+
+    @Test
+    void generateRejectsMoreAttachmentsThanPlanAllows() {
+        when(conversationService.getOwned("free_1", 42L)).thenReturn(
+                VerlaConversation.builder().id(42L).primaryIntent("SIMULATION").build());
+        when(planEntitlementService.getEffectiveEntitlements("free_1")).thenReturn(
+                new EffectiveEntitlements("free", "free", 3, 0, Set.of("writing")));
+
+        VerlaSimulationController.GenerateSimulationRequest request =
+                new VerlaSimulationController.GenerateSimulationRequest(
+                        "make a lab",
+                        "[{\"objectId\":\"a\"},{\"objectId\":\"b\"},{\"objectId\":\"c\"},{\"objectId\":\"d\"}]",
+                        "en");
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.generate("free_1", 42L, request));
+        assertTrue(error.getMessage().contains("at most 3 attachments"));
     }
 
     @Test

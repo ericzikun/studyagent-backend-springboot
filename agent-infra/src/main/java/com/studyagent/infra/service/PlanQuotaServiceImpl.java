@@ -885,7 +885,14 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         return missingPlanWindow || planWindowExpired;
     }
 
+    @Autowired(required=false)
+    private com.studyagent.infra.service.billing.RecoveryTestClockSupport recoveryTestClockSupport;
+
     LocalDateTime resolveRefreshTime(UserSubscriptionEntity subscription, LocalDateTime fallbackNow) {
+        if (recoveryTestClockSupport != null && subscription != null) {
+            Instant observed = recoveryTestClockSupport.localTime(subscription.getClerkUserId(), subscription.getStripeSubscriptionId(), subscription.getStripeCustomerId());
+            if (observed != null) return DateTimeFormats.fromInstant(observed);
+        }
         if (!shouldUseStripeSimulationTime(subscription)) {
             return fallbackNow;
         }

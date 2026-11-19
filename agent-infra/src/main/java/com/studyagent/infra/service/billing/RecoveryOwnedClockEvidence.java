@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Test-only attestation of an owned fixture's controlled operation, never production evidence.
+ * TEST-only attestation shared by the isolated operator and native acceptance fixtures.
  * The fixture must populate these facts from complete native API reads, not webhook headers,
  * metadata, recipes, or inferred Event/Charge business timestamps. This validates consistency;
  * it cannot authenticate arbitrary caller-supplied facts. No public constructor for Validated

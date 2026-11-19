@@ -115,4 +115,29 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Reuse guarded native Stripe fixtures in agent-start HTTP acceptance tests only. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>recovery-test-fixtures</id>
+                        <phase>process-test-classes</phase>
+                        <goals><goal>test-jar</goal></goals>
+                        <configuration>
+                            <includes>
+                                <include>com/studyagent/infra/service/billing/RecoverySandbox*.class</include>
+                                <include>com/studyagent/infra/service/billing/RecoveryOwnedClock*.class</include>
+                                <include>com/studyagent/infra/service/billing/StripePaymentRecoverySandboxIT*.class</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

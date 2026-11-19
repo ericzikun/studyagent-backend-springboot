@@ -263,6 +263,13 @@ billing:
     email-from: ${BILLING_PAYMENT_RECOVERY_EMAIL_FROM:}
     review-assignee: ${BILLING_PAYMENT_RECOVERY_REVIEW_ASSIGNEE:}
     reconciliation-cron: ${BILLING_PAYMENT_RECOVERY_RECONCILIATION_CRON:0 * * * * ?}
+    # TEST operator only: also requires the explicit recovery-test-clock profile,
+    # a TEST Stripe key, a persistent shared volume, a strong token and exact user IDs.
+    test-clock:
+      enabled: ${BILLING_PAYMENT_RECOVERY_TEST_CLOCK_ENABLED:false}
+      directory: ${BILLING_PAYMENT_RECOVERY_TEST_CLOCK_DIRECTORY:}
+      operator-token: ${BILLING_PAYMENT_RECOVERY_TEST_CLOCK_OPERATOR_TOKEN:}
+      allowed-user-ids: ${BILLING_PAYMENT_RECOVERY_TEST_CLOCK_ALLOWED_USER_IDS:}
   portal:
     configuration-id: ${BILLING_PORTAL_CONFIGURATION_ID:}
   regional-pricing:

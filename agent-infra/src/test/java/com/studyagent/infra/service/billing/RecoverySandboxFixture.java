@@ -10,6 +10,8 @@ record RecoverySandboxFixture(String caseKey,String sourceKey,String targetPlanC
         long introAmountMinor,String sourcePriceId,String priceVersion,String conversionMode){
     boolean priceUpdate(){return "PRICE_UPDATE".equals(conversionMode);}
     boolean explicitFirstPay(){return "EXPLICIT_FIRST_PAY".equals(conversionMode);}
+    boolean scheduleFirstPay(){return "SCHEDULE_FIRST_PAY".equals(conversionMode);}
+    boolean controlledFirstPay(){return explicitFirstPay()||scheduleFirstPay();}
     static RecoverySandboxFixture parse(String caseKey,String json){
         var key=RecoveryCaseKey.parse(caseKey);
         try{
@@ -19,9 +21,10 @@ record RecoverySandboxFixture(String caseKey,String sourceKey,String targetPlanC
             if(!currency.matches("[a-z]{3}"))throw new IllegalArgumentException("Lowercase ISO currency required");
             Currency.getInstance(currency.toUpperCase(java.util.Locale.ROOT));
             String mode=value.has("conversionMode")?value.get("conversionMode").getAsString():"STANDARD";
-            if(!java.util.Set.of("STANDARD","PRICE_UPDATE","EXPLICIT_FIRST_PAY").contains(mode)
+            if(!java.util.Set.of("STANDARD","PRICE_UPDATE","EXPLICIT_FIRST_PAY","SCHEDULE_FIRST_PAY").contains(mode)
                     || "PRICE_UPDATE".equals(mode) && ("formal".equals(key.sourceKey()) || !"NO_SCHEDULE".equals(key.scheduleClass()))
-                    || "EXPLICIT_FIRST_PAY".equals(mode) && (!"formal".equals(key.sourceKey()) || !"NO_SCHEDULE".equals(key.scheduleClass())))throw new IllegalArgumentException("Unsupported fixture conversion mode");
+                    || "EXPLICIT_FIRST_PAY".equals(mode) && (!"formal".equals(key.sourceKey()) || !"NO_SCHEDULE".equals(key.scheduleClass()))
+                    || "SCHEDULE_FIRST_PAY".equals(mode) && (!"EQUIVALENT_SCHEDULE".equals(key.scheduleClass()) || !"RENEW".equals(key.cancelMode())))throw new IllegalArgumentException("Unsupported fixture conversion mode");
             return new RecoverySandboxFixture(key.value(),key.sourceKey(),key.targetPlanCode(),key.interval(),!"formal".equals(key.sourceKey()),
                     "EQUIVALENT_SCHEDULE".equals(key.scheduleClass()),"PERIOD_END".equals(key.cancelMode()),currency,
                     positiveInteger(value,"unitAmountMinor"),positiveInteger(value,"introAmountMinor"),

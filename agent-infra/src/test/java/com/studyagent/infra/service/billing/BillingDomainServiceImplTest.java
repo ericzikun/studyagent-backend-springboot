@@ -116,6 +116,19 @@ class BillingDomainServiceImplTest {
     private final SubscriptionPriceRolloutService rolloutService = org.mockito.Mockito.mock(SubscriptionPriceRolloutService.class);
 
     @Test
+    void missingTestClockKeepsTheAccountReadableAndPaidFactsIntact() {
+        var member=stubLegacyProBadgeAccount();member.setPaymentRecoveryId(91L);member.setStatus("trialing");when(userSubscriptionMapper.selectByUser("user_badge")).thenReturn(member);
+        var start=LocalDateTime.now().plusDays(14);var end=start.plusMonths(1);member.setCurrentPeriodStart(start);member.setCurrentPeriodEnd(end);
+        var roots=org.mockito.Mockito.mock(com.studyagent.infra.mapper.SubscriptionPaymentRecoveryMapper.class);
+        var root=new com.studyagent.infra.entity.SubscriptionPaymentRecoveryEntity();root.setId(91L);root.setClerkUserId("user_badge");root.setStripeSubscriptionId(member.getStripeSubscriptionId());root.setStatus("PAID");root.setGrantState("GRANTED");root.setDisplayTier("pro");root.setPlanCode("pro_monthly");root.setEntitlementStartAt(start);root.setEntitlementEndAt(end);root.setContractSnapshot("registered_test_clock_controlled_operation");
+        when(roots.selectById(91L)).thenReturn(root);
+        var resolver=new PaymentRecoveryAccessServiceImpl(userSubscriptionMapper,roots,org.mockito.Mockito.mock(com.studyagent.infra.mapper.SubscriptionRecoveryActionMapper.class),org.mockito.Mockito.mock(com.studyagent.infra.mapper.SubscriptionRecoveryReplacementMapper.class));
+        var service=service();org.springframework.test.util.ReflectionTestUtils.setField(service,"paymentRecoveryAccessService",resolver);
+        var result=service.getCurrentSubscription("user_badge");assertEquals("pro",result.getTier());assertEquals("pro_monthly",result.getPlanCode());assertEquals("PAID",result.getPaymentRecovery().state());assertEquals(end,result.getCurrentPeriodEnd());assertEquals(com.studyagent.service.domain.billing.BillingAccessState.SUSPENDED,result.getAccessState());assertFalse(result.getCanConsumePaidEntitlements());assertFalse(result.getCanRefreshPlan());assertFalse(result.getCanPurchaseAddon());
+        assertEquals("GRANTED",root.getGrantState());verify(userSubscriptionMapper,never()).updateById(any(UserSubscriptionEntity.class));org.mockito.Mockito.verifyNoInteractions(planQuotaService);
+    }
+
+    @Test
     void expiredRecoveryPaidPeriodDoesNotFallBackToTechnicalTrialRights() {
         var current = stubLegacyProBadgeAccount(); current.setStatus("trialing");
         var summary = new com.studyagent.service.domain.billing.PaymentRecoverySummary("91", "PAID", false,

@@ -2,6 +2,7 @@ package com.studyagent.infra.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.infra.entity.AiFeatureDefsEntity;
 import com.studyagent.infra.entity.QuotaLedgerAllocationEntity;
 import com.studyagent.infra.entity.QuotaLedgerEntity;
@@ -1625,6 +1626,10 @@ class QuotaDomainServiceImplTest {
         assertEquals("42", ledger.getSourceId());
         assertEquals("simulation_session:42", ledger.getIdempotencyKey());
         assertTrue(ledger.getBizContext().contains("Pendulum lab"));
+        assertTrue(
+                Math.abs(java.time.Duration.between(
+                        ledger.getCreatedAt(), DateTimeFormats.now()).toMinutes()) <= 5,
+                "ledger createdAt must use the Shanghai app clock");
         assertNull(ledgerId);
 
         QuotaLedgerEntity existing = new QuotaLedgerEntity();

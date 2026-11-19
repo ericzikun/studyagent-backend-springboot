@@ -631,7 +631,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
         ledger.setSourceId(sourceId);
         ledger.setIdempotencyKey(idempotencyKey);
         ledger.setBizContext(bizContext == null ? null : GSON.toJson(bizContext));
-        ledger.setCreatedAt(LocalDateTime.now());
+        ledger.setCreatedAt(DateTimeFormats.now());
         quotaLedgerMapper.insert(ledger);
         return ledger.getId();
     }

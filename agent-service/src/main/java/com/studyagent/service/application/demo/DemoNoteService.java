@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 笔记 demo 业务服务：会话编排（素材提交 / 后续对话 / 结果回填）。
@@ -50,6 +51,15 @@ public class DemoNoteService {
 
     public static final String SOURCE_TYPE_FILE = "file";
     public static final String SOURCE_TYPE_TEXT = "text";
+    public static final String SOURCE_TYPE_YOUTUBE = "youtube";
+
+    private static final String YOUTUBE_SOURCE_TITLE = "YouTube 视频";
+    /** watch / shorts / embed / live / youtu.be 都归一成 11 位 video id。 */
+    private static final Pattern YOUTUBE_URL_PATTERN = Pattern.compile(
+            "^https?://(?:www\\.|m\\.)?"
+                    + "(?:youtube\\.com/(?:watch\\?(?:[^#]*&)?v=|shorts/|embed/|live/|v/)|youtu\\.be/)"
+                    + "([0-9A-Za-z_-]{11}).*$",
+            Pattern.CASE_INSENSITIVE);
 
     public static final String STATUS_DRAFT = "draft";
     public static final String STATUS_GENERATING = "generating";
@@ -214,6 +224,14 @@ public class DemoNoteService {
             c.setInputText(null);
             c.setTitle(truncate(filename == null || filename.isBlank() ? DRAFT_TITLE : filename.trim(),
                     TITLE_MAX_LENGTH));
+        } else if (SOURCE_TYPE_YOUTUBE.equals(normalizedType)) {
+            String url = text.trim();
+            ensureTextFitsCommandPayload(url, "YouTube 链接");
+            c.setSourceType(SOURCE_TYPE_YOUTUBE);
+            c.setAttachmentObjectId(null);
+            c.setAttachmentFilename(null);
+            c.setInputText(url);
+            c.setTitle(YOUTUBE_SOURCE_TITLE);
         } else {
             String trimmed = text.trim();
             ensureTextFitsCommandPayload(trimmed, "粘贴文本");
@@ -694,6 +712,10 @@ public class DemoNoteService {
             requireText(text);
             return SOURCE_TYPE_TEXT;
         }
+        if (SOURCE_TYPE_YOUTUBE.equals(raw)) {
+            requireYoutubeUrl(text);
+            return SOURCE_TYPE_YOUTUBE;
+        }
         if (raw.isEmpty()) {
             if (objectId != null && !objectId.isBlank()) {
                 requireFileObjectId(objectId);
@@ -702,12 +724,21 @@ public class DemoNoteService {
             requireText(text);
             return SOURCE_TYPE_TEXT;
         }
-        throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "sourceType 只支持 file 或 text");
+        throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "sourceType 只支持 file、text 或 youtube");
     }
 
     private static void requireFileObjectId(String objectId) {
         if (objectId == null || objectId.isBlank()) {
             throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "选择文件上传时必须提供 objectId");
+        }
+    }
+
+    private static void requireYoutubeUrl(String text) {
+        if (text == null || text.isBlank()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "必须提供 YouTube 链接");
+        }
+        if (!YOUTUBE_URL_PATTERN.matcher(text.trim()).matches()) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "YouTube 链接无效");
         }
     }
 

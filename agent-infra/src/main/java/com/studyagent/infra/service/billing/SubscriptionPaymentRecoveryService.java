@@ -78,7 +78,9 @@ public class SubscriptionPaymentRecoveryService {
             var owned=recoveries.selectByInvoice(invoiceId);
             if(owned!=null){applyInvoice(owned,stripe.readInvoice(invoiceId),event);return true;}
             String subscriptionId=string(object,"subscription");
-            if(subscriptionId==null && "invoice_payment.paid".equals(type)){var header=stripe.readInvoiceHeader(invoiceId);if(header==null)throw incomplete(invoiceId);subscriptionId=header.getSubscription();}
+            // Newer webhook envelopes omit the legacy root subscription field. Resolve the native
+            // header before choosing a handler, including before a SHIFT invoice is registered.
+            if(subscriptionId==null && ("invoice_payment.paid".equals(type)||!object.has("subscription")||object.has("parent"))){var header=stripe.readInvoiceHeader(invoiceId);if(header==null)throw incomplete(invoiceId);subscriptionId=header.getSubscription();}
             if(subscriptionId!=null && routeSupersededStudyPass(subscriptionId,Set.of("invoice.paid","invoice.payment_succeeded","invoice_payment.paid").contains(type)?invoiceId:null))return true;
             if(routeReplacementInvoice(subscriptionId,invoiceId,object,event))return true;
             var user=subscriptionId==null?null:users.selectByStripeSubscriptionId(subscriptionId);
@@ -1448,6 +1450,7 @@ public class SubscriptionPaymentRecoveryService {
             r.setTechnicalInvoiceIds(JSON.toJson(technical));
             if("canceled".equals(snapshot.subscription().getStatus())){r.setAnchorSyncState("REVIEW");review(r,"REMOTE_CANCELED_PAID_CYCLE_PRESERVED");}
             else if(!nextInvoiceVerified){r.setAnchorSyncState("REVIEW");review(r,"NEXT_INVOICE_CONTRACT_OR_AMOUNT_MISMATCH");repairProtection(r,snapshot);}
+            else if(snapshot.subscription().getPauseCollection()!=null){r.setAnchorSyncState("REVIEW");review(r,"RENEWAL_COLLECTION_STILL_PAUSED");repairProtection(r,snapshot);}
             else if(!aligned){r.setAnchorSyncState("REVIEW");review(r,"RENEWAL_BOUNDARY_OR_CANCELLATION_MISMATCH");repairProtection(r,snapshot);}
             else{
                 boolean safe=true;
@@ -1475,14 +1478,21 @@ public class SubscriptionPaymentRecoveryService {
         if(items==null || items.getData()==null || items.getData().size()!=1)return false;
         var item=items.getData().get(0);
         if(item.getPrice()==null || !Objects.equals(priceId,item.getPrice().getId()) || !Objects.equals(quantity,item.getQuantity())
-                || !Objects.equals(root.getCurrency(),item.getPrice().getCurrency()) || item.getPrice().getUnitAmount()==null)return false;
+                || item.getPrice().getUnitAmount()==null)return false;
         var lines=preview.lines();if(lines.size()!=1)return false;var line=lines.get(0);
         if(line.getPrice()==null || !Objects.equals(priceId,line.getPrice().getId()) || !Objects.equals(quantity,line.getQuantity())
                 || !Objects.equals(root.getCurrency(),line.getCurrency()) || Boolean.TRUE.equals(line.getProration())
                 || line.getPeriod()==null || !Objects.equals(end,line.getPeriod().getStart()))return false;
-        long expected=Math.multiplyExact(item.getPrice().getUnitAmount(),quantity);
-        // A changed/expired discount or tax must be reviewed rather than silently accepting a different bill.
         var original=snapshot.lines().get(0);
+        long expected;
+        if(Objects.equals(root.getCurrency(),item.getPrice().getCurrency()))expected=Math.multiplyExact(item.getPrice().getUnitAmount(),quantity);
+        else{
+            // Price.unit_amount is in its default currency. A multi-currency subscription's
+            // original invoice line already contains the selected currency's full quantity amount.
+            if(original.getAmount()==null||original.getAmount()<0||!Objects.equals(original.getAmount(),line.getAmount()))return false;
+            expected=original.getAmount();
+        }
+        // A changed/expired discount or tax must be reviewed rather than silently accepting a different bill.
         if(original.getDiscountAmounts()!=null)for(var discount:original.getDiscountAmounts())expected=Math.subtractExact(expected,discount.getAmount());
         if(original.getTaxAmounts()!=null)for(var tax:original.getTaxAmounts())if(!Boolean.TRUE.equals(tax.getInclusive()))expected=Math.addExact(expected,tax.getAmount());
         return Objects.equals(expected,preview.invoice().getAmountDue());

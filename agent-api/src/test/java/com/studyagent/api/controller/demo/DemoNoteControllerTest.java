@@ -3,8 +3,6 @@ package com.studyagent.api.controller.demo;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
-import com.studyagent.infra.entity.demo.note.DemoNoteFeedbackEntity;
-import com.studyagent.infra.mapper.demo.note.DemoNoteFeedbackMapper;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
@@ -46,7 +44,6 @@ class DemoNoteControllerTest {
     private DemoNoteService service;
     private NoteVerlaCommandDispatcher dispatcher;
     private VerlaEditorPdfExportService pdfExportService;
-    private DemoNoteFeedbackMapper feedbackMapper;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -54,28 +51,9 @@ class DemoNoteControllerTest {
         service = mock(DemoNoteService.class);
         dispatcher = mock(NoteVerlaCommandDispatcher.class);
         pdfExportService = mock(VerlaEditorPdfExportService.class);
-        feedbackMapper = mock(DemoNoteFeedbackMapper.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService, feedbackMapper))
+                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService))
                 .build();
-    }
-
-    @Test
-    void feedback_persists_vote_for_owned_conversation() throws Exception {
-        when(service.resolveConversationId("user_1", "vc_abc")).thenReturn(NOTE_CONVERSATION_ID);
-        when(service.getOwned("user_1", NOTE_CONVERSATION_ID)).thenReturn(conversation());
-
-        mockMvc.perform(post("/v1/demo/note/conversations/vc_abc/feedback")
-                        .requestAttr("clerkUserId", "user_1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"kind\":\"up\"}"))
-                .andExpect(status().isOk());
-
-        org.mockito.ArgumentCaptor<DemoNoteFeedbackEntity> captor =
-                org.mockito.ArgumentCaptor.forClass(DemoNoteFeedbackEntity.class);
-        verify(feedbackMapper).insert(captor.capture());
-        org.junit.jupiter.api.Assertions.assertEquals("up", captor.getValue().getKind());
-        org.junit.jupiter.api.Assertions.assertEquals(NOTE_CONVERSATION_ID, captor.getValue().getNoteConversationId());
     }
 
     @Test

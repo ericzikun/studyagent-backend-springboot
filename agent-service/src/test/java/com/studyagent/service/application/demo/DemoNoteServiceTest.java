@@ -176,6 +176,37 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void first_turn_accepts_youtube_source_and_stores_url() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation note = service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "youtube", null,
+                "https://youtu.be/LF9sd-2jCoY", null, null, null, null, null)
+                .getConversation();
+
+        assertEquals("youtube", note.getSourceType());
+        assertEquals("https://youtu.be/LF9sd-2jCoY", note.getInputText());
+        assertNull(note.getAttachmentObjectId());
+        assertNull(note.getAttachmentFilename());
+        assertEquals("YouTube 视频", note.getTitle());
+    }
+
+    @Test
+    void first_turn_rejects_invalid_youtube_url() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "youtube", null, null, null, null, null, null, null));
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "youtube", null,
+                "https://example.com/watch?v=LF9sd-2jCoY", null, null, null, null, null));
+        assertThrows(BusinessException.class, () -> service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "youtube", null,
+                "https://www.youtube.com/watch?v=too-short", null, null, null, null, null));
+    }
+
+    @Test
     void first_turn_falls_back_on_unknown_learning_goal() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));

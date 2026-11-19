@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla.handler;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
@@ -36,13 +37,15 @@ class NoteEventHandlerTest {
 
     private DemoNoteService demoNoteService;
     private VerlaSessionRepository sessionRepository;
+    private VerlaQuotaService quotaService;
     private NoteEventHandler handler;
 
     @BeforeEach
     void setUp() {
         demoNoteService = mock(DemoNoteService.class);
         sessionRepository = mock(VerlaSessionRepository.class);
-        handler = new NoteEventHandler(demoNoteService, sessionRepository, new SessionStateMachine());
+        quotaService = mock(VerlaQuotaService.class);
+        handler = new NoteEventHandler(demoNoteService, sessionRepository, new SessionStateMachine(), quotaService);
     }
 
     @Test

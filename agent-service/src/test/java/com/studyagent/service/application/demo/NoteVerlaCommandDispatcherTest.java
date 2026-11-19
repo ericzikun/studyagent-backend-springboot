@@ -10,6 +10,8 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -65,6 +67,7 @@ class NoteVerlaCommandDispatcherTest {
     private VerlaSessionRepository sessionRepository;
     private VerlaConversationService conversationService;
     private MqOutboxService mqOutboxService;
+    private VerlaQuotaService verlaQuotaService;
     private NoteVerlaCommandDispatcher dispatcher;
 
     @BeforeEach
@@ -74,6 +77,7 @@ class NoteVerlaCommandDispatcherTest {
         sessionRepository = mock(VerlaSessionRepository.class);
         conversationService = mock(VerlaConversationService.class);
         mqOutboxService = mock(MqOutboxService.class);
+        verlaQuotaService = mock(VerlaQuotaService.class);
 
         dispatcher = new NoteVerlaCommandDispatcher(
                 conversationRepository,
@@ -81,7 +85,8 @@ class NoteVerlaCommandDispatcherTest {
                 sessionRepository,
                 new SessionStateMachine(),
                 conversationService,
-                mqOutboxService);
+                mqOutboxService,
+                verlaQuotaService);
         ReflectionTestUtils.setField(dispatcher, "commandExchange", COMMAND_EXCHANGE);
 
         when(turnRepository.save(any(VerlaTurn.class))).thenAnswer(invocation -> {
@@ -107,6 +112,8 @@ class NoteVerlaCommandDispatcherTest {
         verify(turnRepository).save(turnCaptor.capture());
         assertEquals(VERLA_CONVERSATION_ID, turnCaptor.getValue().getConversationId());
         verify(conversationRepository).touchOnNewTurn(VERLA_CONVERSATION_ID, TURN_ID);
+        // 首轮扣 1 次作业额度（TASK_CREATE），与作业共用同一份会员额度
+        verify(verlaQuotaService).consumeForAssignmentRun(any(VerlaQuotaContext.class));
 
         ArgumentCaptor<VerlaSession> sessionCaptor = ArgumentCaptor.forClass(VerlaSession.class);
         verify(sessionRepository, org.mockito.Mockito.times(2)).save(sessionCaptor.capture());

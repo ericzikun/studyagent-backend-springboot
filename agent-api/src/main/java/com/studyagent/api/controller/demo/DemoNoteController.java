@@ -13,6 +13,8 @@ import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
 import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
+import com.studyagent.infra.entity.demo.note.DemoNoteFeedbackEntity;
+import com.studyagent.infra.mapper.demo.note.DemoNoteFeedbackMapper;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +54,9 @@ public class DemoNoteController {
     private final DemoNoteService service;
     private final NoteVerlaCommandDispatcher commandDispatcher;
     private final VerlaEditorPdfExportService pdfExportService;
+    private final DemoNoteFeedbackMapper feedbackMapper;
+
+    private static final Set<String> FEEDBACK_KINDS = Set.of("up", "down", "report");
 
     /** 进入页面时的会话分配：复用最近的草稿，没有才新建。 */
     @PostMapping("/conversations/draft")
@@ -86,6 +93,33 @@ public class DemoNoteController {
         // 待审提案也一并带出，刷新页面仍能继续审阅
         return Result.success(NoteConversationVO.from(
                 conv, service.listMessages(conv.getId()), service.parsePendingProposal(conv)));
+    }
+
+    /**
+     * 编辑器顶栏反馈：点赞 / 点踩 / 举报。轻量落库，供产品回看。
+     */
+    @PostMapping("/conversations/{id}/feedback")
+    public Result<Map<String, Object>> submitFeedback(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        NoteConversation conv = service.getOwned(
+                clerkUserId, service.resolveConversationId(clerkUserId, id));
+        String kind = body == null || body.get("kind") == null
+                ? "" : String.valueOf(body.get("kind")).trim().toLowerCase();
+        if (!FEEDBACK_KINDS.contains(kind)) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(),
+                    "kind must be one of up/down/report");
+        }
+        DemoNoteFeedbackEntity entity = new DemoNoteFeedbackEntity();
+        entity.setNoteConversationId(conv.getId());
+        entity.setClerkUserId(clerkUserId);
+        entity.setKind(kind);
+        entity.setComment(body.get("comment") == null ? null : String.valueOf(body.get("comment")));
+        entity.setCreatedAt(LocalDateTime.now());
+        feedbackMapper.insert(entity);
+        return Result.success(Map.of());
     }
 
     /**

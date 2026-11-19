@@ -16,6 +16,8 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -68,6 +70,7 @@ public class NoteVerlaCommandDispatcher {
     private final SessionStateMachine sessionStateMachine;
     private final VerlaConversationService conversationService;
     private final MqOutboxService mqOutboxService;
+    private final VerlaQuotaService verlaQuotaService;
 
     /**
      * 派发一轮笔记回合。调用方须已把素材/消息落库
@@ -130,6 +133,18 @@ public class NoteVerlaCommandDispatcher {
         session.setStatus(dispatching.name());
         session.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(session);
+
+        // 商业化：笔记与作业共用同一份作业额度（TASK_CREATE），只在首轮扣 1 次，
+        // 多轮追问不重复收费；失败/取消由 NoteEventHandler 按 session 退款。
+        if (ctx.isFirstTurn()) {
+            verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
+                    .clerkUserId(noteConv.getClerkUserId())
+                    .conversationId(verlaConversationId)
+                    .turnId(turn.getId())
+                    .sessionId(session.getId())
+                    .intent("NOTE_MAKER")
+                    .build());
+        }
 
         VerlaCommandEnvelope envelope = VerlaCommandEnvelope.builder()
                 .schemaVersion(1)

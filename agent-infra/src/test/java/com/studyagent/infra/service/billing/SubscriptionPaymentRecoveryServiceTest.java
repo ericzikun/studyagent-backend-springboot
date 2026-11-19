@@ -30,6 +30,16 @@ class SubscriptionPaymentRecoveryServiceTest {
     @org.junit.jupiter.api.BeforeAll static void userMapping(){com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper.initTableInfo(UserSubscriptionEntity.class);com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper.initTableInfo(SubscriptionPlanEntity.class);}
     @org.junit.jupiter.api.BeforeEach void userWriteResult(){when(users.update(any(UserSubscriptionEntity.class),any())).thenReturn(1);}
 
+    @Test void testOperatorPreflightUsesExactProductionAdmissionAndDoesNotWrite() {
+        enable();var snapshot=snapshot();var user=user();user.setStripeCustomerId("cus_old");when(users.selectByUser("user")).thenReturn(user);when(stripe.readInvoice("in_old")).thenReturn(snapshot);
+        assertEquals("formal:pro_monthly:month_1:NO_SCHEDULE:RENEW",service.requireTestClockAdmission("user","in_old"));
+        assertThrows(IllegalArgumentException.class,()->properties.setVerifiedCohorts(Set.of("formal")));properties.setVerifiedCohorts(Set.of("formal:basic_monthly:month_1:NO_SCHEDULE:RENEW"));assertThrows(IllegalStateException.class,()->service.requireTestClockAdmission("user","in_old"));
+        verify(stripe,never()).execute(any());verifyNoInteractions(recoveries,actions,orders);
+    }
+    @Test void testOperatorPreflightRejectsAnotherCustomer() {
+        enable();var user=user();user.setStripeCustomerId("cus_other");when(users.selectByUser("user")).thenReturn(user);when(stripe.readInvoice("in_old")).thenReturn(snapshot());
+        assertThrows(IllegalStateException.class,()->service.requireTestClockAdmission("user","in_old"));verify(stripe,never()).execute(any());
+    }
     @Test void reviewCalendarSkipsConfiguredHolidayAndCountsAnExplicitWeekendWorkday() {
         var entered=java.time.LocalDateTime.of(2026,11,13,10,20); // Friday
         properties.setReviewHolidays(Set.of(java.time.LocalDate.of(2026,11,16)));

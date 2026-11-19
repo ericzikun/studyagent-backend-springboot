@@ -51,6 +51,16 @@ public class SubscriptionPaymentRecoveryService {
     private static final Set<String> CLOSED=Set.of("EXPIRED","CANCELED","SWITCHED");
     private static final Set<String> INVOICE_EVENTS=Set.of("invoice.payment_failed","invoice.payment_action_required","invoice.paid","invoice.payment_succeeded","invoice_payment.paid","invoice.finalized","invoice.voided","invoice.marked_uncollectible");
     public record ReplacementReservation(long recoveryId,long replacementId,long actionId,String orderNo,Instant expiresAt){}
+    /** Read-only preflight for the isolated TEST operator; ordinary admission remains unchanged. */
+    public String requireTestClockAdmission(String userId,String invoiceId){
+        var snapshot=stripe.readInvoice(invoiceId);var user=users.selectByUser(userId);
+        if(user==null||snapshot.subscription()==null||!Objects.equals(user.getStripeSubscriptionId(),snapshot.subscription().getId())
+                ||!Objects.equals(user.getStripeCustomerId(),snapshot.invoice().getCustomer()))throw incomplete(invoiceId);
+        Contract contract=contract(snapshot,admissionSource(snapshot,user),trialSignal(snapshot,user));
+        if(contract==null||!config.admits(userId,RecoveryCaseKey.parse(contract.caseKey()),epoch(snapshot.invoice().getCreated()),Instant.now()))
+            throw new IllegalStateException("RECOVERY_TEST_CLOCK_CASE_NOT_ADMITTED");
+        return contract.caseKey();
+    }
     private record CancellationTarget(String subscriptionId,String status){}
     private record SourceProvenance(String source,Map<String,Object> evidence){}
     private record SourceInvoice(Invoice invoice,InvoiceLineItem line,SubscriptionPlanEntity plan){}

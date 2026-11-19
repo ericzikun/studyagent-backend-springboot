@@ -125,6 +125,47 @@ class PaymentRecoveryAccessServiceImplTest {
         var future=new SubscriptionRecoveryActionEntity();future.setActionType("RETRY_PAY");future.setStatus("READY");future.setScheduledAt(DateTimeFormats.fromInstant(now.plusSeconds(86400)));var blocked=new SubscriptionRecoveryActionEntity();blocked.setActionType(blockedType);blocked.setStatus("REVIEW");when(actions.selectByRecovery(1L)).thenReturn(List.of(future,blocked));
         assertNull(service.resolve("user","sub_old").summary().nextRetryAt());
     }
+    @Test void registeredFuturePaidCycleUsesLocallyObservedBusinessTime() {
+        var r=fixture("PAID");r.setGrantState("GRANTED");r.setContractSnapshot("{\"source\":\"registered_test_clock_controlled_operation\"}");
+        Instant simulated=now.plusSeconds(14*86400);r.setEntitlementStartAt(DateTimeFormats.fromInstant(simulated));r.setEntitlementEndAt(DateTimeFormats.fromInstant(simulated.plusSeconds(30*86400)));
+        var support=mock(RecoveryTestClockSupport.class);when(support.localTime("user","sub_old",null)).thenReturn(simulated);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"testClockSupport",support);
+        assertTrue(service.resolve("user","sub_old").paidCycleValid());verify(support).localTime("user","sub_old",null);
+    }
+    @Test void registeredClockWithoutPersistedObservationFailsClosed() {
+        var r=fixture("OPEN_AUTO");r.setContractSnapshot("registered_test_clock_controlled_operation");
+        var result=assertDoesNotThrow(()->service.resolve("user","sub_old"));assertTrue(result.locked());assertFalse(result.paidCycleValid());assertNotNull(result.summary());assertTrue(result.summary().allowedActions().isEmpty());assertNull(result.summary().nextRetryAt());
+    }
+    @Test void closedFreeHistoryUsesTheOriginalSubscriptionClockBinding() {
+        var r=fixture("EXPIRED");r.setContractSnapshot("registered_test_clock_controlled_operation");r.setAccountClosedAt(DateTimeFormats.fromInstant(now));
+        var user=users.selectByUser("user");user.setStripeSubscriptionId(null);user.setTier("free");
+        var support=mock(RecoveryTestClockSupport.class);when(support.localTime("user","sub_old",null)).thenReturn(now.plusSeconds(30*86400));org.springframework.test.util.ReflectionTestUtils.setField(service,"testClockSupport",support);
+        assertFalse(service.resolve("user",null).locked());verify(support).localTime("user","sub_old",null);
+    }
+    @Test void deadlineUsesRegisteredBusinessTimeWithoutRemoteReads() {
+        var r=fixture("OPEN_AUTO");r.setStripeInvoiceStatus("open");
+        var support=mock(RecoveryTestClockSupport.class);when(support.localTime("user","sub_old",null)).thenReturn(now.plusSeconds(30*86400));org.springframework.test.util.ReflectionTestUtils.setField(service,"testClockSupport",support);
+        assertTrue(service.resolve("user","sub_old").summary().allowedActions().isEmpty());verify(support,never()).locked(any());
+    }
+    @Test void missingClockKeepsPaidFactsReadableAndRecoversAfterEvidenceReturns() {
+        var r=fixture("PAID");r.setGrantState("GRANTED");r.setContractSnapshot("registered_test_clock_controlled_operation");
+        Instant simulated=now.plusSeconds(14*86400);var start=DateTimeFormats.fromInstant(simulated);var end=DateTimeFormats.fromInstant(simulated.plusSeconds(30*86400));r.setEntitlementStartAt(start);r.setEntitlementEndAt(end);
+        var support=mock(RecoveryTestClockSupport.class);org.springframework.test.util.ReflectionTestUtils.setField(service,"testClockSupport",support);
+        var user=users.selectByUser("user");when(users.selectByUserForUpdate("user")).thenReturn(user);when(recoveries.selectForUpdate(1L)).thenReturn(r);
+        var unavailable=assertDoesNotThrow(()->service.resolveForUpdate("user","sub_old"));assertTrue(unavailable.locked());assertFalse(unavailable.paidCycleValid());assertEquals("PAID",unavailable.summary().state());assertEquals("pro",unavailable.summary().displayTier());assertTrue(unavailable.summary().allowedActions().isEmpty());
+        assertEquals("GRANTED",r.getGrantState());assertEquals(start,r.getEntitlementStartAt());assertEquals(end,r.getEntitlementEndAt());
+        when(support.localTime("user","sub_old",null)).thenReturn(simulated);assertTrue(service.resolve("user","sub_old").paidCycleValid());
+        verify(users,never()).updateById(any(UserSubscriptionEntity.class));verify(recoveries,never()).updateById(any(SubscriptionPaymentRecoveryEntity.class));
+    }
+    @Test void brokenProofStorageStillAllowsReadOnlySummary() {
+        var r=fixture("OPEN_AUTO");r.setContractSnapshot("registered_test_clock_controlled_operation");
+        var support=mock(RecoveryTestClockSupport.class);when(support.localTime("user","sub_old",null)).thenThrow(new IllegalStateException("RECOVERY_TEST_CLOCK_PROOF_UNREADABLE"));org.springframework.test.util.ReflectionTestUtils.setField(service,"testClockSupport",support);
+        var result=assertDoesNotThrow(()->service.resolve("user","sub_old"));assertTrue(result.locked());assertTrue(result.summary().allowedActions().isEmpty());
+    }
+    @Test void closedFreeHistoryRemainsReadableWithoutAnyClockFiles() {
+        var r=fixture("EXPIRED");r.setContractSnapshot("registered_test_clock_controlled_operation");r.setAccountClosedAt(DateTimeFormats.fromInstant(now));var user=users.selectByUser("user");user.setStripeSubscriptionId(null);user.setTier("free");
+        var result=assertDoesNotThrow(()->service.resolve("user",null));assertNotNull(result.summary());assertFalse(result.locked());assertTrue(result.summary().allowedActions().isEmpty());
+    }
     private SubscriptionPaymentRecoveryEntity fixture(String state) {
         var u = new UserSubscriptionEntity();u.setClerkUserId("user"); u.setStripeSubscriptionId("sub_old");u.setPaymentRecoveryId(1L);u.setStatus("canceled");
         when(users.selectByUser("user")).thenReturn(u);

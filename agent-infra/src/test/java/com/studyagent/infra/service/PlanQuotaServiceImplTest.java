@@ -39,6 +39,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.ArgumentMatchers.anyString;
 
 @ExtendWith(MockitoExtension.class)
 class PlanQuotaServiceImplTest {
@@ -627,6 +630,26 @@ class PlanQuotaServiceImplTest {
         assertEquals(16L, updated.getPlanBalance());
         assertEquals(LocalDateTime.parse("2026-08-24T14:29:25"), updated.getPlanPeriodStart());
         assertEquals(LocalDateTime.parse("2026-09-24T14:29:25"), updated.getPlanPeriodEnd());
+    }
+
+    @Test
+    void missingClockPausesQuotaRefreshWithoutClearingOrExpiringPaidBalances() {
+        var member=new UserSubscriptionEntity();member.setClerkUserId("user_clock");member.setStripeSubscriptionId("sub_clock");member.setPaymentRecoveryId(91L);member.setStatus("active");member.setPlanCode("pro_yearly");when(userSubscriptionMapper.selectByUser("user_clock")).thenReturn(member);
+        var roots=mock(com.studyagent.infra.mapper.SubscriptionPaymentRecoveryMapper.class);var root=new com.studyagent.infra.entity.SubscriptionPaymentRecoveryEntity();root.setId(91L);root.setClerkUserId("user_clock");root.setStripeSubscriptionId("sub_clock");root.setStatus("PAID");root.setGrantState("GRANTED");root.setDisplayTier("pro");root.setPlanCode("pro_yearly");root.setContractSnapshot("registered_test_clock_controlled_operation");when(roots.selectById(91L)).thenReturn(root);
+        var access=new com.studyagent.infra.service.billing.PaymentRecoveryAccessServiceImpl(userSubscriptionMapper,roots,mock(com.studyagent.infra.mapper.SubscriptionRecoveryActionMapper.class),mock(com.studyagent.infra.mapper.SubscriptionRecoveryReplacementMapper.class));
+        var service=new PlanQuotaServiceImpl(subscriptionPlanMapper,aiFeatureDefsMapper,userAiQuotaMapper,quotaLedgerMapper,userSubscriptionMapper);ReflectionTestUtils.setField(service,"paymentRecoveryAccessService",access);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(()->service.refreshAllPlanQuotasIfNeeded("user_clock"));org.mockito.Mockito.verifyNoInteractions(userAiQuotaMapper,quotaLedgerMapper,subscriptionPlanMapper);assertEquals("PAID",root.getStatus());assertEquals("GRANTED",root.getGrantState());
+    }
+
+    @Test
+    void registeredOperatorClockUsesOnlyLocalEvidenceEvenWithRestrictedTestKey() throws Exception {
+        var service=spy(new PlanQuotaServiceImpl(subscriptionPlanMapper,aiFeatureDefsMapper,userAiQuotaMapper,quotaLedgerMapper,userSubscriptionMapper));
+        var support=mock(com.studyagent.infra.service.billing.RecoveryTestClockSupport.class);
+        var subscription=new UserSubscriptionEntity();subscription.setClerkUserId("user_owned");subscription.setStripeSubscriptionId("sub_owned");subscription.setStripeCustomerId("cus_owned");
+        var observed=Instant.parse("2027-01-31T23:00:00Z");when(support.localTime("user_owned","sub_owned","cus_owned")).thenReturn(observed);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"recoveryTestClockSupport",support);
+        assertEquals(DateTimeFormats.fromInstant(observed),service.resolveRefreshTime(subscription,LocalDateTime.parse("2026-11-18T12:00:00")));
+        verify(service,never()).retrieveStripeSubscription(anyString());verify(service,never()).retrieveTestClockFrozenTime(anyString());
     }
 
     @Test

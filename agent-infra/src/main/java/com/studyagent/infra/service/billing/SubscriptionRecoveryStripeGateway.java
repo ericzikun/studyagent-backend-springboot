@@ -9,6 +9,7 @@ import com.stripe.model.testhelpers.TestClock;
 import com.stripe.net.RequestOptions;
 import com.studyagent.infra.entity.SubscriptionRecoveryActionEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.time.Instant;
 import java.time.Clock;
@@ -18,6 +19,7 @@ import java.util.*;
 /** All recovery Stripe I/O lives here. Writes require a claimed, frozen, persisted action. */
 @Component
 public class SubscriptionRecoveryStripeGateway {
+    @Autowired(required=false) private RecoveryTestClockSupport testClockSupport;
     private final Clock evidenceClock;
     public SubscriptionRecoveryStripeGateway(){this(Clock.systemUTC());}
     SubscriptionRecoveryStripeGateway(Clock clock){this.evidenceClock=clock;}
@@ -46,6 +48,7 @@ public class SubscriptionRecoveryStripeGateway {
     public Invoice readInvoiceHeader(String id){outsideTransaction();try{return Invoice.retrieve(id);}catch(StripeException e){throw readFailure(id,e);}}
     public Snapshot readInvoice(String id) {
         outsideTransaction();
+        if(testClockSupport!=null)testClockSupport.safeRuntime();
         try {
             Invoice invoice=Invoice.retrieve(id);
             if(invoice.getSubscription()==null) return new Snapshot(invoice,null,null,List.of(),null,null,Instant.now());
@@ -64,8 +67,11 @@ public class SubscriptionRecoveryStripeGateway {
                 if(!"paid".equals(invoice.getStatus()))throw metadataFailure;
             }
             Instant businessNow=Instant.now();
-            if(sub!=null && Boolean.FALSE.equals(sub.getLivemode())&&sub.getTestClock()!=null)
-                businessNow=Instant.ofEpochSecond(TestClock.retrieve(sub.getTestClock()).getFrozenTime());
+            if(sub!=null && Boolean.FALSE.equals(sub.getLivemode())&&sub.getTestClock()!=null){
+                var clock=TestClock.retrieve(sub.getTestClock());
+                if(testClockSupport!=null)testClockSupport.observeReadyClock(sub,clock);
+                businessNow=Instant.ofEpochSecond(clock.getFrozenTime());
+            }
             return new Snapshot(invoice,sub,schedule,List.copyOf(lines),pi,charge,businessNow);
         } catch(StripeException e){throw readFailure(id,e);}
     }
@@ -74,7 +80,10 @@ public class SubscriptionRecoveryStripeGateway {
         var invoice=snapshot.invoice();
         if(invoice.getCreated()==null || incoming.getCreated()==null)throw new IllegalStateException("RECOVERY_FIRST_FAILURE_HISTORY_UNKNOWN:"+invoice.getId());
         boolean testClock=snapshot.subscription()!=null && Boolean.FALSE.equals(snapshot.subscription().getLivemode()) && snapshot.subscription().getTestClock()!=null;
-        if(testClock)throw new IllegalStateException("RECOVERY_FIRST_FAILURE_TEST_CLOCK_BUSINESS_EVIDENCE_REQUIRED:"+invoice.getId());
+        if(testClock){
+            if(testClockSupport!=null)return testClockSupport.firstFailure(snapshot,incoming);
+            throw new IllegalStateException("RECOVERY_FIRST_FAILURE_TEST_CLOCK_BUSINESS_EVIDENCE_REQUIRED:"+invoice.getId());
+        }
         try{
             long historyStart=invoice.getCreated();
             if(Instant.ofEpochSecond(historyStart).isBefore(evidenceClock.instant().minus(Duration.ofDays(30))))throw new IllegalStateException("RECOVERY_FIRST_FAILURE_HISTORY_EXPIRED:"+invoice.getId());
@@ -158,6 +167,7 @@ public class SubscriptionRecoveryStripeGateway {
     }
     public WriteResult execute(SubscriptionRecoveryActionEntity action){
         outsideTransaction();
+        if(testClockSupport!=null)testClockSupport.safeRuntime();
         if(!"DISPATCHING".equals(action.getStatus())||action.getProviderIdempotencyKey()==null||action.getPayloadJson()==null)
             throw new IllegalStateException("Recovery writes require a claimed persistent action");
         Map<String,Object> params=thaw(action.getPayloadJson());

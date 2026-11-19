@@ -6546,5 +6546,74 @@
       "cleanupResult": "PASS",
       "evidence": "/Users/alf/Projects/SA/Backend/Task/Task1104/payment-recovery-evidence-archive/20261117-jsonl/recovery-2459d4d6-d6f4-4d53-8a91-c86e039eee84.jsonl"
     }
+  ],
+  "incrementalValidationReports": [
+    {
+      "date": "2026-11-18",
+      "scope": "NATIVE_TEST_LOCAL_SIGNED_HTTP_NATURAL_CRON_AND_REAL_TEST_CLERK_BEARER",
+      "report": "/Users/alf/Projects/SA/Backend/Task/Task1104/payment-recovery-evidence-archive/20261118-remaining-contracts/result.json",
+      "nativePassedScalarContracts": 24,
+      "historicalFailedRuns": 4,
+      "caseKeys": [
+        "formal:basic_monthly:month_1:EQUIVALENT_SCHEDULE:RENEW",
+        "formal:basic_monthly:month_1:NO_SCHEDULE:RENEW",
+        "formal:plus_monthly:month_1:EQUIVALENT_SCHEDULE:RENEW",
+        "formal:pro_monthly:month_1:NO_SCHEDULE:PERIOD_END",
+        "formal:pro_monthly:month_1:NO_SCHEDULE:RENEW",
+        "pro_trial_to_monthly:pro_monthly:month_1:EQUIVALENT_SCHEDULE:RENEW",
+        "pro_trial_to_monthly:pro_monthly:month_1:NO_SCHEDULE:PERIOD_END"
+      ],
+      "jointTests": 917,
+      "localHttpTests": 13,
+      "realClerkBearerCases": 4,
+      "stripePublicDeliveryResult": "SCOPED_PASS",
+      "finalResult": "NOT_RUN",
+      "releaseEligibleCaseKeys": [],
+      "realClerkPublicBrowserResult": "USER_REPORTED_SCOPED_PASS",
+      "scheduleD30Cases": 2
+    },
+    {
+      "scope": "DEPLOYED_TEST_CLOCK_OPERATOR_COLD_ADMISSION",
+      "report": "/Users/alf/Projects/SA/Backend/Task/Task1104/payment-recovery-evidence-archive/20261119-deployed-test-clock/操作说明.md",
+      "monthlyCaseKey": "formal:pro_monthly:month_1:NO_SCHEDULE:RENEW",
+      "monthlyResult": "PASS",
+      "monthlyScope": "NATIVE_GENERIC_DECLINE_COLD_ADMISSION_EXACT_CHECKPOINTS_D30_NATURAL_CRON",
+      "annualCaseKey": "formal:pro_yearly:year_1:NO_SCHEDULE:RENEW",
+      "annualResult": "PASS",
+      "annualScope": "NATIVE_D7_REPAY_FULL_YEAR_SHIFT_TWO_MONTHLY_QUOTA_REFRESHES",
+      "jointRegression": {
+        "tests": 977,
+        "passed": 976,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0
+      },
+      "packageResult": "PASS",
+      "deploymentResult": "NOT_RUN",
+      "fundsFourSlotResult": "NOT_RUN",
+      "replacementDoubleResult": "NOT_RUN",
+      "productionMailComparison": "NOT_RUN",
+      "productionWrites": 0,
+      "mailBudget": 0,
+      "releaseEligibleCaseKeys": []
+    },
+    {
+      "scope": "TEST_CLOCK_P1_AUTHORIZATION_AND_READ_AVAILABILITY",
+      "report": "/Users/alf/Projects/SA/Backend/Task/Task1104/payment-recovery-evidence-archive/20261119-clock-p1-review/result.json",
+      "result": "PASS",
+      "jointRegression": {
+        "suites": 47,
+        "tests": 996,
+        "passed": 995,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0
+      },
+      "packageResult": "PASS",
+      "remoteStripeIT": "NOT_RUN_THIS_ROUND",
+      "productionWrites": 0,
+      "mailBudget": 0,
+      "releaseEligibleCaseKeys": []
+    }
   ]
 }

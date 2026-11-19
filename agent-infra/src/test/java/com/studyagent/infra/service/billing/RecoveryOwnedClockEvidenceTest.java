@@ -256,6 +256,8 @@ class RecoveryOwnedClockEvidenceTest {
         input.preAttempt = new PreInput().fact(); return input;
     }
 
+    static Frame persistableProof(){return firstPay().frame();}
+
     private static class PreInput {
         InvoiceFact invoice = new InvoiceFact("in_new", "cus_own", "sub_own", "pi_new", "price_new", false, REAL_CREATED);
         String status = "open"; Boolean autoAdvance = false, attempted = false;

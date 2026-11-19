@@ -19,6 +19,7 @@ public class PaymentRecoveryAccessServiceImpl implements PaymentRecoveryAccessSe
     private final SubscriptionRecoveryReplacementMapper replacements;
     private final Clock clock;
     private final PaymentRecoveryProperties config;
+    @Autowired(required=false) private RecoveryTestClockSupport testClockSupport;
 
     @Autowired
     public PaymentRecoveryAccessServiceImpl(UserSubscriptionMapper users, SubscriptionPaymentRecoveryMapper recoveries,
@@ -56,20 +57,29 @@ public class PaymentRecoveryAccessServiceImpl implements PaymentRecoveryAccessSe
         if (!sameSubscription && !(subscriptionId == null && closed && "free".equals(user.getTier())))
             return PaymentRecoveryAccess.none();
         Instant start = instant(recovery.getEntitlementStartAt()), end = instant(recovery.getEntitlementEndAt());
+        Instant now=clock.instant();
+        boolean registeredClock=recovery.getContractSnapshot()!=null&&recovery.getContractSnapshot().contains("registered_test_clock_controlled_operation");
+        Instant testNow=null;
+        try{if(testClockSupport!=null)testNow=testClockSupport.localTime(userId,recovery.getStripeSubscriptionId(),user.getStripeCustomerId());}
+        catch(IllegalStateException unavailable){if(!registeredClock)throw unavailable;}
+        boolean timeUnavailable=registeredClock&&testNow==null;
+        if(testNow!=null)now=testNow;
         var selected = selectedInvoice(recovery, currentRead);
         boolean financialHold = "OPEN".equals(selected.getDisputeState()) || "LOST".equals(selected.getDisputeState()) || "FULL".equals(selected.getRefundState());
-        boolean paid = !financialHold && sameSubscription && "PAID".equals(recovery.getStatus()) && "GRANTED".equals(recovery.getGrantState())
-                && start != null && end != null && !clock.instant().isBefore(start) && clock.instant().isBefore(end);
+        boolean paid = !timeUnavailable && !financialHold && sameSubscription && "PAID".equals(recovery.getStatus()) && "GRANTED".equals(recovery.getGrantState())
+                && start != null && end != null && !now.isBefore(start) && now.isBefore(end);
         boolean locked = sameSubscription && !closed && !paid && !"PAID".equals(recovery.getStatus());
         // Confirmed paid facts awaiting a grant are held, not eligible for another payment.
         if (sameSubscription && "PAID".equals(recovery.getStatus()) && (!"GRANTED".equals(recovery.getGrantState()) || financialHold)) locked = true;
+        // Unknown TEST time holds consumption without changing paid facts or guessing expiry from wall time.
+        if(timeUnavailable&&sameSubscription&&!closed)locked=true;
         var replacement = replacements.selectActive(recovery.getStripeSubscriptionId());
         var summary = new PaymentRecoverySummary(String.valueOf(recovery.getId()), recovery.getStatus(), locked,
                 recovery.getDisplayTier(), recovery.getPlanCode(), selected.getAmountDueMinor(), selected.getAmountPaidMinor(),
                 selected.getAmountRemainingMinor(), selected.getCurrency(), recovery.getFirstFailedAt(), recovery.getDeadlineAt(),
-                nextRetry(recovery, replacement != null), allowedActions(recovery,locked,replacement!=null), recovery.getAnchorSyncState(), recovery.getReviewState(),
+                timeUnavailable?null:nextRetry(recovery, replacement != null), timeUnavailable?List.of():allowedActions(recovery,locked,replacement!=null,now), recovery.getAnchorSyncState(), recovery.getReviewState(),
                 replacement == null ? null : new PaymentRecoverySummary.Replacement(replacement.getOrderNo(), replacement.getState(), replacement.getExpiresAt()));
-        return new PaymentRecoveryAccess(locked, paid, paid ? start : null, paid ? end : null, summary);
+        return new PaymentRecoveryAccess(locked, paid, paid||timeUnavailable ? start : null, paid||timeUnavailable ? end : null, summary);
     }
     private SubscriptionPaymentRecoveryEntity selectedInvoice(SubscriptionPaymentRecoveryEntity root, boolean currentRead) {
         if (root.getEntitlementInvoiceId() == null || root.getEntitlementInvoiceId().equals(root.getStripeInvoiceId())) return root;
@@ -80,12 +90,12 @@ public class PaymentRecoveryAccessServiceImpl implements PaymentRecoveryAccessSe
             throw new IllegalStateException("RECOVERY_ENTITLEMENT_SOURCE_MISMATCH:" + root.getId());
         return selected;
     }
-    private List<String> allowedActions(SubscriptionPaymentRecoveryEntity r,boolean locked,boolean replacement) {
+    private List<String> allowedActions(SubscriptionPaymentRecoveryEntity r,boolean locked,boolean replacement,Instant now) {
         if(!locked || !Set.of("OPEN_AUTO","OPEN_MANUAL","CLOSING","REVIEW").contains(Objects.toString(r.getStatus(),"")))return List.of();
         List<String> result=new ArrayList<>();
         boolean protectedWindow="ACTIVE".equals(r.getProtectionState());
         boolean unknownPayment=actions.selectByRecovery(r.getId()).stream().anyMatch(a->Set.of("RETRY_PAY","CREATE_CHECKOUT").contains(a.getActionType()) && Set.of("DISPATCHING","UNKNOWN","REVIEW").contains(a.getStatus()));
-        boolean open=Set.of("OPEN_AUTO","OPEN_MANUAL").contains(r.getStatus()) && r.getDeadlineAt()!=null && clock.instant().isBefore(instant(r.getDeadlineAt()));
+        boolean open=Set.of("OPEN_AUTO","OPEN_MANUAL").contains(r.getStatus()) && r.getDeadlineAt()!=null && now.isBefore(instant(r.getDeadlineAt()));
         boolean cleanReview=r.getReviewState()==null||Set.of("NONE","RESOLVED").contains(r.getReviewState());
         if(protectedWindow && open && cleanReview && !replacement && !unknownPayment && r.getAmountPaidMinor()!=null && r.getAmountPaidMinor()==0 && r.getAmountRemainingMinor()!=null && r.getAmountRemainingMinor()>0){
             if("open".equals(r.getStripeInvoiceStatus()))result.add("pay_open_invoice");

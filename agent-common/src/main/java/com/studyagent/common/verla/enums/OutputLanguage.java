@@ -34,7 +34,9 @@ public enum OutputLanguage {
     HINDI("hindi"),
     MALAY("malay"),
     FILIPINO("filipino"),
-    THAI("thai");
+    THAI("thai"),
+    UKRAINIAN("ukrainian"),
+    KAZAKH("kazakh");
 
     /** MQ payload / workspace_json 中使用的规范值（小写完整语言名）。 */
     private final String value;
@@ -106,6 +108,10 @@ public enum OutputLanguage {
         ALIASES.put("tl-ph", "filipino");
         ALIASES.put("th", "thai");
         ALIASES.put("th-th", "thai");
+        ALIASES.put("uk", "ukrainian");
+        ALIASES.put("uk-ua", "ukrainian");
+        ALIASES.put("kk", "kazakh");
+        ALIASES.put("kk-kz", "kazakh");
     }
 
     /**

@@ -16,6 +16,16 @@ class OutputLanguageTest {
     }
 
     @Test
+    void ukrainianAndKazakhAliasesPreserveTheOutputPreference() {
+        for (String raw : List.of("uk", "UK", "ukrainian", "Ukrainian", " uk ", "uk-UA")) {
+            assertThat(OutputLanguage.fromRaw(raw)).as(raw).isEqualTo(OutputLanguage.UKRAINIAN);
+        }
+        for (String raw : List.of("kk", "KK", "kazakh", "Kazakh", " kk ", "kk-KZ")) {
+            assertThat(OutputLanguage.fromRaw(raw)).as(raw).isEqualTo(OutputLanguage.KAZAKH);
+        }
+    }
+
+    @Test
     void missingAndUnknownPreferencesKeepTheEnglishDefault() {
         assertThat(OutputLanguage.fromRaw(null)).isEqualTo(OutputLanguage.ENGLISH);
         assertThat(OutputLanguage.fromRaw(" ")).isEqualTo(OutputLanguage.ENGLISH);

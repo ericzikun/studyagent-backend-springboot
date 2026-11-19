@@ -50,6 +50,10 @@ public class NoteConversation {
      * 提交时才写 {@link #noteMd} 并推进版本。NULL = 无待审提案。
      */
     private String pendingProposalJson;
+    /** 思维导图 JSON（root/children），与笔记同轮生成；旧会话为 null。 */
+    private String mindmapJson;
+    /** 博客 Markdown，与笔记同轮生成；旧会话为 null。 */
+    private String blogMd;
     /** draft / generating / completed / failed。 */
     private String status;
     private LocalDateTime createdAt;

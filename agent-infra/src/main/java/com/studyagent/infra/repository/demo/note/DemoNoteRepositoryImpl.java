@@ -137,6 +137,8 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setNoteMd(c.getNoteMd());
         e.setNoteVersion(c.getNoteVersion());
         e.setPendingProposalJson(c.getPendingProposalJson());
+        e.setMindmapJson(c.getMindmapJson());
+        e.setBlogMd(c.getBlogMd());
         e.setStatus(c.getStatus());
         e.setCreatedAt(c.getCreatedAt());
         e.setUpdatedAt(c.getUpdatedAt());
@@ -183,6 +185,8 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setNoteMd(e.getNoteMd());
         c.setNoteVersion(e.getNoteVersion());
         c.setPendingProposalJson(e.getPendingProposalJson());
+        c.setMindmapJson(e.getMindmapJson());
+        c.setBlogMd(e.getBlogMd());
         c.setStatus(e.getStatus());
         c.setCreatedAt(e.getCreatedAt());
         c.setUpdatedAt(e.getUpdatedAt());

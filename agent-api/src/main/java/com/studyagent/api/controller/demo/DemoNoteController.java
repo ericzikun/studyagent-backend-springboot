@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.demo;
 
 import com.studyagent.api.common.Result;
+import com.studyagent.api.dto.demo.note.NoteBlogTtsVO;
 import com.studyagent.api.dto.demo.note.NoteConversationSummaryVO;
 import com.studyagent.api.dto.demo.note.NoteConversationVO;
 import com.studyagent.api.dto.demo.note.NoteDocumentPatchRequest;
@@ -9,6 +10,7 @@ import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateResponseVO;
 import com.studyagent.api.dto.demo.note.NoteProposalCommitRequest;
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.note.NoteBlogTtsService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
@@ -31,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.util.List;
 import java.util.Map;
@@ -51,6 +55,63 @@ public class DemoNoteController {
     private final DemoNoteService service;
     private final NoteVerlaCommandDispatcher commandDispatcher;
     private final VerlaEditorPdfExportService pdfExportService;
+    private final NoteBlogTtsService blogTtsService;
+
+    /** 博客语音合成：按自然段切成可拖动定位的音频片段；重复请求命中缓存。 */
+    @PostMapping("/conversations/{id}/blog/tts")
+    public Result<NoteBlogTtsVO> blogTts(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long id) {
+        NoteConversation conversation = service.getOwned(clerkUserId, id);
+        String blogMd = conversation.getBlogMd();
+        if (blogMd == null || blogMd.isBlank()) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "博客尚未生成");
+        }
+        try {
+            NoteBlogTtsService.Payload payload = blogTtsService.synthesize(id, blogMd);
+            return Result.success(NoteBlogTtsVO.builder()
+                    .segments(payload.segments().stream()
+                            .map(segment -> NoteBlogTtsVO.Segment.builder()
+                                    .index(segment.index())
+                                    .paragraphIndex(segment.paragraphIndex())
+                                    .text(segment.text())
+                                    .url(segment.url())
+                                    .durationMs(segment.durationMs())
+                                    .build())
+                            .toList())
+                    .totalDurationMs(payload.totalDurationMs())
+                    .voice(payload.voice())
+                    .build());
+        } catch (NoteBlogTtsService.TtsUnavailable e) {
+            throw new com.studyagent.common.exception.BusinessException(
+                    com.studyagent.common.api.ApiCode.INTERNAL_ERROR.getCode(), e.getMessage());
+        }
+    }
+
+    /** 签名音频流：audio 标签无法带 Clerk 头，鉴权由 exp + HMAC 签名承担。 */
+    @GetMapping("/blog-audio/{conversationId}/{fileName}")
+    public ResponseEntity<byte[]> blogAudio(
+            @PathVariable Long conversationId,
+            @PathVariable String fileName,
+            @RequestParam(required = false) Long exp,
+            @RequestParam(required = false) String sig) {
+        if (!blogTtsService.verify(conversationId, fileName, exp, sig)) {
+            return ResponseEntity.status(403).build();
+        }
+        Path file = blogTtsService.resolveAudio(conversationId, fileName);
+        if (file == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
+                    .contentType(MediaType.parseMediaType("audio/wav"))
+                    .body(Files.readAllBytes(file));
+        } catch (java.io.IOException e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 
     /** 进入页面时的会话分配：复用最近的草稿，没有才新建。 */
     @PostMapping("/conversations/draft")

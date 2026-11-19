@@ -46,6 +46,7 @@ public class NoteEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.NOTE_PARSE_STARTED,
             VerlaAgentEventType.NOTE_TITLE_RESOLVED,
             VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+            VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
             VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
             VerlaAgentEventType.NOTE_TURN_COMPLETED,
             VerlaAgentEventType.NOTE_FAILED,
@@ -75,6 +76,7 @@ public class NoteEventHandler implements VerlaEventHandler {
                     demoNoteService.applyGeneratedTitle(row.getConversationId(), asString(payload.get("title")));
             // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
             case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
+            case NOTE_EXTRAS_COMMIT -> saveExtras(row, payload);
             // 后续轮改文档只**提案**：存成待审，等用户接受才写正文（首轮不走这里）
             case NOTE_EDIT_PROPOSAL_READY -> saveProposal(row, payload);
             case NOTE_TURN_COMPLETED -> completeTurn(row, payload);
@@ -104,6 +106,14 @@ public class NoteEventHandler implements VerlaEventHandler {
                     "NOTE_ARTIFACT_COMMIT without contentMd, sessionId=" + row.getSessionId());
         }
         demoNoteService.applyArtifactCommit(row.getConversationId(), contentMd, asLong(payload.get("versionNo")));
+    }
+
+    /** 导图/博客 extras：任何一项缺失都只跳过；绝不让 extras 把回合标失败。 */
+    private void saveExtras(VerlaEventInbox row, Map<String, Object> payload) {
+        demoNoteService.applyExtras(
+                row.getConversationId(),
+                asString(payload.get("mindmapJson")),
+                asString(payload.get("blogMd")));
     }
 
     /**

@@ -373,7 +373,7 @@ public class VerlaConversationDashboardStatusService {
             // 笔记事件不参与通用推导：NOTE_MAKER 在 resolve() 里按 session 单独算状态。
             case NOTE_PARSE_STARTED, NOTE_PARSE_COMPLETED, NOTE_TITLE_RESOLVED, NOTE_SUMMARIZE_STARTED,
                     NOTE_CHAT_STREAM_CHUNK, NOTE_ARTIFACT_BEGIN, NOTE_ARTIFACT_DELTA,
-                    NOTE_ARTIFACT_COMMIT, NOTE_EDIT_PROPOSAL_READY, NOTE_TURN_COMPLETED,
+                    NOTE_ARTIFACT_COMMIT, NOTE_EXTRAS_COMMIT, NOTE_EDIT_PROPOSAL_READY, NOTE_TURN_COMPLETED,
                     NOTE_FAILED, NOTE_CANCELLED -> null;
             // Video Tutor 是独立产品入口，按主流程口径给状态；不像 FILE_CHAT /
             // ASSIGNMENT_CHAT 那样整体 null（那两个是"追问不改主对话状态"的语义）。

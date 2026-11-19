@@ -47,6 +47,10 @@ public class DemoNoteConversationEntity {
      */
     @TableField(value = "pending_proposal_json", updateStrategy = FieldStrategy.ALWAYS)
     private String pendingProposalJson;
+    @TableField("mindmap_json")
+    private String mindmapJson;
+    @TableField("blog_md")
+    private String blogMd;
     private String status;
     @TableField("created_at")
     private LocalDateTime createdAt;

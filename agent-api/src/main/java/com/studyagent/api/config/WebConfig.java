@@ -37,7 +37,9 @@ public class WebConfig implements WebMvcConfigurer {
                 // 附件内容上传：使用 upload ticket（绑定 user + objectId，TTL 1h）鉴权。
                 // 慢上传耗时可能超过 Clerk JWT 的 60s 有效期，鉴权必须发生在 ticket 层。
                 "/v1/verla/v2/uploads/*/content",
-                "/v1/verla/v2/uploads/*/finalize"
+                "/v1/verla/v2/uploads/*/finalize",
+                // 笔记博客音频：audio 标签带不了 Authorization，鉴权用 exp + HMAC 签名。
+                "/v1/demo/note/blog-audio/**"
             );
     }
 

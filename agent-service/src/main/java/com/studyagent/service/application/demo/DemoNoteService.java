@@ -650,6 +650,35 @@ public class DemoNoteService {
     }
 
     /**
+     * 笔记 extras（{@code NOTE_EXTRAS_COMMIT}）：导图 JSON / 博客 Markdown。
+     * <p>best-effort：extras 只是附加视图，缺任意一项都不影响笔记本身。
+     */
+    @Transactional
+    public void applyExtras(Long verlaConversationId, String mindmapJson, String blogMd) {
+        NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+        if (c == null) {
+            log.warn("[Notes] extras dropped: no note conversation for verlaConvId={}", verlaConversationId);
+            return;
+        }
+        boolean changed = false;
+        if (mindmapJson != null && !mindmapJson.isBlank()) {
+            c.setMindmapJson(mindmapJson);
+            changed = true;
+        }
+        if (blogMd != null && !blogMd.isBlank()) {
+            c.setBlogMd(blogMd);
+            changed = true;
+        }
+        if (!changed) {
+            return;
+        }
+        repo.saveConversation(c);
+        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={}",
+                verlaConversationId, c.getMindmapJson() != null,
+                c.getBlogMd() == null ? 0 : c.getBlogMd().length());
+    }
+
+    /**
      * 回合终态（{@code NOTE_TURN_COMPLETED}）：追加助手消息并把会话置为 completed。
      * <p>没有助手文本时不追加空气泡（例如弱模型「只调工具不说话」）。
      */

@@ -61,6 +61,10 @@ public class NoteConversationVO {
      * <p>落库而不是只放前端内存，刷新页面仍能继续审阅。
      */
     private Map<String, Object> pendingProposal;
+    /** 思维导图 JSON 原文（前端解析渲染）；旧会话为 null。 */
+    private String mindmapJson;
+    /** 博客 Markdown；旧会话为 null。 */
+    private String blogMd;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -93,6 +97,8 @@ public class NoteConversationVO {
                 .status(c.getStatus())
                 .messages(messages == null ? null : messages.stream().map(NoteMessageVO::from).toList())
                 .pendingProposal(pendingProposal)
+                .mindmapJson(c.getMindmapJson())
+                .blogMd(c.getBlogMd())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .build();

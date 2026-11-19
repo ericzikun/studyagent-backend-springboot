@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.demo;
 
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.note.NoteBlogTtsService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
@@ -44,6 +45,7 @@ class DemoNoteControllerTest {
     private DemoNoteService service;
     private NoteVerlaCommandDispatcher dispatcher;
     private VerlaEditorPdfExportService pdfExportService;
+    private NoteBlogTtsService blogTtsService;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -51,8 +53,9 @@ class DemoNoteControllerTest {
         service = mock(DemoNoteService.class);
         dispatcher = mock(NoteVerlaCommandDispatcher.class);
         pdfExportService = mock(VerlaEditorPdfExportService.class);
+        blogTtsService = mock(NoteBlogTtsService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService))
+                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService, blogTtsService))
                 .build();
     }
 

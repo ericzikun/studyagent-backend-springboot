@@ -55,6 +55,7 @@ class NoteEventHandlerTest {
                         VerlaAgentEventType.NOTE_PARSE_STARTED,
                         VerlaAgentEventType.NOTE_TITLE_RESOLVED,
                         VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+                        VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
                         VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
                         VerlaAgentEventType.NOTE_TURN_COMPLETED,
                         VerlaAgentEventType.NOTE_FAILED,

@@ -219,6 +219,30 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void apply_extras_persists_mindmap_and_blog() {
+        NoteConversation conv = draft();
+        conv.setId(NOTE_CONVERSATION_ID);
+        conv.setVerlaConversationId(3403L);
+        when(repo.findByVerlaConversationId(3403L)).thenReturn(Optional.of(conv));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.applyExtras(3403L, "{\"label\":\"root\"}", "# blog\n\nbody");
+
+        assertEquals("{\"label\":\"root\"}", conv.getMindmapJson());
+        assertEquals("# blog\n\nbody", conv.getBlogMd());
+        verify(repo).saveConversation(conv);
+    }
+
+    @Test
+    void apply_extras_is_noop_when_conversation_missing() {
+        when(repo.findByVerlaConversationId(9999L)).thenReturn(Optional.empty());
+
+        service.applyExtras(9999L, "{}", "blog");
+
+        verify(repo, never()).saveConversation(any(NoteConversation.class));
+    }
+
+    @Test
     void resolve_referenced_notes_keeps_owned_notes_and_skips_self_and_others() {
         NoteConversation other = draft();
         other.setId(77L);

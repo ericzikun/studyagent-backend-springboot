@@ -13,6 +13,15 @@ final class RecoveryOwnedClockGateway extends SubscriptionRecoveryStripeGateway 
     private int shiftNativeExecuteCount;
     private java.util.function.Consumer<com.studyagent.infra.entity.SubscriptionRecoveryActionEntity> checkoutBeforeWrite;
     private int checkoutNativeExecuteCount;
+    private java.util.function.Consumer<com.studyagent.infra.entity.SubscriptionRecoveryActionEntity> beforeNativeWrite;
+    void observeBeforeNativeWrite(java.util.function.Consumer<com.studyagent.infra.entity.SubscriptionRecoveryActionEntity> observer){beforeNativeWrite=observer;}
+    private java.util.function.Consumer<Snapshot> afterNativeRead;
+    void observeNativeReads(java.util.function.Consumer<Snapshot> observer){afterNativeRead=observer;}
+    @Override public Snapshot readInvoice(String id){
+        var snapshot=super.readInvoice(id);
+        if(afterNativeRead!=null)afterNativeRead.accept(snapshot);
+        return snapshot;
+    }
     void observeCheckoutBeforeWrite(java.util.function.Consumer<com.studyagent.infra.entity.SubscriptionRecoveryActionEntity> observer){checkoutBeforeWrite=observer;}
     int checkoutNativeExecuteCount(){return checkoutNativeExecuteCount;}
 
@@ -25,6 +34,7 @@ final class RecoveryOwnedClockGateway extends SubscriptionRecoveryStripeGateway 
     }
 
     @Override public WriteResult execute(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity action) {
+        if(beforeNativeWrite!=null)beforeNativeWrite.accept(action);
         if("CREATE_CHECKOUT".equals(action.getActionType())){
             if(checkoutBeforeWrite!=null)checkoutBeforeWrite.accept(action);
             checkoutNativeExecuteCount++;

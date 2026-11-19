@@ -43,7 +43,7 @@ class PaymentRecoveryDeploymentConfigurationTest {
         assertFalse(config.isAcceptNew());
         assertFalse(config.isAutomaticPayEnabled());
         assertFalse(config.isEmailEnabled());
-        assertNull(config.getAcceptInvoicesCreatedAfter());
+        assertEquals(java.time.Instant.parse("2099-01-01T00:00:00Z"), config.getAcceptInvoicesCreatedAfter());
         assertTrue(config.getAllowedUserIds().isEmpty());
         assertTrue(config.getVerifiedCohorts().isEmpty());
     }
@@ -73,6 +73,45 @@ class PaymentRecoveryDeploymentConfigurationTest {
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     assertClosed(context.getBean(PaymentRecoveryProperties.class));
+                });
+    }
+
+    @Test void documentedEnvironmentVariablesBindThroughApplicationYaml() {
+        String cohort = "formal:pro_monthly:month_1:NO_SCHEDULE:RENEW";
+        configured(Map.ofEntries(
+                Map.entry("BILLING_PAYMENT_RECOVERY_ACCEPT_NEW", "true"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_CREATED_AFTER", "2026-11-18T00:00:00Z"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_AUTOMATIC_PAY_ENABLED", "true"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_ALLOWED_USER_IDS", " user_a, ,user_b "),
+                Map.entry("BILLING_PAYMENT_RECOVERY_VERIFIED_COHORTS", " " + cohort + ", "),
+                Map.entry("BILLING_PAYMENT_RECOVERY_DISPATCH_TOLERANCE_SECONDS", "1200"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_BATCH_SIZE", "25"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_LEASE_SECONDS", "90"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_UNKNOWN_ESCALATION_HOURS", "12"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_PORTAL_MANAGEMENT_CONFIGURATION_ID", "bpc_test_manage"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_PORTAL_METHOD_ONLY_CONFIGURATION_ID", "bpc_test_method"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_EMAIL_ENABLED", "true"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_EMAIL_FROM", "Test <sender@example.test>"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_REVIEW_ASSIGNEE", "test-owner"),
+                Map.entry("BILLING_PAYMENT_RECOVERY_RECONCILIATION_CRON", "0 5 * * * ?")), Map.of())
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    PaymentRecoveryProperties config = context.getBean(PaymentRecoveryProperties.class);
+                    assertTrue(config.isAcceptNew());
+                    assertTrue(config.isAutomaticPayEnabled());
+                    assertTrue(config.isEmailEnabled());
+                    assertEquals(java.time.Instant.parse("2026-11-18T00:00:00Z"), config.getAcceptInvoicesCreatedAfter());
+                    assertEquals(java.util.Set.of("user_a", "user_b"), config.getAllowedUserIds());
+                    assertEquals(java.util.Set.of(cohort), config.getVerifiedCohorts());
+                    assertEquals(1200, config.getDispatchToleranceSeconds());
+                    assertEquals(25, config.getBatchSize());
+                    assertEquals(90, config.getLeaseSeconds());
+                    assertEquals(12, config.getUnknownEscalationHours());
+                    assertEquals("bpc_test_manage", config.getPortalManagementConfigurationId());
+                    assertEquals("bpc_test_method", config.getPortalMethodOnlyConfigurationId());
+                    assertEquals("Test <sender@example.test>", config.getEmailFrom());
+                    assertEquals("test-owner", config.getReviewAssignee());
+                    assertEquals("0 5 * * * ?", context.getEnvironment().getProperty("billing.payment-recovery.reconciliation-cron"));
                 });
     }
 }

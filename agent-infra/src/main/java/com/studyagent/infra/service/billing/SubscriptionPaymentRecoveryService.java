@@ -51,6 +51,16 @@ public class SubscriptionPaymentRecoveryService {
     private static final Set<String> CLOSED=Set.of("EXPIRED","CANCELED","SWITCHED");
     private static final Set<String> INVOICE_EVENTS=Set.of("invoice.payment_failed","invoice.payment_action_required","invoice.paid","invoice.payment_succeeded","invoice_payment.paid","invoice.finalized","invoice.voided","invoice.marked_uncollectible");
     public record ReplacementReservation(long recoveryId,long replacementId,long actionId,String orderNo,Instant expiresAt){}
+    /** Read-only preflight for the isolated TEST operator; ordinary admission remains unchanged. */
+    public String requireTestClockAdmission(String userId,String invoiceId){
+        var snapshot=stripe.readInvoice(invoiceId);var user=users.selectByUser(userId);
+        if(user==null||snapshot.subscription()==null||!Objects.equals(user.getStripeSubscriptionId(),snapshot.subscription().getId())
+                ||!Objects.equals(user.getStripeCustomerId(),snapshot.invoice().getCustomer()))throw incomplete(invoiceId);
+        Contract contract=contract(snapshot,admissionSource(snapshot,user),trialSignal(snapshot,user));
+        if(contract==null||!config.admits(userId,RecoveryCaseKey.parse(contract.caseKey()),epoch(snapshot.invoice().getCreated()),Instant.now()))
+            throw new IllegalStateException("RECOVERY_TEST_CLOCK_CASE_NOT_ADMITTED");
+        return contract.caseKey();
+    }
     private record CancellationTarget(String subscriptionId,String status){}
     private record SourceProvenance(String source,Map<String,Object> evidence){}
     private record SourceInvoice(Invoice invoice,InvoiceLineItem line,SubscriptionPlanEntity plan){}
@@ -79,7 +89,7 @@ public class SubscriptionPaymentRecoveryService {
                 var snapshot=stripe.readInvoice(invoiceId);
                 if("PAID".equals(current.getStatus())){
                     if(isTechnicalInvoice(current,invoiceId))return true;
-                    if(hasPendingShift(current))throw new IllegalStateException("RECOVERY_TECHNICAL_INVOICE_PENDING:"+invoiceId);
+                    if(hasPendingShift(current)||awaitsShiftInvoiceRegistration(current,invoiceId))throw new IllegalStateException("RECOVERY_TECHNICAL_INVOICE_PENDING:"+invoiceId);
                     Instant start=firstPeriodStart(snapshot);
                     if(start==null||current.getEntitlementEndAt()==null||start.isBefore(instant(current.getEntitlementEndAt())))
                         return adoptChild(current,snapshot,event);
@@ -897,7 +907,7 @@ public class SubscriptionPaymentRecoveryService {
                 else if(methodCustomer==null || !Objects.equals(r.getStripeCustomerId(),methodCustomer.getId()) || methodCustomer.getInvoiceSettings()==null
                         || !Objects.equals(method,methodCustomer.getInvoiceSettings().getDefaultPaymentMethod()))skip="SKIPPED_SUPERSEDED";
                 else if(actions.selectByRecovery(r.getId()).stream().anyMatch(a->!Objects.equals(a.getId(),action.getId()) && "UPDATE_METHOD".equals(a.getActionType()) && Set.of("DISPATCHING","UNKNOWN","REVIEW").contains(a.getStatus())))return null;
-                else if(snapshot.subscription().getSchedule()!=null){review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);skip="SKIPPED_CONTRACT_CHANGED";}
+                else if(snapshot.subscription().getSchedule()!=null && ("subscription".equals(params.get("resource")) || scheduledMethodNeedsReview(snapshot,method))){review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);skip="SKIPPED_CONTRACT_CHANGED";}
                 else if("invoice".equals(params.get("resource")) && !"open".equals(targetSnapshot.invoice().getStatus()))skip="SKIPPED_TERMINAL";
             }else if("SET_CANCEL_PREFERENCE".equals(action.getActionType())){
                 var saved=r.getContractSnapshot()==null?new JsonObject():JsonParser.parseString(r.getContractSnapshot()).getAsJsonObject();
@@ -1296,7 +1306,7 @@ public class SubscriptionPaymentRecoveryService {
         locked(root.getId(),(u,r)->{
             if(!Objects.equals(u.getPaymentRecoveryId(),r.getId()) || !Objects.equals(u.getStripeSubscriptionId(),r.getStripeSubscriptionId())
                     || !Set.of("OPEN_AUTO","OPEN_MANUAL","PAID").contains(r.getStatus()))return null;
-            if(snapshot.subscription().getSchedule()!=null){
+            if(scheduledMethodNeedsReview(snapshot,method)){
                 var hold=addAction(r,"UPDATE_METHOD","recovery:"+r.getId()+":method:schedule-review:"+method,r.getStripeSubscriptionId(),Map.of("resource","subscription","default_payment_method",method),null,Instant.now());
                 if("READY".equals(hold.getStatus())){
                     hold.setStatus("REVIEW");hold.setLastError("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");hold.setResultJson(JSON.toJson(Map.of("pending_schedule_id",snapshot.subscription().getSchedule(),"requires_read_confirmation",true)));actions.updateById(hold);
@@ -1309,6 +1319,11 @@ public class SubscriptionPaymentRecoveryService {
                 queueMethodSetting(r,"invoice",r.getStripeInvoiceId(),method);
             return null;
         });
+    }
+    /** A compatible Schedule does not prevent synchronizing only the open invoice's override. */
+    private static boolean scheduledMethodNeedsReview(SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
+        return snapshot.subscription().getSchedule()!=null && (!Objects.equals(method,snapshot.subscription().getDefaultPaymentMethod())
+                || !schedulePaymentMethodCompatible(snapshot,method));
     }
     private static boolean schedulePaymentMethodCompatible(SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
         if(snapshot.subscription().getSchedule()==null)return true;
@@ -1392,6 +1407,16 @@ public class SubscriptionPaymentRecoveryService {
                 && a.getFirstDispatchedAt()!=null && action.getScheduledAt()!=null && !action.getScheduledAt().isAfter(a.getFirstDispatchedAt()));
     }
     private boolean hasPendingShift(SubscriptionPaymentRecoveryEntity root){return actions.selectByRecovery(root.getId()).stream().anyMatch(a->"SHIFT_RENEWAL".equals(a.getActionType())&&Set.of("READY","DISPATCHING","UNKNOWN").contains(a.getStatus()));}
+    /** A successful remote update can emit its invoice callback before local registration completes. */
+    private boolean awaitsShiftInvoiceRegistration(SubscriptionPaymentRecoveryEntity root,String invoiceId) {
+        return actions.selectByRecovery(root.getId()).stream().filter(a->"SHIFT_RENEWAL".equals(a.getActionType())
+                && "SUCCEEDED".equals(a.getStatus()) && a.getResultJson()!=null).anyMatch(a->{
+            var result=SubscriptionRecoveryStripeGateway.thaw(a.getResultJson());
+            return Objects.equals(invoiceId,result.get("latest_invoice"))
+                    && !Objects.equals(invoiceId,result.get("before_latest_invoice"))
+                    && !Objects.equals(invoiceId,root.getEntitlementInvoiceId());
+        });
+    }
     private boolean isTechnicalInvoice(SubscriptionPaymentRecoveryEntity root,String id){return root.getTechnicalInvoiceIds()!=null&&SubscriptionRecoveryStripeGateway.thaw("{\"ids\":"+root.getTechnicalInvoiceIds()+"}").get("ids") instanceof List<?> ids&&ids.contains(id);}
     private static Event syntheticEvent(String id,String type,String invoice){return ApiResource.GSON.fromJson(JSON.toJson(Map.of("id",id,"type",type,"created",Instant.now().getEpochSecond(),"data",Map.of("object",Map.of("id",invoice,"object","invoice")))),Event.class);}
 

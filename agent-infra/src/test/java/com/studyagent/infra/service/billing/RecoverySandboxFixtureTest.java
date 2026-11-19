@@ -33,6 +33,17 @@ class RecoverySandboxFixtureTest {
     void priceUpdateCannotBeRelabeledAsFormalOrScheduled(String key){
         assertThrows(IllegalArgumentException.class,()->RecoverySandboxFixture.parse(key,"{\"currency\":\"usd\",\"unitAmountMinor\":7999,\"introAmountMinor\":299,\"conversionMode\":\"PRICE_UPDATE\"}"));
     }
+    @ParameterizedTest
+    @ValueSource(strings={"formal:basic_monthly:month_1:EQUIVALENT_SCHEDULE:RENEW","pro_trial_to_monthly:pro_monthly:month_1:EQUIVALENT_SCHEDULE:RENEW"})
+    void renewingEquivalentSchedulesUseDistinctControlledFirstPay(String key){
+        var f=assertDoesNotThrow(()->RecoverySandboxFixture.parse(key,"{\"currency\":\"usd\",\"unitAmountMinor\":2999,\"introAmountMinor\":299,\"conversionMode\":\"SCHEDULE_FIRST_PAY\"}"));
+        assertTrue(f.keepSchedule());assertFalse(f.periodEnd());assertEquals("SCHEDULE_FIRST_PAY",f.conversionMode());assertEquals(!key.startsWith("formal:"),f.intro());
+    }
+    @ParameterizedTest
+    @ValueSource(strings={"formal:basic_monthly:month_1:EQUIVALENT_SCHEDULE:PERIOD_END","pro_trial_to_monthly:pro_monthly:month_1:EQUIVALENT_SCHEDULE:PERIOD_END","formal:pro_monthly:month_1:NO_SCHEDULE:RENEW"})
+    void controlledScheduleFixtureDoesNotEnableRejectedOrRelabeledShapes(String key){
+        assertThrows(IllegalArgumentException.class,()->RecoverySandboxFixture.parse(key,"{\"currency\":\"usd\",\"unitAmountMinor\":2999,\"introAmountMinor\":299,\"conversionMode\":\"SCHEDULE_FIRST_PAY\"}"));
+    }
     @Test void unknownConversionModeFailsBeforeRemoteCalls(){
         assertThrows(IllegalArgumentException.class,()->RecoverySandboxFixture.parse("pro_trial_to_monthly:pro_monthly:month_1:NO_SCHEDULE:RENEW","{\"currency\":\"usd\",\"unitAmountMinor\":7999,\"introAmountMinor\":299,\"conversionMode\":\"unknown\"}"));
     }

@@ -49,15 +49,38 @@ final class RecoverySandboxApplicationHarness implements AutoCloseable {
     private Set<String> deadlineIntroDraftIds;
     private String replacementOrderNo;
 
+    // Native HTTP acceptance shares these already guarded, test-only fixtures.
+    SqlSessionTemplate sessions() { return sql; }
+    SubscriptionPaymentRecoveryService recoveryService() { return service; }
+    StripeBillingWebhookService webhookService() { return inbox; }
+    PaymentRecoveryProperties properties() { return config; }
+    Event initialFailureEvent() { return firstEvent; }
+    String ownedInvoiceId() { return invoiceId; }
+    String ownedSubscriptionId() { return subscriptionId; }
+    String ownedRunId() { return user; }
+    String ownedIntroPriceId() { return introPriceId; }
+    void observeNativeWrites(java.util.function.Consumer<SubscriptionRecoveryActionEntity> observer) { ownedGateway.observeBeforeNativeWrite(observer); }
+    void observeNativeReads(java.util.function.Consumer<SubscriptionRecoveryStripeGateway.Snapshot> observer) { ownedGateway.observeNativeReads(observer); }
+    RecoverySandboxFixture contractFixture() { return fixture; }
+    void evidence(String stage, Map<String,Object> fields) throws Exception { journal.record(stage, fields); }
+    void assertNoLegacySideEffects() { verifyNoInteractions(legacyAnalytics, legacyRobot); }
+
     RecoverySandboxApplicationHarness(String run,String key,RecoverySandboxFixture fixture,Event event,
             RecoveryOwnedClockEvidence.Registry registry,String customerId,String subscriptionId,String invoiceId,
             String introPriceId,String formalPriceId,boolean automaticFunds,RecoverySandboxCreationTracker.Journal journal) throws Exception {
-        assertTrue(key.startsWith("sk_test_")||key.startsWith("rk_test_"));assertTrue(fixture.priceUpdate()||fixture.explicitFirstPay());assertEquals(Boolean.FALSE,event.getLivemode());
+        this(run,key,fixture,event,registry,customerId,subscriptionId,invoiceId,introPriceId,formalPriceId,automaticFunds,journal,null);
+    }
+    /** Expected assertion time only; this never registers admission evidence. */
+    RecoverySandboxApplicationHarness(String run,String key,RecoverySandboxFixture fixture,Event event,
+            RecoveryOwnedClockEvidence.Registry registry,String customerId,String subscriptionId,String invoiceId,
+            String introPriceId,String formalPriceId,boolean automaticFunds,RecoverySandboxCreationTracker.Journal journal,Instant expectedFirstFailure) throws Exception {
+        if(expectedFirstFailure!=null)assertEquals("true",System.getenv("STRIPE_RECOVERY_DEPLOYED_CLOCK_IT"));
+        assertTrue(key.startsWith("sk_test_")||key.startsWith("rk_test_"));assertTrue(fixture.priceUpdate()||fixture.controlledFirstPay());assertEquals(Boolean.FALSE,event.getLivemode());
         this.journal=journal;this.fixture=fixture;this.firstEvent=event;this.user=run;this.subscriptionId=subscriptionId;this.invoiceId=invoiceId;this.introPriceId=introPriceId;
         this.automaticFunds=automaticFunds;
         shiftResponseLoss="true".equals(System.getenv("STRIPE_RECOVERY_SHIFT_ACK_LOSS"))?new RecoverySandboxShiftResponseLoss(run,subscriptionId):null;
         ownedGateway=new RecoveryOwnedClockGateway(run,registry,shiftResponseLoss);
-        provenFirstFailure=registry.find(run,invoiceId).orElseThrow().occurredAt();
+        provenFirstFailure=expectedFirstFailure==null?registry.find(run,invoiceId).orElseThrow().occurredAt():expectedFirstFailure;
         database=new RecoverySandboxApplicationDatabase();sql=new SqlSessionTemplate(database.sessions());previousKey=Stripe.apiKey;Stripe.apiKey=key;
         try{
             var plans=sql.getMapper(SubscriptionPlanMapper.class);if(fixture.intro())plans.insert(plan(fixture.sourceKey(),introPriceId,true));plans.insert(plan(fixture.targetPlanCode(),formalPriceId,false));

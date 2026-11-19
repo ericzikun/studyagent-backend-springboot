@@ -18,7 +18,14 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Explicit opt-in. Creates isolated test objects; never consumes application customers/prices. */
 @EnabledIfEnvironmentVariable(named = "STRIPE_RECOVERY_SANDBOX", matches = "true")
 class StripePaymentRecoverySandboxIT {
-    private final String run = "recovery-" + UUID.randomUUID();
+    @FunctionalInterface interface ApplicationAcceptance {
+        void accept(RecoverySandboxApplicationHarness application) throws Exception;
+    }
+    private ApplicationAcceptance httpAcceptance;
+    private ApplicationAcceptance deployedClockAcceptance;
+    void useDeployedClockAcceptance(ApplicationAcceptance acceptance){assertEquals("true",System.getenv("STRIPE_RECOVERY_DEPLOYED_CLOCK_IT"));deployedClockAcceptance=Objects.requireNonNull(acceptance);}
+    void useHttpAcceptance(ApplicationAcceptance acceptance) { httpAcceptance = Objects.requireNonNull(acceptance); }
+    private final String run = ("true".equals(System.getenv("STRIPE_RECOVERY_DEPLOYED_CLOCK_IT"))?"user_":"recovery-") + UUID.randomUUID();
     private final List<String> clocks = new ArrayList<>();
     private final List<String> prices = new ArrayList<>();
     private final List<String> products = new ArrayList<>();
@@ -97,12 +104,12 @@ class StripePaymentRecoverySandboxIT {
         if(fundsSetup){
             options=options.toBuilder().setMaxNetworkRetries(0).build();
             assertEquals("insufficient_funds",failureFixture,"Saved funds fixture requires the explicit funds scenario");
-            assertTrue((fixture.priceUpdate()||fixture.explicitFirstPay())&&!fixture.periodEnd(),"Saved funds probe requires a controlled renewing fixture");
+            assertTrue((fixture.priceUpdate()||fixture.controlledFirstPay())&&!fixture.periodEnd(),"Saved funds probe requires a controlled renewing fixture");
             if(d30Closure)assertEquals("true",System.getenv("STRIPE_RECOVERY_APPLICATION_IT"),"Funds D30 requires the real isolated application worker");assertFalse(precloseOwnedIntroDraft,"Funds worker scenario uses the original native setup drafts");
         }
         if("true".equals(System.getenv("STRIPE_RECOVERY_APPLICATION_IT"))){
             if(d30Closure){assertEquals(fundsSetup?"insufficient_funds":"generic_decline",failureFixture);assertFalse(precloseOwnedIntroDraft,"Application D30 must retain the original owned trial draft");}
-            assertTrue(fixture.priceUpdate()||fixture.explicitFirstPay(),"Application wiring requires an owned controlled first failure");
+            assertTrue(fixture.priceUpdate()||fixture.controlledFirstPay(),"Application wiring requires an owned controlled first failure");
             assertTrue("generic_decline".equals(failureFixture)||fundsSetup&&"insufficient_funds".equals(failureFixture),"Application funds requires explicit saved-method setup");
             RecoverySandboxApplicationDatabase.requireLocalSchema(System.getenv("PAYMENT_RECOVERY_TEST_JDBC_URL"));
         }
@@ -110,7 +117,7 @@ class StripePaymentRecoverySandboxIT {
             assertEquals("true",System.getenv("STRIPE_RECOVERY_APPLICATION_IT"),"Active cancellation requires the isolated application inbox");
             assertEquals("generic_decline",failureFixture);assertFalse(fundsSetup);assertFalse(d30Closure);assertFalse(precloseOwnedIntroDraft);assertFalse(fixture.periodEnd());assertTrue(fixture.intro());
         }
-        if(d30Closure)assertTrue(fixture.priceUpdate()&&!fixture.periodEnd(),"D30 probe requires proven owned first failure and a renewing contract");
+        if(d30Closure)assertTrue((fixture.priceUpdate()||fixture.scheduleFirstPay()&&"true".equals(System.getenv("STRIPE_RECOVERY_NATIVE_HTTP_IT")))&&!fixture.periodEnd(),"D30 probe requires proven owned first failure and a renewing contract");
         if(precloseOwnedIntroDraft)assertTrue("true".equals(System.getenv("STRIPE_RECOVERY_APPLICATION_IT"))&&fixture.priceUpdate(),"Setup-draft control is restricted to the isolated application fixture");
         var fixtureEvidence=new LinkedHashMap<String,Object>();fixtureEvidence.put("caseKey",caseKey);fixtureEvidence.put("conversionMode",fixture.conversionMode());fixtureEvidence.put("currency",fixture.currency());fixtureEvidence.put("unitAmountMinor",fixture.unitAmountMinor());fixtureEvidence.put("introAmountMinor",fixture.introAmountMinor());fixtureEvidence.put("sourcePriceId",fixture.sourcePriceId());fixtureEvidence.put("priceVersion",fixture.priceVersion());fixtureEvidence.put("basis",fixturePath==null?"SYNTHETIC_MECHANISM":"OWNED_TEST_CLONE_OF_SCALAR_CONTRACT");fixtureEvidence.put("finalResult","NOT_RUN");
         record("case", fixtureEvidence);
@@ -185,8 +192,8 @@ class StripePaymentRecoverySandboxIT {
             }else{
                 SubscriptionSchedule schedule = creations.create("create-schedule", Map.of("customer", customer.getId(),
                         "start_date", now, "end_behavior", "release", "metadata", metadata(caseKey),
-                        "phases", List.of(Map.of("items", List.of(Map.of("price", introPrice.getId())), "iterations", 1),
-                                Map.of("items", List.of(Map.of("price", price.getId())), "iterations", 2))),
+                        "phases", List.of(Map.of("items", List.of(Map.of("price", introPrice.getId())), "iterations", 1,"metadata",metadata(caseKey)),
+                                Map.of("items", List.of(Map.of("price", price.getId())), "iterations", 2,"metadata",metadata(caseKey)))),
                         (parameters, key) -> SubscriptionSchedule.create(parameters, createOptions(key)), created -> {
                             registerClockSchedule(created, customer.getId(), clock.getId());
                             record("created-schedule", Map.of("id", created.getId(), "phases", created.getPhases(), "endBehavior", created.getEndBehavior()));
@@ -196,7 +203,7 @@ class StripePaymentRecoverySandboxIT {
         } else if(fixture.keepSchedule()){
             SubscriptionSchedule schedule = creations.create("create-formal-equivalent-schedule", Map.of("customer", customer.getId(),
                     "start_date", now, "end_behavior", "release", "metadata", metadata(caseKey),
-                    "phases", List.of(Map.of("items", List.of(Map.of("price", price.getId())), "iterations", 2))),
+                    "phases", List.of(Map.of("items", List.of(Map.of("price", price.getId())), "iterations", 2,"metadata",metadata(caseKey)))),
                     (parameters, key) -> SubscriptionSchedule.create(parameters, createOptions(key)), created -> {
                         registerClockSchedule(created, customer.getId(), clock.getId());
                         record("created-formal-schedule", Map.of("id", created.getId()));
@@ -221,15 +228,15 @@ class StripePaymentRecoverySandboxIT {
                         .attach(Map.of("customer", customer.getId()), write("attach-bad"));
         assertEquals(customer.getId(), bad.getCustomer());
         subscription.update(Map.of("default_payment_method", bad.getId()), write("default-bad"));
-        if(portalHosted){
+        if(portalHosted||fixture.scheduleFirstPay()){
             var body=Map.<String,Object>of("invoice_settings",Map.of("default_payment_method",bad.getId()));
-            record("portal-fixture-default-bad-intent",Map.of("customerId",customer.getId(),"parameters",body,"idempotencyKey",run+":portal-default-bad"));
+            record(fixture.scheduleFirstPay()?"schedule-fixture-default-bad-intent":"portal-fixture-default-bad-intent",Map.of("customerId",customer.getId(),"parameters",body,"idempotencyKey",run+":portal-default-bad"));
             var observed=customer.update(body,write("portal-default-bad"));
             assertEquals(bad.getId(),observed.getInvoiceSettings().getDefaultPaymentMethod());
         }
         stage = "FIRST_FAILURE";
         long oldBoundary = subscription.getCurrentPeriodEnd();
-        if(fixture.priceUpdate()||fixture.explicitFirstPay())subscription=subscription.update(Map.of("pause_collection",Map.of("behavior","keep_as_draft")),write("fixture-pause-before-boundary"));
+        if(fixture.priceUpdate()||fixture.controlledFirstPay())subscription=subscription.update(Map.of("pause_collection",Map.of("behavior","keep_as_draft")),write("fixture-pause-before-boundary"));
         Instant boundaryOperationStart=Instant.now().minusSeconds(1);
         advance(clock.getId(), oldBoundary);
         if(fixture.priceUpdate()){
@@ -263,11 +270,21 @@ class StripePaymentRecoverySandboxIT {
             operationRequestId=subscription.getLastResponse().requestId();
             record("legacy-price-updated",Map.of("subscriptionId",subscription.getId(),"boundary",oldBoundary,"sourceInvoice",initialInvoice.getId(),"prorationBehavior","none","offSession",fundsSetup));
         }
-        if(fixture.explicitFirstPay()){
-            subscription=Subscription.retrieve(subscription.getId(),options);assertNull(subscription.getSchedule());
+        if(fixture.controlledFirstPay()){
+            subscription=Subscription.retrieve(subscription.getId(),options);
+            if(fixture.keepSchedule())assertNotNull(subscription.getSchedule());else assertNull(subscription.getSchedule());
             if(periodEnd)subscription=subscription.update(Map.of("cancel_at_period_end",true),write("fixture-formal-cancel-preference"));
             Invoice due=Invoice.retrieve(subscription.getLatestInvoice(),options);assertNotEquals(initialInvoice.getId(),due.getId());assertEquals("draft",due.getStatus());
-            assertEquals("subscription_cycle",due.getBillingReason());assertEquals(Boolean.FALSE,due.getAutoAdvance());assertEquals(0L,due.getAmountPaid());
+            assertEquals(fixture.scheduleFirstPay()&&fixture.intro()?"subscription_update":"subscription_cycle",due.getBillingReason());
+            assertEquals(price.getId(),due.getLines().getData().get(0).getPrice().getId());
+            assertEquals(Boolean.FALSE,due.getLines().getData().get(0).getProration());
+            assertEquals(Boolean.FALSE,due.getAutoAdvance());assertEquals(0L,due.getAmountPaid());
+            if(deployedClockAcceptance!=null){
+                assertTrue(fixture.explicitFirstPay());assertFalse(fundsSetup);assertFalse(fixture.periodEnd());
+                var placeholder=new Event();placeholder.setLivemode(false);placeholder.setCreated(Instant.now().getEpochSecond());
+                application=new RecoverySandboxApplicationHarness(run,options.getApiKey(),fixture,placeholder,new RecoveryOwnedClockEvidence.Registry(),customer.getId(),subscription.getId(),due.getId(),initialInvoice.getLines().getData().get(0).getPrice().getId(),price.getId(),false,this::record,Instant.ofEpochSecond(oldBoundary));
+                stage="DEPLOYED_TEST_CLOCK_COLD_ADMISSION";deployedClockAcceptance.accept(application);return;
+            }
             due=due.finalizeInvoice(SubscriptionRecoveryStripeGateway.finalizeParams(),write("fixture-finalize-unattempted-formal"));
             beforeOperationClock=TestClock.retrieve(clock.getId(),options);beforeOperationSub=Subscription.retrieve(subscription.getId(),options);
             for(var prior:Invoice.list(Map.of("subscription",subscription.getId(),"limit",100L),options).autoPagingIterable()){
@@ -281,7 +298,7 @@ class StripePaymentRecoverySandboxIT {
             try{due.pay(body,write("fixture-explicit-first-pay"));fail("The controlled formal first payment must really fail");}
             catch(CardException declined){assertEquals(failureFixture,declined.getDeclineCode());operationRequestId=declined.getRequestId();assertNotNull(operationRequestId);}
         }
-        if(!fixture.priceUpdate()&&!fixture.explicitFirstPay())advance(clock.getId(), oldBoundary + 3600);
+        if(!fixture.priceUpdate()&&!fixture.controlledFirstPay())advance(clock.getId(), oldBoundary + 3600);
         subscription = Subscription.retrieve(subscription.getId(), options);
         Invoice invoice = Invoice.retrieve(subscription.getLatestInvoice(), options);
         assertEquals("open", invoice.getStatus());
@@ -298,8 +315,8 @@ class StripePaymentRecoverySandboxIT {
         assertEquals(failureFixture, pi.getLastPaymentError().getDeclineCode());
         long failedAt = Charge.retrieve(pi.getLatestCharge(), options).getCreated();
         long first=oldBoundary+3600;
-        if(fixture.priceUpdate()||fixture.explicitFirstPay()){
-            controlledFailure=captureControlledFailure(clock.getId(),beforeOperationClock,beforeOperationSub,subscription,invoice,pi,operationRequestId,operationRealStart,beforeInvoiceIds,beforeFormalInvoiceIds,usedPriceIds,fixture.explicitFirstPay()?"EXPLICIT_FIRST_PAY":"PRICE_UPDATE",beforeExplicitPay);
+        if(fixture.priceUpdate()||fixture.controlledFirstPay()){
+            controlledFailure=captureControlledFailure(clock.getId(),beforeOperationClock,beforeOperationSub,subscription,invoice,pi,operationRequestId,operationRealStart,beforeInvoiceIds,beforeFormalInvoiceIds,usedPriceIds,fixture.controlledFirstPay()?"EXPLICIT_FIRST_PAY":"PRICE_UPDATE",beforeExplicitPay);
             first=controlledFailure.proof().occurredAt().getEpochSecond();
             var proof=new RecoveryOwnedClockGateway(run,ownedClockEvidence).readFirstFailure(new SubscriptionRecoveryStripeGateway.Snapshot(invoice,subscription,null,invoice.getLines().getData(),pi,Charge.retrieve(pi.getLatestCharge(),options),Instant.ofEpochSecond(first)),controlledFailure.event());
             assertEquals(Instant.ofEpochSecond(first),proof.occurredAt());
@@ -321,6 +338,7 @@ class StripePaymentRecoverySandboxIT {
             assertNotNull(controlledFailure);
             application=new RecoverySandboxApplicationHarness(run,options.getApiKey(),fixture,controlledFailure.event(),ownedClockEvidence,
                     customer.getId(),subscription.getId(),invoice.getId(),initialInvoice.getLines().getData().get(0).getPrice().getId(),price.getId(),fundsSetup,this::record);
+            if(httpAcceptance!=null){stage="APPLICATION_HTTP_SCHEDULER";httpAcceptance.accept(application);return;}
             application.admitAndProtect();
             if(replacementCheckout){
                 stage=replacementDouble?"APPLICATION_REPLACEMENT_DOUBLE_PAYMENT":"APPLICATION_REPLACEMENT_CHECKOUT";
@@ -634,7 +652,7 @@ class StripePaymentRecoverySandboxIT {
     }
     private static String nativeId(com.google.gson.JsonObject raw,String key){var value=raw.get(key);if(value==null||value.isJsonNull())return null;return value.isJsonObject()?value.getAsJsonObject().get("id").getAsString():value.getAsString();}
 
-    private Map<String, String> metadata(String caseKey) { return Map.of("recovery_test_run", run, "case_key", caseKey); }
+    private Map<String, String> metadata(String caseKey) { return deployedClockAcceptance==null?Map.of("recovery_test_run", run, "case_key", caseKey):Map.of("recovery_test_run",run,"case_key",caseKey,"clerk_user_id",run); }
     private void owned(Boolean live, Map<String, String> metadata) {
         assertEquals(Boolean.FALSE, live);
         assertEquals(run, metadata.get("recovery_test_run"));

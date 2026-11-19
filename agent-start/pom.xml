@@ -76,6 +76,14 @@
 
         <!-- Tests -->
         <dependency>
+            <groupId>com.studyagent</groupId>
+            <artifactId>agent-infra</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <classifier>tests</classifier>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>

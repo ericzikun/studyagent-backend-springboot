@@ -728,6 +728,7 @@ public class SubscriptionPaymentRecoveryService {
     private void recordPaidOrder(SubscriptionPaymentRecoveryEntity root,SubscriptionPaymentRecoveryEntity row,SubscriptionRecoveryStripeGateway.Snapshot snapshot){
         var existing=orders.selectOne(new LambdaQueryWrapper<RechargeOrderEntity>().eq(RechargeOrderEntity::getStripeInvoiceId,row.getStripeInvoiceId()).last("LIMIT 1"));
         if(existing==null){existing=new RechargeOrderEntity();existing.setOrderNo("recovery_"+row.getStripeInvoiceId());existing.setOrderType("subscription");existing.setClerkUserId(root.getClerkUserId());existing.setPlanCode(root.getPlanCode());
+            existing.setFeatureCode("subscription");existing.setPackageCode(root.getPlanCode());existing.setQuotaAmount(0L);
             existing.setStripeInvoiceId(row.getStripeInvoiceId());existing.setStripeSubscriptionId(row.getStripeSubscriptionId());existing.setStripePaymentIntentId(snapshot.invoice().getPaymentIntent());
             existing.setCurrency(row.getCurrency());existing.setPriceCents(Math.toIntExact(row.getAmountPaidMinor()));existing.setStatus("FULL".equals(row.getRefundState())?"refunded":"PARTIAL".equals(row.getRefundState())?"partially_refunded":"OPEN".equals(row.getDisputeState())||"LOST".equals(row.getDisputeState())?"disputed":"completed");existing.setPaidAt(row.getPaidAt());
             existing.setBizContext(JSON.toJson(Map.of("payment_recovery_id",root.getId(),"original_invoice_id",row.getStripeInvoiceId())));orders.insert(existing);

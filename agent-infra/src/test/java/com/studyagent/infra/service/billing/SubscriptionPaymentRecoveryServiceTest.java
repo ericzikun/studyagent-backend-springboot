@@ -513,6 +513,24 @@ class SubscriptionPaymentRecoveryServiceTest {
         enable();var snap=paidSnapshot();snap.invoice().setStatusTransitions(null);var root=existingRoot();root.setGrantState("NONE");root.setContractSnapshot("{\"price_id\":\"price_old\",\"quantity\":1}");ownedFixture(root,snap);
         assertTrue(service.tryProcessEvent(event()));assertEquals("PAID",root.getStatus());assertEquals("HELD",root.getGrantState());assertNull(root.getEntitlementStartAt());assertEquals("PAID_TIME_UNVERIFIED",root.getReviewReason());
     }
+    @Test void paidRecoveryCreatesOneOrderWithRequiredLegacySubscriptionFields() {
+        enable();var snap=paidSnapshot();var root=existingRoot();root.setDisplayTier("pro");
+        root.setContractSnapshot("{\"price_id\":\"price_old\",\"quantity\":1,\"recovery_admission\":{\"sourceKey\":\"formal\",\"contractHash\":\"original\"}}");
+        ownedFixture(root,snap);var quota=injectQuota();
+        var history=new ArrayList<RechargeOrderEntity>();
+        when(orders.selectOne(any())).thenAnswer(call->history.isEmpty()?null:history.get(0));
+        when(orders.insert(any(RechargeOrderEntity.class))).thenAnswer(call->{history.add(call.getArgument(0));return 1;});
+        assertTrue(service.tryProcessEvent(event()));assertTrue(service.tryProcessEvent(event()));
+        assertEquals(1,history.size());var order=history.get(0);
+        assertAll(()->assertEquals("subscription",order.getFeatureCode()),
+                ()->assertEquals("pro_monthly",order.getPackageCode()),
+                ()->assertEquals(0L,order.getQuotaAmount()),
+                ()->assertEquals("completed",order.getStatus()),
+                ()->assertEquals("in_old",order.getStripeInvoiceId()),
+                ()->assertEquals(2900,order.getPriceCents()));
+        verify(quota,times(1)).resetFromPaidInvoiceAt(eq("user"),eq("sub_old"),eq("pro_monthly"),any(),any(),eq("in_old"),any());
+        verify(stripe,never()).execute(any());
+    }
     private SubscriptionRecoveryStripeGateway.Snapshot paidSnapshot(){
         var snap=snapshot();snap.invoice().setStatus("paid");snap.invoice().setAmountPaid(2900L);snap.invoice().setAmountRemaining(0L);
         var times=new Invoice.StatusTransitions();times.setPaidAt(now.getEpochSecond());snap.invoice().setStatusTransitions(times);

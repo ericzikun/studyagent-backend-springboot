@@ -23,12 +23,15 @@ public class RecoveryTestClockController {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Void> authorizationDenied(ResponseStatusException denied){return ResponseEntity.status(denied.getStatusCode()).build();}
     public record Register(String runId,String userId,String customerId,String clockId){}
-    public record Pause(String subscriptionId){}
-    public record Advance(String checkpoint){}
+    public record Pause(String subscriptionId,Integer window){}
+    public record Advance(String checkpoint,Integer window){}
+    public record Window(Integer window){}
+    public record NextWindow(String expectedInvoiceId){}
     @PostMapping("/runs") public ResponseEntity<?> register(@RequestBody Register body){return call(()->support.register(body.runId(),body.userId(),body.customerId(),body.clockId()));}
-    @PostMapping("/runs/{run}/pause") public ResponseEntity<?> pause(@PathVariable String run,@RequestBody Pause body){return call(()->support.pause(run,body.subscriptionId()));}
-    @PostMapping("/runs/{run}/first-failure") public ResponseEntity<?> firstFailure(@PathVariable String run){return call(()->support.firstPay(run));}
-    @PostMapping("/runs/{run}/advance") public ResponseEntity<?> advance(@PathVariable String run,@RequestBody Advance body){return call(()->support.advance(run,body.checkpoint()));}
+    @PostMapping("/runs/{run}/next-window") public ResponseEntity<?> nextWindow(@PathVariable String run,@RequestBody NextWindow body){return call(()->support.nextWindow(run,body.expectedInvoiceId()));}
+    @PostMapping("/runs/{run}/pause") public ResponseEntity<?> pause(@PathVariable String run,@RequestBody Pause body){return call(()->support.pause(run,body.subscriptionId(),body.window()));}
+    @PostMapping("/runs/{run}/first-failure") public ResponseEntity<?> firstFailure(@PathVariable String run,@RequestBody(required=false) Window body){return call(()->support.firstPay(run,body==null?null:body.window()));}
+    @PostMapping("/runs/{run}/advance") public ResponseEntity<?> advance(@PathVariable String run,@RequestBody Advance body){return call(()->support.advance(run,body.checkpoint(),body.window()));}
     @GetMapping("/runs/{run}") public ResponseEntity<?> status(@PathVariable String run){return call(()->support.status(run));}
     private static ResponseEntity<?> call(Callable<Map<String,Object>> call){
         try{return ResponseEntity.ok(call.call());}

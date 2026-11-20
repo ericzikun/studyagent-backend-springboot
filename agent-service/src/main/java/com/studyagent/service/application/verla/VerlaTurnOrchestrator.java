@@ -1779,7 +1779,7 @@ public class VerlaTurnOrchestrator {
 
     }
 
-    // MIG-001: 本方法与 main 的调用点一并缺席 —— release 在 continueAssignmentClarify 里用它做
+    // req:MIG-001 本方法与 main 的调用点一并缺席 —— release 在 continueAssignmentClarify 里用它做
     // 「同一 turn 只允许一条在途 deep_understanding」的单飞保护，main 的 continueAssignmentClarify 没有该调用。
     // 并行派发后 auto-advance hand-off 被删除，此处暂时没有调用者，先注释保留，等单飞保护那次提交一起恢复。
     // 恢复时取消注释即可（实现与 release/2.1.0 逐字一致）。

@@ -958,6 +958,11 @@ public class SubscriptionPaymentRecoveryService {
                     if(unprotected){for(var invoice:invoices)if(Boolean.TRUE.equals(invoice.getAutoAdvance())&&Set.of("draft","open","uncollectible").contains(invoice.getStatus()))
                         addAction(r,"DISABLE_ADVANCE","recovery:"+invoice.getId()+":disable-advance",invoice.getId(),Map.of("auto_advance",false),null,Instant.now());return null;}
                 }
+            }else if("DISABLE_ADVANCE".equals(action.getActionType())){
+                // A protection intent frozen while the invoice was still collectible must not be
+                // dispatched after finalize/void completed it: Stripe rejects updates on a void
+                // invoice, which would open a human review for a no-op.
+                if(Set.of("paid","void").contains(targetSnapshot.invoice().getStatus()))skip="SKIPPED_TERMINAL";
             }else if(Set.of("VOID_INVOICE","FINALIZE_INVOICE").contains(action.getActionType())){
                 if("PAID".equals(r.getStatus()) && genuineNextCycle(r,targetSnapshot))skip="SKIPPED_NEW_BILLING_CYCLE";
                 else if(!Objects.equals(targetSnapshot.invoice().getSubscription(),r.getStripeSubscriptionId()) || !Objects.equals(targetSnapshot.invoice().getCustomer(),r.getStripeCustomerId()))skip="SKIPPED_WRONG_SUBSCRIPTION";

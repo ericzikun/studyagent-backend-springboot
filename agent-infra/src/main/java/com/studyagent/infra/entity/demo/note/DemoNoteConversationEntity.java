@@ -52,6 +52,13 @@ public class DemoNoteConversationEntity {
     private String mindmapJson;
     @TableField(value = "blog_md", updateStrategy = FieldStrategy.ALWAYS)
     private String blogMd;
+    /** PROCESSING / READY / FAILED；重新生成时必须能写回 NULL。 */
+    @TableField(value = "blog_audio_status", updateStrategy = FieldStrategy.ALWAYS)
+    private String blogAudioStatus;
+    @TableField(value = "blog_audio_json", updateStrategy = FieldStrategy.ALWAYS)
+    private String blogAudioJson;
+    @TableField(value = "blog_audio_source_hash", updateStrategy = FieldStrategy.ALWAYS)
+    private String blogAudioSourceHash;
     private String status;
     @TableField("created_at")
     private LocalDateTime createdAt;

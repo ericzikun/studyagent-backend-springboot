@@ -65,6 +65,10 @@ public class NoteConversationVO {
     private String mindmapJson;
     /** 博客 Markdown；旧会话为 null。 */
     private String blogMd;
+    /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
+    private String blogAudioStatus;
+    /** 播客音频 manifest JSON（分段 URL/时长/sourceHash）；READY 时有值。 */
+    private String blogAudioJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -99,6 +103,8 @@ public class NoteConversationVO {
                 .pendingProposal(pendingProposal)
                 .mindmapJson(c.getMindmapJson())
                 .blogMd(c.getBlogMd())
+                .blogAudioStatus(c.getBlogAudioStatus())
+                .blogAudioJson(c.getBlogAudioJson())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .build();

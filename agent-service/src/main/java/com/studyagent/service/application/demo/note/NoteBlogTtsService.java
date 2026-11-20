@@ -72,7 +72,32 @@ public class NoteBlogTtsService {
     public record Payload(List<Segment> segments, long totalDurationMs, String voice) {
     }
 
+    /** 本地缓存完成后的分段（fileName 用于 OSS 上传与本地签名 URL）。 */
+    public record CachedSegment(int index, int paragraphIndex, String text, String fileName,
+                                long durationMs) {
+    }
+
+    public record CachedPayload(List<CachedSegment> segments, long totalDurationMs, String voice) {
+    }
+
     public Payload synthesize(long conversationId, String blogMd) {
+        CachedPayload cached = cache(conversationId, blogMd);
+        List<Segment> segments = new ArrayList<>(cached.segments().size());
+        for (CachedSegment segment : cached.segments()) {
+            segments.add(new Segment(
+                    segment.index(), segment.paragraphIndex(), segment.text(),
+                    signedUrl(conversationId, segment.fileName()), segment.durationMs()));
+        }
+        log.info("[note/blog-tts] synthesized convId={} segments={} totalMs={}",
+                conversationId, segments.size(), cached.totalDurationMs());
+        return new Payload(segments, cached.totalDurationMs(), cached.voice());
+    }
+
+    /**
+     * 合成并落本地缓存（幂等：已存在的 sha 文件直接读时长）。
+     * <p>预生成任务在后台线程调用它，再把 WAV 上传 OSS。
+     */
+    public CachedPayload cache(long conversationId, String blogMd) {
         if (!isReady()) {
             throw new TtsUnavailable("语音服务暂不可用，请稍后重试");
         }
@@ -135,20 +160,26 @@ public class NoteBlogTtsService {
             }
         }
 
-        List<Segment> segments = new ArrayList<>();
+        List<CachedSegment> segments = new ArrayList<>();
         long total = 0;
         for (int i = 0; i < chunkTexts.size(); i += 1) {
-            segments.add(new Segment(
-                    i, chunkParagraphs.get(i), chunkTexts.get(i),
-                    signedUrl(conversationId, fileNames.get(i)), durations[i]));
+            segments.add(new CachedSegment(
+                    i, chunkParagraphs.get(i), chunkTexts.get(i), fileNames.get(i), durations[i]));
             total += durations[i];
         }
         if (segments.isEmpty()) {
             throw new TtsUnavailable("博客还没有可朗读的内容");
         }
-        log.info("[note/blog-tts] synthesized convId={} segments={} totalMs={}",
-                conversationId, segments.size(), total);
-        return new Payload(segments, total, voice);
+        return new CachedPayload(segments, total, voice);
+    }
+
+    /** 读取已缓存的 WAV 字节（预生成任务上传 OSS 用）。 */
+    public byte[] readCached(long conversationId, String fileName) throws IOException {
+        Path file = resolveAudio(conversationId, fileName);
+        if (file == null) {
+            throw new IOException("cached audio missing: " + fileName);
+        }
+        return Files.readAllBytes(file);
     }
 
     public Path resolveAudio(long conversationId, String fileName) {

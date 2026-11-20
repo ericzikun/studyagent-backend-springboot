@@ -92,6 +92,14 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
     }
 
     @Override
+    public Optional<NoteConversation> findById(Long conversationId) {
+        if (conversationId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(convMapper.selectById(conversationId)).map(this::toDomain);
+    }
+
+    @Override
     public Optional<NoteConversation> findByVerlaConversationId(Long verlaConversationId) {
         if (verlaConversationId == null) {
             return Optional.empty();
@@ -139,6 +147,9 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setPendingProposalJson(c.getPendingProposalJson());
         e.setMindmapJson(c.getMindmapJson());
         e.setBlogMd(c.getBlogMd());
+        e.setBlogAudioStatus(c.getBlogAudioStatus());
+        e.setBlogAudioJson(c.getBlogAudioJson());
+        e.setBlogAudioSourceHash(c.getBlogAudioSourceHash());
         e.setStatus(c.getStatus());
         e.setCreatedAt(c.getCreatedAt());
         e.setUpdatedAt(c.getUpdatedAt());
@@ -187,6 +198,9 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setPendingProposalJson(e.getPendingProposalJson());
         c.setMindmapJson(e.getMindmapJson());
         c.setBlogMd(e.getBlogMd());
+        c.setBlogAudioStatus(e.getBlogAudioStatus());
+        c.setBlogAudioJson(e.getBlogAudioJson());
+        c.setBlogAudioSourceHash(e.getBlogAudioSourceHash());
         c.setStatus(e.getStatus());
         c.setCreatedAt(e.getCreatedAt());
         c.setUpdatedAt(e.getUpdatedAt());

@@ -66,6 +66,11 @@ public class DemoNoteService {
     public static final String STATUS_COMPLETED = "completed";
     public static final String STATUS_FAILED = "failed";
 
+    /** 播客音频预生成状态（blog_audio_status）。 */
+    public static final String BLOG_AUDIO_PROCESSING = "PROCESSING";
+    public static final String BLOG_AUDIO_READY = "READY";
+    public static final String BLOG_AUDIO_FAILED = "FAILED";
+
     private static final String DRAFT_TITLE = "未命名笔记";
     private static final int TITLE_MAX_LENGTH = 60;
     private static final int COURSE_NAME_MAX_LENGTH = 255;
@@ -248,6 +253,9 @@ public class DemoNoteService {
         // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
         c.setMindmapJson(null);
         c.setBlogMd(null);
+        c.setBlogAudioStatus(null);
+        c.setBlogAudioJson(null);
+        c.setBlogAudioSourceHash(null);
         // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
         c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);
@@ -657,11 +665,11 @@ public class DemoNoteService {
      * <p>best-effort：extras 只是附加视图，缺任意一项都不影响笔记本身。
      */
     @Transactional
-    public void applyExtras(Long verlaConversationId, String mindmapJson, String blogMd) {
+    public NoteConversation applyExtras(Long verlaConversationId, String mindmapJson, String blogMd) {
         NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
         if (c == null) {
             log.warn("[Notes] extras dropped: no note conversation for verlaConvId={}", verlaConversationId);
-            return;
+            return null;
         }
         boolean changed = false;
         if (mindmapJson != null && !mindmapJson.isBlank()) {
@@ -669,16 +677,70 @@ public class DemoNoteService {
             changed = true;
         }
         if (blogMd != null && !blogMd.isBlank()) {
+            String hash = sha256Hex(blogMd);
+            boolean sourceChanged = !hash.equals(c.getBlogAudioSourceHash());
+            if (sourceChanged) {
+                c.setBlogAudioSourceHash(hash);
+                c.setBlogAudioJson(null);
+            }
+            // 内容变了要重做；上次失败/还没开始的也允许重试；READY 且内容没变则保留 manifest。
+            if (sourceChanged || !BLOG_AUDIO_READY.equals(c.getBlogAudioStatus())) {
+                c.setBlogAudioStatus(BLOG_AUDIO_PROCESSING);
+            }
             c.setBlogMd(blogMd);
             changed = true;
         }
         if (!changed) {
-            return;
+            return c;
         }
         repo.saveConversation(c);
-        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={}",
+        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} audioStatus={}",
                 verlaConversationId, c.getMindmapJson() != null,
-                c.getBlogMd() == null ? 0 : c.getBlogMd().length());
+                c.getBlogMd() == null ? 0 : c.getBlogMd().length(),
+                c.getBlogAudioStatus());
+        return c;
+    }
+
+    /** 异步预生成完成：只有 blog 内容仍是任务输入的那一份才落 manifest（防止旧任务覆盖新内容）。 */
+    @Transactional
+    public void markBlogAudioReady(Long conversationId, String sourceHash, String manifestJson) {
+        NoteConversation c = repo.findById(conversationId).orElse(null);
+        if (c == null) {
+            return;
+        }
+        if (sourceHash == null || !sourceHash.equals(c.getBlogAudioSourceHash())) {
+            log.info("[Notes] stale blog audio dropped demoId={}", conversationId);
+            return;
+        }
+        c.setBlogAudioStatus(BLOG_AUDIO_READY);
+        c.setBlogAudioJson(manifestJson);
+        repo.saveConversation(c);
+    }
+
+    /** 预生成失败：保留 blog_md，前端可回退到按需 /blog/tts。 */
+    @Transactional
+    public void markBlogAudioFailed(Long conversationId, String sourceHash, String reason) {
+        NoteConversation c = repo.findById(conversationId).orElse(null);
+        if (c == null) {
+            return;
+        }
+        if (sourceHash != null && !sourceHash.equals(c.getBlogAudioSourceHash())) {
+            return;
+        }
+        c.setBlogAudioStatus(BLOG_AUDIO_FAILED);
+        c.setBlogAudioJson(null);
+        repo.saveConversation(c);
+        log.warn("[Notes] blog audio FAILED demoId={} reason={}", conversationId, reason);
+    }
+
+    private static String sha256Hex(String text) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            return java.util.HexFormat.of().formatHex(
+                    digest.digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("sha-256 unavailable", e);
+        }
     }
 
     /**

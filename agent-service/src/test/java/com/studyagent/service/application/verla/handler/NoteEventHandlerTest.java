@@ -3,6 +3,7 @@ package com.studyagent.service.application.verla.handler;
 import com.studyagent.common.verla.enums.VerlaAgentEventType;
 import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.note.NoteBlogAudioPrefetchService;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.verla.VerlaEventInbox;
 import com.studyagent.service.domain.verla.VerlaSession;
@@ -36,6 +37,7 @@ class NoteEventHandlerTest {
     private static final long VERLA_CONVERSATION_ID = 11L;
 
     private DemoNoteService demoNoteService;
+    private NoteBlogAudioPrefetchService blogAudioPrefetchService;
     private VerlaSessionRepository sessionRepository;
     private VerlaQuotaService quotaService;
     private NoteEventHandler handler;
@@ -43,9 +45,11 @@ class NoteEventHandlerTest {
     @BeforeEach
     void setUp() {
         demoNoteService = mock(DemoNoteService.class);
+        blogAudioPrefetchService = mock(NoteBlogAudioPrefetchService.class);
         sessionRepository = mock(VerlaSessionRepository.class);
         quotaService = mock(VerlaQuotaService.class);
-        handler = new NoteEventHandler(demoNoteService, sessionRepository, new SessionStateMachine(), quotaService);
+        handler = new NoteEventHandler(demoNoteService, blogAudioPrefetchService,
+                sessionRepository, new SessionStateMachine(), quotaService);
     }
 
     @Test
@@ -89,6 +93,24 @@ class NoteEventHandlerTest {
         verify(demoNoteService).applyGeneratedTitle(VERLA_CONVERSATION_ID, "Business Ethics Memo Guidelines");
         // 起名与生成进度无关：不该推进 session 状态
         verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void extras_schedule_blog_audio_prefetch_after_saving() {
+        com.studyagent.service.domain.demo.note.NoteConversation saved =
+                new com.studyagent.service.domain.demo.note.NoteConversation();
+        saved.setId(7L);
+        saved.setVerlaConversationId(VERLA_CONVERSATION_ID);
+        saved.setBlogAudioStatus(DemoNoteService.BLOG_AUDIO_PROCESSING);
+        when(demoNoteService.applyExtras(VERLA_CONVERSATION_ID, "{\"label\":\"root\"}", "# blog"))
+                .thenReturn(saved);
+
+        handler.handle(
+                row(VerlaAgentEventType.NOTE_EXTRAS_COMMIT),
+                env(VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
+                        Map.of("mindmapJson", "{\"label\":\"root\"}", "blogMd", "# blog")));
+
+        verify(blogAudioPrefetchService).schedule(saved, "# blog");
     }
 
     @Test

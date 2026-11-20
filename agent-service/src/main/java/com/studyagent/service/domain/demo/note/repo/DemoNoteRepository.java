@@ -25,6 +25,9 @@ public interface DemoNoteRepository {
 
     Optional<NoteConversation> getOwnedConversation(String clerkUserId, Long conversationId);
 
+    /** 按 demo 主键取会话（异步音频任务回写状态用）。 */
+    Optional<NoteConversation> findById(Long conversationId);
+
     /** 由主线 {@code verla_conversations.id} 反查 demo 会话（uk_note_verla_conv 唯一键）。 */
     Optional<NoteConversation> findByVerlaConversationId(Long verlaConversationId);
 

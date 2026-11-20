@@ -54,6 +54,12 @@ public class NoteConversation {
     private String mindmapJson;
     /** 博客 Markdown，与笔记同轮生成；旧会话为 null。 */
     private String blogMd;
+    /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
+    private String blogAudioStatus;
+    /** 播客音频 manifest（分段 OSS/签名 URL + 时长 + sourceHash）；READY 时有值。 */
+    private String blogAudioJson;
+    /** manifest 对应的 blogMd 哈希，用于重新生成时判定旧音频失效。 */
+    private String blogAudioSourceHash;
     /** draft / generating / completed / failed。 */
     private String status;
     private LocalDateTime createdAt;

@@ -40,8 +40,26 @@ class RecoveryTestClockControllerTest {
     @Test void remoteClientCannotReachTheControllerWithValidTokenOrSpoofedHeaders()throws Exception{
         mvc().perform(get(prefix+"/runs/recovery-unit").header(RecoveryTestClockOperatorFilter.HEADER,token).header("X-Forwarded-For","127.0.0.1").with(r->{r.setRemoteAddr("198.51.100.2");return r;})).andExpect(status().isForbidden());verifyNoInteractions(support);
     }
+    @Test void nextWindowAcceptsOnlyThePriorInvoiceTransitionToken()throws Exception{
+        when(support.nextWindow("recovery-unit","in_previous")).thenReturn(Map.of("window",2));
+        mvc().perform(post(prefix+"/runs/recovery-unit/next-window").contentType("application/json").content("{\"expectedInvoiceId\":\"in_previous\"}")
+                .header(RecoveryTestClockOperatorFilter.HEADER,token).with(r->{r.setRemoteAddr("127.0.0.1");return r;}))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.window").value(2));
+        verify(support).nextWindow("recovery-unit","in_previous");
+    }
+    @Test void secondWindowIsForwardedOnEveryMutatingCommand()throws Exception{
+        var mvc=mvc();
+        mvc.perform(post(prefix+"/runs/recovery-unit/pause").contentType("application/json").content("{\"subscriptionId\":\"sub_owned\",\"window\":2}").header(RecoveryTestClockOperatorFilter.HEADER,token).with(r->{r.setRemoteAddr("127.0.0.1");return r;})).andExpect(status().isOk());
+        mvc.perform(post(prefix+"/runs/recovery-unit/first-failure").contentType("application/json").content("{\"window\":2}").header(RecoveryTestClockOperatorFilter.HEADER,token).with(r->{r.setRemoteAddr("127.0.0.1");return r;})).andExpect(status().isOk());
+        mvc.perform(post(prefix+"/runs/recovery-unit/advance").contentType("application/json").content("{\"checkpoint\":\"D30\",\"window\":2}").header(RecoveryTestClockOperatorFilter.HEADER,token).with(r->{r.setRemoteAddr("127.0.0.1");return r;})).andExpect(status().isOk());
+        verify(support).pause("recovery-unit","sub_owned",2);verify(support).firstPay("recovery-unit",2);verify(support).advance("recovery-unit","D30",2);
+    }
+    @Test void originalFirstFailureWithoutBodyRetainsFirstWindowCompatibility()throws Exception{
+        mvc().perform(post(prefix+"/runs/recovery-unit/first-failure").header(RecoveryTestClockOperatorFilter.HEADER,token).with(r->{r.setRemoteAddr("127.0.0.1");return r;})).andExpect(status().isOk());
+        verify(support).firstPay("recovery-unit",null);
+    }
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings={"/runs","/runs/recovery-unit/pause","/runs/recovery-unit/first-failure","/runs/recovery-unit/advance"})
+    @org.junit.jupiter.params.provider.ValueSource(strings={"/runs","/runs/recovery-unit/pause","/runs/recovery-unit/first-failure","/runs/recovery-unit/advance","/runs/recovery-unit/next-window"})
     void everyWriteRechecksAuthorizationBeforeItsService(String path)throws Exception{
         mvc().perform(post(prefix+path).contentType("application/json").content("{}").with(r->{r.setRemoteAddr("127.0.0.1");return r;})).andExpect(status().isUnauthorized());verifyNoInteractions(support);
     }

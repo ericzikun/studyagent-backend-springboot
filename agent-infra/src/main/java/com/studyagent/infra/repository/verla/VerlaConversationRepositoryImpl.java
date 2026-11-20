@@ -24,6 +24,11 @@ public class VerlaConversationRepositoryImpl
     }
 
     @Override
+    public VerlaConversation findByIdForUpdate(Long id) {
+        return toDomain(this.baseMapper.selectByIdForUpdate(id));
+    }
+
+    @Override
     public VerlaConversation findById(Long id) {
         VerlaConversationEntity e = this.getById(id);
         return toDomain(e);

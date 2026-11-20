@@ -27,6 +27,11 @@ public class VerlaMessageRepositoryImpl
     }
 
     @Override
+    public VerlaMessage findAssignmentFirstSubmit(Long conversationId, String submitId) {
+        return toDomain(this.baseMapper.selectAssignmentFirstSubmit(conversationId, submitId));
+    }
+
+    @Override
     public VerlaMessage findById(Long id) {
         return toDomain(this.getById(id));
     }

@@ -17,6 +17,9 @@ import java.util.List;
  */
 public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEntity> {
 
+    @Select("SELECT * FROM verla_conversations WHERE id = #{id} FOR UPDATE")
+    VerlaConversationEntity selectByIdForUpdate(@Param("id") Long id);
+
     /**
      * 会话列表（支持 Dashboard segment / status 过滤），与非过滤语义兼容：
      * {@code segment == null && conversationStatus == null} 时等价于旧「全部未删除」列表。

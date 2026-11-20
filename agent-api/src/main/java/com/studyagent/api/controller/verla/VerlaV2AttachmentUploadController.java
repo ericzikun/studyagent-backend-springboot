@@ -57,7 +57,11 @@ public class VerlaV2AttachmentUploadController {
             throw new BusinessException(ApiCode.PARAM_ERROR, "conversationId required");
         }
         try {
-            VerlaUploadSignResult r = attachmentService.requestSign(
+            VerlaUploadSignResult r = Boolean.TRUE.equals(req.getAssignmentFirstSubmit())
+                    ? attachmentService.requestAssignmentUploadSign(
+                            clerkUserId, req.getConversationId(), req.getFilename(), req.getMime(),
+                            req.getSizeBytes() == null ? 0L : req.getSizeBytes())
+                    : attachmentService.requestSign(
                     clerkUserId,
                     req.getConversationId(),
                     req.getFilename(),
@@ -102,6 +106,28 @@ public class VerlaV2AttachmentUploadController {
             throw new BusinessException(ApiCode.INTERNAL_ERROR, "upload failed");
         }
         return Result.success(null);
+    }
+
+    @PutMapping(value = "/{objectId}/content", params = "assignmentRecovery=true",
+            consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public Result<Void> uploadAssignmentContent(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String objectId, HttpServletRequest request) {
+        ensureLogin(clerkUserId);
+        try {
+            attachmentService.uploadAssignmentContent(clerkUserId, objectId, request.getInputStream());
+        } catch (IOException e) {
+            log.warn("[verla/v2/uploads] Assignment content interrupted objectId={}: {}", objectId, e.getMessage());
+            throw new BusinessException(ApiCode.INTERNAL_ERROR, "upload failed");
+        }
+        return Result.success(null);
+    }
+
+    @PostMapping("/{objectId}/assignment-recovery")
+    public Result<Boolean> recoverAssignmentUpload(
+            @RequestAttribute("clerkUserId") String clerkUserId, @PathVariable String objectId) {
+        ensureLogin(clerkUserId);
+        return Result.success(attachmentService.recoverAssignmentUpload(clerkUserId, objectId));
     }
 
     @PostMapping("/{objectId}/finalize")

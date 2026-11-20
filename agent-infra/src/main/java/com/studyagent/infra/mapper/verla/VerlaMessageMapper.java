@@ -9,6 +9,15 @@ import java.util.List;
 
 public interface VerlaMessageMapper extends BaseMapper<VerlaMessageEntity> {
 
+    @Select("""
+            SELECT * FROM verla_messages
+            WHERE conversation_id = #{conversationId} AND role = 'user'
+              AND JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.assignmentFirstSubmitId')) = #{submitId}
+            LIMIT 1 FOR UPDATE
+            """)
+    VerlaMessageEntity selectAssignmentFirstSubmit(@Param("conversationId") Long conversationId,
+                                                   @Param("submitId") String submitId);
+
     /**
      * 主对话消息分页。文件对话 / 作业追问消息写入同表，但用 meta_json.scene
      * （FILE_CHAT / ASSIGNMENT_CHAT）隔离，不进入主聊天历史。

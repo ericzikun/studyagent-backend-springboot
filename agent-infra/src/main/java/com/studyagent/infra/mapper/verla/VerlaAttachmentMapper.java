@@ -57,6 +57,20 @@ public interface VerlaAttachmentMapper extends BaseMapper<VerlaAttachmentEntity>
     VerlaAttachmentEntity selectActiveUserUploadForUpdate(@Param("clerkUserId") String clerkUserId,
                                                           @Param("objectId") String objectId);
 
+    @Select("""
+            SELECT * FROM verla_attachments
+            WHERE status = 'UPLOADED' AND attachment_origin = 'USER_UPLOAD'
+              AND deleted_at IS NULL AND turn_id IS NULL AND session_id IS NULL
+              AND storage_uri LIKE 'oss://%' AND checksum_sha256 IS NOT NULL
+              AND JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.assignmentFirstSubmit')) = 'true'
+              AND updated_at < #{cutoff}
+              AND EXISTS (SELECT 1 FROM verla_conversations c
+                          WHERE c.id = verla_attachments.conversation_id AND c.status = 'active')
+            ORDER BY updated_at, id LIMIT #{limit}
+            """)
+    List<VerlaAttachmentEntity> selectAssignmentUploadsToFinalize(
+            @Param("cutoff") java.time.LocalDateTime cutoff, @Param("limit") int limit);
+
     @Update("UPDATE verla_attachments "
             + "SET deleted_at = #{deletedAt}, updated_at = #{deletedAt} "
             + "WHERE id = #{id} AND deleted_at IS NULL")

@@ -106,7 +106,7 @@ class VerlaSimulationControllerTest {
         assertEquals(Boolean.TRUE, result.getData().get("canCreate"));
         assertEquals(Boolean.TRUE, other.getData().get("canCreate"));
         assertEquals(3, result.getData().get("maxFiles"));
-        assertEquals(1, result.getData().get("maxActiveRuns"));
+        assertEquals(4, result.getData().get("maxActiveRuns"));
         assertEquals(50, result.getData().get("maxDailyRuns"));
     }
 
@@ -417,7 +417,7 @@ class VerlaSimulationControllerTest {
                 .build();
         when(conversationService.getOwned("user_1", 11L)).thenReturn(conversation);
         when(jdbcTemplate.queryForObject(anyString(), any(Class.class), any()))
-                .thenReturn(1);
+                .thenReturn(4);
 
         assertThrows(BusinessException.class,
                 () -> controller.generate("user_1", 11L,

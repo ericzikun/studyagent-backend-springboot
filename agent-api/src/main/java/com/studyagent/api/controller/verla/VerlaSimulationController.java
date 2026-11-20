@@ -67,7 +67,9 @@ public class VerlaSimulationController {
     private static final int MAX_PROMPT_CHARS = 6000;
     private static final long MAX_FILE_BYTES = 32L * 1024 * 1024;
     private static final int MAX_ATTACHMENTS_JSON_CHARS = 32 * 1024;
-    private static final int MAX_ACTIVE_RUNS = 1;
+    /** Per-user concurrent generations; matches the worker's simulation generate pool. */
+    @org.springframework.beans.factory.annotation.Value("${verla.simulation.max-active-runs:4}")
+    private int maxActiveRuns = 4;
     private static final int MAX_DAILY_RUNS = 50;
     private static final Pattern HEAD_TAG = Pattern.compile("<head\\b[^>]*>", Pattern.CASE_INSENSITIVE);
     private static final String HIDDEN_GUARD =
@@ -126,7 +128,7 @@ public class VerlaSimulationController {
         body.put("maxFiles", planEntitlementService.getEffectiveEntitlements(clerkUserId).maxFiles());
         body.put("maxFileBytes", MAX_FILE_BYTES);
         body.put("maxExtractedChars", 30000);
-        body.put("maxActiveRuns", MAX_ACTIVE_RUNS);
+        body.put("maxActiveRuns", maxActiveRuns);
         body.put("maxDailyRuns", MAX_DAILY_RUNS);
         body.put("pass", pass);
         return Result.success(body);
@@ -424,7 +426,7 @@ public class VerlaSimulationController {
                         + "WHERE c.user_id = ? AND c.status <> 'deleted' AND s.kind = 'SIMULATION' "
                         + "AND s.status IN ('CREATED', 'DISPATCHING', 'RUNNING', 'CANCELLING')",
                 Integer.class, clerkUserId);
-        if (active != null && active >= MAX_ACTIVE_RUNS) {
+        if (active != null && active >= maxActiveRuns) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "another simulation is still generating");
         }

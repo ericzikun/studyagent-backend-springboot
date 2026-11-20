@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -96,7 +97,8 @@ public class DemoNoteController {
             @PathVariable Long conversationId,
             @PathVariable String fileName,
             @RequestParam(required = false) Long exp,
-            @RequestParam(required = false) String sig) {
+            @RequestParam(required = false) String sig,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String range) {
         if (!blogTtsService.verify(conversationId, fileName, exp, sig)) {
             return ResponseEntity.status(403).build();
         }
@@ -105,10 +107,34 @@ public class DemoNoteController {
             return ResponseEntity.notFound().build();
         }
         try {
+            byte[] data = Files.readAllBytes(file);
+            // 单轨 WAV 有几 MB：支持 Range，浏览器拖动进度时不用整文件重下
+            if (range != null && range.startsWith("bytes=")) {
+                String[] parts = range.substring("bytes=".length()).split("-", 2);
+                int total = data.length;
+                int start = parts.length > 0 && !parts[0].isBlank()
+                        ? Integer.parseInt(parts[0].trim()) : 0;
+                int end = parts.length > 1 && !parts[1].isBlank()
+                        ? Integer.parseInt(parts[1].trim()) : total - 1;
+                start = Math.max(0, Math.min(start, total - 1));
+                end = Math.max(start, Math.min(end, total - 1));
+                int length = end - start + 1;
+                byte[] slice = java.util.Arrays.copyOfRange(data, start, end + 1);
+                return ResponseEntity.status(206)
+                        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                        .header(HttpHeaders.CONTENT_RANGE,
+                                "bytes " + start + "-" + end + "/" + total)
+                        .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
+                        .contentType(MediaType.parseMediaType("audio/wav"))
+                        .contentLength(length)
+                        .body(slice);
+            }
             return ResponseEntity.ok()
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                     .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
                     .contentType(MediaType.parseMediaType("audio/wav"))
-                    .body(Files.readAllBytes(file));
+                    .contentLength(data.length)
+                    .body(data);
         } catch (java.io.IOException e) {
             return ResponseEntity.internalServerError().build();
         }

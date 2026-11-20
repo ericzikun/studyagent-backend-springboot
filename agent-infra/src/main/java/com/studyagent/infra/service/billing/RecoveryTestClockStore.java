@@ -26,6 +26,16 @@ final class RecoveryTestClockStore {
         public Map<String,Operation> operations=new LinkedHashMap<>();
         public RecoveryOwnedClockEvidence.Frame proof;
         public RecoveryTestClockStripe.Capture before;
+        // Missing fields in existing run files retain first-window compatibility.
+        public int window=1;
+        public List<Window> history=new ArrayList<>();
+    }
+    static final class Window {
+        public int number;
+        public String invoiceId;
+        public Map<String,Operation> operations=new LinkedHashMap<>();
+        public RecoveryOwnedClockEvidence.Frame proof;
+        public RecoveryTestClockStripe.Capture before;
     }
     private static final Map<Path,ReentrantLock> LOCKS=new ConcurrentHashMap<>();
     private final Path directory;

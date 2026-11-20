@@ -58,8 +58,37 @@ public class RecoveryTestClockSupport {
         });
         return summary(run);
     });}
-    public Map<String,Object> pause(String runId,String subscriptionId){return locked(()->{
-        var run=required(runId);scope(run);var user=users.selectByUser(run.userId);var sub=stripe.subscription(subscriptionId);
+    public Map<String,Object> nextWindow(String runId,String expectedInvoiceId){return locked(()->{
+        var run=required(runId);scope(run);
+        check(expectedInvoiceId!=null&&!expectedInvoiceId.isBlank(),"PREVIOUS_INVOICE_REQUIRED");
+        // The prior invoice is the transition token: duplicate requests never rotate twice.
+        if(run.history.stream().anyMatch(w->expectedInvoiceId.equals(w.invoiceId)))return summary(run);
+        check(run.proof!=null&&expectedInvoiceId.equals(run.invoiceId),"PREVIOUS_WINDOW_REQUIRED");
+        new RecoveryOwnedClockEvidence.Registry().register(run.proof);
+        check(run.operations.values().stream().allMatch(op->Set.of("SUCCEEDED","DECLINED","FAILED").contains(op.state)),"PREVIOUS_OPERATIONS_MUST_BE_SETTLED");
+        check(run.history.size()<100,"WINDOW_LIMIT_REACHED");
+        var root=roots.selectByInvoice(expectedInvoiceId);var user=users.selectByUser(run.userId);
+        check(root!=null&&root.getOwnerRecoveryId()==null&&run.userId.equals(root.getClerkUserId())&&run.subscriptionId.equals(root.getStripeSubscriptionId())
+                &&"PAID".equals(root.getStatus())&&"GRANTED".equals(root.getGrantState())&&"CONFIRMED".equals(root.getAnchorSyncState())
+                &&"RELEASED".equals(root.getProtectionState())&&Set.of("NONE","RESOLVED").contains(Objects.toString(root.getReviewState(),"NONE")),"PREVIOUS_RECOVERY_MUST_BE_SETTLED");
+        check(user!=null&&run.customerId.equals(user.getStripeCustomerId())&&run.subscriptionId.equals(user.getStripeSubscriptionId())&&user.getPaymentRecoveryId()==null,"RELEASED_LOCAL_SUBSCRIPTION_REQUIRED");
+        var notifications=Set.of("CAPTURE_FAILURE","NOTIFY_INTERNAL_FAILURE","NOTIFY_REVIEW","SEND_EMAIL");
+        check(actions!=null&&actions.selectByRecovery(root.getId()).stream().noneMatch(a->!notifications.contains(Objects.toString(a.getActionType(),""))
+                &&Set.of("READY","DISPATCHING","UNKNOWN","SUBMITTED","REVIEW").contains(Objects.toString(a.getStatus(),""))),"PREVIOUS_ACTIONS_MUST_BE_SETTLED");
+        var clock=stripe.clock(run.clockId);RecoveryTestClockStripe.ready(clock);var sub=stripe.subscription(run.subscriptionId);subscriptionScope(run,sub);
+        check("active".equals(sub.getStatus())&&sub.getPauseCollection()==null&&!Boolean.TRUE.equals(sub.getCancelAtPeriodEnd())&&sub.getCancelAt()==null
+                &&sub.getCurrentPeriodEnd()!=null&&sub.getCurrentPeriodEnd()>clock.getFrozenTime(),"NEXT_PAID_BOUNDARY_REQUIRED");
+        for(var invoiceId:List.of(expectedInvoiceId,Objects.toString(sub.getLatestInvoice(),""))){
+            var invoice=stripe.invoice(invoiceId);invoiceScope(run,invoice);check("paid".equals(invoice.getStatus()),"PREVIOUS_INVOICES_MUST_BE_PAID");
+        }
+        var previous=new RecoveryTestClockStore.Window();previous.number=run.window;previous.invoiceId=run.invoiceId;
+        previous.proof=run.proof;previous.before=run.before;previous.operations=run.operations;run.history.add(previous);
+        run.window++;run.invoiceId=null;run.proof=null;run.before=null;run.operations=new LinkedHashMap<>();
+        run.observedBusinessTime=Instant.ofEpochSecond(clock.getFrozenTime());store.save(run);return summary(run);
+    });}
+    public Map<String,Object> pause(String runId,String subscriptionId){return pause(runId,subscriptionId,null);}
+    public Map<String,Object> pause(String runId,String subscriptionId,Integer window){return locked(()->{
+        var run=required(runId);requireWindow(run,window);scope(run);var user=users.selectByUser(run.userId);var sub=stripe.subscription(subscriptionId);
         subscriptionScope(run,sub);check(user!=null&&subscriptionId.equals(user.getStripeSubscriptionId())&&run.customerId.equals(user.getStripeCustomerId()),"LOCAL_SUBSCRIPTION_BINDING_REQUIRED");
         check(run.proof==null,"FIRST_FAILURE_ALREADY_RECORDED");check(run.subscriptionId==null||run.subscriptionId.equals(subscriptionId),"SUBSCRIPTION_BINDING_CONFLICT");
         run.subscriptionId=subscriptionId;store.save(run);
@@ -68,8 +97,9 @@ public class RecoveryTestClockSupport {
         if(sub.getPauseCollection()!=null&&"keep_as_draft".equals(sub.getPauseCollection().getBehavior())){op.state="SUCCEEDED";store.save(run);}
         return summary(run);
     });}
-    public Map<String,Object> firstPay(String runId){return locked(()->{
-        var run=required(runId);scope(run);check(run.subscriptionId!=null,"PAUSE_SUBSCRIPTION_FIRST");
+    public Map<String,Object> firstPay(String runId){return firstPay(runId,null);}
+    public Map<String,Object> firstPay(String runId,Integer window){return locked(()->{
+        var run=required(runId);requireWindow(run,window);scope(run);check(run.subscriptionId!=null,"PAUSE_SUBSCRIPTION_FIRST");
         var sub=stripe.subscription(run.subscriptionId);subscriptionScope(run,sub);
         check(sub.getPauseCollection()!=null&&"keep_as_draft".equals(sub.getPauseCollection().getBehavior()),"SETUP_PAUSE_REQUIRED");
         var user=users.selectByUser(run.userId);check(user!=null&&run.subscriptionId.equals(user.getStripeSubscriptionId())&&run.customerId.equals(user.getStripeCustomerId()),"LOCAL_SUBSCRIPTION_BINDING_REQUIRED");
@@ -92,8 +122,9 @@ public class RecoveryTestClockSupport {
         if(frame!=null){new RecoveryOwnedClockEvidence.Registry().register(frame);run.proof=frame;pay.state="DECLINED";store.save(run);}
         return summary(run);
     });}
-    public Map<String,Object> advance(String runId,String checkpoint){return locked(()->{
-        var run=required(runId);scope(run);check(run.subscriptionId!=null,"PAUSE_SUBSCRIPTION_FIRST");
+    public Map<String,Object> advance(String runId,String checkpoint){return advance(runId,checkpoint,null);}
+    public Map<String,Object> advance(String runId,String checkpoint,Integer window){return locked(()->{
+        var run=required(runId);requireWindow(run,window);scope(run);check(run.subscriptionId!=null,"PAUSE_SUBSCRIPTION_FIRST");
         var sub=stripe.subscription(run.subscriptionId);subscriptionScope(run,sub);var clock=stripe.clock(run.clockId);
         var prior=run.operations.get("advance-"+checkpoint);
         if(prior!=null){observeAdvance(run,prior);return summary(run);}
@@ -158,15 +189,18 @@ public class RecoveryTestClockSupport {
     SubscriptionRecoveryStripeGateway.FirstFailure firstFailure(SubscriptionRecoveryStripeGateway.Snapshot snapshot,Event event){return locked(()->{
         var customer=stripe.customer(snapshot.invoice().getCustomer());var metadata=customer.getMetadata();
         check(metadata!=null&&metadata.get("recovery_test_run")!=null,"REGISTERED_RUN_REQUIRED");var run=required(metadata.get("recovery_test_run"));scope(run);
-        check(run.proof!=null&&run.invoiceId.equals(snapshot.invoice().getId())&&run.subscriptionId.equals(snapshot.invoice().getSubscription())
+        var frame=run.proof!=null&&Objects.equals(run.invoiceId,snapshot.invoice().getId())?run.proof:
+                run.history.stream().filter(w->Objects.equals(w.invoiceId,snapshot.invoice().getId())).map(w->w.proof).findFirst().orElse(null);
+        String invoiceId=snapshot.invoice().getId();
+        check(frame!=null&&run.subscriptionId.equals(snapshot.invoice().getSubscription())
                 &&run.customerId.equals(snapshot.invoice().getCustomer())&&snapshot.subscription()!=null&&run.clockId.equals(snapshot.subscription().getTestClock()),"VERIFIED_FIRST_FAILURE_REQUIRED");
-        var proof=new RecoveryOwnedClockEvidence.Registry().register(run.proof);var nativeEvent=proof.frame().failureEvents().get(0);
+        var proof=new RecoveryOwnedClockEvidence.Registry().register(frame);var nativeEvent=proof.frame().failureEvents().get(0);
         var currentClock=stripe.clock(run.clockId);RecoveryTestClockStripe.ready(currentClock);
         check(Boolean.FALSE.equals(snapshot.invoice().getLivemode())&&Boolean.FALSE.equals(snapshot.subscription().getLivemode())
                 &&snapshot.paymentIntent()!=null&&Boolean.FALSE.equals(snapshot.paymentIntent().getLivemode())
                 &&run.customerId.equals(snapshot.paymentIntent().getCustomer())&&snapshot.invoice().getPaymentIntent().equals(snapshot.paymentIntent().getId())
                 &&snapshot.charge()!=null&&Boolean.FALSE.equals(snapshot.charge().getLivemode())&&run.customerId.equals(snapshot.charge().getCustomer())
-                &&run.invoiceId.equals(snapshot.charge().getInvoice())&&snapshot.paymentIntent().getId().equals(snapshot.charge().getPaymentIntent())
+                &&invoiceId.equals(snapshot.charge().getInvoice())&&snapshot.paymentIntent().getId().equals(snapshot.charge().getPaymentIntent())
                 &&snapshot.charge().getId().equals(snapshot.paymentIntent().getLatestCharge()),"NATIVE_PAYMENT_ASSOCIATIONS_REQUIRED");
         check(event!=null&&Boolean.FALSE.equals(event.getLivemode())&&nativeEvent.eventId().equals(event.getId())&&nativeEvent.type().equals(event.getType())
                 &&Objects.equals(nativeEvent.created(),event.getCreated()),"NATIVE_FIRST_EVENT_REQUIRED");
@@ -174,7 +208,7 @@ public class RecoveryTestClockSupport {
         if(eventSub==null&&raw.has("parent")&&raw.get("parent").isJsonObject()){
             var parent=raw.getAsJsonObject("parent");if("subscription_details".equals(RecoveryTestClockStripe.id(parent,"type"))&&parent.has("subscription_details"))eventSub=RecoveryTestClockStripe.id(parent.getAsJsonObject("subscription_details"),"subscription");
         }
-        check(Set.of("2023-10-16","2025-12-15.clover").contains(Objects.toString(event.getApiVersion(),""))&&run.invoiceId.equals(RecoveryTestClockStripe.id(raw,"id"))
+        check(Set.of("2023-10-16","2025-12-15.clover").contains(Objects.toString(event.getApiVersion(),""))&&invoiceId.equals(RecoveryTestClockStripe.id(raw,"id"))
                 &&run.customerId.equals(RecoveryTestClockStripe.id(raw,"customer"))&&run.subscriptionId.equals(eventSub),"EVENT_SCOPE_REQUIRED");
         var envelope=com.google.gson.JsonParser.parseString(event.toJson()).getAsJsonObject();
         check(envelope.has("request")&&envelope.get("request").isJsonObject()
@@ -184,6 +218,7 @@ public class RecoveryTestClockSupport {
         return new SubscriptionRecoveryStripeGateway.FirstFailure(proof.occurredAt(),"registered_test_clock_controlled_operation",nativeEvent.eventId(),proof.frame().charges().get(0).chargeId(),snapshot.businessNow());
     });}
     private RecoveryTestClockStore.Run required(String id){var run=store.read(id);check(run!=null,"REGISTERED_RUN_REQUIRED");allowed(run.userId);return run;}
+    private static void requireWindow(RecoveryTestClockStore.Run run,Integer expected){check(run.window==(expected==null?1:expected),"WINDOW_MISMATCH");}
     private void allowed(String user){check(properties.getAllowedUserIds().contains(user),"USER_NOT_ALLOWED");}
     private void scope(RecoveryTestClockStore.Run run)throws Exception{
         allowed(run.userId);var clock=stripe.clock(run.clockId);var customer=stripe.customer(run.customerId);
@@ -196,7 +231,7 @@ public class RecoveryTestClockSupport {
     private RecoveryTestClockStore.Operation operation(RecoveryTestClockStore.Run run,String name,String type,String target,Map<String,Object> params){
         var prior=run.operations.get(name);
         if(prior!=null){check(type.equals(prior.type)&&target.equals(prior.target)&&params.equals(prior.parameters),"FROZEN_OPERATION_CONFLICT");return prior;}
-        var operation=new RecoveryTestClockStore.Operation();operation.type=type;operation.target=target;operation.parameters=new LinkedHashMap<>(params);operation.key="test-clock:"+run.runId+":"+name;run.operations.put(name,operation);store.save(run);return operation;
+        var operation=new RecoveryTestClockStore.Operation();operation.type=type;operation.target=target;operation.parameters=new LinkedHashMap<>(params);operation.key="test-clock:"+run.runId+":"+(run.window==1?"":"window-"+run.window+":")+name;run.operations.put(name,operation);store.save(run);return operation;
     }
     private void execute(RecoveryTestClockStore.Run run,RecoveryTestClockStore.Operation operation){
         if(!"READY".equals(operation.state))return; // UNKNOWN/DISPATCHING are read back, never resent.
@@ -215,6 +250,7 @@ public class RecoveryTestClockSupport {
     }
     private Map<String,Object> summary(RecoveryTestClockStore.Run run){
         var view=new LinkedHashMap<String,Object>();view.put("runId",run.runId);view.put("userId",run.userId);view.put("customerId",run.customerId);view.put("clockId",run.clockId);view.put("subscriptionId",run.subscriptionId);view.put("invoiceId",run.invoiceId);
+        view.put("window",run.window);view.put("history",run.history.stream().map(w->Map.of("window",w.number,"invoiceId",w.invoiceId,"firstFailureBusinessAt",w.proof.beforeClock().frozenTime())).toList());
         view.put("firstFailureBusinessAt",run.proof==null?null:run.proof.beforeClock().frozenTime());view.put("observedBusinessTime",run.observedBusinessTime);view.put("operations",run.operations);view.put("testOnly",true);
         var root=run.invoiceId==null?null:roots.selectByInvoice(run.invoiceId);
         if(root!=null){

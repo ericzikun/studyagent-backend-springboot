@@ -95,6 +95,7 @@ public class AdminOwnerProfileEnricher {
         return switch (taskType) {
             case AI_DETECTION -> FeatureCode.AI_DETECTION;
             case AI_HUMANIZER -> FeatureCode.HUMANIZER;
+            case SIMULATION -> FeatureCode.SIMULATION;
             case ASSIGNMENT, UNKNOWN -> FeatureCode.TASK_CREATE;
         };
     }
@@ -103,7 +104,7 @@ public class AdminOwnerProfileEnricher {
         if (clerkUserId == null || clerkUserId.isBlank() || featureCode == null) {
             return null;
         }
-        if (unlimited) {
+        if (unlimited || featureCode == FeatureCode.SIMULATION) {
             return null;
         }
         try {

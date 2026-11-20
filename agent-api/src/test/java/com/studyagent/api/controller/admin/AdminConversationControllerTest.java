@@ -34,6 +34,7 @@ class AdminConversationControllerTest {
     private AdminConversationBrowseService browseService;
     private AdminOwnerProfileEnricher ownerProfileEnricher;
     private VerlaConversationDashboardStatusService dashboardStatusService;
+    private com.studyagent.service.domain.verla.repo.VerlaArtifactRepository artifactRepository;
     private AdminConversationController controller;
 
     @BeforeEach
@@ -42,6 +43,7 @@ class AdminConversationControllerTest {
         browseService = mock(AdminConversationBrowseService.class);
         ownerProfileEnricher = mock(AdminOwnerProfileEnricher.class);
         dashboardStatusService = mock(VerlaConversationDashboardStatusService.class);
+        artifactRepository = mock(com.studyagent.service.domain.verla.repo.VerlaArtifactRepository.class);
         controller = new AdminConversationController(
                 adminAccessService,
                 browseService,
@@ -49,12 +51,38 @@ class AdminConversationControllerTest {
                 dashboardStatusService,
                 mock(com.studyagent.service.application.verla.VerlaConversationService.class),
                 mock(com.studyagent.service.domain.verla.repo.VerlaMessageRepository.class),
-                mock(com.studyagent.service.domain.verla.repo.VerlaArtifactRepository.class),
+                artifactRepository,
                 mock(com.studyagent.service.application.verla.VerlaAttachmentService.class),
                 mock(com.studyagent.service.application.verla.VerlaFileChatService.class),
                 mock(com.studyagent.service.application.verla.AssignmentRuntimeSnapshotService.class),
                 mock(com.studyagent.service.application.verla.AiWritingRuntimeSnapshotService.class),
-                mock(com.studyagent.service.application.verla.VerlaCodeProjectService.class));
+                mock(com.studyagent.service.application.verla.VerlaCodeProjectService.class),
+                mock(com.studyagent.service.domain.file.OssStorageService.class));
+    }
+
+    @Test
+    void simulationContent_shouldReturnHtmlWithHiddenGuard() {
+        VerlaConversation conversation = VerlaConversation.builder()
+                .id(11L)
+                .userId("user_2")
+                .primaryIntent("SIMULATION")
+                .title("Pendulum lab")
+                .build();
+        when(browseService.requireReadable(11L)).thenReturn(conversation);
+        when(artifactRepository.findByConversation(11L)).thenReturn(List.of(
+                com.studyagent.service.domain.verla.VerlaArtifact.builder()
+                        .kind("simulation_html")
+                        .artifactUid("artifact_11")
+                        .bodyOrRef("<html><head><title>lab</title></head><body>x</body></html>")
+                        .sizeBytes(64L)
+                        .build()));
+
+        Result<Map<String, Object>> result = controller.getSimulationContent("admin", 11L);
+
+        assertThat(result.getData().get("title")).isEqualTo("Pendulum lab");
+        assertThat((String) result.getData().get("html"))
+                .contains("data-verla-hidden-guard")
+                .contains("<title>lab</title>");
     }
 
     @Test

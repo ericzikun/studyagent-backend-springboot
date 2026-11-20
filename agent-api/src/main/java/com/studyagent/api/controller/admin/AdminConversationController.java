@@ -9,6 +9,7 @@ import com.studyagent.api.dto.verla.response.FileChatPanelResponseVO;
 import com.studyagent.api.dto.verla.response.MessagePageVO;
 import com.studyagent.api.dto.verla.response.VerlaArtifactVO;
 import com.studyagent.api.dto.verla.response.VerlaAttachmentVO;
+import com.studyagent.api.dto.verla.response.VerlaConversationVO;
 import com.studyagent.api.dto.verla.response.VerlaMessageVO;
 import com.studyagent.api.web.verla.VerlaPublicId;
 import com.studyagent.common.api.ApiCode;
@@ -28,6 +29,7 @@ import com.studyagent.service.application.verla.admin.VerlaAdminAccessService;
 import com.studyagent.service.application.verla.dto.VerlaConversationListSlice;
 import com.studyagent.infra.service.admin.AdminOwnerProfileEnricher;
 import com.studyagent.common.quota.FeatureCode;
+import com.studyagent.service.domain.file.OssStorageService;
 import com.studyagent.service.domain.verla.VerlaArtifact;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaMessage;
@@ -53,6 +55,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -69,6 +72,10 @@ import java.util.zip.ZipOutputStream;
 @RequiredArgsConstructor
 public class AdminConversationController {
 
+    private static final String KIND_SIMULATION_HTML = "simulation_html";
+    private static final String HIDDEN_GUARD =
+            "<style data-verla-hidden-guard>[hidden]{display:none!important}</style>";
+
     private final VerlaAdminAccessService adminAccessService;
     private final AdminConversationBrowseService browseService;
     private final AdminOwnerProfileEnricher ownerProfileEnricher;
@@ -81,6 +88,7 @@ public class AdminConversationController {
     private final AssignmentRuntimeSnapshotService assignmentRuntimeSnapshotService;
     private final AiWritingRuntimeSnapshotService aiWritingRuntimeSnapshotService;
     private final VerlaCodeProjectService codeProjectService;
+    private final OssStorageService ossStorageService;
 
     @GetMapping("/access")
     public Result<Boolean> checkAccess(@RequestAttribute("clerkUserId") String clerkUserId) {
@@ -217,6 +225,66 @@ public class AdminConversationController {
                 .filter(VerlaArtifactVO::isListVisible)
                 .map(VerlaArtifactVO::from)
                 .collect(Collectors.toList()));
+    }
+
+    /** Admin read-only preview of a generated simulation lab (sandboxed iframe on the frontend). */
+    @GetMapping("/{cid}/simulation-content")
+    public Result<Map<String, Object>> getSimulationContent(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @VerlaPublicId(VerlaPublicIdType.CONVERSATION) @PathVariable Long cid) {
+        adminAccessService.assertAdmin(clerkUserId);
+        VerlaConversation conversation = browseService.requireReadable(cid);
+        VerlaArtifact artifact = artifactRepository.findByConversation(cid).stream()
+                .filter(item -> KIND_SIMULATION_HTML.equals(item.getKind()))
+                .reduce((first, second) -> second)
+                .orElse(null);
+        if (artifact == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(),
+                    "simulation artifact not found");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("conversationId", VerlaConversationVO.fromPublic(conversation).getConversationId());
+        body.put("title", conversation.getTitle());
+        body.put("artifactUid", artifact.getArtifactUid());
+        body.put("sizeBytes", artifact.getSizeBytes() == null ? 0L : artifact.getSizeBytes());
+        body.put("html", withHiddenGuard(readArtifactHtml(artifact)));
+        return Result.success(body);
+    }
+
+    private String readArtifactHtml(VerlaArtifact artifact) {
+        if (artifact.getBodyOrRef() != null && !artifact.getBodyOrRef().isBlank()) {
+            return artifact.getBodyOrRef();
+        }
+        String ref = artifact.getContentRef();
+        if (ref == null || ref.isBlank()) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(), "simulation content missing");
+        }
+        String key = ref.startsWith("oss://") ? ref.substring("oss://".length()) : ref;
+        int slash = key.indexOf('/');
+        if (slash >= 0) {
+            key = key.substring(slash + 1);
+        }
+        byte[] bytes = ossStorageService.getObjectBytes(key);
+        if (bytes == null || bytes.length == 0) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND.getCode(),
+                    "simulation content unavailable");
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private String withHiddenGuard(String html) {
+        if (html == null || html.isEmpty() || html.contains("data-verla-hidden-guard")) {
+            return html;
+        }
+        int head = html.toLowerCase(Locale.ROOT).indexOf("<head");
+        if (head < 0) {
+            return html;
+        }
+        int end = html.indexOf('>', head);
+        if (end < 0) {
+            return html;
+        }
+        return html.substring(0, end + 1) + "\n" + HIDDEN_GUARD + html.substring(end + 1);
     }
 
     @GetMapping("/{cid}/file-chat")

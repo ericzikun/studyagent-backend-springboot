@@ -117,6 +117,7 @@ public class AssignmentRunDispatchMonitorService {
                 .outboxId(row.getOutboxId())
                 .clerkUserId(row.getClerkUserId())
                 .featureCode(row.getFeatureCode())
+                .kind(row.getKind())
                 .sessionStatus(row.getSessionStatus())
                 .outboxStatus(outboxStatusLabel(row.getOutboxStatus()))
                 .outboxAction(row.getOutboxAction())
@@ -183,6 +184,9 @@ public class AssignmentRunDispatchMonitorService {
             case "ASSIGNMENT_AGENT_FLOW_ARTIFACT_UPDATED", "ASSIGNMENT_ARTIFACT_UPDATED" ->
                     "Artifact updated";
             case "ASSIGNMENT_PROGRESS", "ASSIGNMENT_AGENT_FLOW_PROGRESS" -> "Progress update";
+            case "SIMULATION_STARTED" -> "Simulation started";
+            case "SIMULATION_PROGRESS" -> "Simulation generating";
+            case "SIMULATION_ARTIFACT_UPDATED" -> "Simulation artifact updated";
             default -> eventType;
         };
     }

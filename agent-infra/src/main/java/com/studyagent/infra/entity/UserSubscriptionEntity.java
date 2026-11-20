@@ -32,6 +32,11 @@ public class UserSubscriptionEntity extends BaseEntity {
     private LocalDateTime quotaPeriodStart;
     @TableField("quota_period_end")
     private LocalDateTime quotaPeriodEnd;
+    /** Source zone of the stored wall-clock pair. Null means unclassified legacy history. */
+    @TableField("current_period_time_zone")
+    private String currentPeriodTimeZone;
+    @TableField("quota_period_time_zone")
+    private String quotaPeriodTimeZone;
     @TableField("cancel_at_period_end")
     private Boolean cancelAtPeriodEnd;
     @TableField("pending_plan_code")

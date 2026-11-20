@@ -1029,6 +1029,19 @@ class SubscriptionPaymentRecoveryServiceTest {
         var finalize=readyAction("FINALIZE_INVOICE","in_draft");finalize.setActionKey("recovery:1:FINALIZE_INVOICE:in_draft");finalize.setStatus("finalize_unknown".equals(condition)?"UNKNOWN":"SKIPPED");finalize.setSkipReason("other_skip".equals(condition)?"SKIPPED_TERMINAL":"SKIPPED_UNVERIFIED_TARGET");var ledger=failureLedger();ledger.add(finalize);bindSequenceActions(ledger);
         service.reconcile(1L);assertNull(root.getAccountClosedAt());assertEquals("CLOSING",root.getStatus());assertEquals("draft",draft.getStatus());verify(quota,never()).clearPlanQuotaAt(anyString(),anyString(),anyString(),anyString(),any());verify(stripe,never()).execute(any());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"void","paid"})
+    void protectionIntentFrozenBeforeCloseIsNotDispatchedAfterTheInvoiceBecameTerminal(String status){
+        var snap=snapshot();var root=existingRoot();root.setStatus("CLOSING");root.setCloseReason("DEADLINE");ownedFixture(root,snap);
+        var target=snapshot();target.invoice().setId("in_closed");target.invoice().setStatus(status);target.invoice().setAutoAdvance(false);
+        if("paid".equals(status)){target.invoice().setAmountPaid(2900L);target.invoice().setAmountRemaining(0L);}
+        when(stripe.readInvoice("in_closed")).thenReturn(target);
+        var action=readyAction("DISABLE_ADVANCE","in_closed");action.setActionKey("recovery:in_closed:disable-advance");action.setProviderIdempotencyKey(action.getActionKey());action.setPayloadJson("{\"auto_advance\":false}");
+        var ledger=failureLedger();ledger.add(action);bindSequenceActions(ledger);
+        service.runDueAction(10L);
+        assertEquals("SKIPPED",action.getStatus());assertEquals("SKIPPED_TERMINAL",action.getSkipReason());
+        assertNull(root.getReviewState());verify(actions,never()).claim(anyLong(),anyInt(),anyString(),any(),any());verify(stripe,never()).execute(any());assertRecoveryHistoryWasNotDeleted();
+    }
     @Test void finalizationCannotIncludeMixedGoodsEvenWhenTheCohortHasSilentCleanupEvidence() {
         var snap=snapshot();var root=existingRoot();root.setStatus("CLOSING");root.setCloseReason("DEADLINE");root.setContractSnapshot("{\"price_id\":\"price_old\",\"quantity\":1,\"recovery_admission\":{\"silentCleanupVerified\":true}}");ownedFixture(root,snap);
         var mixed=snapshot();mixed.invoice().setId("in_mixed");mixed.invoice().setStatus("draft");mixed.invoice().setAutoAdvance(false);var extra=ApiResource.GSON.fromJson(mixed.lines().get(0).toJson(),InvoiceLineItem.class);extra.setType("invoiceitem");extra.setId("il_extra");var target=new SubscriptionRecoveryStripeGateway.Snapshot(mixed.invoice(),mixed.subscription(),null,List.of(mixed.lines().get(0),extra),mixed.paymentIntent(),mixed.charge(),now);when(stripe.readInvoice("in_mixed")).thenReturn(target);

@@ -639,6 +639,9 @@ public class SubscriptionPaymentRecoveryService {
             if(Objects.equals(invoice.getId(),current.invoice().getId()) || !"paid".equals(invoice.getStatus()) || invoice.getAmountPaid()==null || invoice.getAmountPaid()<=0)continue;
             Instant paid=invoice.getStatusTransitions()==null?null:epoch(invoice.getStatusTransitions().getPaidAt());
             var known=recoveries.selectByInvoice(invoice.getId());
+            // Settled receipts from earlier windows on this subscription are not payments for this window.
+            if(known!=null&&!Objects.equals(root.getId(),known.getId())&&!Objects.equals(root.getId(),known.getOwnerRecoveryId())
+                    &&paid!=null&&root.getFirstFailedAt()!=null&&paid.isBefore(instant(root.getFirstFailedAt())))continue;
             if(known==null && (paid==null || root.getFirstFailedAt()==null || paid.isBefore(instant(root.getFirstFailedAt()))))continue;
             var candidate=stripe.readInvoice(invoice.getId());
             if(!Objects.equals(root.getStripeCustomerId(),candidate.invoice().getCustomer()) || !Objects.equals(root.getStripeSubscriptionId(),candidate.invoice().getSubscription()))throw incomplete(invoice.getId());

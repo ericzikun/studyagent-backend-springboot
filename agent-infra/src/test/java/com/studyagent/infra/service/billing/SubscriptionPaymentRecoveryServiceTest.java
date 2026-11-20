@@ -28,6 +28,39 @@ class SubscriptionPaymentRecoveryServiceTest {
     private final Instant now=Instant.parse("2026-11-11T02:00:00Z");
 
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void earlierPaidRecoveryReceiptsDoNotBlockProtectionOfANewWindow(boolean historicalChild) {
+        var current=snapshot();var pause=new Subscription.PauseCollection();pause.setBehavior("keep_as_draft");current.subscription().setPauseCollection(pause);
+        var root=existingRoot();root.setStatus("OPEN_MANUAL");root.setProtectionState("PENDING");root.setGrantState("NONE");root.setReviewState("NONE");ownedFixture(root,current);
+        var previous=paidSnapshot();previous.invoice().setId("in_prior");previous.invoice().getStatusTransitions().setPaidAt(now.minusSeconds(86400).getEpochSecond());
+        var old=new SubscriptionPaymentRecoveryEntity();old.setId(2L);old.setStripeInvoiceId("in_prior");old.setStatus("PAID");old.setGrantState("GRANTED");old.setReviewState("NONE");if(historicalChild)old.setOwnerRecoveryId(9L);
+        when(recoveries.selectByInvoice("in_prior")).thenReturn(old);when(stripe.readInvoice("in_prior")).thenReturn(previous);
+        when(stripe.listInvoices("sub_old")).thenReturn(List.of(current.invoice(),previous.invoice()));
+        assertDoesNotThrow(()->service.reconcile(1L));
+        assertEquals("ACTIVE",root.getProtectionState());assertEquals("OPEN_MANUAL",root.getStatus());assertEquals("NONE",root.getReviewState());
+        assertEquals("GRANTED",old.getGrantState());assertEquals("NONE",old.getReviewState());
+        verify(stripe,never()).readInvoice("in_prior");verify(recoveries,never()).updateById(same(old));verifyNoInteractions(orders);assertRecoveryHistoryWasNotDeleted();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"unknown","same_time","later"})
+    void ambiguousForeignRecoveryReceiptsStillRequireReconciliation(String paidTime) {
+        var current=snapshot();var root=existingRoot();ownedFixture(root,current);
+        var previous=paidSnapshot();previous.invoice().setId("in_prior");previous.invoice().getStatusTransitions().setPaidAt("unknown".equals(paidTime)?null:now.plusSeconds("later".equals(paidTime)?1:0).getEpochSecond());
+        var old=new SubscriptionPaymentRecoveryEntity();old.setId(2L);old.setGrantState("GRANTED");when(recoveries.selectByInvoice("in_prior")).thenReturn(old);when(stripe.readInvoice("in_prior")).thenReturn(previous);
+        when(stripe.listInvoices("sub_old")).thenReturn(List.of(current.invoice(),previous.invoice()));
+        assertThrows(IllegalStateException.class,()->service.reconcile(1L));assertEquals("GRANTED",old.getGrantState());verifyNoInteractions(orders);
+    }
+
+    @Test void ownWindowChildWithAnInvalidEarlyPaidTimeStillOpensReview() {
+        var current=snapshot();var root=existingRoot();ownedFixture(root,current);
+        var previous=paidSnapshot();previous.invoice().setId("in_prior");previous.invoice().getStatusTransitions().setPaidAt(now.minusSeconds(1).getEpochSecond());
+        var child=new SubscriptionPaymentRecoveryEntity();child.setId(2L);child.setOwnerRecoveryId(1L);child.setGrantState("NONE");when(recoveries.selectByInvoice("in_prior")).thenReturn(child);when(stripe.readInvoice("in_prior")).thenReturn(previous);
+        when(stripe.listInvoices("sub_old")).thenReturn(List.of(current.invoice(),previous.invoice()));
+        service.reconcile(1L);assertEquals("PAYMENT_OUTSIDE_RECOVERY_WINDOW",root.getReviewReason());assertEquals("HELD",child.getGrantState());verifyNoInteractions(orders);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings={"customer.subscription.updated","customer.subscription.deleted"})
     void releasedPaidRecoveryDoesNotConsumeLaterSubscriptionEvents(String type) {
         var paid=paidSnapshot();var root=confirmedPaidRoot(paid);root.setReviewState("NONE");ownedFixture(root,paid);

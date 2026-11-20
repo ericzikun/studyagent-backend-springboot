@@ -340,8 +340,9 @@ class SubscriptionPaymentRecoveryHttpSchedulerMysqlIT {
                     executeStatement(q, Files.readString(Path.of("../sql/" + file)), "ALTER TABLE user_subscriptions");
                 executeStatement(q, Files.readString(Path.of("../sql/069_commercialization_integrity.sql")), "ALTER TABLE stripe_webhook_events");
                 q.execute("ALTER TABLE user_subscriptions ADD COLUMN pricing_zone VARCHAR(8), ADD COLUMN price_version VARCHAR(32), ADD COLUMN currency CHAR(3), ADD COLUMN pricing_country CHAR(2)");
-                for (String statement : Files.readString(Path.of("../sql/097_subscription_payment_recovery.sql")).split(";"))
-                    if (!statement.isBlank()) q.execute(statement.replace("USE studyagent", "USE " + url.split("/")[3].split("\\?")[0]));
+                for(String migration:List.of("097_subscription_payment_recovery.sql","098_subscription_period_time_zones.sql"))
+                    for (String statement : Files.readString(Path.of("../sql/"+migration)).split(";"))
+                        if (!statement.isBlank()) q.execute(statement.replace("USE studyagent", "USE " + url.split("/")[3].split("\\?")[0]));
             } catch (Exception e) { ds.close(); throw e; }
             return ds;
         }

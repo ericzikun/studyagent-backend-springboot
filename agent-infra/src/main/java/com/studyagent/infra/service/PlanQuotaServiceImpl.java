@@ -357,6 +357,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         paid.setCurrentPeriodEnd(DateTimeFormats.fromInstant(access.paidPeriodEnd()));
         paid.setQuotaPeriodStart(paid.getCurrentPeriodStart());
         paid.setQuotaPeriodEnd(paid.getCurrentPeriodEnd());
+        paid.setCurrentPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());
+        paid.setQuotaPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());
         return paid;
     }
 
@@ -702,6 +704,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                         .eq("clerk_user_id", subscription.getClerkUserId())
                         .set("quota_period_start", windowStart)
                         .set("quota_period_end", windowEnd)
+                        .set("quota_period_time_zone", subscription.getQuotaPeriodTimeZone())
                         .set("updated_at", now));
         if (updated != 1) {
             throw new IllegalStateException("Subscription update conflict during annual quota window sync: clerkUserId="

@@ -27,6 +27,34 @@ class SubscriptionPaymentRecoveryServiceTest {
     private final SubscriptionPaymentRecoveryService service=new SubscriptionPaymentRecoveryService(users,recoveries,actions,replacements,plans,orders,stripe,properties,access,tx);
     private final Instant now=Instant.parse("2026-11-11T02:00:00Z");
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"customer.subscription.updated","customer.subscription.deleted"})
+    void releasedPaidRecoveryDoesNotConsumeLaterSubscriptionEvents(String type) {
+        var paid=paidSnapshot();var root=confirmedPaidRoot(paid);root.setReviewState("NONE");ownedFixture(root,paid);
+        users.selectByUserForUpdate("user").setPaymentRecoveryId(null);
+        when(recoveries.selectBySubscription("sub_old",0L,100)).thenReturn(List.of(root));
+        var event=ApiResource.GSON.fromJson("{\"id\":\"evt_released_period\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"sub_old\",\"object\":\"subscription\"}}}",Event.class);
+        assertFalse(service.tryProcessEvent(event),"The current normal subscription owns events after the paid recovery pointer was released");
+        assertEquals("GRANTED",root.getGrantState());assertEquals("NONE",root.getReviewState());
+        verify(stripe,never()).readInvoice(anyString());verify(recoveries,never()).updateById(any(SubscriptionPaymentRecoveryEntity.class));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "customer.subscription.updated,sub_new,", "customer.subscription.deleted,sub_new,",
+            "customer.subscription.updated,sub_old,2", "customer.subscription.deleted,sub_old,2"})
+    void historicalPaidSubscriptionCannotReachLegacyWhenOwnershipHasMoved(String type,String currentSubscription,Long recoveryId) {
+        var paid=paidSnapshot();var root=confirmedPaidRoot(paid);root.setReviewState("NONE");ownedFixture(root,paid);
+        var user=users.selectByUserForUpdate("user");user.setStripeSubscriptionId(currentSubscription);user.setPaymentRecoveryId(recoveryId);
+        when(recoveries.selectBySubscription("sub_old",0L,100)).thenReturn(List.of(root));
+        var event=ApiResource.GSON.fromJson("{\"id\":\"evt_historical_owner\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"sub_old\",\"object\":\"subscription\"}}}",Event.class);
+        assertTrue(service.tryProcessEvent(event),"A historical subscription must not overwrite the new subscription or recovery through legacy handling");
+        assertEquals(currentSubscription,user.getStripeSubscriptionId());assertEquals(recoveryId,user.getPaymentRecoveryId());
+        assertEquals("GRANTED",root.getGrantState());assertEquals("NONE",root.getReviewState());
+        verify(stripe,never()).readInvoice(anyString());verify(users,never()).update(any(UserSubscriptionEntity.class),any());
+        verify(recoveries,never()).updateById(any(SubscriptionPaymentRecoveryEntity.class));
+    }
+
     @org.junit.jupiter.api.BeforeAll static void userMapping(){com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper.initTableInfo(UserSubscriptionEntity.class);com.studyagent.infra.testutil.MybatisPlusTableInfoTestHelper.initTableInfo(SubscriptionPlanEntity.class);}
     @org.junit.jupiter.api.BeforeEach void userWriteResult(){when(users.update(any(UserSubscriptionEntity.class),any())).thenReturn(1);}
 

@@ -21,6 +21,76 @@ class SubscriptionPaymentRecoveryMysqlIT {
     private static boolean created;
     private static final LocalDateTime NOW = LocalDateTime.of(2026,11,11,10,0);
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"month","year"})
+    void normalCallbackKeepsUtcStorageAndApiReturnsActualEpochAfterRecoveryHandoff(String interval) throws Exception {
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE user_subscriptions SET tier='pro',status='active',stripe_subscription_id='sub_test',payment_recovery_id=NULL WHERE id=1");
+            q.executeUpdate("UPDATE subscription_payment_recoveries SET status='PAID',grant_state='GRANTED',review_state='NONE',entitlement_invoice_id='in_test',entitlement_start_at='2026-12-27 14:28:34',entitlement_end_at='2027-01-27 14:28:34' WHERE id=1");
+        }
+        var sessions=new org.mybatis.spring.SqlSessionTemplate(factory);var users=sessions.getMapper(UserSubscriptionMapper.class);
+        var roots=sessions.getMapper(SubscriptionPaymentRecoveryMapper.class);
+        var recovery=new SubscriptionPaymentRecoveryService(users,roots,sessions.getMapper(SubscriptionRecoveryActionMapper.class),null,null,null,null,null,null,null);
+        var webhook=new StripeBillingWebhookService(null,users,null,null,null,null,null,null,null,null,null,null);
+        var start=java.time.Instant.parse("year".equals(interval)?"2027-01-30T20:30:00Z":"2027-01-27T06:28:34Z");
+        var end=java.time.Instant.parse("year".equals(interval)?"2028-01-30T20:30:00Z":"2027-02-27T06:28:34Z");
+        var quotaEnd="year".equals(interval)?java.time.Instant.parse("2027-02-28T20:30:00Z"):end;
+        var sub=new com.stripe.model.Subscription();sub.setId("sub_test");sub.setCustomer("cus_test");sub.setStatus("active");sub.setCurrentPeriodStart(start.getEpochSecond());sub.setCurrentPeriodEnd(end.getEpochSecond());
+        var plan=new com.studyagent.infra.entity.SubscriptionPlanEntity();plan.setTier("pro");plan.setPlanCode("pro_"+("year".equals(interval)?"yearly":"monthly"));plan.setBillingInterval(interval);
+        var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
+        for(int repeat=0;repeat<2;repeat++)tx.executeWithoutResult(state->{
+            var user=users.selectByUserForUpdate("test_user");webhook.applySubscription(user,sub,plan,false,true,null,null,NOW);
+            org.springframework.test.util.ReflectionTestUtils.invokeMethod(webhook,"updateSubscriptionEntity",user,false);
+        });
+        var stored=users.selectByUser("test_user");assertNull(stored.getPaymentRecoveryId());
+        assertEquals(LocalDateTime.ofInstant(start,java.time.ZoneOffset.UTC),stored.getCurrentPeriodStart());
+        assertEquals(LocalDateTime.ofInstant(end,java.time.ZoneOffset.UTC),stored.getCurrentPeriodEnd());
+        assertEquals("UTC",stored.getCurrentPeriodTimeZone());assertEquals("UTC",stored.getQuotaPeriodTimeZone());
+        var billing=org.mockito.Mockito.mock(BillingDomainServiceImpl.class,org.mockito.Mockito.CALLS_REAL_METHODS);
+        com.studyagent.service.domain.billing.SubscriptionResult view=org.springframework.test.util.ReflectionTestUtils.invokeMethod(billing,"toResult",stored);
+        var values=java.util.List.of(view.getCurrentPeriodStart(),view.getCurrentPeriodEnd(),view.getQuotaPeriodStart(),view.getQuotaPeriodEnd());
+        var instants=java.util.List.of(start,end,start,quotaEnd);
+        for(int n=0;n<4;n++)assertEquals(instants.get(n),java.time.OffsetDateTime.parse(com.studyagent.common.datetime.DateTimeFormats.formatApi(values.get(n))).toInstant());
+        for(String type:java.util.List.of("customer.subscription.updated","customer.subscription.deleted")){
+            var event=com.stripe.net.ApiResource.GSON.fromJson("{\"id\":\"evt_next_period\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"sub_test\"}}}",com.stripe.model.Event.class);
+            assertFalse(recovery.tryProcessEvent(event));
+        }
+        assertEquals("GRANTED",roots.selectById(1L).getGrantState());assertEquals("NONE",roots.selectById(1L).getReviewState());
+        for(String table:java.util.List.of("recharge_orders","quota_ledger","subscription_payment_recovery_actions"))assertEquals(0,scalar("SELECT COUNT(*) FROM "+table));
+    }
+
+    @Test void sourceZoneMigrationIsIdempotentAndDoesNotGuessOrRewriteHistoricalDates() throws Exception {
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE user_subscriptions SET current_period_start='2027-01-27 06:28:34',current_period_end='2027-02-27 06:28:34',quota_period_start='2027-01-27 14:28:34',quota_period_end='2027-02-27 14:28:34' WHERE id=1");
+        }
+        var users=new org.mybatis.spring.SqlSessionTemplate(factory).getMapper(UserSubscriptionMapper.class);
+        var before=users.selectByUser("test_user");migrate();migrate();var after=users.selectByUser("test_user");
+        assertEquals(before.getCurrentPeriodStart(),after.getCurrentPeriodStart());assertEquals(before.getCurrentPeriodEnd(),after.getCurrentPeriodEnd());
+        assertEquals(before.getQuotaPeriodStart(),after.getQuotaPeriodStart());assertEquals(before.getQuotaPeriodEnd(),after.getQuotaPeriodEnd());
+        assertNull(after.getCurrentPeriodTimeZone());assertNull(after.getQuotaPeriodTimeZone());assertEquals(before.getVersion(),after.getVersion());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"month","year"})
+    void mixedSourceRepairClearsPersistedMarkerInsteadOfRetainingTheOldZone(String interval) throws Exception {
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE user_subscriptions SET current_period_start='2027-01-27 14:28:34',current_period_end='2027-02-27 14:28:34',current_period_time_zone='Asia/Shanghai',quota_period_time_zone='Asia/Shanghai',stripe_subscription_id='sub_test' WHERE id=1");
+        }
+        var users=new org.mybatis.spring.SqlSessionTemplate(factory).getMapper(UserSubscriptionMapper.class);
+        var billing=org.mockito.Mockito.mock(BillingDomainServiceImpl.class,org.mockito.Mockito.CALLS_REAL_METHODS);
+        org.springframework.test.util.ReflectionTestUtils.setField(billing,"userSubscriptionMapper",users);
+        var user=users.selectByUser("test_user");var originalEnd=user.getCurrentPeriodEnd();
+        var plan=new com.studyagent.infra.entity.SubscriptionPlanEntity();plan.setTier("pro");plan.setPlanCode("pro_monthly");plan.setBillingInterval(interval);
+        var sub=new com.stripe.model.Subscription();sub.setId("sub_test");sub.setStatus("active");sub.setCurrentPeriodStart(java.time.Instant.parse("2027-01-27T06:28:34Z").getEpochSecond());
+        try(var stripe=org.mockito.Mockito.mockStatic(com.stripe.model.Subscription.class)){
+            stripe.when(()->com.stripe.model.Subscription.retrieve("sub_test")).thenReturn(sub);
+            org.springframework.test.util.ReflectionTestUtils.invokeMethod(billing,"repairActivatedInitialSubscription",user,plan);
+        }
+        var stored=users.selectByUser("test_user");assertNull(stored.getCurrentPeriodTimeZone());
+        assertEquals(LocalDateTime.parse("2027-01-27T06:28:34"),stored.getCurrentPeriodStart());assertEquals(originalEnd,stored.getCurrentPeriodEnd());
+        assertEquals("year".equals(interval)?"UTC":null,stored.getQuotaPeriodTimeZone());
+    }
+
     @BeforeAll static void setup() throws Exception {
         String url = System.getenv("PAYMENT_RECOVERY_TEST_JDBC_URL");
         Assumptions.assumeTrue(url != null, "Dedicated test JDBC URL is missing");
@@ -89,10 +159,11 @@ class SubscriptionPaymentRecoveryMysqlIT {
         factory.getConfiguration().addMapper(SubscriptionPriceRolloutMapper.class);
     }
     private static void migrate() throws Exception {
-        Path file = Path.of("../sql/097_subscription_payment_recovery.sql");
-        String sql = Files.readString(file).replace("USE studyagent;", "USE " + schema + ";");
-        try(Connection c=ds.getConnection();Statement s=c.createStatement()) {
-            for(String part:sql.split(";")) if(!part.isBlank()) s.execute(part);
+        for(String name:java.util.List.of("097_subscription_payment_recovery.sql","098_subscription_period_time_zones.sql")){
+            String sql=Files.readString(Path.of("../sql/"+name)).replace("USE studyagent;", "USE " + schema + ";");
+            try(Connection c=ds.getConnection();Statement s=c.createStatement()) {
+                for(String part:sql.split(";")) if(!part.isBlank()) s.execute(part);
+            }
         }
     }
     @BeforeEach void fixtures() throws Exception {
@@ -1006,6 +1077,8 @@ class SubscriptionPaymentRecoveryMysqlIT {
         assertEquals(orderCount,scalar("SELECT COUNT(*) FROM recharge_orders"));assertEquals(3,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='plan_reset'"));assertEquals(3,scalar("SELECT COUNT(*) FROM quota_ledger WHERE invoice_id='"+source+"'"));assertEquals(3,scalar("SELECT COUNT(*) FROM user_ai_quotas"));assertEquals(anchorCount,scalar("SELECT COUNT(*) FROM subscription_payment_recovery_actions WHERE action_type='SHIFT_RENEWAL'"));
         try(var session=factory.openSession(true)){
             var root=session.getMapper(SubscriptionPaymentRecoveryMapper.class).selectById(1L);assertEquals("PAID",root.getStatus());assertEquals("GRANTED",root.getGrantState());assertEquals(source,root.getEntitlementInvoiceId());assertEquals(NOW.plusDays(28),root.getEntitlementStartAt());assertEquals(annual?NOW.plusDays(28).plusYears(1):NOW.plusDays(28).plusMonths(1),root.getEntitlementEndAt());assertEquals(NOW.plusDays(28).plusMonths(1),root.getQuotaPeriodEndAt());
+            var member=session.getMapper(UserSubscriptionMapper.class).selectByUser("test_user");
+            assertEquals("Asia/Shanghai",member.getCurrentPeriodTimeZone());assertEquals("Asia/Shanghai",member.getQuotaPeriodTimeZone());
             for(var anchor:session.getMapper(SubscriptionRecoveryActionMapper.class).selectByRecovery(1L))if("SHIFT_RENEWAL".equals(anchor.getActionType())){
                 var payload=SubscriptionRecoveryStripeGateway.thaw(anchor.getPayloadJson());assertEquals(source,((java.util.Map<?,?>)payload.get("metadata")).get("payment_recovery_invoice_id"));assertEquals(root.getEntitlementEndAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toEpochSecond(),((Number)payload.get("trial_end")).longValue());
             }

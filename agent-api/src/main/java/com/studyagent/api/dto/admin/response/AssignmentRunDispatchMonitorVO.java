@@ -80,6 +80,7 @@ public class AssignmentRunDispatchMonitorVO {
         private Long outboxId;
         private String clerkUserId;
         private String featureCode;
+        private String kind;
         private String sessionStatus;
         private String outboxStatus;
         private String outboxAction;
@@ -104,6 +105,7 @@ public class AssignmentRunDispatchMonitorVO {
                     .outboxId(row.getOutboxId())
                     .clerkUserId(row.getClerkUserId())
                     .featureCode(row.getFeatureCode())
+                    .kind(row.getKind())
                     .sessionStatus(row.getSessionStatus())
                     .outboxStatus(row.getOutboxStatus())
                     .outboxAction(row.getOutboxAction())

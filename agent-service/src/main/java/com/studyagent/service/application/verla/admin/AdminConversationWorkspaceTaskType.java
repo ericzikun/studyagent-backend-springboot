@@ -12,6 +12,7 @@ public enum AdminConversationWorkspaceTaskType {
     ASSIGNMENT("assignment"),
     AI_DETECTION("ai-detection"),
     AI_HUMANIZER("humanizer"),
+    SIMULATION("simulation"),
     UNKNOWN("unknown");
 
     private final String routeKey;
@@ -37,6 +38,7 @@ public enum AdminConversationWorkspaceTaskType {
             case "ASSIGNMENT", "CREATE_ASSIGNMENT" -> ASSIGNMENT;
             case "AI_DETECTION" -> AI_DETECTION;
             case "AI_HUMANIZER" -> AI_HUMANIZER;
+            case "SIMULATION" -> SIMULATION;
             default -> UNKNOWN;
         };
     }

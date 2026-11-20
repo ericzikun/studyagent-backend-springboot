@@ -46,6 +46,8 @@ public class AssignmentRunDispatchMonitorView {
         private Long outboxId;
         private String clerkUserId;
         private String featureCode;
+        /** ASSIGNMENT | SIMULATION */
+        private String kind;
         private String sessionStatus;
         private String outboxStatus;
         private String outboxAction;

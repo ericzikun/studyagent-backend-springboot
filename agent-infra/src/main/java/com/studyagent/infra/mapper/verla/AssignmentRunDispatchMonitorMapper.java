@@ -26,7 +26,7 @@ public interface AssignmentRunDispatchMonitorMapper {
             + "o.created_at AS outbox_created_at "
             + "FROM verla_sessions s "
             + "INNER JOIN mq_outbox o ON o.session_id = s.id "
-            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry') "
+            + "AND o.action IN ('cmd.assignment.run', 'cmd.agent.control.retry', 'cmd.simulation.generate') "
             + "LEFT JOIN verla_conversations c ON c.id = s.conversation_id "
             + "ORDER BY COALESCE(s.started_at, s.created_at) DESC "
             + "LIMIT #{limit}")

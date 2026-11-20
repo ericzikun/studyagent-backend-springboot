@@ -127,7 +127,7 @@ public class VerlaSimulationController {
         body.put("maxFiles", planEntitlementService.getEffectiveEntitlements(clerkUserId).maxFiles());
         body.put("maxFileBytes", MAX_FILE_BYTES);
         body.put("maxExtractedChars", 30000);
-        body.put("maxActiveRuns", maxActiveRuns);
+        body.put("maxActiveRuns", effectiveMaxActiveRuns(entitlement));
         body.put("maxDailyRuns", MAX_DAILY_RUNS);
         body.put("pass", pass);
         return Result.success(body);
@@ -394,14 +394,25 @@ public class VerlaSimulationController {
         }
     }
 
+    /** Never admit more concurrent runs than the remaining quota, so parallel
+     *  completions cannot overshoot the plan limit. */
+    private int effectiveMaxActiveRuns(SimulationEntitlementService.Entitlement entitlement) {
+        if (entitlement == null || entitlement.unlimited() || entitlement.remaining() == null) {
+            return maxActiveRuns;
+        }
+        return Math.max(0, Math.min(maxActiveRuns, entitlement.remaining().intValue()));
+    }
+
     private void enforceRunLimits(String clerkUserId) {
+        SimulationEntitlementService.Entitlement entitlement =
+                simulationEntitlementService.resolve(clerkUserId);
         Integer active = jdbcTemplate.queryForObject(
                 "SELECT COUNT(DISTINCT s.id) FROM verla_sessions s "
                         + "INNER JOIN verla_conversations c ON c.id = s.conversation_id "
                         + "WHERE c.user_id = ? AND c.status <> 'deleted' AND s.kind = 'SIMULATION' "
                         + "AND s.status IN ('CREATED', 'DISPATCHING', 'RUNNING', 'CANCELLING')",
                 Integer.class, clerkUserId);
-        if (active != null && active >= maxActiveRuns) {
+        if (active != null && active >= effectiveMaxActiveRuns(entitlement)) {
             throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
                     "another simulation is still generating");
         }

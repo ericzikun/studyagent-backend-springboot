@@ -69,7 +69,9 @@ public class NoteBlogTtsService {
     public record Segment(int index, int paragraphIndex, String text, String url, long durationMs) {
     }
 
-    public record Payload(List<Segment> segments, long totalDurationMs, String voice) {
+    /** fullUrl = 整篇拼接后的单轨 WAV；前端优先用它避免逐段切源造成卡顿/自动播放拦截。 */
+    public record Payload(List<Segment> segments, long totalDurationMs, String voice,
+                          String fullUrl) {
     }
 
     /** 本地缓存完成后的分段（fileName 用于 OSS 上传与本地签名 URL）。 */
@@ -77,7 +79,8 @@ public class NoteBlogTtsService {
                                 long durationMs) {
     }
 
-    public record CachedPayload(List<CachedSegment> segments, long totalDurationMs, String voice) {
+    public record CachedPayload(List<CachedSegment> segments, long totalDurationMs, String voice,
+                                String fullFileName) {
     }
 
     public Payload synthesize(long conversationId, String blogMd) {
@@ -88,9 +91,11 @@ public class NoteBlogTtsService {
                     segment.index(), segment.paragraphIndex(), segment.text(),
                     signedUrl(conversationId, segment.fileName()), segment.durationMs()));
         }
-        log.info("[note/blog-tts] synthesized convId={} segments={} totalMs={}",
-                conversationId, segments.size(), cached.totalDurationMs());
-        return new Payload(segments, cached.totalDurationMs(), cached.voice());
+        String fullUrl = cached.fullFileName() == null
+                ? null : signedUrl(conversationId, cached.fullFileName());
+        log.info("[note/blog-tts] synthesized convId={} segments={} totalMs={} fullUrl={}",
+                conversationId, segments.size(), cached.totalDurationMs(), fullUrl != null);
+        return new Payload(segments, cached.totalDurationMs(), cached.voice(), fullUrl);
     }
 
     /**
@@ -161,16 +166,95 @@ public class NoteBlogTtsService {
         }
 
         List<CachedSegment> segments = new ArrayList<>();
-        long total = 0;
         for (int i = 0; i < chunkTexts.size(); i += 1) {
             segments.add(new CachedSegment(
                     i, chunkParagraphs.get(i), chunkTexts.get(i), fileNames.get(i), durations[i]));
-            total += durations[i];
         }
         if (segments.isEmpty()) {
             throw new TtsUnavailable("博客还没有可朗读的内容");
         }
-        return new CachedPayload(segments, total, voice);
+        FullAudio full;
+        try {
+            full = buildFullAudio(dir, fileNames, sampleRate, voice);
+        } catch (IOException e) {
+            log.warn("[note/blog-tts] full track build failed: {}", e.getMessage());
+            throw new TtsUnavailable("语音合成失败，请稍后重试");
+        }
+        return new CachedPayload(segments, full.durationMs(), voice, full.fileName());
+    }
+
+    private record FullAudio(String fileName, long durationMs) {
+    }
+
+    /**
+     * 把所有分段拼成一条单轨 WAV：前端只切一次 src，拖动/连续播放没有段间空隙。
+     * 每个分段首尾做 8ms 线性淡入淡出，消除 TTS 分段拼接处的爆音（“滋滋声”）。
+     */
+    private FullAudio buildFullAudio(Path dir, List<String> fileNames, int sampleRate, String voice)
+            throws IOException {
+        String fileName = sha256("full|" + String.join("|", fileNames)
+                + "|" + voice + "|" + sampleRate) + ".wav";
+        Path full = dir.resolve(fileName);
+        if (Files.isRegularFile(full) && Files.isReadable(full)) {
+            return new FullAudio(fileName, readDurationMs(full, sampleRate));
+        }
+
+        ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+        for (String name : fileNames) {
+            byte[] data = extractPcm(Files.readAllBytes(dir.resolve(name)));
+            fadeEdges(data, sampleRate);
+            pcm.write(data);
+        }
+        byte[] all = pcm.toByteArray();
+        if (all.length == 0) {
+            throw new IOException("empty concatenated audio");
+        }
+        Files.write(full, wav(all, sampleRate));
+        log.info("[note/blog-tts] full track built file={} durationMs={}",
+                fileName, durationMs(all.length, sampleRate));
+        return new FullAudio(fileName, durationMs(all.length, sampleRate));
+    }
+
+    private static byte[] extractPcm(byte[] wavBytes) throws IOException {
+        if (wavBytes.length < 12) {
+            throw new IOException("invalid wav");
+        }
+        int pos = 12;
+        while (pos + 8 <= wavBytes.length) {
+            String id = new String(wavBytes, pos, 4, StandardCharsets.US_ASCII);
+            int size = ByteBuffer.wrap(wavBytes, pos + 4, 4)
+                    .order(ByteOrder.LITTLE_ENDIAN).getInt();
+            int dataStart = pos + 8;
+            if ("data".equals(id)) {
+                int end = Math.min(wavBytes.length, dataStart + size);
+                return java.util.Arrays.copyOfRange(wavBytes, dataStart, end);
+            }
+            pos = dataStart + size + (size & 1);
+        }
+        throw new IOException("wav has no data chunk");
+    }
+
+    /** s16le mono：首尾各 8ms 线性淡入/淡出，抵消分段边界的硬切爆音。 */
+    private static void fadeEdges(byte[] pcm, int sampleRate) {
+        int samples = pcm.length / 2;
+        int fade = Math.min(Math.round(sampleRate * 0.008f), samples / 2);
+        if (fade <= 0) {
+            return;
+        }
+        for (int i = 0; i < fade; i += 1) {
+            double gain = i / (double) fade;
+            scaleSample(pcm, i, gain);
+            scaleSample(pcm, samples - 1 - i, gain);
+        }
+    }
+
+    private static void scaleSample(byte[] pcm, int index, double gain) {
+        int offset = index * 2;
+        short value = (short) ((pcm[offset] & 0xff) | (pcm[offset + 1] << 8));
+        int scaled = (int) Math.round(value * gain);
+        scaled = Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, scaled));
+        pcm[offset] = (byte) (scaled & 0xff);
+        pcm[offset + 1] = (byte) ((scaled >> 8) & 0xff);
     }
 
     /** 读取已缓存的 WAV 字节（预生成任务上传 OSS 用）。 */

@@ -118,10 +118,15 @@ public class NoteBlogAudioPrefetchService {
                 item.put("durationMs", segment.durationMs());
                 segments.add(item);
             }
+            String fullUrl = uploadFileToOss(demoId, sourceHash, cached.fullFileName());
+            if (fullUrl == null && cached.fullFileName() != null) {
+                fullUrl = tts.signedUrl(demoId, cached.fullFileName());
+            }
             Map<String, Object> manifest = new LinkedHashMap<>();
             manifest.put("status", "READY");
             manifest.put("voice", cached.voice());
             manifest.put("totalDurationMs", cached.totalDurationMs());
+            manifest.put("fullUrl", fullUrl);
             manifest.put("sourceHash", sourceHash);
             manifest.put("segments", segments);
             demoNoteService.markBlogAudioReady(
@@ -141,20 +146,24 @@ public class NoteBlogAudioPrefetchService {
     /** 上传单段 WAV；OSS 未启用或失败时返回 null，由调用方退回本地签名 URL。 */
     private String uploadToOss(long demoId, String sourceHash,
                                NoteBlogTtsService.CachedSegment segment) {
-        if (!oss.isEnabled()) {
+        return uploadFileToOss(demoId, sourceHash, segment.fileName());
+    }
+
+    private String uploadFileToOss(long demoId, String sourceHash, String fileName) {
+        if (!oss.isEnabled() || fileName == null || fileName.isBlank()) {
             return null;
         }
         try {
-            byte[] bytes = tts.readCached(demoId, segment.fileName());
+            byte[] bytes = tts.readCached(demoId, fileName);
             String ossKey = OSS_PREFIX + "/" + demoId + "/" + sourceHash.substring(0, 16)
-                    + "/" + segment.fileName();
+                    + "/" + fileName;
             if (!oss.putBytesAtKey(ossKey, bytes)) {
                 return null;
             }
             return oss.getOssUrl(ossKey);
         } catch (Exception e) {
             log.warn("[note/blog-audio] OSS upload failed demoId={} file={}: {}",
-                    demoId, segment.fileName(), e.getMessage());
+                    demoId, fileName, e.getMessage());
             return null;
         }
     }

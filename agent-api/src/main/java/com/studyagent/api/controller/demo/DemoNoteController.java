@@ -82,6 +82,7 @@ public class DemoNoteController {
                             .toList())
                     .totalDurationMs(payload.totalDurationMs())
                     .voice(payload.voice())
+                    .fullUrl(payload.fullUrl())
                     .build());
         } catch (NoteBlogTtsService.TtsUnavailable e) {
             throw new com.studyagent.common.exception.BusinessException(

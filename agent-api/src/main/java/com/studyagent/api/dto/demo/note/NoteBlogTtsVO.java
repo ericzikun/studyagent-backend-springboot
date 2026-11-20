@@ -17,6 +17,8 @@ public class NoteBlogTtsVO {
     private List<Segment> segments;
     private long totalDurationMs;
     private String voice;
+    /** 整篇拼接后的单轨 WAV（优先使用，避免逐段切源卡顿）。 */
+    private String fullUrl;
 
     @Data
     @Builder

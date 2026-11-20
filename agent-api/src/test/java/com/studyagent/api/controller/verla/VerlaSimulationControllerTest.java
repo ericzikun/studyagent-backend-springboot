@@ -122,6 +122,17 @@ class VerlaSimulationControllerTest {
     }
 
     @Test
+    void configClampsActiveRunsByRemainingQuota() {
+        when(entitlementService.resolve("member_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, false,
+                        3L, 1L, 2L, null, null,
+                        false, false, true, false, false, null, false));
+
+        assertEquals(2, controller.config("member_1").getData().get("maxActiveRuns"));
+    }
+
+    @Test
     void generateRejectsMoreAttachmentsThanPlanAllows() {
         when(conversationService.getOwned("free_1", 42L)).thenReturn(
                 VerlaConversation.builder().id(42L).primaryIntent("SIMULATION").build());
@@ -422,6 +433,30 @@ class VerlaSimulationControllerTest {
         assertThrows(BusinessException.class,
                 () -> controller.generate("user_1", 11L,
                         new VerlaSimulationController.GenerateSimulationRequest("make a lab", null, "en")));
+        verify(turnOrchestrator, never()).onUserMessage(any());
+    }
+
+    @Test
+    void generateClampsConcurrentRunsToRemainingQuota() {
+        when(entitlementService.resolve("member_1")).thenReturn(
+                new SimulationEntitlementService.Entitlement(
+                        true, false, SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, false,
+                        3L, 2L, 1L, null, null,
+                        false, false, true, false, false, null, false));
+        when(conversationService.getOwned("member_1", 11L)).thenReturn(
+                VerlaConversation.builder()
+                        .id(11L)
+                        .userId("member_1")
+                        .primaryIntent("SIMULATION")
+                        .build());
+        when(jdbcTemplate.queryForObject(anyString(), any(Class.class), any()))
+                .thenReturn(1);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> controller.generate("member_1", 11L,
+                        new VerlaSimulationController.GenerateSimulationRequest("make a lab", null, "en")));
+
+        assertEquals(ApiCode.ILLEGAL_STATE.getCode(), error.getCode());
         verify(turnOrchestrator, never()).onUserMessage(any());
     }
 

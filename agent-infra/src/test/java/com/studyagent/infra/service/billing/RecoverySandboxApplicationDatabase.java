@@ -92,10 +92,11 @@ final class RecoverySandboxApplicationDatabase implements AutoCloseable {
         factory.getConfiguration().addMapper(SubscriptionPriceRolloutMapper.class);
     }
     private void migrate() throws Exception {
-        Path file = Path.of("../sql/097_subscription_payment_recovery.sql");
-        String sql = Files.readString(file).replace("USE studyagent;", "USE " + schema + ";");
-        try(Connection c=ds.getConnection();Statement s=c.createStatement()) {
-            for(String part:sql.split(";")) if(!part.isBlank()) s.execute(part);
+        for(String name:java.util.List.of("097_subscription_payment_recovery.sql","098_subscription_period_time_zones.sql")){
+            String sql=Files.readString(Path.of("../sql/"+name)).replace("USE studyagent;", "USE " + schema + ";");
+            try(Connection c=ds.getConnection();Statement s=c.createStatement()) {
+                for(String part:sql.split(";")) if(!part.isBlank()) s.execute(part);
+            }
         }
     }
     private void catalog() throws Exception {

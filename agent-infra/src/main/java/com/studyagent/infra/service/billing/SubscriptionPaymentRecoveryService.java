@@ -137,6 +137,14 @@ public class SubscriptionPaymentRecoveryService {
             }
             var root=latestRoot(string(object,"id"));
             if(root==null)return false;
+            if("PAID".equals(root.getStatus())){
+                var user=users.selectByUser(root.getClerkUserId());
+                if(user==null)throw incomplete(root.getStripeInvoiceId());
+                if(!currentRecovery(user,root)){
+                    // Only the same subscription with a released pointer may resume legacy synchronization.
+                    return user.getPaymentRecoveryId()!=null || !Objects.equals(user.getStripeSubscriptionId(),root.getStripeSubscriptionId());
+                }
+            }
             if("customer.subscription.trial_will_end".equals(type)&&"PAID".equals(root.getStatus()))return true;
             applyInvoice(root,stripe.readInvoice(root.getStripeInvoiceId()),event);return true;
         }
@@ -681,6 +689,7 @@ public class SubscriptionPaymentRecoveryService {
         root.setEntitlementStartAt(local(paid));root.setEntitlementEndAt(local(end));root.setQuotaPeriodEndAt(local(quotaEnd));
         user.setTier(root.getDisplayTier());user.setPlanCode(root.getPlanCode());if(snapshot.subscription()!=null)user.setStatus(snapshot.subscription().getStatus());
         user.setCurrentPeriodStart(local(paid));user.setCurrentPeriodEnd(local(end));user.setQuotaPeriodStart(local(paid));user.setQuotaPeriodEnd(local(quotaEnd));user.setGraceEndAt(null);
+        user.setCurrentPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());user.setQuotaPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());
         user.setSubscriptionPhase(IntroTrialPlans.PHASE_STANDARD);
         var admission=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject().getAsJsonObject("recovery_admission");
         if(!"formal".equals(string(admission,"sourceKey"))&&user.getIntroTrialConvertedAt()==null)user.setIntroTrialConvertedAt(local(paid));
@@ -1551,7 +1560,8 @@ public class SubscriptionPaymentRecoveryService {
                 replacement.setState("PAID");replacement.setNewSubscriptionId(snapshot.subscription().getId());replacement.setCheckoutSessionId(session.getId());replacement.setClosedAt(DateTimeFormats.now());replacement.setActiveSubscriptionKey(null);replacements.updateById(replacement);
                 order.setStatus("completed");order.setPriceCents(Math.toIntExact(snapshot.invoice().getAmountPaid()));order.setPaidAt(local(paid));order.setStripeInvoiceId(snapshot.invoice().getId());order.setStripeSubscriptionId(snapshot.subscription().getId());order.setStripePaymentIntentId(snapshot.invoice().getPaymentIntent());orders.updateById(order);
                 user.setStripeSubscriptionId(snapshot.subscription().getId());user.setStripeCustomerId(snapshot.invoice().getCustomer());user.setStripeScheduleId(null);user.setPlanCode(plan.getPlanCode());user.setTier(plan.getTier());user.setStatus(snapshot.subscription().getStatus());user.setPaymentRecoveryId(null);user.setGraceEndAt(null);
-                user.setCurrentPeriodStart(local(paid));user.setCurrentPeriodEnd(local(end));user.setQuotaPeriodStart(local(paid));user.setQuotaPeriodEnd(local(quotaEnd));user.setSubscriptionPhase(IntroTrialPlans.PHASE_STANDARD);saveRecoveryUser(user);
+                user.setCurrentPeriodStart(local(paid));user.setCurrentPeriodEnd(local(end));user.setQuotaPeriodStart(local(paid));user.setQuotaPeriodEnd(local(quotaEnd));user.setSubscriptionPhase(IntroTrialPlans.PHASE_STANDARD);
+                user.setCurrentPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());user.setQuotaPeriodTimeZone(DateTimeFormats.APP_ZONE.getId());saveRecoveryUser(user);
                 var quota=quotaProvider==null?null:quotaProvider.getIfAvailable();if(quota==null)throw new IllegalStateException("BillingQuotaGateway unavailable");
                 quota.resetFromPaidInvoiceAt(user.getClerkUserId(),user.getStripeSubscriptionId(),plan.getPlanCode(),paid,quotaEnd,snapshot.invoice().getId(),requiredBusinessTime(snapshot));quota.resumeEligibleAddonsAt(user.getClerkUserId(),user.getStripeSubscriptionId(),"replacement:"+order.getOrderNo()+":addons",requiredBusinessTime(snapshot));endStudyPasses(r);
                 if(r.getEntitlementInvoiceId()!=null)review(r,"OLD_PAYMENT_AFTER_REPLACEMENT");r.setCloseReason("REPLACEMENT_PAID");r.setStatus("CLOSING");skipRetries(r,"SWITCHED");r.setNextReconcileAt(DateTimeFormats.now());recoveries.updateById(r);return null;

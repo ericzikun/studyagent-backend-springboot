@@ -1844,6 +1844,7 @@ public class StripeBillingWebhookService {
             entity.setPlanCode(deleted ? null : plan.getPlanCode());
             entity.setCurrentPeriodStart(fromEpoch(resolvePeriodEpoch(periodStartOverride, resolveSubscriptionPeriodStart(subscription))));
             entity.setCurrentPeriodEnd(fromEpoch(resolvePeriodEpoch(periodEndOverride, resolveSubscriptionPeriodEnd(subscription))));
+            entity.setCurrentPeriodTimeZone("UTC");
         }
         entity.setCancelAtPeriodEnd(!deleted && Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd()));
         entity.setStripeScheduleId(resolveMirroredScheduleId(
@@ -1868,6 +1869,7 @@ public class StripeBillingWebhookService {
                     : ("year".equals(plan.getBillingInterval())
                     ? quotaPeriodStart.plusMonths(1)
                     : subscriptionPeriodEnd));
+            entity.setQuotaPeriodTimeZone("UTC");
             if (introTrialPlan) {
                 entity.setSubscriptionPhase(IntroTrialPlans.PHASE_INTRO);
             } else if (resolvedPlanCode != null) {
@@ -1953,6 +1955,8 @@ public class StripeBillingWebhookService {
         entity.setCurrentPeriodEnd(null);
         entity.setQuotaPeriodStart(null);
         entity.setQuotaPeriodEnd(null);
+        entity.setCurrentPeriodTimeZone(null);
+        entity.setQuotaPeriodTimeZone(null);
         entity.setCancelAtPeriodEnd(false);
         entity.setPendingPlanCode(null);
         entity.setPendingEffectiveAt(null);
@@ -1995,6 +1999,8 @@ public class StripeBillingWebhookService {
                 .set(UserSubscriptionEntity::getCurrentPeriodEnd, entity.getCurrentPeriodEnd())
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, entity.getQuotaPeriodStart())
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, entity.getQuotaPeriodEnd())
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone, entity.getCurrentPeriodTimeZone())
+                .set(UserSubscriptionEntity::getQuotaPeriodTimeZone, entity.getQuotaPeriodTimeZone())
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, entity.getPendingEffectiveAt())
                 .set(UserSubscriptionEntity::getPendingUpgradeOrderNo, entity.getPendingUpgradeOrderNo())
                 .set(UserSubscriptionEntity::getPendingUpgradeExpiresAt, entity.getPendingUpgradeExpiresAt())

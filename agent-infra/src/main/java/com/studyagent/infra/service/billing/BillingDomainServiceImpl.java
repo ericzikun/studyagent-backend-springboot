@@ -1089,7 +1089,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             UserSubscriptionEntity current,
             String requestedSuccessUrl,
             String resumeToken) {
-        LocalDateTime now = LocalDateTime.now();
+        var createdAt = java.time.ZonedDateTime.now();
+        LocalDateTime now = createdAt.toLocalDateTime();
+        String periodTimeZone = createdAt.getOffset().getId();
         String sessionId = "mock_cs_" + UUID.randomUUID().toString().replace("-", "");
         String customerId = hasText(current.getStripeCustomerId())
                 ? current.getStripeCustomerId()
@@ -1131,6 +1133,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getCurrentPeriodEnd, currentPeriodEnd)
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, now)
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone, periodTimeZone)
+                .set(UserSubscriptionEntity::getQuotaPeriodTimeZone, periodTimeZone)
                 .set(UserSubscriptionEntity::getCancelAtPeriodEnd, false)
                 .set(UserSubscriptionEntity::getPendingPlanCode, conversionPlanCode)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt,
@@ -1151,6 +1155,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         current.setCurrentPeriodEnd(currentPeriodEnd);
         current.setQuotaPeriodStart(now);
         current.setQuotaPeriodEnd(quotaPeriodEnd);
+        current.setCurrentPeriodTimeZone(periodTimeZone);
+        current.setQuotaPeriodTimeZone(periodTimeZone);
         current.setCancelAtPeriodEnd(false);
         current.setPendingPlanCode(conversionPlanCode);
         current.setPendingEffectiveAt(introTrial && !oneTimeProTrial ? currentPeriodEnd : null);
@@ -3001,7 +3007,9 @@ public class BillingDomainServiceImpl implements BillingDomainService {
             markIntroTrialUsed(current, stripeCustomerId);
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
+        var grantedAt = java.time.ZonedDateTime.now();
+        LocalDateTime now = grantedAt.toLocalDateTime();
+        String periodTimeZone = grantedAt.getOffset().getId();
         LocalDateTime periodEnd = now.plusDays(IntroTrialPlans.resolveTrialDays(plan.getTrialDays()));
         markIntroTrialUsed(current, stripeCustomerId);
         userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
@@ -3016,6 +3024,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getCurrentPeriodEnd, periodEnd)
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, now)
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, periodEnd)
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone, periodTimeZone)
+                .set(UserSubscriptionEntity::getQuotaPeriodTimeZone, periodTimeZone)
                 .set(UserSubscriptionEntity::getCancelAtPeriodEnd, false)
                 .set(UserSubscriptionEntity::getPendingPlanCode, null)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
@@ -3606,12 +3616,14 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getStatus, updated.getStatus())
                 .set(UserSubscriptionEntity::getCurrentPeriodStart, fromEpoch(updated.getCurrentPeriodStart()))
                 .set(UserSubscriptionEntity::getCurrentPeriodEnd, fromEpoch(updated.getCurrentPeriodEnd()))
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone, "UTC")
                 .set(UserSubscriptionEntity::getLastSyncedAt, now)
                 .set(UserSubscriptionEntity::getUpdatedAt, now));
         current.setCancelAtPeriodEnd(Boolean.TRUE.equals(updated.getCancelAtPeriodEnd()));
         current.setStatus(updated.getStatus());
         current.setCurrentPeriodStart(fromEpoch(updated.getCurrentPeriodStart()));
         current.setCurrentPeriodEnd(fromEpoch(updated.getCurrentPeriodEnd()));
+        current.setCurrentPeriodTimeZone("UTC");
         current.setLastSyncedAt(now);
     }
 
@@ -3911,6 +3923,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime currentPeriodStart = current.getCurrentPeriodStart();
         LocalDateTime currentPeriodEnd = current.getCurrentPeriodEnd();
+        String startTimeZone = current.getCurrentPeriodTimeZone();
+        String endTimeZone = current.getCurrentPeriodTimeZone();
         Boolean cancelAtPeriodEnd = current.getCancelAtPeriodEnd();
         String status = current.getStatus();
         try {
@@ -3920,9 +3934,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 cancelAtPeriodEnd = Boolean.TRUE.equals(subscription.getCancelAtPeriodEnd());
                 if (subscription.getCurrentPeriodStart() != null) {
                     currentPeriodStart = fromEpoch(subscription.getCurrentPeriodStart());
+                    startTimeZone = "UTC";
                 }
                 if (subscription.getCurrentPeriodEnd() != null) {
                     currentPeriodEnd = fromEpoch(subscription.getCurrentPeriodEnd());
+                    endTimeZone = "UTC";
                 }
             }
         } catch (StripeException e) {
@@ -3930,8 +3946,11 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         }
 
         LocalDateTime quotaPeriodEnd = currentPeriodEnd;
+        String currentPeriodTimeZone = java.util.Objects.equals(startTimeZone, endTimeZone) ? startTimeZone : null;
+        String quotaPeriodTimeZone = currentPeriodTimeZone;
         if ("year".equals(plan.getBillingInterval()) && currentPeriodStart != null) {
             quotaPeriodEnd = currentPeriodStart.plusMonths(1);
+            quotaPeriodTimeZone = startTimeZone;
         }
 
         userSubscriptionMapper.update(null, new LambdaUpdateWrapper<UserSubscriptionEntity>()
@@ -3943,6 +3962,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .set(UserSubscriptionEntity::getCurrentPeriodEnd, currentPeriodEnd)
                 .set(UserSubscriptionEntity::getQuotaPeriodStart, currentPeriodStart)
                 .set(UserSubscriptionEntity::getQuotaPeriodEnd, quotaPeriodEnd)
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone, currentPeriodTimeZone)
+                .set(UserSubscriptionEntity::getQuotaPeriodTimeZone, quotaPeriodTimeZone)
                 .set(UserSubscriptionEntity::getCancelAtPeriodEnd, Boolean.TRUE.equals(cancelAtPeriodEnd))
                 .set(UserSubscriptionEntity::getPendingPlanCode, null)
                 .set(UserSubscriptionEntity::getPendingEffectiveAt, null)
@@ -3955,6 +3976,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
         current.setCurrentPeriodEnd(currentPeriodEnd);
         current.setQuotaPeriodStart(currentPeriodStart);
         current.setQuotaPeriodEnd(quotaPeriodEnd);
+        current.setCurrentPeriodTimeZone(currentPeriodTimeZone);
+        current.setQuotaPeriodTimeZone(quotaPeriodTimeZone);
         current.setCancelAtPeriodEnd(Boolean.TRUE.equals(cancelAtPeriodEnd));
         current.setPendingPlanCode(null);
         current.setPendingEffectiveAt(null);
@@ -4450,10 +4473,10 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .stripeCustomerId(entity.getStripeCustomerId())
                 .stripeSubscriptionId(entity.getStripeSubscriptionId())
                 .stripeScheduleId(entity.getStripeScheduleId())
-                .currentPeriodStart(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodStart()) : entity.getCurrentPeriodStart())
-                .currentPeriodEnd(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodEnd()) : entity.getCurrentPeriodEnd())
-                .quotaPeriodStart(entity.getQuotaPeriodStart())
-                .quotaPeriodEnd(entity.getQuotaPeriodEnd())
+                .currentPeriodStart(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodStart()) : subscriptionApiTime(entity.getCurrentPeriodStart(), entity.getCurrentPeriodTimeZone()))
+                .currentPeriodEnd(recovery.paidCycleValid() ? com.studyagent.common.datetime.DateTimeFormats.fromInstant(recovery.paidPeriodEnd()) : subscriptionApiTime(entity.getCurrentPeriodEnd(), entity.getCurrentPeriodTimeZone()))
+                .quotaPeriodStart(subscriptionApiTime(entity.getQuotaPeriodStart(), entity.getQuotaPeriodTimeZone()))
+                .quotaPeriodEnd(subscriptionApiTime(entity.getQuotaPeriodEnd(), entity.getQuotaPeriodTimeZone()))
                 .cancelAtPeriodEnd(Boolean.TRUE.equals(entity.getCancelAtPeriodEnd()))
                 .pendingPlanCode(entity.getPendingPlanCode())
                 .pendingEffectiveAt(entity.getPendingEffectiveAt())
@@ -4523,10 +4546,21 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .active(onIntroTrial && canConsume)
                 .used(introTrialUsed)
                 .eligible(IntroTrialPlans.ELIGIBILITY_ELIGIBLE.equals(eligibility))
-                .endsAt(onIntroTrial && canConsume ? entity.getCurrentPeriodEnd() : null)
+                .endsAt(onIntroTrial && canConsume ? subscriptionApiTime(entity.getCurrentPeriodEnd(), entity.getCurrentPeriodTimeZone()) : null)
                 .convertsToPlanCode(convertsToPlanCode)
                 .convertsToBillingInterval(convertsToBillingInterval)
                 .build();
+    }
+
+    private LocalDateTime subscriptionApiTime(LocalDateTime value, String sourceZone) {
+        if (value == null || sourceZone == null || sourceZone.isBlank()) return value;
+        try {
+            return com.studyagent.common.datetime.DateTimeFormats.fromInstant(
+                    value.atZone(java.time.ZoneId.of(sourceZone)).toInstant());
+        } catch (java.time.DateTimeException invalidSource) {
+            log.warn("Subscription period has an invalid source zone: {}", sourceZone);
+            return null;
+        }
     }
 
     private SubscriptionResult freeSubscription() {

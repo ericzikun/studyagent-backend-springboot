@@ -323,7 +323,7 @@ class VerlaFileChatSendFlowTest {
                 "obj_123",
                 "先帮我提取格式要求。");
         assertThat(mqOutboxService.lastEnvelope.getPayload())
-                .containsOnlyKeys("objectId", "message", "userMessageId", "contextRef");
+                .containsOnlyKeys("objectId", "message", "userMessageId", "contextRef", "outputLanguage");
         assertThat(mqOutboxService.lastEnvelope.getPayload().get("userMessageId"))
                 .isEqualTo(result.getUserMessageId());
 

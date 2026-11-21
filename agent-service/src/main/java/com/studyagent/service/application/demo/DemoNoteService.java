@@ -55,6 +55,8 @@ public class DemoNoteService {
 
     private static final String YOUTUBE_SOURCE_TITLE = "YouTube 视频";
     /** watch / shorts / embed / live / youtu.be 都归一成 11 位 video id。 */
+    private static final Pattern MARKDOWN_HEADING_PATTERN =
+            Pattern.compile("^(#{1,6})\\s+(.+?)\\s*$");
     private static final Pattern YOUTUBE_URL_PATTERN = Pattern.compile(
             "^https?://(?:www\\.|m\\.)?"
                     + "(?:youtube\\.com/(?:watch\\?(?:[^#]*&)?v=|shorts/|embed/|live/|v/)|youtu\\.be/)"
@@ -526,11 +528,129 @@ public class DemoNoteService {
         }
 
         int first = md.indexOf(original);
-        if (first < 0 || md.indexOf(original, first + 1) >= 0) {
-            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
-                    "笔记内容已变化，无法唯一定位要修改的片段，请刷新后重试");
+        if (first >= 0 && md.indexOf(original, first + 1) < 0) {
+            return md.substring(0, first) + proposed + md.substring(first + original.length());
         }
-        return md.substring(0, first) + proposed + md.substring(first + original.length());
+
+        // 编辑器序列化后的 Markdown 与库内原文可能只差空行/列表符号；此时按章节标题
+        // 或前言范围重放，避免用户「接受」后却因为定位失败被迫刷新重审。
+        String op = str(hunk.get("op"));
+        if ("update_section".equals(op)) {
+            String replaced = replaceSectionByHeading(
+                    md, str(hunk.get("heading")), original, proposed);
+            if (replaced != null) {
+                return replaced;
+            }
+        }
+        if ("preamble".equals(op)) {
+            String replaced = replacePreamble(md, original, proposed);
+            if (replaced != null) {
+                return replaced;
+            }
+        }
+        throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
+                "笔记内容已变化，无法唯一定位要修改的片段，请刷新后重试");
+    }
+
+    /** 按标题替换整节；仅当该节与 original 除空白/列表符号外一致时才视为可安全重放。 */
+    private static String replaceSectionByHeading(
+            String md, String heading, String original, String proposed) {
+        String target = normalizeMarkdownHeading(heading);
+        if (target.isEmpty()) {
+            return null;
+        }
+        String[] lines = md.split("\n", -1);
+        int start = -1;
+        int depth = -1;
+        for (int i = 0; i < lines.length; i += 1) {
+            var matcher = MARKDOWN_HEADING_PATTERN.matcher(lines[i]);
+            if (!matcher.matches()) {
+                continue;
+            }
+            if (start < 0) {
+                if (matcher.group(2).strip().equals(target)) {
+                    start = i;
+                    depth = matcher.group(1).length();
+                }
+            } else if (matcher.group(1).length() <= depth) {
+                return joinWithSection(lines, start, i, original, proposed);
+            }
+        }
+        return start < 0 ? null : joinWithSection(lines, start, lines.length, original, proposed);
+    }
+
+    private static String joinWithSection(
+            String[] lines, int start, int end, String original, String proposed) {
+        String existing = String.join("\n", java.util.Arrays.copyOfRange(lines, start, end));
+        if (!normalizeMarkdownForMatch(existing).equals(normalizeMarkdownForMatch(original))) {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < start; i += 1) {
+            out.add(lines[i]);
+        }
+        out.add(sectionBody(lines[start], proposed));
+        for (int i = end; i < lines.length; i += 1) {
+            out.add(lines[i]);
+        }
+        return String.join("\n", out);
+    }
+
+    private static String sectionBody(String headingLine, String proposed) {
+        String body = proposed == null ? "" : proposed.strip();
+        if (body.isEmpty()) {
+            return headingLine;
+        }
+        return MARKDOWN_HEADING_PATTERN.matcher(body).matches()
+                ? body
+                : headingLine + "\n\n" + body;
+    }
+
+    /** 前言没有固定标题：替换第一个标题之前的全部文本。 */
+    private static String replacePreamble(String md, String original, String proposed) {
+        String body = proposed == null ? "" : proposed.strip();
+        if (body.isEmpty()) {
+            return null;
+        }
+        String[] lines = md.split("\n", -1);
+        int firstHeading = lines.length;
+        for (int i = 0; i < lines.length; i += 1) {
+            if (MARKDOWN_HEADING_PATTERN.matcher(lines[i]).matches()) {
+                firstHeading = i;
+                break;
+            }
+        }
+        String existing = String.join("\n", java.util.Arrays.copyOfRange(lines, 0, firstHeading));
+        if (!normalizeMarkdownForMatch(existing).equals(normalizeMarkdownForMatch(original))) {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        out.add(body);
+        for (int i = firstHeading; i < lines.length; i += 1) {
+            out.add(lines[i]);
+        }
+        return String.join("\n", out);
+    }
+
+    private static String normalizeMarkdownHeading(String heading) {
+        return heading == null ? "" : heading.replaceFirst("^#{1,6}\\s*", "").strip();
+    }
+
+    /** 只抹平空白/列表符号差异；正文有实质改动时仍应失败，避免覆盖用户手改。 */
+    private static String normalizeMarkdownForMatch(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        for (String line : text.replace("\r\n", "\n").replace('\r', '\n').split("\n")) {
+            String normalized = line.strip().replaceAll("\\s+", " ");
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            normalized = normalized.replaceFirst("^[-+*]\\s+", "- ");
+            out.append(normalized).append('\n');
+        }
+        return out.toString().strip();
     }
 
     private Map<String, Object> readJson(String raw) {

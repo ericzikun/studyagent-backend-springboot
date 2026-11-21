@@ -468,6 +468,15 @@ class DemoNoteServiceTest {
         return body;
     }
 
+    private static Map<String, Object> sectionHunk(
+            String id, String heading, String original, String proposed) {
+        Map<String, Object> body = new LinkedHashMap<>(
+                hunk(id, original, proposed, original, "", ""));
+        body.put("op", "update_section");
+        body.put("heading", heading);
+        return body;
+    }
+
     private static Map<String, Object> oneHunkProposal(String proposalId, long baseVersion, String proposedMd) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("proposalId", proposalId);
@@ -581,6 +590,32 @@ class DemoNoteServiceTest {
                 Map.of("hunkId", "h2", "status", "rejected")));
 
         // 部分接受：只应用 A，B 保持原样（不能拿 proposedContentMd 整篇覆盖）
+        assertTrue(result.getNoteMd().contains("- 新A"));
+        assertTrue(result.getNoteMd().contains("- 旧B"));
+        assertEquals(2L, result.getNoteVersion());
+    }
+
+    @Test
+    void commit_proposal_applies_partial_hunk_when_only_editor_formatting_differs() {
+        NoteConversation conversation = draft();
+        // 编辑器序列化会把 `*` 列表统一成 `-`，并与库内空行不同；内容本身没变时应能重放
+        conversation.setNoteMd("# 主题\n\n## A\n* 旧A\n\n\n## B\n- 旧B");
+        conversation.setNoteVersion(1L);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("proposalId", "np_fmt");
+        body.put("baseVersion", 1);
+        body.put("proposedContentMd", "# 主题\n\n## A\n- 新A\n\n## B\n- 新B");
+        body.put("changes", List.of(
+                sectionHunk("h1", "A", "## A\n- 旧A", "## A\n- 新A"),
+                sectionHunk("h2", "B", "## B\n- 旧B", "## B\n- 新B")));
+        conversation.setPendingProposalJson(toJson(body));
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation result = service.commitProposal("user_1", NOTE_CONVERSATION_ID, "np_fmt", 1L, List.of(
+                Map.of("hunkId", "h1", "status", "accepted"),
+                Map.of("hunkId", "h2", "status", "rejected")));
+
         assertTrue(result.getNoteMd().contains("- 新A"));
         assertTrue(result.getNoteMd().contains("- 旧B"));
         assertEquals(2L, result.getNoteVersion());

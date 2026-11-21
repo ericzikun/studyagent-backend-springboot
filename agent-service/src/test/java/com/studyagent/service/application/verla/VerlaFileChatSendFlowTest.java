@@ -311,10 +311,9 @@ class VerlaFileChatSendFlowTest {
 
         FileChatPanelView initialPanel = fileChatService.getPanel(USER_ID, CONVERSATION_ID, "obj_123", null, 20);
         assertThat(initialPanel.getAnalysis().getText()).isEqualTo("这是附件解析阶段就准备好的文件说明。");
-        assertThat(initialPanel.getSuggestedQuestions()).containsExactly(
-                "帮我提取这个文件里的格式要求",
-                "这个文件和当前作业的关系是什么",
-                "我应该先从哪一步开始");
+        // req:CHAT-002 chat with file 下线：解析回写不再组装 fileChat 元数据，
+        // payload 里的 suggestedQuestions 不再被持久化。测试跟随该意图。
+        assertThat(initialPanel.getSuggestedQuestions()).isEmpty();
         assertThat(initialPanel.getMessages()).isEmpty();
 
         SendMessageResult result = orchestrator.startFileChat(
@@ -333,10 +332,8 @@ class VerlaFileChatSendFlowTest {
 
         FileChatPanelView completedPanel = fileChatService.getPanel(USER_ID, CONVERSATION_ID, "obj_123", null, 20);
         assertThat(completedPanel.getAnalysis().getText()).isEqualTo("这是附件解析阶段就准备好的文件说明。");
-        assertThat(completedPanel.getSuggestedQuestions()).containsExactly(
-                "帮我提取这个文件里的格式要求",
-                "这个文件和当前作业的关系是什么",
-                "我应该先从哪一步开始");
+        // req:CHAT-002 chat with file 下线：suggestedQuestions 不再由解析回写持久化。
+        assertThat(completedPanel.getSuggestedQuestions()).isEmpty();
         assertThat(completedPanel.getMessages())
                 .extracting(
                         com.studyagent.service.application.verla.dto.FileChatPanelMessageView::getRole,

@@ -111,6 +111,14 @@ class RecoveryTestClockSupportTest {
         var run=prepared();run.proof=RecoveryOwnedClockEvidenceTest.persistableProof();save(run);var root=new SubscriptionPaymentRecoveryEntity();root.setClerkUserId(owner);root.setStripeSubscriptionId(run.subscriptionId);root.setFirstFailedAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(run.proof.beforeClock().frozenTime()));when(roots.selectByInvoice(run.invoiceId)).thenReturn(root);
         users.selectByUser(owner).setStripeSubscriptionId("sub_new");assertThrows(IllegalStateException.class,()->service().advance(runId,"D7"));verifyNoMoreStripeWrites();
     }
+    @Test void replacementSuccessorOnTheOwnedClockKeepsBusinessTimeVisibleButCannotUseOperatorWrites()throws Exception{
+        var run=prepared();run.observedBusinessTime=Instant.parse("2027-01-01T00:00:00Z");save(run);
+        var successor=ApiResource.GSON.fromJson("{\"id\":\"sub_successor\",\"customer\":\"cus_owned\",\"test_clock\":\"clock_owned\",\"livemode\":false,\"status\":\"active\"}",Subscription.class);when(stripe.subscription("sub_successor")).thenReturn(successor);
+        stripe.clock(run.clockId).setFrozenTime(run.observedBusinessTime.plusSeconds(3600).getEpochSecond());
+        var s=service();s.observeReadyClock(successor,stripe.clock(run.clockId));
+        assertEquals(run.observedBusinessTime.plusSeconds(3600),s.localTime(owner,run.subscriptionId,run.customerId));
+        assertThrows(IllegalStateException.class,()->s.pause(runId,"sub_successor"));verifyNoMoreStripeWrites();
+    }
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"MONTH_1,2027-02-28T23:00:00Z","MONTH_1_AFTER,2027-02-28T23:00:01Z","MONTH_2,2027-03-31T23:00:00Z","PAID_END,2028-01-31T23:00:00Z"})
     void annualCheckpointsUseUtcCalendarMonthsAndActualPaidCycle(String point,String expected)throws Exception{

@@ -182,7 +182,10 @@ public class RecoveryTestClockSupport {
         RecoveryTestClockStripe.ready(clock);String name=clock.getName();
         if(name==null||!name.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{7,79}"))return null;
         var run=store.read(name);if(run==null||run.subscriptionId==null)return null;
-        check(run.clockId.equals(clock.getId())&&run.customerId.equals(sub.getCustomer())&&Objects.equals(run.subscriptionId,sub.getId()),"OBSERVED_CLOCK_SCOPE_REQUIRED");
+        // A replacement creates a successor subscription on the same owned customer and clock.
+        // Reads for that successor must still resolve business time; operator writes remain bound
+        // to run.subscriptionId (pause/advance/firstFailure keep their own scope checks).
+        check(run.clockId.equals(clock.getId())&&run.customerId.equals(sub.getCustomer()),"OBSERVED_CLOCK_SCOPE_REQUIRED");
         var observed=Instant.ofEpochSecond(clock.getFrozenTime());
         if(!observed.equals(run.observedBusinessTime)){run.observedBusinessTime=observed;store.save(run);}return null;
     });}

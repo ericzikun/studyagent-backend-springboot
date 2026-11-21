@@ -31,6 +31,9 @@ public interface DemoNoteRepository {
     /** 由主线 {@code verla_conversations.id} 反查 demo 会话（uk_note_verla_conv 唯一键）。 */
     Optional<NoteConversation> findByVerlaConversationId(Long verlaConversationId);
 
+    /** 把 updated_at 早于 cutoff 且仍为 PROCESSING 的音频状态批量置 FAILED，返回影响行数。 */
+    int failStaleBlogAudio(java.time.LocalDateTime cutoff);
+
     /** 取用户最近一个尚未提交素材的会话，用于「进入页面即分配会话」的草稿复用。 */
     Optional<NoteConversation> findLatestDraft(String clerkUserId);
 

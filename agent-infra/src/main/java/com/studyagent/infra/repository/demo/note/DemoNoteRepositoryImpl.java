@@ -110,6 +110,15 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
     }
 
     @Override
+    public int failStaleBlogAudio(LocalDateTime cutoff) {
+        return convMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<DemoNoteConversationEntity>()
+                .eq(DemoNoteConversationEntity::getBlogAudioStatus, "PROCESSING")
+                .lt(DemoNoteConversationEntity::getUpdatedAt, cutoff)
+                .set(DemoNoteConversationEntity::getBlogAudioStatus, "FAILED")
+                .set(DemoNoteConversationEntity::getBlogAudioJson, null));
+    }
+
+    @Override
     public Optional<NoteConversation> findLatestDraft(String clerkUserId) {
         DemoNoteConversationEntity e = convMapper.selectOne(new LambdaQueryWrapper<DemoNoteConversationEntity>()
                 .eq(DemoNoteConversationEntity::getClerkUserId, clerkUserId)

@@ -228,10 +228,10 @@ public class SubscriptionPaymentRecoveryService {
     private Contract contract(SubscriptionRecoveryStripeGateway.Snapshot snapshot,SourceProvenance provenance,boolean hasTrialSignal){
         if(snapshot.subscription()==null || snapshot.lines()==null||snapshot.lines().isEmpty())throw incomplete(snapshot.invoice().getId());
         var lines=snapshot.lines().stream().filter(l->!Boolean.TRUE.equals(l.getProration())).toList();
-        if(lines.size()!=1||!"subscription".equals(lines.get(0).getType())||lines.get(0).getPrice()==null||lines.get(0).getPrice().getRecurring()==null)return null;
+        if(lines.size()!=1||!"subscription".equals(lines.get(0).getType())||lines.get(0).getPrice()==null||lines.get(0).getPrice().getRecurring()==null){return null;}
         var line=lines.get(0);var price=line.getPrice();
         if(line.getSubscription()!=null&&!snapshot.subscription().getId().equals(line.getSubscription()))throw incomplete(line.getId());
-        var plan=planForPrice(price.getId());if(plan==null||!Set.of("basic","plus","pro").contains(plan.getTier())||IntroTrialPlans.isIntroTrialPlanCode(plan.getPlanCode()))return null;
+        var plan=planForPrice(price.getId());if(plan==null||!Set.of("basic","plus","pro").contains(plan.getTier())||IntroTrialPlans.isIntroTrialPlanCode(plan.getPlanCode())){return null;}
         String source=provenance==null?"formal":provenance.source();
         if(provenance==null&&snapshot.schedule()!=null&&snapshot.schedule().getCurrentPhase()!=null&&line.getPeriod()!=null
                 &&Objects.equals(snapshot.schedule().getCurrentPhase().getStartDate(),line.getPeriod().getStart())){
@@ -248,10 +248,10 @@ public class SubscriptionPaymentRecoveryService {
                     && line.getPeriod().getStart()>snapshot.schedule().getCurrentPhase().getStartDate();
             if(!laterPhase)throw new IllegalStateException("RECOVERY_TRIAL_SOURCE_UNKNOWN:"+snapshot.invoice().getId());
         }
-        if(!"subscription_cycle".equals(snapshot.invoice().getBillingReason())&&"formal".equals(source))return null;
+        if(!"subscription_cycle".equals(snapshot.invoice().getBillingReason())&&"formal".equals(source)){return null;}
         var classified=RecoveryContractClassifier.classify(snapshot.subscription(),snapshot.schedule(),true,price.getId(),line.getQuantity());
         if("UNKNOWN".equals(classified.scheduleClass()))throw new IllegalStateException("RECOVERY_ADMISSION_UNKNOWN_SCHEDULE:"+snapshot.subscription().getId());
-        if(!Set.of("NO_SCHEDULE","EQUIVALENT_SCHEDULE").contains(classified.scheduleClass()))return null;
+        if(!Set.of("NO_SCHEDULE","EQUIVALENT_SCHEDULE").contains(classified.scheduleClass())){return null;}
         int count=Math.toIntExact(price.getRecurring().getIntervalCount());String interval=price.getRecurring().getInterval();
         RecoveryCaseKey key;
         try{key=new RecoveryCaseKey(source,plan.getPlanCode(),interval,count,classified.scheduleClass(),classified.cancelMode());}
@@ -685,8 +685,8 @@ public class SubscriptionPaymentRecoveryService {
             addAction(root,"EXPIRE_CHECKOUT","recovery:"+root.getId()+":expire:"+openReplacement.getCheckoutSessionId(),openReplacement.getCheckoutSessionId(),Map.of(),null,Instant.now());
         if(paidEpoch==null){root.setGrantState("HELD");review(root,"PAID_TIME_UNVERIFIED");return;}
         if("OPEN".equals(row.getDisputeState())||"LOST".equals(row.getDisputeState())||"FULL".equals(row.getRefundState())){root.setGrantState("HELD");review(root,"PAID_FINANCIAL_HOLD");return;}
-        if("GRANTED".equals(root.getGrantState()))return;
-        if(root.getEntitlementStartAt()!=null && root.getEntitlementEndAt()!=null){root.setGrantState("GRANTED");return;}
+        if("GRANTED".equals(root.getGrantState())){planRenewal(root,snapshot,renewalScopeKnown);return;}
+        if(root.getEntitlementStartAt()!=null && root.getEntitlementEndAt()!=null){root.setGrantState("GRANTED");planRenewal(root,snapshot,renewalScopeKnown);return;}
         Instant paid=epoch(paidEpoch);Instant end=SubscriptionRecoveryPolicy.paidPeriodEnd(paid,root.getBillingInterval(),root.getIntervalCount());
         Instant quotaEnd=SubscriptionRecoveryPolicy.quotaPeriodEnd(paid,root.getBillingInterval(),root.getIntervalCount());
         root.setEntitlementStartAt(local(paid));root.setEntitlementEndAt(local(end));root.setQuotaPeriodEndAt(local(quotaEnd));
@@ -702,15 +702,48 @@ public class SubscriptionPaymentRecoveryService {
         quota.resetFromPaidInvoiceAt(root.getClerkUserId(),root.getStripeSubscriptionId(),root.getPlanCode(),paid,quotaEnd,row.getStripeInvoiceId(),requiredBusinessTime(snapshot));
         quota.resumeEligibleAddonsAt(root.getClerkUserId(),root.getStripeSubscriptionId(),"recovery:"+row.getStripeInvoiceId()+":addons",requiredBusinessTime(snapshot));
         root.setGrantState("GRANTED");root.setAnchorSyncState("PENDING");
+        planRenewal(root,snapshot,renewalScopeKnown);
+    }
+    /** Called under the user/root locks. Persist missing intents, never regrant or replace a frozen intent. */
+    private void planRenewal(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot,boolean renewalScopeKnown){
+        if(root.getEntitlementEndAt()==null || root.getEntitlementInvoiceId()==null || "CONFIRMED".equals(root.getAnchorSyncState())
+                || actions.selectByRecovery(root.getId()).stream().anyMatch(a->Set.of("RELEASE_SCHEDULE","SHIFT_RENEWAL").contains(a.getActionType())))return;
+        if("IN_PROGRESS".equals(root.getReviewState()) || root.getReviewReason()!=null
+                && !Set.of("CONTRACT_CHANGED_AFTER_ADMISSION","RENEWAL_CONTRACT_READ_UNKNOWN","OLD_INVOICE_SCOPE_READ_UNKNOWN").contains(root.getReviewReason()))return;
+        if(snapshot.subscription()==null || "canceled".equals(snapshot.subscription().getStatus())){
+            root.setAnchorSyncState("REVIEW");review(root,"REMOTE_CANCELED_PAID_CYCLE_PRESERVED");return;
+        }
+        if(!requiredBusinessTime(snapshot).isBefore(instant(root.getEntitlementEndAt()))){
+            root.setAnchorSyncState("REVIEW");review(root,"PAID_PERIOD_ELAPSED_BEFORE_RENEWAL_SYNC");return;
+        }
         if(!renewalScopeKnown){root.setAnchorSyncState("REVIEW");review(root,"OLD_INVOICE_SCOPE_READ_UNKNOWN");return;}
         Contract latest;
         try{latest=contract(snapshot,admittedSource(root));}
         catch(RuntimeException metadataUnknown){root.setAnchorSyncState("REVIEW");review(root,"RENEWAL_CONTRACT_READ_UNKNOWN");return;}
-        if(latest==null||!Objects.equals(string(admission,"contractHash"),latest.hash())){root.setAnchorSyncState("REVIEW");review(root,"CONTRACT_CHANGED_AFTER_ADMISSION");return;}
+        if(latest==null||!sameContract(root,latest)){root.setAnchorSyncState("REVIEW");review(root,"CONTRACT_CHANGED_AFTER_ADMISSION");return;}
+        resolveRenewalContractReview(root);
         if(snapshot.subscription().getSchedule()!=null)
             addAction(root,"RELEASE_SCHEDULE","recovery:"+root.getId()+":release:"+snapshot.subscription().getSchedule(),snapshot.subscription().getSchedule(),Map.of("preserve_cancel_date",true),null,Instant.now());
-        addAction(root,"SHIFT_RENEWAL","recovery:"+row.getStripeInvoiceId()+":anchor:"+end.getEpochSecond(),root.getStripeSubscriptionId(),SubscriptionRecoveryStripeGateway.shiftParams(row.getStripeInvoiceId(),end),null,Instant.now());
+        Instant end=instant(root.getEntitlementEndAt());
+        addAction(root,"SHIFT_RENEWAL","recovery:"+root.getEntitlementInvoiceId()+":anchor:"+end.getEpochSecond(),root.getStripeSubscriptionId(),SubscriptionRecoveryStripeGateway.shiftParams(root.getEntitlementInvoiceId(),end),null,Instant.now());
+        root.setAnchorSyncState("PENDING");
     }
+    private void resolveRenewalContractReview(SubscriptionPaymentRecoveryEntity root){
+        if(root.getReviewReason()==null)return;
+        // updateById skips null fields; clear only this resolved technical review explicitly in the same transaction.
+        int changed=recoveries.update(null,new LambdaUpdateWrapper<SubscriptionPaymentRecoveryEntity>()
+                .eq(SubscriptionPaymentRecoveryEntity::getId,root.getId())
+                .eq(SubscriptionPaymentRecoveryEntity::getVersion,root.getVersion())
+                .eq(SubscriptionPaymentRecoveryEntity::getReviewReason,root.getReviewReason())
+                .set(SubscriptionPaymentRecoveryEntity::getReviewState,"NONE")
+                .set(SubscriptionPaymentRecoveryEntity::getReviewReason,null)
+                .set(SubscriptionPaymentRecoveryEntity::getReviewEnteredAt,null)
+                .set(SubscriptionPaymentRecoveryEntity::getReviewDueAt,null)
+                .set(SubscriptionPaymentRecoveryEntity::getReviewNextFollowupAt,null));
+        if(changed!=1)throw new IllegalStateException("RECOVERY_REVIEW_RESOLUTION_CONFLICT");
+        root.setReviewState("NONE");root.setReviewReason(null);root.setReviewEnteredAt(null);root.setReviewDueAt(null);root.setReviewNextFollowupAt(null);
+    }
+
     private static Instant requiredBusinessTime(SubscriptionRecoveryStripeGateway.Snapshot snapshot) {
         if (snapshot.businessNow() == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
         return snapshot.businessNow();
@@ -917,12 +950,22 @@ public class SubscriptionPaymentRecoveryService {
                 if(r.getAccountClosedAt()!=null || "PAID".equals(r.getStatus()) && (!currentRecovery(user,r) || obsoletePause(r,action,snapshot)))skip="SKIPPED_SUPERSEDED";
             }else if("UPDATE_METHOD".equals(action.getActionType())){
                 var params=SubscriptionRecoveryStripeGateway.thaw(action.getPayloadJson());String method=Objects.toString(params.get("default_payment_method"),"");
+                String resource=Objects.toString(params.get("resource"),"");
                 if(!Objects.equals(user.getPaymentRecoveryId(),r.getId()) || !Objects.equals(user.getStripeSubscriptionId(),r.getStripeSubscriptionId()) || r.getAccountClosedAt()!=null
                         || !Set.of("OPEN_AUTO","OPEN_MANUAL","PAID").contains(r.getStatus()))skip="SKIPPED_TERMINAL";
                 else if(methodCustomer==null || !Objects.equals(r.getStripeCustomerId(),methodCustomer.getId()) || methodCustomer.getInvoiceSettings()==null
                         || !Objects.equals(method,methodCustomer.getInvoiceSettings().getDefaultPaymentMethod()))skip="SKIPPED_SUPERSEDED";
                 else if(actions.selectByRecovery(r.getId()).stream().anyMatch(a->!Objects.equals(a.getId(),action.getId()) && "UPDATE_METHOD".equals(a.getActionType()) && Set.of("DISPATCHING","UNKNOWN","REVIEW").contains(a.getStatus())))return null;
-                else if(snapshot.subscription().getSchedule()!=null && ("subscription".equals(params.get("resource")) || scheduledMethodNeedsReview(snapshot,method))){review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);skip="SKIPPED_CONTRACT_CHANGED";}
+                else if("schedule".equals(resource)){
+                    var schedule=snapshot.schedule();
+                    if(schedule==null || !Objects.equals(action.getTargetId(),schedule.getId()))skip="SKIPPED_SUPERSEDED";
+                    else if(schedulePhaseMethodConflict(snapshot,method)){review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);skip="SKIPPED_CONTRACT_CHANGED";}
+                }else if(snapshot.subscription().getSchedule()!=null){
+                    var schedule=snapshot.schedule();
+                    String scheduleMethod=schedule==null||schedule.getDefaultSettings()==null?null:schedule.getDefaultSettings().getDefaultPaymentMethod();
+                    if(schedulePhaseMethodConflict(snapshot,method)){review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);skip="SKIPPED_CONTRACT_CHANGED";}
+                    else if(!Objects.equals(method,scheduleMethod))return null;
+                }
                 else if("invoice".equals(params.get("resource")) && !"open".equals(targetSnapshot.invoice().getStatus()))skip="SKIPPED_TERMINAL";
             }else if("SET_CANCEL_PREFERENCE".equals(action.getActionType())){
                 var saved=r.getContractSnapshot()==null?new JsonObject():JsonParser.parseString(r.getContractSnapshot()).getAsJsonObject();
@@ -1115,9 +1158,14 @@ public class SubscriptionPaymentRecoveryService {
         if(Objects.equals(string(admission,"contractHash"),current.hash()))return true;
         boolean released=actions.selectByRecovery(root.getId()).stream().anyMatch(a->"RELEASE_SCHEDULE".equals(a.getActionType())&&"SUCCEEDED".equals(a.getStatus()));
         var now=JsonParser.parseString(current.json()).getAsJsonObject().getAsJsonObject("recovery_admission");
-        return released&&"NO_SCHEDULE".equals(string(now,"scheduleClass"))&&Objects.equals(string(admission,"cancelMode"),string(now,"cancelMode"))
-                &&Objects.equals(root.getPlanCode(),current.plan().getPlanCode())&&Objects.equals(string(JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject(),"price_id"),current.priceId());
+        if(released&&"NO_SCHEDULE".equals(string(now,"scheduleClass"))&&Objects.equals(string(admission,"cancelMode"),string(now,"cancelMode"))
+                &&Objects.equals(root.getPlanCode(),current.plan().getPlanCode())&&Objects.equals(string(JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject(),"price_id"),current.priceId()))return true;
+        return "EQUIVALENT_SCHEDULE".equals(string(admission,"scheduleClass"))
+                && "EQUIVALENT_SCHEDULE".equals(string(now,"scheduleClass"))
+                && Objects.equals(string(admission,"cancelMode"),string(now,"cancelMode"))
+                && RecoveryContractClassifier.sameEffectiveContract(admission.getAsJsonObject("scheduleContract"),now.getAsJsonObject("scheduleContract"));
     }
+
     private void completeAction(SubscriptionRecoveryActionEntity claimed,SubscriptionPaymentRecoveryEntity before,SubscriptionRecoveryStripeGateway.WriteResult result){
         completeAction(claimed,before,result,null);
     }
@@ -1319,6 +1367,8 @@ public class SubscriptionPaymentRecoveryService {
         var customer=stripe.readCustomer(root.getStripeCustomerId());
         if(customer==null || !Objects.equals(root.getStripeCustomerId(),customer.getId()) || customer.getInvoiceSettings()==null)return;
         String method=customer.getInvoiceSettings().getDefaultPaymentMethod();if(method==null)return;
+        if("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW".equals(root.getReviewReason())
+                && schedulePaymentMethodCompatible(snapshot,method))resolveScheduleMethodReview(root);
         if(Objects.equals(method,snapshot.subscription().getDefaultPaymentMethod()) && Objects.equals(method,snapshot.invoice().getDefaultPaymentMethod())
                 && schedulePaymentMethodCompatible(snapshot,method))return;
         var paymentMethod=stripe.readPaymentMethod(method);
@@ -1326,12 +1376,17 @@ public class SubscriptionPaymentRecoveryService {
         locked(root.getId(),(u,r)->{
             if(!Objects.equals(u.getPaymentRecoveryId(),r.getId()) || !Objects.equals(u.getStripeSubscriptionId(),r.getStripeSubscriptionId())
                     || !Set.of("OPEN_AUTO","OPEN_MANUAL","PAID").contains(r.getStatus()))return null;
-            if(scheduledMethodNeedsReview(snapshot,method)){
-                var hold=addAction(r,"UPDATE_METHOD","recovery:"+r.getId()+":method:schedule-review:"+method,r.getStripeSubscriptionId(),Map.of("resource","subscription","default_payment_method",method),null,Instant.now());
-                if("READY".equals(hold.getStatus())){
-                    hold.setStatus("REVIEW");hold.setLastError("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");hold.setResultJson(JSON.toJson(Map.of("pending_schedule_id",snapshot.subscription().getSchedule(),"requires_read_confirmation",true)));actions.updateById(hold);
+            if(snapshot.subscription().getSchedule()!=null && schedulePhaseMethodConflict(snapshot,method)){
+                holdScheduleMethodReview(r,snapshot,method);return null;
+            }
+            if(snapshot.subscription().getSchedule()!=null){
+                resolveScheduleMethodReview(r);
+                var schedule=snapshot.schedule();
+                if(schedule==null){holdScheduleMethodReview(r,snapshot,method);return null;}
+                String scheduleMethod=schedule.getDefaultSettings()==null?null:schedule.getDefaultSettings().getDefaultPaymentMethod();
+                if(!Objects.equals(method,scheduleMethod)){
+                    queueMethodSetting(r,"schedule",schedule.getId(),method);
                 }
-                review(r,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(r);return null;
             }
             if(!Objects.equals(method,snapshot.subscription().getDefaultPaymentMethod()))
                 queueMethodSetting(r,"subscription",r.getStripeSubscriptionId(),method);
@@ -1340,10 +1395,38 @@ public class SubscriptionPaymentRecoveryService {
             return null;
         });
     }
-    /** A compatible Schedule does not prevent synchronizing only the open invoice's override. */
-    private static boolean scheduledMethodNeedsReview(SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
-        return snapshot.subscription().getSchedule()!=null && (!Objects.equals(method,snapshot.subscription().getDefaultPaymentMethod())
-                || !schedulePaymentMethodCompatible(snapshot,method));
+    /** Phase-level overrides cannot be rewritten by the default-settings write; keep them for review. */
+    private static boolean schedulePhaseMethodConflict(SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
+        var schedule=snapshot.schedule();
+        if(snapshot.subscription().getSchedule()==null)return false;
+        if(schedule==null || !Objects.equals(snapshot.subscription().getSchedule(),schedule.getId()))return true;
+        long now=snapshot.businessNow().getEpochSecond();
+        for(var phase:schedule.getPhases()){
+            if(phase.getEndDate()==null)return true;
+            if(phase.getEndDate()<=now)continue;
+            String override=phase.getDefaultPaymentMethod();
+            if(override!=null && !Objects.equals(method,override))return true;
+        }
+        return false;
+    }
+    private void resolveScheduleMethodReview(SubscriptionPaymentRecoveryEntity root) {
+        for(var action:actions.selectByRecovery(root.getId())){
+            if("UPDATE_METHOD".equals(action.getActionType()) && "REVIEW".equals(action.getStatus())
+                    && "PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW".equals(action.getLastError())){
+                action.setStatus("SUPERSEDED");action.setLastError(null);actions.updateById(action);
+            }
+        }
+        if("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW".equals(root.getReviewReason())){
+            root.setReviewState("NONE");root.setReviewReason(null);root.setReviewEnteredAt(null);root.setReviewDueAt(null);root.setReviewNextFollowupAt(null);recoveries.updateById(root);
+        }
+    }
+    private void holdScheduleMethodReview(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
+        var hold=addAction(root,"UPDATE_METHOD","recovery:"+root.getId()+":method:schedule-review:"+method,root.getStripeSubscriptionId(),Map.of("resource","subscription","default_payment_method",method),null,Instant.now());
+        if("READY".equals(hold.getStatus())){
+            hold.setStatus("REVIEW");hold.setLastError("PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");
+            hold.setResultJson(JSON.toJson(Map.of("pending_schedule_id",snapshot.subscription().getSchedule(),"requires_read_confirmation",true)));actions.updateById(hold);
+        }
+        review(root,"PAYMENT_METHOD_SCHEDULE_SYNC_REQUIRES_REVIEW");recoveries.updateById(root);
     }
     private static boolean schedulePaymentMethodCompatible(SubscriptionRecoveryStripeGateway.Snapshot snapshot,String method) {
         if(snapshot.subscription().getSchedule()==null)return true;

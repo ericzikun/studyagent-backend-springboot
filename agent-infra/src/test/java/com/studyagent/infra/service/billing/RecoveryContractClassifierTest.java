@@ -61,6 +61,21 @@ class RecoveryContractClassifierTest {
         schedule.getPhases().get(2).getItems().get(0).setQuantity(2L);
         assertNotEquals(before,classify(sub,schedule,true).contractHash());
     }
+    @Test void pruningOnlyCompletedHistoryKeepsEffectiveContractAndOriginalHashDifferent() {
+        var sub=subscription(true);var schedule=schedule("price_formal","release");
+        var before=classify(sub,schedule,true);schedule.getPhases().remove(0);
+        var after=classify(sub,schedule,true);
+        assertNotEquals(before.contractHash(),after.contractHash());
+        var admitted=com.google.gson.JsonParser.parseString(before.contractJson()).getAsJsonObject();
+        var current=com.google.gson.JsonParser.parseString(after.contractJson()).getAsJsonObject();
+        assertTrue(RecoveryContractClassifier.sameEffectiveContract(admitted,current));
+        // Admission persistence uses Gson's default omission of explicit null fields.
+        current=com.google.gson.JsonParser.parseString(new com.google.gson.Gson().toJson(current)).getAsJsonObject();
+        assertTrue(RecoveryContractClassifier.sameEffectiveContract(admitted,current));
+        assertFalse(RecoveryContractClassifier.sameEffectiveContract(null,current));
+        current.remove("current_phase");assertFalse(RecoveryContractClassifier.sameEffectiveContract(admitted,current));
+    }
+
     private RecoveryContractClassifier.Result classify(Subscription sub,SubscriptionSchedule schedule,boolean complete) {
         return RecoveryContractClassifier.classify(sub,schedule,complete,"price_formal",1L);
     }

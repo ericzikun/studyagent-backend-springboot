@@ -187,6 +187,27 @@ class SubscriptionPaymentRecoveryMysqlIT {
                 """);
         }
     }
+    @Test void resolvedContractReviewPersistsNullsWithoutChangingPaidRightsOrAdmission() throws Exception {
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE subscription_payment_recoveries SET status='PAID',grant_state='GRANTED',anchor_sync_state='REVIEW',entitlement_invoice_id='in_test',entitlement_start_at='2026-11-11 10:00:00',entitlement_end_at='2026-12-11 10:00:00',review_state='OPEN',review_reason='CONTRACT_CHANGED_AFTER_ADMISSION',review_entered_at='2026-11-11 10:00:00',review_due_at='2026-11-13 10:00:00',review_next_followup_at='2026-11-13 10:00:00' WHERE id=1");
+        }
+        var sessions=new org.mybatis.spring.SqlSessionTemplate(factory);var roots=sessions.getMapper(SubscriptionPaymentRecoveryMapper.class);
+        var service=new SubscriptionPaymentRecoveryService(null,roots,null,null,null,null,null,null,null,null);
+        var original=roots.selectById(1L);var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
+        tx.executeWithoutResult(state->{
+            var root=roots.selectForUpdate(1L);
+            org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,"resolveRenewalContractReview",root);
+            root.setAnchorSyncState("PENDING");assertEquals(1,roots.updateById(root));
+        });
+        var stored=roots.selectById(1L);
+        assertEquals("PENDING",stored.getAnchorSyncState());assertEquals("NONE",stored.getReviewState());
+        assertNull(stored.getReviewReason());assertNull(stored.getReviewEnteredAt());assertNull(stored.getReviewDueAt());assertNull(stored.getReviewNextFollowupAt());
+        assertEquals("PAID",stored.getStatus());assertEquals("GRANTED",stored.getGrantState());
+        assertEquals(original.getContractSnapshot(),stored.getContractSnapshot());assertEquals(original.getEntitlementEndAt(),stored.getEntitlementEndAt());
+        assertEquals(original.getVersion()+1,stored.getVersion());
+        assertEquals(0,scalar("SELECT COUNT(*) FROM recharge_orders"));assertEquals(0,scalar("SELECT COUNT(*) FROM quota_ledger"));
+    }
+
     @Test void duplicateFirstFailuresUseTheRealUserTransactionAndCreateOneRecovery() throws Exception {
         clearAdmissionFixture();var stripe=org.mockito.Mockito.mock(SubscriptionRecoveryStripeGateway.class);
         var ready=new CountDownLatch(2);var go=new CountDownLatch(1);var service=admissionService(stripe,null);

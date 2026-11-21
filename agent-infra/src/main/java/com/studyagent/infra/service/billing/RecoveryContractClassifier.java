@@ -78,6 +78,38 @@ final class RecoveryContractClassifier {
         for (String key : List.of("start_date", "end_date", "metadata", "billing_cycle_anchor", "trial_end", "default_payment_method", "default_source")) terms.remove(key);
         return terms;
     }
+    /** Compare the same current/future contract after Stripe drops completed phase history.
+     * The original audit JSON/hash is never rewritten; every remaining field must still match. */
+    static boolean sameEffectiveContract(JsonObject admitted, JsonObject current) {
+        if (admitted == null || current == null) return false;
+        try {
+            JsonObject before = effectiveContract(admitted), after = effectiveContract(current);
+            return before != null && after != null
+                    && canonical(withoutControlledMethods(before)).equals(canonical(withoutControlledMethods(after)));
+        } catch (RuntimeException incomplete) { return false; }
+    }
+    private static JsonObject effectiveContract(JsonObject contract) {
+        JsonObject copy = contract.deepCopy();
+        JsonObject current = copy.getAsJsonObject("current_phase");
+        if (current == null || !current.has("start_date") || !current.has("end_date")) return null;
+        long start = current.get("start_date").getAsLong(), end = current.get("end_date").getAsLong();
+        if (end <= start || !copy.has("phases")) return null;
+        JsonArray remaining = new JsonArray();boolean foundCurrent = false;Long previousEnd = null;
+        for (JsonElement value : copy.getAsJsonArray("phases")) {
+            JsonObject phase = value.getAsJsonObject();
+            long phaseStart = phase.get("start_date").getAsLong(), phaseEnd = phase.get("end_date").getAsLong();
+            if (phaseEnd <= phaseStart || previousEnd != null && previousEnd != phaseStart) return null;
+            previousEnd = phaseEnd;
+            if (phaseEnd <= start) continue;
+            if (phaseStart < start) return null;
+            if (phaseStart == start && phaseEnd == end) foundCurrent = true;
+            remaining.add(phase);
+        }
+        if (!foundCurrent) return null;
+        copy.add("phases", remaining);
+        // Saved admission JSON omits null properties; the live SDK JSON may retain them.
+        return JsonParser.parseString(new Gson().toJson(copy)).getAsJsonObject();
+    }
     private static Result unknown() { return new Result("UNKNOWN", null, null, null); }
     private static Result result(String kind, String cancelMode, JsonObject contract) {
         String json = canonical(contract).toString();

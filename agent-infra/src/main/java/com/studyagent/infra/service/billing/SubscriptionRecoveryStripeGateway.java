@@ -7,6 +7,7 @@ import com.stripe.model.*;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.testhelpers.TestClock;
 import com.stripe.net.RequestOptions;
+import com.stripe.param.SubscriptionScheduleUpdateParams;
 import com.studyagent.infra.entity.SubscriptionRecoveryActionEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -188,6 +189,15 @@ public class SubscriptionRecoveryStripeGateway {
                 case "EXPIRE_CHECKOUT" -> Session.retrieve(target).expire(params,options);
                 case "UPDATE_METHOD" -> {
                     String resource=Objects.toString(params.remove("resource"),"");
+                    String method=Objects.toString(params.get("default_payment_method"),"");
+                    if("schedule".equals(resource)){
+                        if(method.isBlank())throw new IllegalArgumentException("Schedule payment method is required");
+                        var scheduleParams=SubscriptionScheduleUpdateParams.builder()
+                                .setDefaultSettings(SubscriptionScheduleUpdateParams.DefaultSettings.builder()
+                                        .setDefaultPaymentMethod(method).build())
+                                .build();
+                        yield SubscriptionSchedule.retrieve(target).update(scheduleParams,options);
+                    }
                     yield switch(resource){case "subscription"->Subscription.retrieve(target).update(params,options);
                         case "invoice"->Invoice.retrieve(target).update(params,options);
                         default->throw new IllegalArgumentException("Invalid payment-method target");};

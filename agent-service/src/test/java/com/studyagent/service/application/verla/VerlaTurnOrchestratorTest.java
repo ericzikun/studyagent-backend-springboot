@@ -551,7 +551,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void finalizeAssignmentClarify_rejectsUnsupportedPptBeforeQuotaConsume() {
+    void finalizeAssignmentClarify_allowsUnsupportedPptWhileOutputTypeCheckIsBypassed() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -600,19 +600,26 @@ class VerlaTurnOrchestratorTest {
                 .status(TurnStatus.PLANNING.name())
                 .build();
 
-        assertThrows(BusinessException.class,
-                () -> orchestrator.finalizeAssignmentClarify(
-                        "free_user",
-                        74L,
-                        null,
-                        "form-ppt",
-                        "Unsupported PPT request",
-                        Map.of(),
-                        List.of(),
-                        Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
-                        List.of(),
-                        null));
-        Mockito.verifyNoInteractions(quotaService);
+        // [hotfix/outputtype] 产出类型检查在 finalize 入口被主动绕过
+        // （VerlaTurnOrchestrator 里 assertAssignmentOutputAllowed 的调用已注释），
+        // 所以 free 套餐选 ppt 不再被拦截：确认生成照常派发，额度照常扣减。
+        // 测试跟随该意图，不恢复校验。
+        orchestrator.finalizeAssignmentClarify(
+                "free_user",
+                74L,
+                null,
+                "form-ppt",
+                "Unsupported PPT request",
+                Map.of(),
+                List.of(),
+                Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
+                List.of(),
+                null);
+
+        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verify(entitlementService, Mockito.never())
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        Mockito.verify(quotaService).consumeForAssignmentRun(Mockito.any());
     }
 
     @Test
@@ -777,7 +784,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void startAssignmentRunFromFinalClarify_rechecksEntitlementBeforeDispatch() throws Exception {
+    void startAssignmentRunFromFinalClarify_dispatchesWithoutOutputTypeRecheckWhileBypassed() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -836,9 +843,13 @@ class VerlaTurnOrchestratorTest {
                                         "deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)))))
                         .build());
 
-        assertThrows(BusinessException.class,
-                () -> orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L));
-        Mockito.verifyNoInteractions(quotaService);
+        // [hotfix/outputtype] dispatch 前的产出类型复检同样被绕过，ppt 不再拦在派发前。
+        // 测试跟随该意图，不恢复校验。
+        orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
+
+        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.run"));
+        Mockito.verify(entitlementService, Mockito.never())
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
     }
 
     @Test
@@ -1071,7 +1082,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void onAssignmentClarifyCompleted_marksRunFailedAndPersistsDiagnosticsWhenAutoRunSetupFails() throws Exception {
+    void onAssignmentClarifyCompleted_marksRunFailedAndPersistsDiagnosticsWhenQuotaLedgerInheritFails() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -1085,9 +1096,11 @@ class VerlaTurnOrchestratorTest {
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
                 .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
-        Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
-                .when(entitlementService)
-                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        // Auto-run 失败改成由额度台账继承失败触发（产出类型校验已按 hotfix 绕过，
+        // 不再能作为失败来源）。被测能力不变：setup 抛错 → run 标 FAILED + 持久化诊断。
+        Mockito.doThrow(new IllegalStateException("assignment quota ledger not found"))
+                .when(quotaService)
+                .inheritAssignmentQuotaLedger(Mockito.any(), Mockito.any());
         VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
                 conversationService,
                 conversationRepository,

@@ -129,9 +129,12 @@ public class VerlaAttachmentParsedEventHandler implements VerlaEventHandler {
                                            VerlaAttachmentParsedPayload payload) {
         String mergedRoot = mergeRootMetaJson(existing == null ? null : existing.getMetaJson(),
                 payload == null ? null : payload.getMeta());
-        FileChatPanelState current = VerlaFileChatMetadataHelper.readAttachmentState(existing);
-        FileChatPanelState next = nextFileChatState(status, payload, current);
-        return VerlaFileChatMetadataHelper.writeAttachmentState(mergedRoot, next);
+        // req:CHAT-002 chat with file 已下线：不再写 fileChat 元数据。
+        // 原逻辑保留在此备查，恢复时去掉注释即可（历史 meta_json.fileChat 不动）。
+        // FileChatPanelState current = VerlaFileChatMetadataHelper.readAttachmentState(existing);
+        // FileChatPanelState next = nextFileChatState(status, payload, current);
+        // return VerlaFileChatMetadataHelper.writeAttachmentState(mergedRoot, next);
+        return mergedRoot;
     }
 
     private String mergeRootMetaJson(String currentMetaJson, Map<String, Object> meta) {

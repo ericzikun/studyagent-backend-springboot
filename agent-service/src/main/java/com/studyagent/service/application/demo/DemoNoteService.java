@@ -693,6 +693,8 @@ public class DemoNoteService {
         if (!changed) {
             return c;
         }
+        // 音频 reaper 用 updated_at 判断 PROCESSING 是否过旧；extras 是新活动，必须刷新。
+        c.setUpdatedAt(LocalDateTime.now());
         repo.saveConversation(c);
         log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} audioStatus={}",
                 verlaConversationId, c.getMindmapJson() != null,
@@ -715,6 +717,16 @@ public class DemoNoteService {
         c.setBlogAudioStatus(BLOG_AUDIO_READY);
         c.setBlogAudioJson(manifestJson);
         repo.saveConversation(c);
+    }
+
+    /**
+     * 回收长时间停在 PROCESSING 的音频任务（进程重启会丢内存队列）。
+     * <p>置 FAILED 而不是重新入队：多副本各自重启时避免重复合成；前端会回退按需 TTS。
+     */
+    @Transactional
+    public int failStaleBlogAudio(int staleMinutes) {
+        int minutes = Math.max(1, staleMinutes);
+        return repo.failStaleBlogAudio(LocalDateTime.now().minusMinutes(minutes));
     }
 
     /** 预生成失败：保留 blog_md，前端可回退到按需 /blog/tts。 */

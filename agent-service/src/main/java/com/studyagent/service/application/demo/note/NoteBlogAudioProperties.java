@@ -26,4 +26,23 @@ public class NoteBlogAudioProperties {
 
     /** 单段朗读字数上限（CosyVoice 侧建议 <= 280）。 */
     private int maxCharsPerSegment = 220;
+
+    /** 预生成后台任务线程数；每个任务负责一篇博客的分段上传。 */
+    private int workerCount = 2;
+
+    /** 预生成任务队列容量；满了直接置 FAILED，交给前端按需合成兜底。 */
+    private int queueCapacity = 200;
+
+    /** 全局 TTS 合成并发（所有预生成/按需请求共享）。 */
+    private int synthConcurrency = 4;
+
+    /** 共享合成线程池的排队上限；超出视为服务繁忙。 */
+    private int synthQueueCapacity = 256;
+
+    /** PROCESSING 超过多少分钟视为任务已丢失，回收为 FAILED。 */
+    private int staleProcessingMinutes = 120;
+
+    /** 回收器首次/周期执行间隔（毫秒）。 */
+    private long reaperInitialDelayMs = 60_000L;
+    private long reaperIntervalMs = 600_000L;
 }

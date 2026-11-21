@@ -1,6 +1,7 @@
 package com.studyagent.service.application.demo.note;
 
 import com.studyagent.service.application.verla.tts.VideoTutorTtsService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -20,9 +21,10 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,12 +46,15 @@ public class NoteBlogTtsService {
     private static final Pattern BLANK_LINES = Pattern.compile("\\n\\s*\\n");
     private static final Pattern SENTENCE = Pattern.compile("(?<=[。！？!?；;])");
     private static final Pattern FILE_NAME = Pattern.compile("^[a-f0-9]{64}\\.wav$");
-    /** 首次合成并发度：一段 1-3s，串行 20 段要等 40s+；并发后首播等待显著缩短。 */
-    private static final int SYNTH_CONCURRENCY = 4;
 
     private final VideoTutorTtsService tts;
     private final NoteBlogAudioProperties props;
     private final String secret;
+    /**
+     * 所有预生成/按需请求共享的合成池：以前每次 cache() 新建 4 线程，
+     * 两个预生成任务叠加就是 8 路 CosyVoice 并发，且多副本还会翻倍。
+     */
+    private final ThreadPoolExecutor synthExecutor;
 
     public NoteBlogTtsService(VideoTutorTtsService tts, NoteBlogAudioProperties props) {
         this.tts = tts;
@@ -60,6 +65,24 @@ public class NoteBlogTtsService {
         if (props.isEnabled() && (props.getSecret() == null || props.getSecret().isBlank())) {
             log.warn("[note/blog-tts] secret is empty; using an ephemeral one (URLs invalid after restart)");
         }
+        int concurrency = Math.max(1, props.getSynthConcurrency());
+        int queueCapacity = Math.max(1, props.getSynthQueueCapacity());
+        this.synthExecutor = new ThreadPoolExecutor(
+                concurrency, concurrency, 60L, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "note-blog-tts");
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
+        log.info("[note/blog-tts] synth executor concurrency={} queueCapacity={}",
+                concurrency, queueCapacity);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        synthExecutor.shutdownNow();
     }
 
     public boolean isReady() {
@@ -147,21 +170,22 @@ public class NoteBlogTtsService {
             }
         }
         if (!missing.isEmpty()) {
-            ExecutorService pool = Executors.newFixedThreadPool(SYNTH_CONCURRENCY);
+            List<Future<Long>> futures = new ArrayList<>();
             try {
-                List<Future<Long>> futures = new ArrayList<>();
                 for (int index : missing) {
                     Path file = dir.resolve(fileNames.get(index));
                     String chunk = chunkTexts.get(index);
-                    futures.add(pool.submit(() -> synthesizeToFile(chunk, file, sampleRate)));
+                    futures.add(synthExecutor.submit(() -> synthesizeToFile(chunk, file, sampleRate)));
                 }
                 for (int i = 0; i < futures.size(); i += 1) {
                     durations[missing.get(i)] = futures.get(i).get();
                 }
             } catch (Exception e) {
-                throw new TtsUnavailable("语音合成失败，请稍后重试");
-            } finally {
-                pool.shutdownNow();
+                for (Future<Long> future : futures) {
+                    future.cancel(true);
+                }
+                log.warn("[note/blog-tts] synth failed convId={}: {}", conversationId, e.getMessage());
+                throw new TtsUnavailable("语音合成暂不可用，请稍后重试");
             }
         }
 

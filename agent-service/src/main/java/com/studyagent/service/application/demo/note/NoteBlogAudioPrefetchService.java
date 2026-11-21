@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.service.application.demo.DemoNoteService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.file.OssStorageService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -17,10 +19,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 播客音频预生成：extras 落库后异步合成 WAV、上传 OSS，并把 manifest 写回会话行。
@@ -32,17 +35,13 @@ import java.util.concurrent.RejectedExecutionException;
 public class NoteBlogAudioPrefetchService {
 
     private static final String OSS_PREFIX = "verla/v2/note-blog-audio";
-    private static final int OSS_WORKERS = 2;
 
     private final NoteBlogTtsService tts;
     private final OssStorageService oss;
     private final DemoNoteService demoNoteService;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newFixedThreadPool(OSS_WORKERS, runnable -> {
-        Thread thread = new Thread(runnable, "note-blog-audio");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final NoteBlogAudioProperties props;
+    private final ThreadPoolExecutor executor;
     /** 同一会话同一 blog 内容只允许一个任务并发跑。 */
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
@@ -50,11 +49,46 @@ public class NoteBlogAudioPrefetchService {
             NoteBlogTtsService tts,
             OssStorageService oss,
             DemoNoteService demoNoteService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            NoteBlogAudioProperties props) {
         this.tts = tts;
         this.oss = oss;
         this.demoNoteService = demoNoteService;
         this.objectMapper = objectMapper;
+        this.props = props;
+        int workers = Math.max(1, props.getWorkerCount());
+        int queueCapacity = Math.max(1, props.getQueueCapacity());
+        this.executor = new ThreadPoolExecutor(
+                workers, workers, 60L, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "note-blog-audio");
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
+        log.info("[note/blog-audio] prefetch executor workers={} queueCapacity={}",
+                workers, queueCapacity);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
+    /** 进程崩溃/重启会丢内存队列，定时把长时间 PROCESSING 的行回收为 FAILED。 */
+    @Scheduled(
+            initialDelayString = "${verla.note.blog-audio.reaper-initial-delay-ms:60000}",
+            fixedDelayString = "${verla.note.blog-audio.reaper-interval-ms:600000}")
+    public void reapStaleProcessing() {
+        try {
+            int recovered = demoNoteService.failStaleBlogAudio(props.getStaleProcessingMinutes());
+            if (recovered > 0) {
+                log.warn("[note/blog-audio] reaped {} stale PROCESSING rows", recovered);
+            }
+        } catch (Exception e) {
+            log.warn("[note/blog-audio] stale reaper failed: {}", e.getMessage());
+        }
     }
 
     /** extras 事务提交后再起任务，避免后台线程读到未提交的 blog_md。 */
@@ -81,19 +115,27 @@ public class NoteBlogAudioPrefetchService {
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            submit(task);
+                            submit(task, key, demoId, sourceHash);
                         }
                     });
         } else {
-            submit(task);
+            submit(task, key, demoId, sourceHash);
         }
     }
 
-    private void submit(Runnable task) {
+    private void submit(Runnable task, String key, long demoId, String sourceHash) {
         try {
             executor.execute(task);
         } catch (RejectedExecutionException e) {
-            log.warn("[note/blog-audio] prefetch queue full; falling back to on-demand TTS");
+            inFlight.remove(key);
+            log.warn("[note/blog-audio] prefetch queue full demoId={} queueSize={}; "
+                            + "falling back to on-demand TTS",
+                    demoId, executor.getQueue().size());
+            try {
+                demoNoteService.markBlogAudioFailed(demoId, sourceHash, "prefetch_queue_full");
+            } catch (Exception inner) {
+                log.warn("[note/blog-audio] failed to persist queue-full status demoId={}", demoId);
+            }
         }
     }
 

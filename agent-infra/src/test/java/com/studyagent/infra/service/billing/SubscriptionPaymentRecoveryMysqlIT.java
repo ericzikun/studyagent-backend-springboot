@@ -187,6 +187,64 @@ class SubscriptionPaymentRecoveryMysqlIT {
                 """);
         }
     }
+    @Test void concurrentPaidExpiryPersistsFreeAndNullsAndClearsQuotaOnce() throws Exception {
+        var fixture=paidExpiryFixture();var service=fixture.service();var restarted=restart(service);
+        var sessions=new org.mybatis.spring.SqlSessionTemplate(factory);var roots=sessions.getMapper(SubscriptionPaymentRecoveryMapper.class);
+        var original=roots.selectById(1L);String admission=original.getContractSnapshot();
+        concurrently(()->{service.reconcile(1L);return true;},()->{restarted.reconcile(1L);return true;});
+        service.reconcile(1L);assertTrue(service.tryProcessEvent(paidEvent("in_test")));
+        var user=sessions.getMapper(UserSubscriptionMapper.class).selectByUser("test_user");
+        assertEquals("free",user.getTier());assertEquals("canceled",user.getStatus());assertEquals("cus_test",user.getStripeCustomerId());
+        assertNull(user.getPlanCode());assertNull(user.getStripeSubscriptionId());assertNull(user.getStripeScheduleId());assertNull(user.getPaymentRecoveryId());
+        assertNull(user.getCurrentPeriodStart());assertNull(user.getCurrentPeriodEnd());assertNull(user.getQuotaPeriodStart());assertNull(user.getQuotaPeriodEnd());
+        assertNull(user.getCurrentPeriodTimeZone());assertNull(user.getQuotaPeriodTimeZone());assertNull(user.getPendingPlanCode());assertNull(user.getPendingUpgradeOrderNo());
+        assertNull(user.getPricingZone());assertNull(user.getPriceVersion());assertNull(user.getCurrency());
+        var root=roots.selectById(1L);assertEquals("PAID",root.getStatus());assertEquals("GRANTED",root.getGrantState());assertEquals("NONE",root.getReviewState());
+        assertNotNull(root.getAccountClosedAt());assertNull(root.getNextReconcileAt());assertEquals("PAID_PERIOD_ENDED",root.getCloseReason());
+        assertEquals(admission,root.getContractSnapshot());assertEquals(original.getEntitlementEndAt(),root.getEntitlementEndAt());assertEquals("in_test",root.getEntitlementInvoiceId());
+        assertEquals(3,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='plan_clear' AND idempotency_key='recovery:1:paid-period-ended'"));
+        assertEquals(0,scalar("SELECT COALESCE(SUM(plan_balance),0) FROM user_ai_quotas"));
+        assertEquals(1,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='addon_pause' AND idempotency_key='recovery:1:paid-period-ended:addons'"));
+        assertEquals(1,scalar("SELECT COUNT(*) FROM user_addon_grants WHERE id=1 AND status='paused' AND remaining_amount=700"));
+        assertEquals(1,scalar("SELECT COUNT(*) FROM recharge_orders"));
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).preview(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test void paidExpiryFailureRollsBackQuotaAndAccountBeforeRetry() throws Exception {
+        var fixture=paidExpiryFixture();var failing=org.mockito.Mockito.spy(fixture.quota());
+        org.mockito.Mockito.doThrow(new IllegalStateException("test addon failure")) .when(failing).pauseAddonsAt(
+                org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any());
+        var provider=org.mockito.Mockito.mock(org.springframework.beans.factory.ObjectProvider.class);org.mockito.Mockito.when(provider.getIfAvailable()).thenReturn(failing);
+        org.springframework.test.util.ReflectionTestUtils.setField(fixture.service(),"quotaProvider",provider);
+        assertThrows(IllegalStateException.class,()->fixture.service().reconcile(1L));
+        var sessions=new org.mybatis.spring.SqlSessionTemplate(factory);
+        var user=sessions.getMapper(UserSubscriptionMapper.class).selectByUser("test_user");
+        assertEquals("pro",user.getTier());assertEquals(1L,user.getPaymentRecoveryId());assertEquals("sub_test",user.getStripeSubscriptionId());
+        assertNull(sessions.getMapper(SubscriptionPaymentRecoveryMapper.class).selectById(1L).getAccountClosedAt());
+        assertEquals(0,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='plan_clear'"));
+        assertEquals(30012,scalar("SELECT SUM(plan_balance) FROM user_ai_quotas"));
+        org.mockito.Mockito.when(provider.getIfAvailable()).thenReturn(fixture.quota());fixture.service().reconcile(1L);
+        assertEquals("free",sessions.getMapper(UserSubscriptionMapper.class).selectByUser("test_user").getTier());
+        assertEquals(3,scalar("SELECT COUNT(*) FROM quota_ledger WHERE ledger_type='plan_clear'"));
+    }
+
+    private PaymentFixture paidExpiryFixture() throws Exception {
+        var f=paymentFixture(false);var paid=paidSnapshot("in_test","hkd",18900,false);
+        paymentReads(f.stripe(),java.util.Map.of("in_test",paid),false);assertTrue(f.service().tryProcessEvent(paidEvent("in_test")));
+        var sessions=new org.mybatis.spring.SqlSessionTemplate(factory);var roots=sessions.getMapper(SubscriptionPaymentRecoveryMapper.class);
+        var root=roots.selectById(1L);assertEquals("GRANTED",root.getGrantState());root.setAnchorSyncState("CONFIRMED");root.setReviewState("NONE");roots.updateById(root);
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE subscription_payment_recovery_actions SET status='SUCCEEDED' WHERE action_type='SHIFT_RENEWAL'");
+            q.executeUpdate("UPDATE user_subscriptions SET stripe_schedule_id='sched_obsolete',pending_plan_code='plus_monthly',pending_upgrade_order_no='old_order',pricing_zone='Z080',price_version='old',currency='hkd' WHERE id=1");
+        }
+        insertAddon(1,"test_user","active","addon",700,NOW.plusDays(180));
+        var end=root.getEntitlementEndAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant();
+        paid.subscription().setStatus("canceled");paid.subscription().setEndedAt(end.getEpochSecond());
+        var expired=new SubscriptionRecoveryStripeGateway.Snapshot(paid.invoice(),paid.subscription(),null,paid.lines(),paid.paymentIntent(),paid.charge(),end.plusSeconds(1));
+        paymentReads(f.stripe(),java.util.Map.of("in_test",expired),false);return f;
+    }
+
     @Test void resolvedContractReviewPersistsNullsWithoutChangingPaidRightsOrAdmission() throws Exception {
         try(Connection c=ds.getConnection();Statement q=c.createStatement()){
             q.executeUpdate("UPDATE subscription_payment_recoveries SET status='PAID',grant_state='GRANTED',anchor_sync_state='REVIEW',entitlement_invoice_id='in_test',entitlement_start_at='2026-11-11 10:00:00',entitlement_end_at='2026-12-11 10:00:00',review_state='OPEN',review_reason='CONTRACT_CHANGED_AFTER_ADMISSION',review_entered_at='2026-11-11 10:00:00',review_due_at='2026-11-13 10:00:00',review_next_followup_at='2026-11-13 10:00:00' WHERE id=1");

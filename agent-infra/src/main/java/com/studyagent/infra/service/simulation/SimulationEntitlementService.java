@@ -1,5 +1,6 @@
 package com.studyagent.infra.service.simulation;
 
+import com.studyagent.common.datetime.DateTimeFormats;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.billing.SubscriptionResult;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Objects;
 
 /**
@@ -79,7 +81,7 @@ public class SimulationEntitlementService {
                     subscription == null ? null : subscription.getQuotaPeriodStart(),
                     subscription == null ? null : subscription.getCurrentPeriodStart());
             if (periodStart == null) {
-                periodStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+                periodStart = DateTimeFormats.today().withDayOfMonth(1).atStartOfDay();
             }
             LocalDateTime periodEnd = firstNonNull(
                     subscription == null ? null : subscription.getQuotaPeriodEnd(),
@@ -87,7 +89,10 @@ public class SimulationEntitlementService {
             if (periodEnd == null) {
                 periodEnd = periodStart.plusMonths(1);
             }
-            long used = countSucceeded(clerkUserId, periodStart, periodEnd);
+            // Billing exposes periods in Shanghai wall clock while verla_sessions
+            // stores UTC wall clock (Java runs in a UTC container); count in UTC.
+            long used = countSucceeded(
+                    clerkUserId, toUtcWallClock(periodStart), toUtcWallClock(periodEnd));
             long remaining = Math.max(0L, limit - used);
             return new Entitlement(remaining > 0, false, ENTITLEMENT_MEMBERSHIP, false,
                     limit, used, remaining, periodStart, periodEnd,
@@ -126,6 +131,15 @@ public class SimulationEntitlementService {
         SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
         return subscription != null
                 && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
+    }
+
+    /** Shanghai wall clock (billing API time) -> UTC wall clock (session storage). */
+    private static LocalDateTime toUtcWallClock(LocalDateTime appWallClock) {
+        if (appWallClock == null) {
+            return null;
+        }
+        return LocalDateTime.ofInstant(
+                appWallClock.atZone(DateTimeFormats.APP_ZONE).toInstant(), ZoneOffset.UTC);
     }
 
     private long countSucceeded(String clerkUserId, LocalDateTime start, LocalDateTime end) {

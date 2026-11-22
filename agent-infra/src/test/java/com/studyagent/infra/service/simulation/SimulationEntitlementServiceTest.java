@@ -57,6 +57,31 @@ class SimulationEntitlementServiceTest {
     }
 
     @Test
+    void memberUsageCountsAgainstUtcPeriodBounds() {
+        LocalDateTime startCst = LocalDateTime.of(2026, 11, 22, 17, 17, 26);
+        LocalDateTime endCst = startCst.plusMonths(1);
+        when(billing.isPaidMember("member")).thenReturn(true);
+        when(billing.getEffectivePlanOrFree("member")).thenReturn(
+                BillingPlan.builder().assignmentQuota(3L).build());
+        when(billing.getCurrentSubscription("member")).thenReturn(
+                SubscriptionResult.builder()
+                        .quotaPeriodStart(startCst)
+                        .quotaPeriodEnd(endCst)
+                        .build());
+        // Sessions are stored in UTC wall clock: 17:17 Shanghai == 09:17 UTC.
+        when(jdbcTemplate.queryForObject(
+                anyString(), eq(Long.class), eq("member"),
+                eq(startCst.minusHours(8)), eq(endCst.minusHours(8))))
+                .thenReturn(3L);
+
+        SimulationEntitlementService.Entitlement entitlement = service.resolve("member");
+
+        assertEquals(3L, entitlement.used());
+        assertEquals(0L, entitlement.remaining());
+        assertFalse(entitlement.canCreate());
+    }
+
+    @Test
     void freeUserIsLockedAfterFirstSuccessfulLab() {
         when(trialGrantService.isUsed("user_free")).thenReturn(true);
 

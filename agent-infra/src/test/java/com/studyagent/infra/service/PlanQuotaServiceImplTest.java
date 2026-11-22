@@ -14,6 +14,7 @@ import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
 import com.studyagent.infra.mapper.UserAiQuotaMapper;
 import com.studyagent.infra.mapper.UserSubscriptionMapper;
+import com.studyagent.infra.service.simulation.SimulationQuotaLedgerService;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -39,6 +40,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class PlanQuotaServiceImplTest {
@@ -54,6 +59,71 @@ class PlanQuotaServiceImplTest {
     private UserSubscriptionMapper userSubscriptionMapper;
     @Mock
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
+
+    @Test
+    void explicitResetAndClearUseSnapshotTimeWithoutResolvingStripeTime() {
+        var service=org.mockito.Mockito.spy(new PlanQuotaServiceImpl(subscriptionPlanMapper,aiFeatureDefsMapper,userAiQuotaMapper,quotaLedgerMapper,userSubscriptionMapper));
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan("basic_monthly",3L,3L,2L));
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(
+                quota(11L,"task_create",0L,0L,0L),quota(12L,"ai_detection",0L,0L,0L),quota(13L,"humanizer",0L,0L,0L));
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        var business=Instant.parse("2026-12-09T02:00:00Z");
+        service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business.plusSeconds(86400),"in",business);
+        service.clearPlanQuotaAt("user","sub","basic_monthly","clear",business);
+        verify(service,never()).resolveRefreshTime(any(String.class),any());
+        var ledgers=ArgumentCaptor.forClass(QuotaLedgerEntity.class);
+        verify(quotaLedgerMapper,times(3)).insert(ledgers.capture());
+        for(var ledger:ledgers.getAllValues())assertEquals(DateTimeFormats.fromInstant(business),ledger.getCreatedAt());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business,"in",null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.clearPlanQuotaAt("user","sub","basic_monthly","clear",null));
+    }
+
+    @Test
+    void simulationDisplayLedgerReceivesGrantAndClear() {
+        SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
+        UserAiQuotaEntity assignment = quota(11L, "task_create", 0L, 0L, 0L);
+        UserAiQuotaEntity detection = quota(12L, "ai_detection", 0L, 0L, 0L);
+        UserAiQuotaEntity humanizer = quota(13L, "humanizer", 0L, 0L, 0L);
+        UserSubscriptionEntity subscription = new UserSubscriptionEntity();
+        subscription.setClerkUserId("user");
+        subscription.setStripeSubscriptionId("sub");
+        subscription.setPlanCode("basic_monthly");
+        subscription.setQuotaPeriodStart(LocalDateTime.of(2026, 11, 22, 9, 17));
+        subscription.setQuotaPeriodEnd(LocalDateTime.of(2026, 12, 22, 9, 17));
+        subscription.setQuotaPeriodTimeZone("UTC");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
+                .thenReturn(assignment, detection, humanizer);
+        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
+        when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(subscription);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+        SimulationQuotaLedgerService simulationLedger = mock(SimulationQuotaLedgerService.class);
+        ReflectionTestUtils.setField(service, "simulationQuotaLedgerService", simulationLedger);
+
+        Instant start = Instant.parse("2026-11-22T09:17:00Z");
+        Instant end = Instant.parse("2026-12-22T09:17:00Z");
+        Instant businessNow = Instant.parse("2026-11-22T10:00:00Z");
+        service.resetFromPaidInvoiceAt("user", "sub", "basic_monthly", start, end, "in_1", businessNow);
+        verify(simulationLedger).recordPlanGrant(
+                eq("user"), eq("sub"), eq("basic_monthly"), eq("plan_reset"),
+                eq("invoice"), eq("in_1"), eq("invoice"), eq(false), eq(3L),
+                any(LocalDateTime.class), any(LocalDateTime.class), any(LocalDateTime.class));
+
+        service.clearPlanQuotaAt("user", "sub", "basic_monthly", "subscription:sub:deleted", businessNow);
+        verify(simulationLedger).recordPlanClear(
+                eq("user"), eq("sub"), eq("basic_monthly"), eq(3L),
+                any(LocalDateTime.class), eq("UTC"), any(LocalDateTime.class),
+                eq("subscription:sub:deleted"), any(LocalDateTime.class));
+    }
 
     @Test
     void resetFromPaidInvoice_isIdempotent_perInvoiceAndFeature() {

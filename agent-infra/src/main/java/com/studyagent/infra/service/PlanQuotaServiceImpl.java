@@ -14,6 +14,7 @@ import com.studyagent.infra.entity.QuotaLedgerEntity;
 import com.studyagent.infra.entity.SubscriptionPlanEntity;
 import com.studyagent.infra.entity.UserAiQuotaEntity;
 import com.studyagent.infra.entity.UserSubscriptionEntity;
+import com.studyagent.infra.service.simulation.SimulationQuotaLedgerService;
 import com.studyagent.infra.mapper.AiFeatureDefsMapper;
 import com.studyagent.infra.mapper.QuotaLedgerMapper;
 import com.studyagent.infra.mapper.SubscriptionPlanMapper;
@@ -66,6 +67,9 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
 
     @Autowired
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SimulationQuotaLedgerService simulationQuotaLedgerService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -235,6 +239,23 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             }
             ledger.setCreatedAt(now);
             quotaLedgerMapper.insert(ledger);
+        }
+        if (simulationQuotaLedgerService != null && subscription != null && effectivePlanCode != null) {
+            try {
+                SubscriptionPlanEntity simulationPlan = requirePlan(effectivePlanCode);
+                simulationQuotaLedgerService.recordPlanClear(
+                        clerkUserId,
+                        subscriptionId,
+                        effectivePlanCode,
+                        defaultLong(simulationPlan.getAssignmentQuota()),
+                        subscription.getQuotaPeriodStart(),
+                        subscription.getQuotaPeriodTimeZone(),
+                        subscription.getQuotaPeriodEnd(),
+                        idempotencyKey,
+                        now);
+            } catch (IllegalArgumentException unknownPlan) {
+                log.warn("Skip simulation quota clear ledger: {}", unknownPlan.getMessage());
+            }
         }
     }
 
@@ -464,6 +485,17 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 idempotencyKey,
                 windowStart,
                 windowEnd);
+
+        if (simulationQuotaLedgerService != null) {
+            simulationQuotaLedgerService.recordPlanRefresh(
+                    clerkUserId,
+                    subscription.getStripeSubscriptionId(),
+                    subscription.getPlanCode(),
+                    defaultLong(plan.getAssignmentQuota()),
+                    windowStart,
+                    windowEnd,
+                    now);
+        }
     }
 
     private void applyPlanGrant(
@@ -566,6 +598,12 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                     periodStart,
                     periodEnd);
         }
+        if (simulationQuotaLedgerService != null) {
+            simulationQuotaLedgerService.recordPlanGrant(
+                    clerkUserId, subscriptionId, planCode, ledgerType, sourceType, sourceId,
+                    idempotencyPrefix, additive, defaultLong(plan.getAssignmentQuota()),
+                    periodStart, periodEnd, now);
+        }
     }
 
     private void refreshAnnualPlanQuota(
@@ -645,6 +683,17 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 idempotencyKey,
                 windowStart,
                 windowEnd);
+
+        if (simulationQuotaLedgerService != null) {
+            simulationQuotaLedgerService.recordPlanRefresh(
+                    clerkUserId,
+                    subscription.getStripeSubscriptionId(),
+                    subscription.getPlanCode(),
+                    defaultLong(plan.getAssignmentQuota()),
+                    windowStart,
+                    windowEnd,
+                    now);
+        }
     }
 
     private String normalizeResetGrantType(String grantType) {

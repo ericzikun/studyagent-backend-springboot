@@ -253,7 +253,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                 LocalDateTime periodEnd = capturedPeriodEnd != null
                         ? capturedPeriodEnd : subscription.getQuotaPeriodEnd();
                 String periodTimeZone = capturedPeriodTimeZone != null
-                        ? capturedPeriodTimeZone : subscription.getQuotaPeriodTimeZone();
+                        ? capturedPeriodTimeZone : "UTC";
                 simulationQuotaLedgerService.recordPlanClear(
                         clerkUserId,
                         subscriptionId,

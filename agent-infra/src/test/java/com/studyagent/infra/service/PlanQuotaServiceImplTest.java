@@ -61,24 +61,6 @@ class PlanQuotaServiceImplTest {
     private QuotaGrantAnalyticsPublisher quotaGrantAnalyticsPublisher;
 
     @Test
-    void explicitResetAndClearUseSnapshotTimeWithoutResolvingStripeTime() {
-        var service=org.mockito.Mockito.spy(new PlanQuotaServiceImpl(subscriptionPlanMapper,aiFeatureDefsMapper,userAiQuotaMapper,quotaLedgerMapper,userSubscriptionMapper));
-        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan("basic_monthly",3L,3L,2L));
-        when(userAiQuotaMapper.selectOne(any(Wrapper.class))).thenReturn(
-                quota(11L,"task_create",0L,0L,0L),quota(12L,"ai_detection",0L,0L,0L),quota(13L,"humanizer",0L,0L,0L));
-        when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
-        var business=Instant.parse("2026-12-09T02:00:00Z");
-        service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business.plusSeconds(86400),"in",business);
-        service.clearPlanQuotaAt("user","sub","basic_monthly","clear",business);
-        verify(service,never()).resolveRefreshTime(any(String.class),any());
-        var ledgers=ArgumentCaptor.forClass(QuotaLedgerEntity.class);
-        verify(quotaLedgerMapper,times(3)).insert(ledgers.capture());
-        for(var ledger:ledgers.getAllValues())assertEquals(DateTimeFormats.fromInstant(business),ledger.getCreatedAt());
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.resetFromPaidInvoiceAt("user","sub","basic_monthly",business,business,"in",null));
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->service.clearPlanQuotaAt("user","sub","basic_monthly","clear",null));
-    }
-
-    @Test
     void simulationDisplayLedgerReceivesGrantAndClear() {
         SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
         UserAiQuotaEntity assignment = quota(11L, "task_create", 0L, 0L, 0L);
@@ -90,7 +72,6 @@ class PlanQuotaServiceImplTest {
         subscription.setPlanCode("basic_monthly");
         subscription.setQuotaPeriodStart(LocalDateTime.of(2026, 11, 22, 9, 17));
         subscription.setQuotaPeriodEnd(LocalDateTime.of(2026, 12, 22, 9, 17));
-        subscription.setQuotaPeriodTimeZone("UTC");
 
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
@@ -112,7 +93,7 @@ class PlanQuotaServiceImplTest {
         Instant start = Instant.parse("2026-11-22T09:17:00Z");
         Instant end = Instant.parse("2026-12-22T09:17:00Z");
         Instant businessNow = Instant.parse("2026-11-22T10:00:00Z");
-        service.resetFromPaidInvoiceAt("user", "sub", "basic_monthly", start, end, "in_1", businessNow);
+        service.resetFromPaidInvoice("user", "sub", "basic_monthly", start, end, "in_1");
         verify(simulationLedger).recordPlanGrant(
                 eq("user"), eq("sub"), eq("basic_monthly"), eq("plan_reset"),
                 eq("invoice"), eq("in_1"), eq("invoice"), eq(false), eq(3L),

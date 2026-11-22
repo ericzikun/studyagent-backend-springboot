@@ -2812,7 +2812,6 @@ class StripeBillingWebhookServiceTest {
         LocalDateTime quotaEnd = quotaStart.plusMonths(1);
         existing.setQuotaPeriodStart(quotaStart);
         existing.setQuotaPeriodEnd(quotaEnd);
-        existing.setQuotaPeriodTimeZone("UTC");
 
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);

@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Objects;
 
 /**
@@ -89,10 +88,9 @@ public class SimulationEntitlementService {
             if (periodEnd == null) {
                 periodEnd = periodStart.plusMonths(1);
             }
-            // Billing exposes periods in Shanghai wall clock while verla_sessions
-            // stores UTC wall clock (Java runs in a UTC container); count in UTC.
-            long used = countSucceeded(
-                    clerkUserId, toUtcWallClock(periodStart), toUtcWallClock(periodEnd));
+            // main's SubscriptionResult exposes quota periods as stored UTC wall clock,
+            // matching verla_sessions.created_at; count directly.
+            long used = countSucceeded(clerkUserId, periodStart, periodEnd);
             long remaining = Math.max(0L, limit - used);
             return new Entitlement(remaining > 0, false, ENTITLEMENT_MEMBERSHIP, false,
                     limit, used, remaining, periodStart, periodEnd,
@@ -131,15 +129,6 @@ public class SimulationEntitlementService {
         SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
         return subscription != null
                 && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
-    }
-
-    /** Shanghai wall clock (billing API time) -> UTC wall clock (session storage). */
-    private static LocalDateTime toUtcWallClock(LocalDateTime appWallClock) {
-        if (appWallClock == null) {
-            return null;
-        }
-        return LocalDateTime.ofInstant(
-                appWallClock.atZone(DateTimeFormats.APP_ZONE).toInstant(), ZoneOffset.UTC);
     }
 
     private long countSucceeded(String clerkUserId, LocalDateTime start, LocalDateTime end) {

@@ -816,6 +816,104 @@ class SubscriptionPaymentRecoveryServiceTest {
         var action=readyAction("RESTORE_ADVANCE","in_new");action.setPayloadJson("{\"auto_advance\":true}");action.setResultJson("{\"cause_action_id\":9,\"expected_subscription_id\":\"sub_new\"}");when(actions.claim(eq(10L),anyInt(),anyString(),any(),any())).thenReturn(1);when(actions.markDispatched(eq(10L),anyInt(),anyString(),any(),anyString())).thenReturn(1);when(stripe.execute(any())).thenReturn(new SubscriptionRecoveryStripeGateway.WriteResult("UNKNOWN",null,null,null));
         service.runDueAction(10L);assertEquals("SKIPPED",action.getStatus());verify(stripe,never()).execute(any());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void canceledConfirmedPaidCycleDoesNotPreviewAndKeepsRightsBeforeItsEnd(boolean lastSecond) {
+        var f=paidCancellationFixture(false,false);
+        if(lastSecond){
+            var original=f.snapshot();var at=f.root().getEntitlementEndAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant().minusSeconds(1);
+            when(stripe.readInvoice("in_old")).thenReturn(new SubscriptionRecoveryStripeGateway.Snapshot(original.invoice(),original.subscription(),null,original.lines(),original.paymentIntent(),original.charge(),at));
+        }
+        when(stripe.preview("sub_old")).thenThrow(new IllegalStateException("invoice_upcoming_none"));
+        assertDoesNotThrow(()->{service.reconcile(1L);service.reconcile(1L);});
+        assertEquals("pro",f.user().getTier());assertEquals(1L,f.user().getPaymentRecoveryId());
+        assertEquals(f.root().getEntitlementEndAt(),f.user().getCurrentPeriodEnd());
+        assertEquals("GRANTED",f.root().getGrantState());assertEquals("CONFIRMED",f.root().getAnchorSyncState());
+        assertNull(f.root().getAccountClosedAt());assertEquals("NONE",f.root().getReviewState());
+        verify(stripe,never()).preview(anyString());verify(stripe,never()).execute(any());verifyNoInteractions(f.quota());
+    }
+
+    @Test void canceledUnconfirmedPaidCycleNeedsReviewWithoutPreviewOrEarlyClear() {
+        var f=paidCancellationFixture(false,false);f.root().setAnchorSyncState("PENDING");
+        when(stripe.preview("sub_old")).thenThrow(new IllegalStateException("invoice_upcoming_none"));
+        assertDoesNotThrow(()->service.reconcile(1L));
+        assertEquals("REVIEW",f.root().getAnchorSyncState());assertEquals("REMOTE_CANCELED_PAID_CYCLE_PRESERVED",f.root().getReviewReason());
+        assertEquals("GRANTED",f.root().getGrantState());assertEquals(f.root().getEntitlementEndAt(),f.user().getCurrentPeriodEnd());
+        assertNull(f.root().getAccountClosedAt());verifyNoInteractions(f.quota());verify(stripe,never()).preview(anyString());
+    }
+
+    @Test void paidExpiryUsesUtcMirrorAsTheSameInstantInsteadOfClearingEightHoursEarly() {
+        var f=paidCancellationFixture(true,true);
+        f.user().setCurrentPeriodTimeZone("UTC");
+        f.user().setCurrentPeriodEnd(f.root().getEntitlementEndAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant().atOffset(java.time.ZoneOffset.UTC).toLocalDateTime());
+        service.reconcile(1L);assertEquals("free",f.user().getTier());assertNull(f.user().getPaymentRecoveryId());
+        assertEquals("GRANTED",f.root().getGrantState());assertNull(f.root().getNextReconcileAt());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"reconcile","customer.subscription.deleted","customer.subscription.updated"})
+    void canceledPaidCycleExpiresAccountOnlyOnceAndKeepsItsReceipt(String entry) {
+        var f=paidCancellationFixture(true,true);String admission=f.root().getContractSnapshot();
+        var end=f.root().getEntitlementEndAt();
+        for(int i=0;i<2;i++){
+            if("reconcile".equals(entry))service.reconcile(1L);
+            else assertTrue(service.tryProcessEvent(paidLifecycleEvent(entry)));
+        }
+        assertEquals("free",f.user().getTier());assertNull(f.user().getPlanCode());assertEquals("canceled",f.user().getStatus());
+        assertNull(f.user().getPaymentRecoveryId());assertNull(f.user().getStripeSubscriptionId());assertNull(f.user().getStripeScheduleId());
+        assertNull(f.user().getCurrentPeriodEnd());assertNull(f.user().getQuotaPeriodEnd());assertNull(f.user().getPendingPlanCode());
+        assertNull(f.user().getCurrentPeriodTimeZone());assertNull(f.user().getQuotaPeriodTimeZone());assertEquals("cus_old",f.user().getStripeCustomerId());
+        assertEquals("PAID",f.root().getStatus());assertEquals("GRANTED",f.root().getGrantState());assertEquals("in_old",f.root().getEntitlementInvoiceId());
+        assertEquals(admission,f.root().getContractSnapshot());assertEquals(end,f.root().getEntitlementEndAt());
+        assertNotNull(f.root().getAccountClosedAt());assertEquals("PAID_PERIOD_ENDED",f.root().getCloseReason());assertNull(f.root().getNextReconcileAt());
+        verify(f.quota(),times(1)).clearPlanQuotaAt("user","sub_old","pro_monthly","recovery:1:paid-period-ended",f.snapshot().businessNow());
+        verify(f.quota(),times(1)).pauseAddonsAt("user","sub_old","recovery:1:paid-period-ended:addons",f.snapshot().businessNow());
+        // A late receipt must remain historical, not become a second grant or a false double-payment hold.
+        var late=ApiResource.GSON.fromJson("{\"id\":\"evt_old_receipt\",\"type\":\"invoice.paid\",\"data\":{\"object\":{\"id\":\"in_old\"}}}",Event.class);
+        assertTrue(service.tryProcessEvent(late));assertEquals("GRANTED",f.root().getGrantState());assertEquals("NONE",f.root().getReviewState());
+        verify(f.quota(),never()).resetFromPaidInvoiceAt(anyString(),anyString(),anyString(),any(),any(),anyString(),any());
+        verify(stripe,never()).preview(anyString());verify(stripe,never()).execute(any());verify(orders,never()).insert(any(RechargeOrderEntity.class));
+        assertRecoveryHistoryWasNotDeleted();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"active","newer_utc_cycle","unclassified_period","financial_hold"})
+    void paidExpiryDoesNotClearAnUnconfirmedEndOrAnotherPaidPeriod(String state) {
+        var f=paidCancellationFixture(true,true);
+        switch(state){
+            case "active" -> f.snapshot().subscription().setStatus("active");
+            case "newer_utc_cycle" -> {f.user().setCurrentPeriodTimeZone("UTC");f.user().setCurrentPeriodEnd(now.plusSeconds(60*86400).atOffset(java.time.ZoneOffset.UTC).toLocalDateTime());}
+            case "unclassified_period" -> {f.user().setCurrentPeriodTimeZone("unknown");}
+            case "financial_hold" -> f.root().setDisputeState("OPEN");
+        }
+        service.reconcile(1L);
+        assertEquals("pro",f.user().getTier());assertEquals(1L,f.user().getPaymentRecoveryId());assertNull(f.root().getAccountClosedAt());
+        verify(f.quota(),never()).clearPlanQuotaAt(anyString(),anyString(),anyString(),anyString(),any());
+        verify(f.quota(),never()).pauseAddonsAt(anyString(),anyString(),anyString(),any());verify(stripe,never()).execute(any());
+    }
+
+    private record PaidCancellationFixture(SubscriptionPaymentRecoveryEntity root,UserSubscriptionEntity user,
+            SubscriptionRecoveryStripeGateway.Snapshot snapshot,BillingQuotaGateway quota){}
+    private PaidCancellationFixture paidCancellationFixture(boolean expired,boolean periodEnd) {
+        var paid=paidSnapshot();var root=confirmedPaidRoot(paid);root.setAnchorSyncState("CONFIRMED");root.setReviewState("NONE");
+        var saved=com.google.gson.JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject();saved.addProperty("quantity",1);
+        saved.getAsJsonObject("recovery_admission").addProperty("sourceKey","formal");saved.getAsJsonObject("recovery_admission").addProperty("cancelMode",periodEnd?"PERIOD_END":"RENEW");root.setContractSnapshot(saved.toString());
+        var end=root.getEntitlementEndAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant();
+        paid.subscription().setStatus("canceled");paid.subscription().setEndedAt(expired?end.getEpochSecond():now.getEpochSecond());
+        paid.subscription().setCancelAtPeriodEnd(periodEnd);if(periodEnd)paid.subscription().setCancelAt(end.getEpochSecond());
+        var snapshot=new SubscriptionRecoveryStripeGateway.Snapshot(paid.invoice(),paid.subscription(),null,paid.lines(),paid.paymentIntent(),paid.charge(),expired?end:now);
+        ownedFixture(root,snapshot);var user=users.selectByUserForUpdate("user");user.setStripeCustomerId("cus_old");user.setTier("pro");user.setStatus("active");
+        user.setCurrentPeriodStart(root.getEntitlementStartAt());user.setCurrentPeriodEnd(root.getEntitlementEndAt());user.setQuotaPeriodStart(root.getEntitlementStartAt());user.setQuotaPeriodEnd(root.getEntitlementEndAt());
+        user.setCurrentPeriodTimeZone("Asia/Shanghai");user.setQuotaPeriodTimeZone("Asia/Shanghai");user.setPendingPlanCode("plus_monthly");
+        var existing=new RechargeOrderEntity();existing.setStripeInvoiceId("in_old");existing.setStatus("completed");when(orders.selectOne(any())).thenReturn(existing);
+        when(recoveries.selectBySubscription("sub_old",0L,100)).thenReturn(List.of(root));
+        var shift=new SubscriptionRecoveryActionEntity();shift.setActionType("SHIFT_RENEWAL");shift.setStatus("SUCCEEDED");shift.setResultJson("{\"latest_invoice\":\"in_old\",\"before_latest_invoice\":\"in_old\"}");when(actions.selectByRecovery(1L)).thenReturn(List.of(shift));
+        return new PaidCancellationFixture(root,user,snapshot,injectQuota());
+    }
+    private Event paidLifecycleEvent(String type) {
+        return ApiResource.GSON.fromJson("{\"id\":\"evt_paid_end\",\"type\":\""+type+"\",\"data\":{\"object\":{\"id\":\"sub_old\"}}}",Event.class);
+    }
+
     @Test void technicalCanceledCallbackUpdatesRawStateButKeepsTheFullPaidPeriod() {
         var snap=paidSnapshot();var root=confirmedPaidRoot(snap);snap.subscription().setStatus("canceled");snap.subscription().setCurrentPeriodEnd(now.plusSeconds(2*86400).getEpochSecond());ownedFixture(root,snap);var user=users.selectByUserForUpdate("user");user.setStatus("active");user.setCurrentPeriodEnd(root.getEntitlementEndAt());when(recoveries.selectBySubscription("sub_old",0L,100)).thenReturn(List.of(root));
         var event=ApiResource.GSON.fromJson("{\"id\":\"evt_technical_cancel\",\"type\":\"customer.subscription.deleted\",\"data\":{\"object\":{\"id\":\"sub_old\"}}}",Event.class);

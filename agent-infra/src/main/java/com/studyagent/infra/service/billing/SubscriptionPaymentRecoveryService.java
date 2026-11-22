@@ -518,12 +518,22 @@ public class SubscriptionPaymentRecoveryService {
         a.setTransportAttempts(0);a.setVersion(0);actions.insert(a);return a;
     }
     // Only full mirrors read under the user lock reach this method. Keep NULL semantics local to recovery.
-    private void saveRecoveryUser(UserSubscriptionEntity user){
+    private void saveRecoveryUser(UserSubscriptionEntity user){saveRecoveryUser(user,false);}
+    private void saveRecoveryUser(UserSubscriptionEntity user,boolean endedPaidCycle){
         var update=new LambdaUpdateWrapper<UserSubscriptionEntity>().eq(UserSubscriptionEntity::getId,user.getId())
                 .set(user.getPaymentRecoveryId()==null,UserSubscriptionEntity::getPaymentRecoveryId,null)
                 .set(user.getGraceEndAt()==null,UserSubscriptionEntity::getGraceEndAt,null)
                 .set(user.getStripeSubscriptionId()==null,UserSubscriptionEntity::getStripeSubscriptionId,null)
                 .set(user.getStripeScheduleId()==null,UserSubscriptionEntity::getStripeScheduleId,null);
+        if(endedPaidCycle)update
+                .set(UserSubscriptionEntity::getPlanCode,null)
+                .set(UserSubscriptionEntity::getCurrentPeriodStart,null).set(UserSubscriptionEntity::getCurrentPeriodEnd,null)
+                .set(UserSubscriptionEntity::getQuotaPeriodStart,null).set(UserSubscriptionEntity::getQuotaPeriodEnd,null)
+                .set(UserSubscriptionEntity::getCurrentPeriodTimeZone,null).set(UserSubscriptionEntity::getQuotaPeriodTimeZone,null)
+                .set(UserSubscriptionEntity::getPendingPlanCode,null).set(UserSubscriptionEntity::getPendingEffectiveAt,null)
+                .set(UserSubscriptionEntity::getPendingUpgradeOrderNo,null).set(UserSubscriptionEntity::getPendingUpgradeExpiresAt,null)
+                .set(UserSubscriptionEntity::getPricingZone,null).set(UserSubscriptionEntity::getPriceVersion,null)
+                .set(UserSubscriptionEntity::getCurrency,null);
         if(users.update(user,update)!=1)throw incomplete(user.getStripeSubscriptionId());
     }
     private <T>T locked(long id,BiFunction<UserSubscriptionEntity,SubscriptionPaymentRecoveryEntity,T> body){
@@ -576,6 +586,10 @@ public class SubscriptionPaymentRecoveryService {
                 if(child!=root && !Objects.equals(child.getOwnerRecoveryId(),root.getId()))throw incomplete(childSnapshot.invoice().getId());
                 fillInvoice(child,childSnapshot);applyPaid(user,root,child,childSnapshot);if(child!=root)recoveries.updateById(child);
             }
+            if(!incompleteScope && closeEndedPaidCycle(user,root,snapshot)){
+                if(row!=root)recoveries.updateById(row);
+                recoveries.updateById(root);return null;
+            }
             if(!isPaid(snapshot)&&!"PAID".equals(root.getStatus())&&root.getAccountClosedAt()==null){
                 if(snapshot.invoice().getAmountPaid()!=null&&snapshot.invoice().getAmountPaid()>0){
                     skipRetries(root,"PARTIAL_PAYMENT");review(root,"PARTIAL_PAYMENT");
@@ -613,6 +627,33 @@ public class SubscriptionPaymentRecoveryService {
             }
             recoveries.updateById(root);return null;
         });
+    }
+    /** Final local lifecycle transition, under the existing user/root locks; never cancels Stripe. */
+    private boolean closeEndedPaidCycle(UserSubscriptionEntity user,SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot){
+        if(!currentRecovery(user,root) || root.getAccountClosedAt()!=null || !"PAID".equals(root.getStatus())
+                || !"GRANTED".equals(root.getGrantState()) || root.getEntitlementEndAt()==null)return false;
+        var sub=snapshot.subscription();Instant business=requiredBusinessTime(snapshot),end=instant(root.getEntitlementEndAt());
+        if(sub==null || !Objects.equals(root.getStripeSubscriptionId(),sub.getId()) || !Objects.equals(root.getStripeCustomerId(),sub.getCustomer())
+                || !Objects.equals(root.getStripeCustomerId(),user.getStripeCustomerId()) || !"canceled".equals(sub.getStatus())
+                || sub.getEndedAt()==null || epoch(sub.getEndedAt()).isAfter(business) || business.isBefore(end))return false;
+        // A newer paid cycle on this same subscription must not be cleared by its old recovery.
+        if(!Objects.equals(root.getPlanCode(),user.getPlanCode()) || user.getCurrentPeriodEnd()==null)return false;
+        Instant localEnd;
+        if("UTC".equals(user.getCurrentPeriodTimeZone()))localEnd=user.getCurrentPeriodEnd().toInstant(ZoneOffset.UTC);
+        else if(DateTimeFormats.APP_ZONE.getId().equals(user.getCurrentPeriodTimeZone())
+                || user.getCurrentPeriodTimeZone()==null && Objects.equals(user.getCurrentPeriodEnd(),root.getEntitlementEndAt()))localEnd=instant(user.getCurrentPeriodEnd());
+        else return false;
+        if(!end.equals(localEnd))return false;
+        var quota=quotaProvider==null?null:quotaProvider.getIfAvailable();if(quota==null)throw new IllegalStateException("BillingQuotaGateway unavailable");
+        String key="recovery:"+root.getId()+":paid-period-ended";
+        quota.clearPlanQuotaAt(user.getClerkUserId(),root.getStripeSubscriptionId(),root.getPlanCode(),key,business);
+        quota.pauseAddonsAt(user.getClerkUserId(),root.getStripeSubscriptionId(),key+":addons",business);
+        StripeBillingWebhookService.normalizeDeletedSubscriptionState(user);
+        user.setStatus("canceled");user.setPaymentRecoveryId(null);user.setLastSyncedAt(DateTimeFormats.now());
+        saveRecoveryUser(user,true);
+        // PAID/GRANTED and the original entitlement/admission remain immutable historical facts.
+        root.setAccountClosedAt(DateTimeFormats.now());root.setCloseReason("PAID_PERIOD_ENDED");root.setNextReconcileAt(null);
+        return true;
     }
     private boolean mergeUserStripeFacts(UserSubscriptionEntity user,SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot) {
         if(!currentRecovery(user,root) || snapshot.subscription()==null)return false;
@@ -671,6 +712,9 @@ public class SubscriptionPaymentRecoveryService {
         if(snapshot.charge()!=null && Boolean.TRUE.equals(snapshot.charge().getDisputed())
                 && (row.getDisputeState()==null || "NONE".equals(row.getDisputeState())))row.setDisputeState("OPEN");
         recordPaidOrder(root,row,snapshot);
+        // This selected receipt already funded the completed cycle; replay is not a new late payment.
+        if(root.getAccountClosedAt()!=null && "PAID_PERIOD_ENDED".equals(root.getCloseReason())
+                && Objects.equals(root.getEntitlementInvoiceId(),row.getStripeInvoiceId()))return;
         var replacement=replacements.selectByRecovery(root.getId()).stream().filter(x->"PAID".equals(x.getState())).findFirst().orElse(null);
         boolean current=Objects.equals(user.getStripeSubscriptionId(),root.getStripeSubscriptionId())&&Objects.equals(user.getPaymentRecoveryId(),root.getId())&&root.getAccountClosedAt()==null;
         if(replacement!=null||!current){review(root,"OLD_PAYMENT_AFTER_SWITCH_OR_CLOSE");row.setGrantState("HELD");return;}
@@ -1527,6 +1571,14 @@ public class SubscriptionPaymentRecoveryService {
         if(snapshot.subscription()==null)return;
         var root=recoveries.selectById(before.getId());if(root==null||!"PAID".equals(root.getStatus())||root.getEntitlementEndAt()==null)return;
         if(!currentRecovery(users.selectByUser(root.getClerkUserId()),root) || "CONFIRMED".equals(root.getAnchorSyncState()) && !snapshot.businessNow().isBefore(instant(root.getEntitlementEndAt())))return;
+        // A canceled subscription has no upcoming invoice. Keep pre-expiry rights/lifecycle checks,
+        // but never ask Stripe to preview a renewal that can no longer exist.
+        if("canceled".equals(snapshot.subscription().getStatus())){
+            if(!"CONFIRMED".equals(root.getAnchorSyncState()))locked(root.getId(),(u,r)->{
+                if(currentRecovery(u,r)){r.setAnchorSyncState("REVIEW");review(r,"REMOTE_CANCELED_PAID_CYCLE_PRESERVED");recoveries.updateById(r);}return null;
+            });
+            return;
+        }
         var shifts=actions.selectByRecovery(root.getId()).stream().filter(a->"SHIFT_RENEWAL".equals(a.getActionType())&&"SUCCEEDED".equals(a.getStatus())).toList();
         if(shifts.isEmpty())return;
         var shift=shifts.get(shifts.size()-1);var details=shift.getResultJson()==null?Map.<String,Object>of():SubscriptionRecoveryStripeGateway.thaw(shift.getResultJson());

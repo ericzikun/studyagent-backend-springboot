@@ -158,6 +158,9 @@ public class NoteBlogAudioPrefetchService {
                 item.put("text", segment.text());
                 item.put("url", url);
                 item.put("durationMs", segment.durationMs());
+                if (segment.speaker() != null) {
+                    item.put("speaker", segment.speaker());
+                }
                 segments.add(item);
             }
             String fullUrl = uploadFileToOss(demoId, sourceHash, cached.fullFileName());

@@ -76,6 +76,11 @@ public class VideoTutorTtsService {
         return props.getVoice();
     }
 
+    /** 第二音色（Nora）；为空时调用方应回退到 {@link #voice()}。 */
+    public String voiceNora() {
+        return props.getVoiceNora();
+    }
+
     public int sampleRate() {
         return props.getSampleRate();
     }
@@ -89,7 +94,17 @@ public class VideoTutorTtsService {
     }
 
     public Stream open(String rawText, Double rawSpeed, String tutorId) {
-        String voice = voiceFor(tutorId);
+        return openWithVoice(rawText, rawSpeed, voiceFor(tutorId));
+    }
+
+    /**
+     * 指定具体音色开流。笔记播客用它给两个说话人分配不同音色；
+     * tutorId 那套映射保持不变，避免影响 video-tutor。
+     */
+    public Stream openWithVoice(String rawText, Double rawSpeed, String voice) {
+        if (voice == null || voice.isBlank()) {
+            voice = props.getVoice();
+        }
         if (!isReady()) {
             throw new TtsUnavailableException("tts not configured");
         }

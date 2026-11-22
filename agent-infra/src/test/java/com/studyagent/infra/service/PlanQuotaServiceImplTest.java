@@ -126,6 +126,37 @@ class PlanQuotaServiceImplTest {
     }
 
     @Test
+    void simulationClearUsesCapturedWindowAfterSubscriptionNormalization() {
+        SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
+        UserSubscriptionEntity normalized = new UserSubscriptionEntity();
+        normalized.setClerkUserId("user");
+        normalized.setStatus("canceled");
+
+        when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
+        when(userSubscriptionMapper.selectOne(any(Wrapper.class))).thenReturn(normalized);
+
+        PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
+                subscriptionPlanMapper,
+                aiFeatureDefsMapper,
+                userAiQuotaMapper,
+                quotaLedgerMapper,
+                userSubscriptionMapper);
+        SimulationQuotaLedgerService simulationLedger = mock(SimulationQuotaLedgerService.class);
+        ReflectionTestUtils.setField(service, "simulationQuotaLedgerService", simulationLedger);
+
+        LocalDateTime capturedStart = LocalDateTime.of(2026, 11, 22, 11, 41, 14);
+        LocalDateTime capturedEnd = capturedStart.plusMonths(1);
+        service.clearPlanQuotaAt("user", "sub", "basic_monthly", "subscription:sub:deleted",
+                Instant.parse("2026-11-22T11:42:29Z"),
+                capturedStart, capturedEnd, "UTC");
+
+        verify(simulationLedger).recordPlanClear(
+                eq("user"), eq("sub"), eq("basic_monthly"), eq(3L),
+                eq(capturedStart), eq("UTC"), eq(capturedEnd),
+                eq("subscription:sub:deleted"), any(LocalDateTime.class));
+    }
+
+    @Test
     void resetFromPaidInvoice_isIdempotent_perInvoiceAndFeature() {
         SubscriptionPlanEntity plan = plan("basic_monthly", 3L, 3L, 2L);
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 0L, 0L);

@@ -49,7 +49,7 @@ class SimulationQuotaLedgerServiceTest {
     }
 
     @Test
-    void planClearWritesRemainingOnlyAndSkipsZero() {
+    void planClearWritesRemainingAndAlsoRecordsExhaustedWindow() {
         LocalDateTime start = LocalDateTime.of(2026, 11, 22, 9, 17);
         LocalDateTime end = start.plusMonths(1);
         LocalDateTime now = start.plusHours(2);
@@ -69,7 +69,8 @@ class SimulationQuotaLedgerServiceTest {
         when(usageCounter.countSucceededUtc("user_1", start, end)).thenReturn(3L);
         service.recordPlanClear("user_1", "sub_1", "basic_monthly", 3L,
                 start, "UTC", end, "subscription:sub_2:deleted", now);
-        verify(quotaLedgerMapper).insert(ledger.capture());
+        verify(quotaLedgerMapper, org.mockito.Mockito.times(2)).insert(ledger.capture());
+        assertEquals(0L, ledger.getValue().getAmount());
     }
 
     @Test

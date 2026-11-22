@@ -1,6 +1,7 @@
 package com.studyagent.service.domain.billing;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import com.studyagent.service.domain.quota.AddonGrantSnapshot;
 
 /**
@@ -54,6 +55,16 @@ public interface BillingQuotaGateway {
     );
 
     void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey);
+
+    /**
+     * Clear with a period snapshot captured before the subscription row was normalized.
+     * Used by subscription.deleted, where the stored quota window is already null.
+     */
+    default void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, LocalDateTime periodStart, LocalDateTime periodEnd,
+            String periodTimeZone) {
+        clearPlanQuota(clerkUserId, subscriptionId, planCode, idempotencyKey);
+    }
 
     void grantAddonFromCheckout(
             String clerkUserId,

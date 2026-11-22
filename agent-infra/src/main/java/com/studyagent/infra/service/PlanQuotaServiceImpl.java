@@ -172,6 +172,34 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey) {
+        clearPlanQuotaAt(clerkUserId, subscriptionId, planCode, idempotencyKey,
+                resolveRefreshTime(subscriptionId, DateTimeFormats.now()).atZone(DateTimeFormats.APP_ZONE).toInstant(),
+                null, null, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, LocalDateTime periodStart, LocalDateTime periodEnd,
+            String periodTimeZone) {
+        clearPlanQuotaAt(clerkUserId, subscriptionId, planCode, idempotencyKey,
+                resolveRefreshTime(subscriptionId, DateTimeFormats.now()).atZone(DateTimeFormats.APP_ZONE).toInstant(),
+                periodStart, periodEnd, periodTimeZone);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void clearPlanQuotaAt(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, Instant businessNow) {
+        clearPlanQuotaAt(clerkUserId, subscriptionId, planCode, idempotencyKey, businessNow,
+                null, null, null);
+    }
+
+    void clearPlanQuotaAt(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, Instant businessNow,
+            LocalDateTime capturedPeriodStart, LocalDateTime capturedPeriodEnd,
+            String capturedPeriodTimeZone) {
+        if (businessNow == null) throw new IllegalStateException("RECOVERY_BUSINESS_TIME_MISSING");
+        LocalDateTime now = DateTimeFormats.fromInstant(businessNow);
         List<UserAiQuotaEntity> quotas = userAiQuotaMapper.selectList(
                 new LambdaQueryWrapper<UserAiQuotaEntity>()
                         .eq(UserAiQuotaEntity::getClerkUserId, clerkUserId)
@@ -179,7 +207,6 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
                                 FeatureCode.TASK_CREATE.getCode(),
                                 FeatureCode.AI_DETECTION.getCode(),
                                 FeatureCode.HUMANIZER.getCode())));
-        LocalDateTime now = resolveRefreshTime(subscriptionId, DateTimeFormats.now());
         UserSubscriptionEntity subscription = findSubscriptionForPlanLifecycle(clerkUserId, subscriptionId);
         String effectivePlanCode = resolveLifecyclePlanCode(planCode, subscription);
         for (UserAiQuotaEntity quota : quotas) {
@@ -221,14 +248,20 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         if (simulationQuotaLedgerService != null && subscription != null && effectivePlanCode != null) {
             try {
                 SubscriptionPlanEntity simulationPlan = requirePlan(effectivePlanCode);
+                LocalDateTime periodStart = capturedPeriodStart != null
+                        ? capturedPeriodStart : subscription.getQuotaPeriodStart();
+                LocalDateTime periodEnd = capturedPeriodEnd != null
+                        ? capturedPeriodEnd : subscription.getQuotaPeriodEnd();
+                String periodTimeZone = capturedPeriodTimeZone != null
+                        ? capturedPeriodTimeZone : subscription.getQuotaPeriodTimeZone();
                 simulationQuotaLedgerService.recordPlanClear(
                         clerkUserId,
                         subscriptionId,
                         effectivePlanCode,
                         defaultLong(simulationPlan.getAssignmentQuota()),
-                        subscription.getQuotaPeriodStart(),
-                        subscription.getQuotaPeriodTimeZone(),
-                        subscription.getQuotaPeriodEnd(),
+                        periodStart,
+                        periodTimeZone,
+                        periodEnd,
                         idempotencyKey,
                         now);
             } catch (IllegalArgumentException unknownPlan) {

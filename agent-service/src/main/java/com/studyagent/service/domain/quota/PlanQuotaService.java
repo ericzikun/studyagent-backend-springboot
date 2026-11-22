@@ -1,6 +1,7 @@
 package com.studyagent.service.domain.quota;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 public interface PlanQuotaService {
     /**
@@ -59,4 +60,14 @@ public interface PlanQuotaService {
     );
 
     void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey);
+
+    /**
+     * Clear with a period snapshot captured before the subscription row was normalized.
+     * Used by subscription.deleted, where the stored quota window is already null.
+     */
+    default void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, LocalDateTime periodStart, LocalDateTime periodEnd,
+            String periodTimeZone) {
+        clearPlanQuota(clerkUserId, subscriptionId, planCode, idempotencyKey);
+    }
 }

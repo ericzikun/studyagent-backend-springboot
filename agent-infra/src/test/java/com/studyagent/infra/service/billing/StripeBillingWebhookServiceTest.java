@@ -959,10 +959,11 @@ class StripeBillingWebhookServiceTest {
         verify(billingQuotaGateway, never()).resumeEligibleAddons(
                 any(), any(), any());
         verify(billingQuotaGateway).clearPlanQuota(
-                "user_1",
-                "sub_canceled",
-                "plus_monthly",
-                "subscription:sub_canceled:deleted");
+                eq("user_1"),
+                eq("sub_canceled"),
+                eq("plus_monthly"),
+                eq("subscription:sub_canceled:deleted"),
+                any(), any(), any());
     }
 
     @Test
@@ -1028,7 +1029,8 @@ class StripeBillingWebhookServiceTest {
         assertEquals("DE", existing.getPricingCountry());
         assertTrue(updateValues.contains("DE"), "update wrapper must persist pricing_country");
         verify(billingQuotaGateway).clearPlanQuota(
-                "user_1", "sub_active", "plus_monthly", "subscription:sub_active:deleted");
+                eq("user_1"), eq("sub_active"), eq("plus_monthly"),
+                eq("subscription:sub_active:deleted"), any(), any(), any());
     }
 
     @Test
@@ -2806,6 +2808,11 @@ class StripeBillingWebhookServiceTest {
         existing.setStatus("active");
         existing.setStripeCustomerId("cus_123");
         existing.setStripeSubscriptionId("sub_123");
+        LocalDateTime quotaStart = LocalDateTime.parse("2026-11-22T11:41:14");
+        LocalDateTime quotaEnd = quotaStart.plusMonths(1);
+        existing.setQuotaPeriodStart(quotaStart);
+        existing.setQuotaPeriodEnd(quotaEnd);
+        existing.setQuotaPeriodTimeZone("UTC");
 
         when(userSubscriptionMapper.selectByUserForUpdate("user_1")).thenReturn(existing);
         when(quotaGatewayProvider.getIfAvailable()).thenReturn(billingQuotaGateway);
@@ -2819,11 +2826,15 @@ class StripeBillingWebhookServiceTest {
 
         invokeSyncSubscription(service(), subscription, true, false);
 
+        // The row is normalized to canceled/null before the clear runs; the period
+        // captured beforehand must still reach the quota owner.
+        assertNull(existing.getQuotaPeriodStart());
         verify(billingQuotaGateway).clearPlanQuota(
-                "user_1",
-                "sub_123",
-                "basic_monthly",
-                "subscription:sub_123:deleted");
+                eq("user_1"),
+                eq("sub_123"),
+                eq("basic_monthly"),
+                eq("subscription:sub_123:deleted"),
+                eq(quotaStart), eq(quotaEnd), eq("UTC"));
     }
 
     private void assertReviewRequired(Event event) {

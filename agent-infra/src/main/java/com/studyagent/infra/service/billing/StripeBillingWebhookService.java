@@ -1729,6 +1729,11 @@ public class StripeBillingWebhookService {
             return;
         }
         String previousPlanCode = existing == null ? null : existing.getPlanCode();
+        // applySubscription normalizes deleted rows (period and plan fields become null),
+        // so capture the simulation quota window before the mutation for the clear ledger.
+        LocalDateTime previousQuotaPeriodStart = existing == null ? null : existing.getQuotaPeriodStart();
+        LocalDateTime previousQuotaPeriodEnd = existing == null ? null : existing.getQuotaPeriodEnd();
+        String previousQuotaPeriodTimeZone = existing == null ? null : existing.getQuotaPeriodTimeZone();
 
         ResolvedSubscriptionPlan resolved = deleted ? null : resolveSubscriptionPlan(subscription);
         SubscriptionPlanEntity plan = resolved == null ? null : resolved.plan();
@@ -1769,7 +1774,10 @@ public class StripeBillingWebhookService {
                     clerkUserId,
                     subscription.getId(),
                     previousPlanCode,
-                    "subscription:" + subscription.getId() + ":deleted");
+                    "subscription:" + subscription.getId() + ":deleted",
+                    previousQuotaPeriodStart,
+                    previousQuotaPeriodEnd,
+                    previousQuotaPeriodTimeZone);
             quotaGateway().pauseAddons(
                     clerkUserId,
                     subscription.getId(),

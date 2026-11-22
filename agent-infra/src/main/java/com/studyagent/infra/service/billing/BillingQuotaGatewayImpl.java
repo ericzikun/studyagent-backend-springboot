@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -90,6 +91,14 @@ public class BillingQuotaGatewayImpl implements BillingQuotaGateway {
     @Override
     public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode, String idempotencyKey) {
         planQuotaService.clearPlanQuota(clerkUserId, subscriptionId, planCode, idempotencyKey);
+    }
+
+    @Override
+    public void clearPlanQuota(String clerkUserId, String subscriptionId, String planCode,
+            String idempotencyKey, LocalDateTime periodStart, LocalDateTime periodEnd,
+            String periodTimeZone) {
+        planQuotaService.clearPlanQuota(clerkUserId, subscriptionId, planCode, idempotencyKey,
+                periodStart, periodEnd, periodTimeZone);
     }
 
     @Override

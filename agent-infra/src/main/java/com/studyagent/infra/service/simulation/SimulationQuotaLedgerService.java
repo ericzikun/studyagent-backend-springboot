@@ -76,9 +76,6 @@ public class SimulationQuotaLedgerService {
         LocalDateTime endUtc = SimulationUsageCounter.toUtcWallClock(periodEnd, periodTimeZone);
         long used = usageCounter.countSucceededUtc(clerkUserId, startUtc, endUtc);
         long remaining = Math.max(0L, limit - used);
-        if (remaining == 0L) {
-            return;
-        }
         Map<String, Object> context = baseContext(planCode, subscriptionId, periodStart, periodEnd);
         context.put("display_only", true);
         context.put("limit", limit);

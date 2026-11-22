@@ -19,7 +19,10 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Future;
@@ -46,6 +49,9 @@ public class NoteBlogTtsService {
     private static final Pattern BLANK_LINES = Pattern.compile("\\n\\s*\\n");
     private static final Pattern SENTENCE = Pattern.compile("(?<=[。！？!?；;])");
     private static final Pattern FILE_NAME = Pattern.compile("^[a-f0-9]{64}\\.wav$");
+    /** 播客文稿的说话人标记：`**主持人**：……` / `**Host**: ...`。 */
+    private static final Pattern SPEAKER_LINE =
+            Pattern.compile("^\\s*\\*\\*([^*\\n]{1,24})\\*\\*\\s*[：:]\\s*(.+)$");
 
     private final VideoTutorTtsService tts;
     private final NoteBlogAudioProperties props;
@@ -89,7 +95,12 @@ public class NoteBlogTtsService {
         return props.isEnabled() && tts.isReady();
     }
 
-    public record Segment(int index, int paragraphIndex, String text, String url, long durationMs) {
+    public record Segment(int index, int paragraphIndex, String text, String url, long durationMs,
+                          String speaker) {
+    }
+
+    /** 文稿里的一个说话回合；speaker 为空表示旧文章/无标记段落。 */
+    record Turn(int paragraphIndex, String speaker, String text) {
     }
 
     /** fullUrl = 整篇拼接后的单轨 WAV；前端优先用它避免逐段切源造成卡顿/自动播放拦截。 */
@@ -99,7 +110,7 @@ public class NoteBlogTtsService {
 
     /** 本地缓存完成后的分段（fileName 用于 OSS 上传与本地签名 URL）。 */
     public record CachedSegment(int index, int paragraphIndex, String text, String fileName,
-                                long durationMs) {
+                                long durationMs, String speaker) {
     }
 
     public record CachedPayload(List<CachedSegment> segments, long totalDurationMs, String voice,
@@ -112,7 +123,8 @@ public class NoteBlogTtsService {
         for (CachedSegment segment : cached.segments()) {
             segments.add(new Segment(
                     segment.index(), segment.paragraphIndex(), segment.text(),
-                    signedUrl(conversationId, segment.fileName()), segment.durationMs()));
+                    signedUrl(conversationId, segment.fileName()), segment.durationMs(),
+                    segment.speaker()));
         }
         String fullUrl = cached.fullFileName() == null
                 ? null : signedUrl(conversationId, cached.fullFileName());
@@ -129,12 +141,28 @@ public class NoteBlogTtsService {
         if (!isReady()) {
             throw new TtsUnavailable("语音服务暂不可用，请稍后重试");
         }
-        List<String> paragraphs = splitParagraphs(blogMd);
-        if (paragraphs.isEmpty()) {
-            throw new TtsUnavailable("博客还没有可朗读的内容");
+        List<Turn> turns = splitTurns(blogMd);
+        if (turns.isEmpty()) {
+            throw new TtsUnavailable("播客还没有可朗读的内容");
         }
         int sampleRate = tts.sampleRate();
-        String voice = tts.voice();
+        String defaultVoice = tts.voice();
+        String altVoice = tts.voiceNora() == null || tts.voiceNora().isBlank()
+                ? defaultVoice : tts.voiceNora();
+
+        LinkedHashSet<String> speakers = new LinkedHashSet<>();
+        for (Turn turn : turns) {
+            if (turn.speaker() != null) {
+                speakers.add(turn.speaker());
+            }
+        }
+        Map<String, String> speakerVoices = new LinkedHashMap<>();
+        int speakerIndex = 0;
+        for (String speaker : speakers) {
+            speakerVoices.put(speaker, speakerIndex == 0 ? defaultVoice : altVoice);
+            speakerIndex += 1;
+        }
+
         Path dir = storageDir().resolve(String.valueOf(conversationId));
         try {
             Files.createDirectories(dir);
@@ -144,14 +172,23 @@ public class NoteBlogTtsService {
 
         List<String> chunkTexts = new ArrayList<>();
         List<Integer> chunkParagraphs = new ArrayList<>();
+        List<String> chunkVoices = new ArrayList<>();
+        List<String> chunkSpeakers = new ArrayList<>();
         List<String> fileNames = new ArrayList<>();
-        for (int paragraphIndex = 0; paragraphIndex < paragraphs.size(); paragraphIndex += 1) {
-            for (String chunk : chunkText(paragraphs.get(paragraphIndex))) {
+        LinkedHashSet<String> usedVoices = new LinkedHashSet<>();
+        for (Turn turn : turns) {
+            String voice = turn.speaker() == null
+                    ? defaultVoice
+                    : speakerVoices.getOrDefault(turn.speaker(), altVoice);
+            usedVoices.add(voice);
+            for (String chunk : chunkText(turn.text())) {
                 if (chunkTexts.size() >= props.getMaxSegments()) {
                     break;
                 }
                 chunkTexts.add(chunk);
-                chunkParagraphs.add(paragraphIndex);
+                chunkParagraphs.add(turn.paragraphIndex());
+                chunkVoices.add(voice);
+                chunkSpeakers.add(turn.speaker());
                 fileNames.add(sha256(chunk + "|" + voice + "|" + sampleRate) + ".wav");
             }
             if (chunkTexts.size() >= props.getMaxSegments()) {
@@ -175,7 +212,9 @@ public class NoteBlogTtsService {
                 for (int index : missing) {
                     Path file = dir.resolve(fileNames.get(index));
                     String chunk = chunkTexts.get(index);
-                    futures.add(synthExecutor.submit(() -> synthesizeToFile(chunk, file, sampleRate)));
+                    String voice = chunkVoices.get(index);
+                    futures.add(synthExecutor.submit(
+                            () -> synthesizeToFile(chunk, file, sampleRate, voice)));
                 }
                 for (int i = 0; i < futures.size(); i += 1) {
                     durations[missing.get(i)] = futures.get(i).get();
@@ -192,19 +231,23 @@ public class NoteBlogTtsService {
         List<CachedSegment> segments = new ArrayList<>();
         for (int i = 0; i < chunkTexts.size(); i += 1) {
             segments.add(new CachedSegment(
-                    i, chunkParagraphs.get(i), chunkTexts.get(i), fileNames.get(i), durations[i]));
+                    i, chunkParagraphs.get(i), chunkTexts.get(i), fileNames.get(i), durations[i],
+                    chunkSpeakers.get(i)));
         }
         if (segments.isEmpty()) {
-            throw new TtsUnavailable("博客还没有可朗读的内容");
+            throw new TtsUnavailable("播客还没有可朗读的内容");
         }
         FullAudio full;
         try {
-            full = buildFullAudio(dir, fileNames, sampleRate, voice);
+            full = buildFullAudio(dir, fileNames, sampleRate);
         } catch (IOException e) {
             log.warn("[note/blog-tts] full track build failed: {}", e.getMessage());
             throw new TtsUnavailable("语音合成失败，请稍后重试");
         }
-        return new CachedPayload(segments, full.durationMs(), voice, full.fileName());
+        String voiceLabel = String.join("+", usedVoices);
+        log.info("[note/blog-tts] voices convId={} voices={} speakers={}",
+                conversationId, voiceLabel, speakerVoices.keySet());
+        return new CachedPayload(segments, full.durationMs(), voiceLabel, full.fileName());
     }
 
     private record FullAudio(String fileName, long durationMs) {
@@ -214,10 +257,11 @@ public class NoteBlogTtsService {
      * 把所有分段拼成一条单轨 WAV：前端只切一次 src，拖动/连续播放没有段间空隙。
      * 每个分段首尾做 8ms 线性淡入淡出，消除 TTS 分段拼接处的爆音（“滋滋声”）。
      */
-    private FullAudio buildFullAudio(Path dir, List<String> fileNames, int sampleRate, String voice)
+    private FullAudio buildFullAudio(Path dir, List<String> fileNames, int sampleRate)
             throws IOException {
+        // 每个分段文件名已把音色算进哈希；整轨只需按分段列表+采样率区分。
         String fileName = sha256("full|" + String.join("|", fileNames)
-                + "|" + voice + "|" + sampleRate) + ".wav";
+                + "|" + sampleRate) + ".wav";
         Path full = dir.resolve(fileName);
         if (Files.isRegularFile(full) && Files.isReadable(full)) {
             return new FullAudio(fileName, readDurationMs(full, sampleRate));
@@ -321,9 +365,9 @@ public class NoteBlogTtsService {
                 sig.getBytes(StandardCharsets.US_ASCII));
     }
 
-    private long synthesizeToFile(String text, Path file, int sampleRate) {
+    private long synthesizeToFile(String text, Path file, int sampleRate, String voice) {
         ByteArrayOutputStream pcm = new ByteArrayOutputStream();
-        try (VideoTutorTtsService.Stream stream = tts.open(text, 1.0)) {
+        try (VideoTutorTtsService.Stream stream = tts.openWithVoice(text, 1.0, voice)) {
             stream.writeTo(pcm);
         } catch (VideoTutorTtsService.TtsUnavailableException e) {
             throw new TtsUnavailable("语音合成失败：" + e.getMessage());
@@ -376,15 +420,44 @@ public class NoteBlogTtsService {
         return buffer.array();
     }
 
-    private List<String> splitParagraphs(String markdown) {
+    /**
+     * 把文稿切成说话回合。带 `**说话人**：` 的行各自成回合；没有标记的块
+     * （旧文章、标题、过渡段）保留为 speaker=null，走默认音色，保证老会话可用。
+     */
+    static List<Turn> splitTurns(String markdown) {
         String body = markdown == null ? "" : markdown.replace("```", "\n");
-        List<String> result = new ArrayList<>();
+        List<Turn> result = new ArrayList<>();
+        int paragraphIndex = 0;
         for (String block : BLANK_LINES.split(body)) {
-            String text = toSpoken(block);
-            if (!text.isBlank()) {
-                result.add(text);
+            String trimmed = block.trim();
+            if (trimmed.isEmpty()) {
+                continue;
             }
+            String pendingSpeaker = null;
+            StringBuilder pending = new StringBuilder();
+            for (String line : trimmed.split("\\R")) {
+                Matcher matcher = SPEAKER_LINE.matcher(line);
+                if (matcher.matches()) {
+                    if (!pending.isEmpty()) {
+                        result.add(new Turn(paragraphIndex, pendingSpeaker,
+                                toSpoken(pending.toString())));
+                        pending.setLength(0);
+                    }
+                    pendingSpeaker = matcher.group(1).trim();
+                    pending.append(matcher.group(2));
+                } else if (!line.isBlank()) {
+                    if (!pending.isEmpty()) {
+                        pending.append(' ');
+                    }
+                    pending.append(line);
+                }
+            }
+            if (!pending.isEmpty()) {
+                result.add(new Turn(paragraphIndex, pendingSpeaker, toSpoken(pending.toString())));
+            }
+            paragraphIndex += 1;
         }
+        result.removeIf(turn -> turn.text().isBlank());
         return result;
     }
 

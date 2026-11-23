@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -176,5 +177,48 @@ class SimulationEntitlementServiceTest {
         assertEquals(SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, entitlement.entitlement());
         assertEquals(16L, entitlement.limit());
         assertEquals(13L, entitlement.remaining());
+    }
+
+    @Test
+    void activeLegacySubscriptionWithoutPlanFallsBackToFreeTrial() {
+        when(billing.getCurrentSubscription("legacy_free")).thenReturn(
+                SubscriptionResult.builder()
+                        .tier("free")
+                        .status("active")
+                        .canConsumePaidEntitlements(true)
+                        .build());
+
+        SimulationEntitlementService.Entitlement entitlement = service.resolve("legacy_free");
+
+        assertTrue(entitlement.canCreate());
+        assertEquals(SimulationEntitlementService.ENTITLEMENT_FREE_TRIAL, entitlement.entitlement());
+        assertEquals(1L, entitlement.limit());
+        assertEquals(1L, entitlement.remaining());
+    }
+
+    @Test
+    void memberWithoutStoredPeriodsFallsBackToCurrentMonth() {
+        when(billing.isPaidMember("member_no_period")).thenReturn(true);
+        when(billing.getEffectivePlanOrFree("member_no_period")).thenReturn(
+                BillingPlan.builder().planCode("plus_monthly").assignmentQuota(8L).build());
+        when(billing.getCurrentSubscription("member_no_period")).thenReturn(
+                SubscriptionResult.builder()
+                        .planCode("plus_monthly")
+                        .canConsumePaidEntitlements(true)
+                        .build());
+        when(jdbcTemplate.queryForObject(
+                anyString(), eq(Long.class), eq("member_no_period"),
+                any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(2L);
+
+        SimulationEntitlementService.Entitlement entitlement = service.resolve("member_no_period");
+
+        assertEquals(SimulationEntitlementService.ENTITLEMENT_MEMBERSHIP, entitlement.entitlement());
+        assertNotNull(entitlement.periodStart());
+        assertEquals(1, entitlement.periodStart().getDayOfMonth());
+        assertEquals(entitlement.periodStart().plusMonths(1), entitlement.periodEnd());
+        assertEquals(8L, entitlement.limit());
+        assertEquals(2L, entitlement.used());
+        assertEquals(6L, entitlement.remaining());
     }
 }

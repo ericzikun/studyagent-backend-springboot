@@ -8,9 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 /**
  * Resolves whether a user may create a Simulation Lab and how many labs the
@@ -128,6 +126,7 @@ public class SimulationEntitlementService {
         }
         SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
         return subscription != null
+                && subscription.getPlanCode() != null
                 && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
     }
 
@@ -155,6 +154,6 @@ public class SimulationEntitlementService {
     }
 
     private static LocalDateTime firstNonNull(LocalDateTime first, LocalDateTime second) {
-        return Objects.requireNonNullElse(first, second);
+        return first != null ? first : second;
     }
 }

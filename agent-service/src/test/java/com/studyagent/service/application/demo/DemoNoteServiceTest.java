@@ -226,10 +226,12 @@ class DemoNoteServiceTest {
         when(repo.findByVerlaConversationId(3403L)).thenReturn(Optional.of(conv));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.applyExtras(3403L, "{\"label\":\"root\"}", "# blog\n\nbody");
+        service.applyExtras(3403L, "{\"label\":\"root\"}", "# blog\n\nbody",
+                "{\"questions\":[]}");
 
         assertEquals("{\"label\":\"root\"}", conv.getMindmapJson());
         assertEquals("# blog\n\nbody", conv.getBlogMd());
+        assertEquals("{\"questions\":[]}", conv.getQuizJson());
         verify(repo).saveConversation(conv);
     }
 
@@ -237,7 +239,7 @@ class DemoNoteServiceTest {
     void apply_extras_is_noop_when_conversation_missing() {
         when(repo.findByVerlaConversationId(9999L)).thenReturn(Optional.empty());
 
-        service.applyExtras(9999L, "{}", "blog");
+        service.applyExtras(9999L, "{}", "blog", null);
 
         verify(repo, never()).saveConversation(any(NoteConversation.class));
     }

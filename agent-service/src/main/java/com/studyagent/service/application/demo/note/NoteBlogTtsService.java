@@ -22,6 +22,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -146,21 +147,28 @@ public class NoteBlogTtsService {
             throw new TtsUnavailable("播客还没有可朗读的内容");
         }
         int sampleRate = tts.sampleRate();
-        String defaultVoice = tts.voice();
-        String altVoice = tts.voiceNora() == null || tts.voiceNora().isBlank()
-                ? defaultVoice : tts.voiceNora();
+        String hostVoice = blankToFallback(props.getHostVoice(), tts.voice());
+        String guestVoice = blankToFallback(props.getGuestVoice(), hostVoice);
 
-        LinkedHashSet<String> speakers = new LinkedHashSet<>();
-        for (Turn turn : turns) {
-            if (turn.speaker() != null) {
-                speakers.add(turn.speaker());
-            }
-        }
         Map<String, String> speakerVoices = new LinkedHashMap<>();
-        int speakerIndex = 0;
-        for (String speaker : speakers) {
-            speakerVoices.put(speaker, speakerIndex == 0 ? defaultVoice : altVoice);
-            speakerIndex += 1;
+        boolean firstSpeakerAssigned = false;
+        for (Turn turn : turns) {
+            String speaker = turn.speaker();
+            if (speaker == null || speakerVoices.containsKey(speaker)) {
+                continue;
+            }
+            String role = speakerRole(speaker);
+            String voice;
+            if ("host".equals(role)) {
+                voice = hostVoice;
+            } else if ("guest".equals(role)) {
+                voice = guestVoice;
+            } else {
+                // 自定义名字：第一人当主持、第二人当讲解，保证仍是一男一女
+                voice = firstSpeakerAssigned ? guestVoice : hostVoice;
+            }
+            speakerVoices.put(speaker, voice);
+            firstSpeakerAssigned = true;
         }
 
         Path dir = storageDir().resolve(String.valueOf(conversationId));
@@ -178,8 +186,8 @@ public class NoteBlogTtsService {
         LinkedHashSet<String> usedVoices = new LinkedHashSet<>();
         for (Turn turn : turns) {
             String voice = turn.speaker() == null
-                    ? defaultVoice
-                    : speakerVoices.getOrDefault(turn.speaker(), altVoice);
+                    ? hostVoice
+                    : speakerVoices.getOrDefault(turn.speaker(), hostVoice);
             usedVoices.add(voice);
             for (String chunk : chunkText(turn.text())) {
                 if (chunkTexts.size() >= props.getMaxSegments()) {
@@ -418,6 +426,27 @@ public class NoteBlogTtsService {
         buffer.putInt(pcm.length);
         buffer.put(pcm);
         return buffer.array();
+    }
+
+    private static String blankToFallback(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    /** 按标签识别角色；自定义名字返回 null，由调用方按出现顺序分配。 */
+    static String speakerRole(String label) {
+        if (label == null || label.isBlank()) {
+            return null;
+        }
+        String lower = label.toLowerCase(Locale.ROOT);
+        if (label.contains("主持") || lower.contains("host") || lower.contains("moderator")) {
+            return "host";
+        }
+        if (label.contains("讲解") || label.contains("嘉賓") || label.contains("嘉宾")
+                || lower.contains("guest") || lower.contains("explainer")
+                || lower.contains("expert")) {
+            return "guest";
+        }
+        return null;
     }
 
     /**

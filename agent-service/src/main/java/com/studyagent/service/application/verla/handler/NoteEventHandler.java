@@ -117,7 +117,8 @@ public class NoteEventHandler implements VerlaEventHandler {
         NoteConversation saved = demoNoteService.applyExtras(
                 row.getConversationId(),
                 asString(payload.get("mindmapJson")),
-                blogMd);
+                blogMd,
+                asString(payload.get("quizJson")));
         // 事务提交后再异步合成播客语音；失败只置 FAILED，前端回退按需合成
         if (saved != null && blogMd != null && !blogMd.isBlank()
                 && DemoNoteService.BLOG_AUDIO_PROCESSING.equals(saved.getBlogAudioStatus())) {

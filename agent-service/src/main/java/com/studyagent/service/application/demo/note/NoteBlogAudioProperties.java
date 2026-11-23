@@ -27,6 +27,15 @@ public class NoteBlogAudioProperties {
     /** 单段朗读字数上限（CosyVoice 侧建议 <= 280）。 */
     private int maxCharsPerSegment = 220;
 
+    /**
+     * 播客主持人音色（女）。独立于 video-tutor 的 Theo/Nora，
+     * 改播客音色不会影响白板老师。
+     */
+    private String hostVoice = "longanhuan_v3";
+
+    /** 播客讲解人音色（男）。 */
+    private String guestVoice = "longanzhi_v3";
+
     /** 预生成后台任务线程数；每个任务负责一篇博客的分段上传。 */
     private int workerCount = 2;
 

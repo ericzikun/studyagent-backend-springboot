@@ -33,6 +33,15 @@ class NoteBlogTtsServiceTest {
     }
 
     @Test
+    void speakerRoleMapsHostAndGuestLabelsInChineseAndEnglish() {
+        assertThat(NoteBlogTtsService.speakerRole("主持人")).isEqualTo("host");
+        assertThat(NoteBlogTtsService.speakerRole("Host")).isEqualTo("host");
+        assertThat(NoteBlogTtsService.speakerRole("讲解人")).isEqualTo("guest");
+        assertThat(NoteBlogTtsService.speakerRole("Explainer")).isEqualTo("guest");
+        assertThat(NoteBlogTtsService.speakerRole("小智")).isNull();
+    }
+
+    @Test
     void splitTurnsKeepsLegacyArticleAsUnlabeledParagraphs() {
         String markdown = """
                 # 标题

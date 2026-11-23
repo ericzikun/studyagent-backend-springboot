@@ -102,13 +102,14 @@ class NoteEventHandlerTest {
         saved.setId(7L);
         saved.setVerlaConversationId(VERLA_CONVERSATION_ID);
         saved.setBlogAudioStatus(DemoNoteService.BLOG_AUDIO_PROCESSING);
-        when(demoNoteService.applyExtras(VERLA_CONVERSATION_ID, "{\"label\":\"root\"}", "# blog"))
-                .thenReturn(saved);
+        when(demoNoteService.applyExtras(VERLA_CONVERSATION_ID, "{\"label\":\"root\"}", "# blog",
+                "{\"questions\":[]}")).thenReturn(saved);
 
         handler.handle(
                 row(VerlaAgentEventType.NOTE_EXTRAS_COMMIT),
                 env(VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
-                        Map.of("mindmapJson", "{\"label\":\"root\"}", "blogMd", "# blog")));
+                        Map.of("mindmapJson", "{\"label\":\"root\"}", "blogMd", "# blog",
+                                "quizJson", "{\"questions\":[]}")));
 
         verify(blogAudioPrefetchService).schedule(saved, "# blog");
     }

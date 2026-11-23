@@ -52,6 +52,9 @@ public class DemoNoteConversationEntity {
     private String mindmapJson;
     @TableField(value = "blog_md", updateStrategy = FieldStrategy.ALWAYS)
     private String blogMd;
+    /** 四选一测验 JSON；重新生成时必须能写回 NULL。 */
+    @TableField(value = "quiz_json", updateStrategy = FieldStrategy.ALWAYS)
+    private String quizJson;
     /** PROCESSING / READY / FAILED；重新生成时必须能写回 NULL。 */
     @TableField(value = "blog_audio_status", updateStrategy = FieldStrategy.ALWAYS)
     private String blogAudioStatus;

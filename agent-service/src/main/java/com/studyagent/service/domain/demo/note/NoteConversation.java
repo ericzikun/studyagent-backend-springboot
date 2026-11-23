@@ -54,6 +54,8 @@ public class NoteConversation {
     private String mindmapJson;
     /** 博客 Markdown，与笔记同轮生成；旧会话为 null。 */
     private String blogMd;
+    /** 四选一测验 JSON（questions/options/answerIndex/explanation）；旧会话为 null。 */
+    private String quizJson;
     /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
     private String blogAudioStatus;
     /** 播客音频 manifest（分段 OSS/签名 URL + 时长 + sourceHash）；READY 时有值。 */

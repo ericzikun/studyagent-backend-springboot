@@ -152,6 +152,8 @@ public class VerlaAttachmentService {
         return HDR_UPLOAD_TOKEN;
     }
 
+    private static final String ASSIGNMENT_UPLOAD_META = "{\"assignmentFirstSubmit\":true}";
+
     private static final String ORIGIN_DOC_EDITOR_IMAGE = "DOCUMENT_EDITOR_IMAGE";
     private static final String ORIGIN_EDITOR_PREVIEW_IMAGE = "EDITOR_PREVIEW_IMAGE";
 
@@ -171,6 +173,21 @@ public class VerlaAttachmentService {
                 sessionId,
                 StringUtils.hasText(attachmentOrigin) ? attachmentOrigin : VerlaAttachment.ORIGIN_USER_UPLOAD,
                 metaJson);
+    }
+
+    @Transactional
+    public VerlaUploadSignResult requestAssignmentUploadSign(String clerkUserId, long conversationId,
+                                                            String filename, String mime, long sizeBytes) {
+        requireOssConfigured();
+        ensureUser(clerkUserId);
+        VerlaConversation conversation = conversationService.loadWritable(clerkUserId, conversationId);
+        String intent = conversation.getPrimaryIntent();
+        if (conversation.getLastTurnId() != null || (StringUtils.hasText(intent)
+                && !"ASSIGNMENT".equals(intent) && !"CREATE_ASSIGNMENT".equals(intent))) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "not a first Assignment upload");
+        }
+        return requestSignForUser(clerkUserId, conversationId, filename, mime, sizeBytes,
+                null, null, VerlaAttachment.ORIGIN_USER_UPLOAD, ASSIGNMENT_UPLOAD_META);
     }
 
     @Transactional
@@ -308,6 +325,12 @@ public class VerlaAttachmentService {
         byte[] body = readFullyLimited(rawIn, att.getSizeBytes());
         String checksum = sha256Hex(body);
 
+        storeUploadContent(att, body, checksum);
+        uploadTickets.put(objectId, ticket);
+    }
+
+    private void storeUploadContent(VerlaAttachment att, byte[] body, String checksum) throws IOException {
+        String objectId = att.getObjectId();
         String storageUri;
         if (ossStorageService.isEnabled()) {
             boolean ok = ossStorageService.putBytesAtKey(att.getOssKey(), body);
@@ -331,8 +354,74 @@ public class VerlaAttachmentService {
                 .build());
 
         uploadedContentCache.put(objectId, body);
-        uploadTickets.put(objectId, ticket);
         log.info("[Verla/attachment/V2] content stored objectId={} bytes={} uri={}", objectId, body.length, storageUri);
+    }
+
+    /**
+     * Resumes the browser upload using the authenticated owner and persisted sign record.
+     * Read the body before taking the row lock so a slow transfer does not hold the lock.
+     */
+    @Transactional(rollbackFor = IOException.class)
+    public void uploadAssignmentContent(String userId, String objectId, InputStream body) throws IOException {
+        requireOssConfigured();
+        VerlaAttachment attachment = getOwned(userId, objectId);
+        requireAssignmentUpload(attachment);
+        conversationService.loadWritable(userId, attachment.getConversationId());
+        byte[] bytes = readFullyLimited(body, attachment.getSizeBytes());
+
+        attachment = getAssignmentUploadForUpdate(userId, objectId);
+        if (hasStoredContent(attachment)) {
+            return;
+        }
+        requireAssignmentUpload(attachment);
+        if (!VerlaAttachmentStatus.UPLOADED.name().equals(attachment.getStatus())) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "attachment not in UPLOADED state");
+        }
+        // The existing quota rules release pending reservations at the sign TTL.
+        if (attachment.getCreatedAt().isBefore(LocalDateTime.now().minusSeconds(Math.max(60L, signTtlSeconds)))) {
+            entitlementService.assertCanReserveUserUpload(userId, attachment.getConversationId());
+        }
+        storeUploadContent(attachment, bytes, sha256Hex(bytes));
+    }
+
+    /** Returns false when the browser still needs to supply the file bytes. */
+    @Transactional
+    public boolean recoverAssignmentUpload(String userId, String objectId) {
+        VerlaAttachment attachment = getAssignmentUploadForUpdate(userId, objectId);
+        conversationService.getOwned(userId, attachment.getConversationId());
+        if (!VerlaAttachmentStatus.UPLOADED.name().equals(attachment.getStatus())) {
+            return hasStoredContent(attachment);
+        }
+        requireAssignmentUpload(attachment);
+        if (!hasStoredContent(attachment)) {
+            return false;
+        }
+        finalizeUploadForUser(userId, objectId, null, null, false, attachment);
+        return true;
+    }
+
+    private VerlaAttachment getAssignmentUploadForUpdate(String userId, String objectId) {
+        ensureUser(userId);
+        VerlaAttachment attachment = attachmentRepository.findActiveUserUploadForUpdate(userId, objectId);
+        if (attachment == null) {
+            throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
+        }
+        return attachment;
+    }
+
+    private static void requireAssignmentUpload(VerlaAttachment attachment) {
+        if (attachment.getDeletedAt() != null || attachment.getTurnId() != null || attachment.getSessionId() != null
+                || !VerlaAttachment.ORIGIN_USER_UPLOAD.equals(attachment.getAttachmentOrigin())
+                || attachment.getMetaJson() == null
+                || !ASSIGNMENT_UPLOAD_META.equals(attachment.getMetaJson().replaceAll("\\s+", ""))) {
+            throw new BusinessException(ApiCode.PARAM_ERROR, "not a recoverable Assignment upload");
+        }
+    }
+
+    private static boolean hasStoredContent(VerlaAttachment attachment) {
+        return StringUtils.hasText(attachment.getStorageUri())
+                && !attachment.getStorageUri().startsWith("pending://")
+                && StringUtils.hasText(attachment.getChecksumSha256());
     }
 
     @Transactional
@@ -358,7 +447,13 @@ public class VerlaAttachmentService {
     private VerlaAttachment finalizeUploadForUser(String clerkUserId, String objectId,
                                                   Long turnId, String clientChecksumSha256,
                                                   boolean skipAttachmentParse) {
-        VerlaAttachment att = attachmentRepository.findByObjectId(objectId);
+        return finalizeUploadForUser(clerkUserId, objectId, turnId, clientChecksumSha256, skipAttachmentParse,
+                attachmentRepository.findByObjectId(objectId));
+    }
+
+    private VerlaAttachment finalizeUploadForUser(String clerkUserId, String objectId,
+                                                  Long turnId, String clientChecksumSha256,
+                                                  boolean skipAttachmentParse, VerlaAttachment att) {
         if (att == null) {
             throw new BusinessException(ApiCode.TASK_NOT_FOUND, "attachment");
         }

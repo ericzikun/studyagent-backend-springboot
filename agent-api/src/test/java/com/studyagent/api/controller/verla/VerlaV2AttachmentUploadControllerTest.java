@@ -17,7 +17,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -49,6 +51,25 @@ class VerlaV2AttachmentUploadControllerTest {
                                 billingDomainService))
                 .setControllerAdvice(new GlobalExceptionHandler(mock(BillingDomainService.class)))
                 .build();
+    }
+
+    @Test
+    void content_uses_recovery_only_for_opted_in_requests() throws Exception {
+        mockMvc.perform(put("/v1/verla/v2/uploads/att_test/content")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .header(VerlaAttachmentService.HDR_UPLOAD_TOKEN, "upload-ticket")
+                        .content("bytes"))
+                .andExpect(status().isOk());
+        verify(attachmentService).uploadContent(eq("user_1"), eq("att_test"), eq("upload-ticket"), any());
+
+        mockMvc.perform(put("/v1/verla/v2/uploads/att_test/content")
+                        .param("assignmentRecovery", "true")
+                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content("bytes"))
+                .andExpect(status().isOk());
+        verify(attachmentService).uploadAssignmentContent(eq("user_1"), eq("att_test"), any());
     }
 
     @Test

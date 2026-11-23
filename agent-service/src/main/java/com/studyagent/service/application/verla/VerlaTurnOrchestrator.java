@@ -160,6 +160,25 @@ public class VerlaTurnOrchestrator {
                 cmd.getConversationId(), cmd.getForceIntent(),
                 cmd.getText() == null ? null : cmd.getText().substring(0, Math.min(50, cmd.getText().length())));
         Optional<String> forced = parseForcedCapabilityIntent(cmd.getForceIntent());
+        if (isRecoverableFirstSubmit(cmd)
+                && (forced.isEmpty() || isAssignmentIntent(forced.get()))) {
+            VerlaConversation locked = conversationRepository.findByIdForUpdate(cmd.getConversationId());
+            if (locked == null || !cmd.getUserId().equals(locked.getUserId())) {
+                throw new BusinessException(ApiCode.TASK_NOT_FOUND);
+            }
+            VerlaMessage accepted = messageRepository.findAssignmentFirstSubmit(
+                    locked.getId(), cmd.getClientMessageId());
+            if (accepted != null) {
+                VerlaTurn turn = turnRepository.findById(accepted.getTurnId());
+                return SendMessageResult.builder()
+                        .userMessageId(accepted.getId())
+                        .turnId(accepted.getTurnId())
+                        .planSessionId(turn.getPlanSessionId())
+                        .agentSessionId(forced.isPresent() ? turn.getAgentSessionId() : null)
+                        .skipPlanReason(forced.isPresent() ? "forced_capability" : null)
+                        .build();
+            }
+        }
         if (forced.isPresent()) {
             return onUserMessageForcedCapability(cmd, forced.get());
         }
@@ -2531,6 +2550,11 @@ public class VerlaTurnOrchestrator {
     // helpers
     // ==========================================================
 
+    private static boolean isRecoverableFirstSubmit(SendMessageCommand cmd) {
+        String id = cmd.getClientMessageId();
+        return id != null && id.length() == 60 && id.startsWith("assignment-first-submit-");
+    }
+
     private VerlaMessage insertUserMessagePlaceholder(Long conversationId, SendMessageCommand cmd) {
         VerlaMessage m = VerlaMessage.builder()
                 .conversationId(conversationId)
@@ -2538,6 +2562,8 @@ public class VerlaTurnOrchestrator {
                 .role("user")
                 .textContent(cmd.getText())
                 .attachmentsJson(cmd.getAttachmentsJson())
+                .metaJson(isRecoverableFirstSubmit(cmd)
+                        ? serializeJson(Map.of("assignmentFirstSubmitId", cmd.getClientMessageId())) : null)
                 .createdAt(LocalDateTime.now())
                 .build();
         return messageRepository.save(m);

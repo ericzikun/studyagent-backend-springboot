@@ -13,6 +13,10 @@ public interface VerlaConversationRepository {
 
     VerlaConversation findById(Long id);
 
+    default VerlaConversation findByIdForUpdate(Long id) {
+        return findById(id);
+    }
+
     /**
      * @param segmentQueryKey {@link com.studyagent.common.verla.enums.VerlaConversationListSegment#getQueryKey()}，可为 null
      * @param conversationStatusDb {@link com.studyagent.service.domain.verla.state.ConversationStatus#getDbValue()}，可为 null

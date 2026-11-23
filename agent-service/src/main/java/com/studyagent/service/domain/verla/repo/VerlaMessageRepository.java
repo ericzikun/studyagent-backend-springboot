@@ -14,6 +14,10 @@ public interface VerlaMessageRepository {
 
     VerlaMessage findById(Long id);
 
+    default VerlaMessage findAssignmentFirstSubmit(Long conversationId, String submitId) {
+        return null;
+    }
+
     /**
      * 主对话历史游标分页（id < cursor 倒序，cursor 为 null 时取最新）。
      * 文件对话消息通过 scene=FILE_CHAT 隔离，不进入主聊天历史。

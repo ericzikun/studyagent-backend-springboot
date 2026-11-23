@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.verla;
 
 import com.studyagent.api.exception.GlobalExceptionHandler;
+import com.studyagent.api.interceptor.AuthInterceptor;
 import com.studyagent.api.service.PaymentResumeContextService;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
@@ -10,6 +11,7 @@ import com.studyagent.service.application.verla.VerlaAttachmentService;
 import com.studyagent.service.domain.billing.BillingDomainService;
 import com.studyagent.service.domain.billing.BillingPlan;
 import com.studyagent.service.domain.file.OssStorageService;
+import com.studyagent.service.domain.user.ClerkClient;
 import com.studyagent.service.domain.verla.VerlaAttachment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,8 +21,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -35,6 +37,7 @@ class VerlaV2AttachmentUploadControllerTest {
     private VerlaAttachmentService attachmentService;
     private PaymentResumeContextService paymentResumeContextService;
     private BillingDomainService billingDomainService;
+    private ClerkClient clerkClient;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -42,6 +45,7 @@ class VerlaV2AttachmentUploadControllerTest {
         attachmentService = mock(VerlaAttachmentService.class);
         paymentResumeContextService = mock(PaymentResumeContextService.class);
         billingDomainService = mock(BillingDomainService.class);
+        clerkClient = mock(ClerkClient.class);
         OssStorageService ossStorageService = mock(OssStorageService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new VerlaV2AttachmentUploadController(
@@ -50,22 +54,31 @@ class VerlaV2AttachmentUploadControllerTest {
                                 paymentResumeContextService,
                                 billingDomainService))
                 .setControllerAdvice(new GlobalExceptionHandler(mock(BillingDomainService.class)))
+                .addMappedInterceptors(new String[]{"/v1/verla/v2/uploads/*/content"}, new AuthInterceptor(clerkClient))
                 .build();
     }
 
     @Test
     void content_uses_recovery_only_for_opted_in_requests() throws Exception {
         mockMvc.perform(put("/v1/verla/v2/uploads/att_test/content")
-                        .requestAttr("clerkUserId", "user_1")
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .header(VerlaAttachmentService.HDR_UPLOAD_TOKEN, "upload-ticket")
                         .content("bytes"))
                 .andExpect(status().isOk());
-        verify(attachmentService).uploadContent(eq("user_1"), eq("att_test"), eq("upload-ticket"), any());
+        verify(attachmentService).uploadContentForInternal(eq("att_test"), eq("upload-ticket"), any());
 
         mockMvc.perform(put("/v1/verla/v2/uploads/att_test/content")
                         .param("assignmentRecovery", "true")
-                        .requestAttr("clerkUserId", "user_1")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content("bytes"))
+                .andExpect(status().isUnauthorized());
+
+        ClerkClient.UserInfo userInfo = new ClerkClient.UserInfo();
+        userInfo.clerkUserId = "user_1";
+        when(clerkClient.verifyToken("signed-token")).thenReturn(userInfo);
+        mockMvc.perform(put("/v1/verla/v2/uploads/att_test/content")
+                        .param("assignmentRecovery", "true")
+                        .header("Authorization", "Bearer signed-token")
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content("bytes"))
                 .andExpect(status().isOk());

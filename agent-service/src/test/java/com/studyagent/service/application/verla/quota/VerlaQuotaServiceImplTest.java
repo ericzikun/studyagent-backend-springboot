@@ -377,7 +377,7 @@ class VerlaQuotaServiceImplTest {
     void assertSufficientForAssignmentRun_passes_whenExempt() {
         ReflectionTestUtils.setField(service, "quotaEnabled", false);
 
-        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc"));
+        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc", 22L));
         verifyNoInteractions(quotaDomainService);
     }
 
@@ -386,7 +386,7 @@ class VerlaQuotaServiceImplTest {
         when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1))
                 .thenReturn(true);
 
-        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc"));
+        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc", 22L));
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
     }
@@ -399,12 +399,28 @@ class VerlaQuotaServiceImplTest {
                 .thenReturn(balance(0));
 
         InsufficientQuotaException ex = assertThrows(InsufficientQuotaException.class,
-                () -> service.assertSufficientForAssignmentRun("user_abc"));
+                () -> service.assertSufficientForAssignmentRun("user_abc", 22L));
         assertEquals("user_abc", ex.getData().getClerkUserId());
         assertEquals("assignment", ex.getData().getPurchaseProductId());
         assertEquals("assignment_generate", ex.getData().getBlockedAction());
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any());
         verify(quotaDomainService, never()).consume(anyString(), anyString(), anyLong(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void assertSufficientForAssignmentRun_passes_whenTurnAlreadyCharged() {
+        VerlaSession charged = VerlaSession.builder()
+                .id(10L)
+                .turnId(22L)
+                .quotaLedgerId(777L)
+                .quotaAmount(1L)
+                .build();
+        when(sessionRepository.findByTurn(22L)).thenReturn(List.of(charged));
+        when(quotaDomainService.canConsume("user_abc", FeatureCode.TASK_CREATE.getCode(), 1))
+                .thenReturn(false);
+
+        assertDoesNotThrow(() -> service.assertSufficientForAssignmentRun("user_abc", 22L));
+        verifyNoInteractions(quotaDomainService);
     }
 
     // ---------------------- WordCounter ----------------------

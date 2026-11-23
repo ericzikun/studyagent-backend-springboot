@@ -6,6 +6,9 @@ import com.studyagent.common.analytics.AnalyticsEvents;
 import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
+import com.studyagent.common.exception.CommercialBlockData;
+import com.studyagent.common.exception.InsufficientQuotaData;
+import com.studyagent.common.exception.InsufficientQuotaException;
 import com.studyagent.common.verla.enums.VerlaSessionKind;
 import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.verla.entitlement.EffectiveEntitlements;
@@ -50,6 +53,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -493,7 +497,7 @@ class VerlaTurnOrchestratorTest {
         assertEquals(1001L, result.getAgentSessionId());
         MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.init");
         assertNotNull(clarifyCommand);
-        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun("user_1");
+        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun(Mockito.eq("user_1"), Mockito.any());
     }
 
     @Test
@@ -549,7 +553,7 @@ class VerlaTurnOrchestratorTest {
         assertEquals(1001L, result.getAgentSessionId());
         MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.init");
         assertNotNull(clarifyCommand);
-        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun("user_1");
+        Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun(Mockito.eq("user_1"), Mockito.any());
     }
 
     @ParameterizedTest
@@ -589,7 +593,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void finalizeAssignmentClarify_allowsUnsupportedPptWhileOutputTypeCheckIsBypassed() {
+    void finalizeAssignmentClarify_rejectsUnsupportedPptBeforeQuotaConsume() {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -638,26 +642,297 @@ class VerlaTurnOrchestratorTest {
                 .status(TurnStatus.PLANNING.name())
                 .build();
 
-        // [hotfix/outputtype] 产出类型检查在 finalize 入口被主动绕过
-        // （VerlaTurnOrchestrator 里 assertAssignmentOutputAllowed 的调用已注释），
-        // 所以 free 套餐选 ppt 不再被拦截：确认生成照常派发，额度照常扣减。
-        // 测试跟随该意图，不恢复校验。
-        orchestrator.finalizeAssignmentClarify(
-                "free_user",
-                74L,
-                null,
-                "form-ppt",
-                "Unsupported PPT request",
-                Map.of(),
-                List.of(),
-                Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
-                List.of(),
-                null);
+        assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user",
+                        74L,
+                        null,
+                        "form-ppt",
+                        "Unsupported PPT request",
+                        Map.of(),
+                        List.of(),
+                        Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
+                        List.of(),
+                        null));
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+    }
 
-        assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
-        Mockito.verify(entitlementService, Mockito.never())
+    @Test
+    void finalizeAssignmentClarify_mergesInferredDeliverableCountBeforeEntitlementGate() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        Mockito.doAnswer(invocation -> {
+                    Map<?, ?> form = invocation.getArgument(1);
+                    Map<?, ?> deliverableCount = (Map<?, ?>) form.get("deliverable_count");
+                    assertNotNull(deliverableCount);
+                    assertEquals(1, ((Number) deliverableCount.get("ppt")).intValue());
+                    throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+                })
+                .when(entitlementService)
                 .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
-        Mockito.verify(quotaService).consumeForAssignmentRun(Mockito.any());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(VerlaSession.builder()
+                .id(880L)
+                .turnId(700L)
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .status(SessionStatus.SUCCEEDED.name())
+                .resultJson(objectMapper.writeValueAsString(Map.of(
+                        "requirementForm", Map.of(
+                                "subject", "Marketing",
+                                "deliverable_count", Map.of("markdown", 1, "ppt", 1, "code", 0)))))
+                .build());
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user",
+                        74L,
+                        null,
+                        "form-inferred-ppt",
+                        "PPT inferred from request",
+                        Map.of("subject", "Marketing"),
+                        List.of(),
+                        Map.of("subject", "Marketing", "academic_level", "University"),
+                        List.of(),
+                        null));
+        assertNull(messageRepository.saved);
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+    }
+
+    @Test
+    void finalizeAssignmentClarify_quotaShortageWinsOverOutputTypeAndFileLimit() {
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        Mockito.doThrow(new InsufficientQuotaException("insufficient", InsufficientQuotaData.builder()
+                        .clerkUserId("free_user")
+                        .purchaseProductId("assignment")
+                        .blockedAction("assignment_generate")
+                        .build()))
+                .when(quotaService).assertSufficientForAssignmentRun("free_user", 700L);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                new VerlaConversationService(conversationRepository, messageRepository,
+                        new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper()),
+                conversationRepository,
+                turnRepository,
+                new FakeSessionRepository(),
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper),
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        InsufficientQuotaException ex = assertThrows(InsufficientQuotaException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user", 74L, null, "form-quota", "Quota first",
+                        Map.of(), List.of(),
+                        Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
+                        List.of(), null));
+
+        assertEquals("assignment_generate", ex.getData().getBlockedAction());
+        Mockito.verifyNoInteractions(entitlementService);
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+        assertTrue(messageRepository.savedMessages.isEmpty());
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+    }
+
+    @Test
+    void finalizeAssignmentClarify_outputTypeWinsOverFileLimit() {
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        EffectiveEntitlements entitlements = new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing"));
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user")).thenReturn(entitlements);
+        Mockito.doThrow(new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED))
+                .when(entitlementService).assertAssignmentOutputAllowed(
+                        Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        Mockito.doThrow(BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
+                        .blockedAction("assignment_generate")
+                        .build()))
+                .when(entitlementService).assertAssignmentFileLimit(Mockito.any(), Mockito.any());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                new VerlaConversationService(conversationRepository, messageRepository,
+                        new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper()),
+                conversationRepository,
+                turnRepository,
+                new FakeSessionRepository(),
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper),
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user", 74L, null, "form-output", "Output type first",
+                        Map.of(), List.of(),
+                        Map.of("deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)),
+                        List.of(), null));
+
+        assertEquals(ApiCode.OUTPUT_TYPE_NOT_ALLOWED.getCode(), ex.getCode());
+        Mockito.verify(quotaService).assertSufficientForAssignmentRun("free_user", 700L);
+        Mockito.verify(entitlementService, Mockito.never()).assertAssignmentFileLimit(Mockito.any(), Mockito.any());
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+        assertTrue(messageRepository.savedMessages.isEmpty());
+    }
+
+    @Test
+    void finalizeAssignmentClarify_fileLimitBlocksAtFinalizeWithPurchasePayload() {
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        EffectiveEntitlements entitlements = new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing"));
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user")).thenReturn(entitlements);
+        Mockito.doThrow(BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
+                        .reasonCode("file_limit_reached")
+                        .purchaseProductId("assignment")
+                        .blockedAction("assignment_generate")
+                        .maxFiles(3)
+                        .activeFiles(4L)
+                        .build()))
+                .when(entitlementService).assertAssignmentFileLimit(entitlements, 74L);
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                new VerlaConversationService(conversationRepository, messageRepository,
+                        new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper()),
+                conversationRepository,
+                turnRepository,
+                new FakeSessionRepository(),
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper),
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user", 74L, null, "form-files", "Too many files",
+                        Map.of(), List.of(),
+                        Map.of("deliverable_count", Map.of("markdown", 1, "ppt", 0, "code", 0)),
+                        List.of(), null));
+
+        assertEquals(ApiCode.FILE_LIMIT_REACHED.getCode(), ex.getCode());
+        CommercialBlockData data = assertInstanceOf(CommercialBlockData.class, ex.getData());
+        assertEquals("assignment", data.getPurchaseProductId());
+        assertEquals("assignment_generate", data.getBlockedAction());
+        assertEquals(3, data.getMaxFiles());
+        assertEquals(4L, data.getActiveFiles());
+        Mockito.verify(entitlementService).assertAssignmentOutputAllowed(Mockito.eq(entitlements), Mockito.anyMap());
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+        assertTrue(messageRepository.savedMessages.isEmpty());
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
     }
 
     @Test
@@ -905,7 +1180,7 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
-    void startAssignmentRunFromFinalClarify_dispatchesWithoutOutputTypeRecheckWhileBypassed() throws Exception {
+    void startAssignmentRunFromFinalClarify_skipsEntitlementRecheckAfterFinalizeGate() throws Exception {
         FakeSessionRepository sessionRepository = new FakeSessionRepository();
         FakeTurnRepository turnRepository = new FakeTurnRepository();
         FakeMessageRepository messageRepository = new FakeMessageRepository();
@@ -964,13 +1239,14 @@ class VerlaTurnOrchestratorTest {
                                         "deliverable_count", Map.of("markdown", 0, "ppt", 1, "code", 0)))))
                         .build());
 
-        // [hotfix/outputtype] dispatch 前的产出类型复检同样被绕过，ppt 不再拦在派发前。
-        // 测试跟随该意图，不恢复校验。
         orchestrator.startAssignmentRunFromFinalClarify("free_user", 74L);
 
         assertNotNull(mqOutboxRepository.findSavedByAction("cmd.assignment.run"));
         Mockito.verify(entitlementService, Mockito.never())
                 .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        Mockito.verify(entitlementService, Mockito.never()).assertAssignmentFileLimit(Mockito.any(), Mockito.any());
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+        Mockito.verify(quotaService).inheritAssignmentQuotaLedger(Mockito.any(), Mockito.eq(700L));
     }
 
     @Test
@@ -1217,8 +1493,7 @@ class VerlaTurnOrchestratorTest {
         EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
         Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
                 .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
-        // Auto-run 失败改成由额度台账继承失败触发（产出类型校验已按 hotfix 绕过，
-        // 不再能作为失败来源）。被测能力不变：setup 抛错 → run 标 FAILED + 持久化诊断。
+        // Auto-run 失败由额度台账继承失败触发；被测能力不变：setup 抛错 → run 标 FAILED + 持久化诊断。
         Mockito.doThrow(new IllegalStateException("assignment quota ledger not found"))
                 .when(quotaService)
                 .inheritAssignmentQuotaLedger(Mockito.any(), Mockito.any());
@@ -1261,7 +1536,7 @@ class VerlaTurnOrchestratorTest {
                 .status(SessionStatus.RUNNING.name())
                 .build();
 
-        // A genuine ppt deliverable (deliverable_count.ppt=1) that the free plan does not allow.
+        // 权益已在 finalize 入口判定，auto-run 阶段不再拦截；这里用 ledger 继承失败触发 setup 失败。
         orchestrator.onAssignmentClarifyCompleted(800L, Map.of(
                 "isReadyForGeneration", true,
                 "requirementForm", Map.of(
@@ -2495,7 +2770,7 @@ class VerlaTurnOrchestratorTest {
         }
 
         @Override
-        public void assertSufficientForAssignmentRun(String clerkUserId) {
+        public void assertSufficientForAssignmentRun(String clerkUserId, Long turnId) {
         }
 
         @Override

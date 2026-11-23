@@ -1276,6 +1276,12 @@ public class VerlaTurnOrchestrator {
                     .build();
         }
 
+        // finalize 请求只带表单可编辑字段；交付物计数来自上一步识别结果，必须合并后再做商业化校验。
+        Map<String, Object> effectiveRequirementForm =
+                mergeRequirementFormWithInferred(turn, requirementForm, reservedFields);
+        assertAssignmentFinalizeEntitlements(userId, conversationId, turn.getId(),
+                normalizeAssignmentRequirementForm(effectiveRequirementForm, reservedFields, normalizedAnswers, null));
+
         String messageText = buildClarifyUserMessageText(
                 "generation", "", reservedFields, normalizedAnswers, requirementForm);
         Map<String, Object> blocks = new LinkedHashMap<>();
@@ -1320,6 +1326,18 @@ public class VerlaTurnOrchestrator {
                 .planSessionId(turn.getPlanSessionId())
                 .agentSessionId(nextSession.getId())
                 .build();
+    }
+
+    /**
+     * 商业化拦截统一在 finalize（confirm/skip）判定，按 额度 &gt; 输出类型 &gt; 文件数 短路，
+     * 保证一次只抛一个可购买错误。签名期不再做套餐判定，否则弹窗会早于追问表单出现。
+     */
+    private void assertAssignmentFinalizeEntitlements(String userId, Long conversationId, Long turnId,
+                                                      Map<String, Object> normalizedRequirementForm) {
+        verlaQuotaService.assertSufficientForAssignmentRun(userId, turnId);
+        EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(userId);
+        entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
+        entitlementService.assertAssignmentFileLimit(entitlements, conversationId);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -2293,8 +2311,6 @@ public class VerlaTurnOrchestrator {
 
         EffectiveEntitlements entitlements = entitlementService.getEffectiveEntitlements(
                 conv == null ? null : conv.getUserId());
-        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
-        // entitlementService.assertAssignmentOutputAllowed(entitlements, normalizedRequirementForm);
 
         // ✦ 商业化扣费：CMD_ASSIGNMENT_CLARIFY 派发前（finalize 确认生成）同事务扣 1 个 task_create；
         //    余额不足抛 InsufficientQuotaException；outbox 尚未写入，整事务回滚不会产生「钱扣了命令没发」。
@@ -2356,10 +2372,7 @@ public class VerlaTurnOrchestrator {
                 entitlements.allowedOutputTypes());
         log.info("[Verla] assignment auto-run entitlement check conversationId={} turnId={} sessionId={} diagnostics={}",
                 turn.getConversationId(), turn.getId(), s.getId(), diagnostics);
-        // [hotfix/outputtype] 暂时绕过套餐产出类型检查
-        // entitlementService.assertAssignmentOutputAllowed(
-        //         entitlements,
-        //         castMap(normalizedFinalClarifyResult.get("requirementForm")));
+        // 权益已在 finalize 入口判定并扣费，run 阶段不重复拦截，避免扣费后才失败。
 
         // ✦ 商业化：run 阶段不重复扣费，继承 finalize 阶段已绑定的 quota_ledger（保证 run 失败可退款）。
         verlaQuotaService.inheritAssignmentQuotaLedger(s.getId(), turn.getId());
@@ -3043,6 +3056,39 @@ public class VerlaTurnOrchestrator {
             }
         }
         return Map.of();
+    }
+
+    /**
+     * 取本 turn 最近一次识别（deep_understanding / clarify）产出的 requirementForm。
+     * finalize 请求只回传表单字段，deliverable_count 等推断字段只存在于该结果里。
+     */
+    private Map<String, Object> findLatestInferredRequirementForm(VerlaTurn turn) {
+        List<VerlaSession> sessions = sessionRepository.findByTurn(turn.getId());
+        for (int i = sessions.size() - 1; i >= 0; i--) {
+            VerlaSession session = sessions.get(i);
+            if (!VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())) {
+                continue;
+            }
+            Map<String, Object> result = parseSlotsJson(session.getResultJson());
+            Map<String, Object> requirementForm = castMap(result.get("requirementForm"));
+            if (!requirementForm.isEmpty()) {
+                return requirementForm;
+            }
+        }
+        return Map.of();
+    }
+
+    private Map<String, Object> mergeRequirementFormWithInferred(VerlaTurn turn,
+                                                                 Map<String, Object> requirementForm,
+                                                                 Map<String, Object> reservedFields) {
+        Map<String, Object> merged = new LinkedHashMap<>(findLatestInferredRequirementForm(turn));
+        if (requirementForm != null) {
+            merged.putAll(requirementForm);
+        }
+        if (reservedFields != null) {
+            merged.putAll(reservedFields);
+        }
+        return merged;
     }
 
     private static boolean isAssignmentIntent(String intent) {

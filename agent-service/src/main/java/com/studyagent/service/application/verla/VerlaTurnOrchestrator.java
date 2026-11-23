@@ -1589,8 +1589,11 @@ public class VerlaTurnOrchestrator {
                     .build();
         }
 
+        // finalize 请求只带表单可编辑字段；交付物计数来自上一步识别结果，必须合并后再做商业化校验。
+        Map<String, Object> effectiveRequirementForm =
+                mergeRequirementFormWithInferred(turn, requirementForm, reservedFields);
         assertAssignmentFinalizeEntitlements(userId, conversationId, turn.getId(),
-                normalizeAssignmentRequirementForm(requirementForm, reservedFields, normalizedAnswers, null));
+                normalizeAssignmentRequirementForm(effectiveRequirementForm, reservedFields, normalizedAnswers, null));
 
         String messageText = buildClarifyUserMessageText(
                 "generation", "", reservedFields, normalizedAnswers, requirementForm);
@@ -3355,6 +3358,39 @@ public class VerlaTurnOrchestrator {
             }
         }
         return Map.of();
+    }
+
+    /**
+     * 取本 turn 最近一次识别（deep_understanding / clarify）产出的 requirementForm。
+     * finalize 请求只回传表单字段，deliverable_count 等推断字段只存在于该结果里。
+     */
+    private Map<String, Object> findLatestInferredRequirementForm(VerlaTurn turn) {
+        List<VerlaSession> sessions = sessionRepository.findByTurn(turn.getId());
+        for (int i = sessions.size() - 1; i >= 0; i--) {
+            VerlaSession session = sessions.get(i);
+            if (!VerlaSessionKind.ASSIGNMENT.name().equals(session.getKind())) {
+                continue;
+            }
+            Map<String, Object> result = parseSlotsJson(session.getResultJson());
+            Map<String, Object> requirementForm = castMap(result.get("requirementForm"));
+            if (!requirementForm.isEmpty()) {
+                return requirementForm;
+            }
+        }
+        return Map.of();
+    }
+
+    private Map<String, Object> mergeRequirementFormWithInferred(VerlaTurn turn,
+                                                                 Map<String, Object> requirementForm,
+                                                                 Map<String, Object> reservedFields) {
+        Map<String, Object> merged = new LinkedHashMap<>(findLatestInferredRequirementForm(turn));
+        if (requirementForm != null) {
+            merged.putAll(requirementForm);
+        }
+        if (reservedFields != null) {
+            merged.putAll(reservedFields);
+        }
+        return merged;
     }
 
     private static boolean isAssignmentIntent(String intent) {

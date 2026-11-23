@@ -620,6 +620,89 @@ class VerlaTurnOrchestratorTest {
     }
 
     @Test
+    void finalizeAssignmentClarify_mergesInferredDeliverableCountBeforeEntitlementGate() throws Exception {
+        FakeSessionRepository sessionRepository = new FakeSessionRepository();
+        FakeTurnRepository turnRepository = new FakeTurnRepository();
+        FakeMessageRepository messageRepository = new FakeMessageRepository();
+        FakeConversationRepository conversationRepository = new FakeConversationRepository();
+        FakeMqOutboxRepository mqOutboxRepository = new FakeMqOutboxRepository();
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        MqOutboxService mqOutboxService = new MqOutboxService(mqOutboxRepository, event -> { }, objectMapper);
+        VerlaConversationService conversationService = new VerlaConversationService(
+                conversationRepository, messageRepository, new ConversationStateMachine(), new com.fasterxml.jackson.databind.ObjectMapper());
+        VerlaQuotaService quotaService = Mockito.mock(VerlaQuotaService.class);
+        EntitlementService entitlementService = Mockito.mock(EntitlementService.class);
+        Mockito.when(entitlementService.getEffectiveEntitlements("free_user"))
+                .thenReturn(new EffectiveEntitlements("free", "free", 3, 3, Set.of("writing")));
+        Mockito.doAnswer(invocation -> {
+                    Map<?, ?> form = invocation.getArgument(1);
+                    Map<?, ?> deliverableCount = (Map<?, ?>) form.get("deliverable_count");
+                    assertNotNull(deliverableCount);
+                    assertEquals(1, ((Number) deliverableCount.get("ppt")).intValue());
+                    throw new BusinessException(ApiCode.OUTPUT_TYPE_NOT_ALLOWED);
+                })
+                .when(entitlementService)
+                .assertAssignmentOutputAllowed(Mockito.any(EffectiveEntitlements.class), Mockito.anyMap());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                conversationService,
+                conversationRepository,
+                turnRepository,
+                sessionRepository,
+                messageRepository,
+                new NoopAttachmentRepository(),
+                new NoopArtifactRepository(),
+                null,
+                new TurnStateMachine(),
+                new SessionStateMachine(),
+                mqOutboxService,
+                objectMapper,
+                quotaService,
+                entitlementService,
+                null,
+                event -> {},
+                mockAnalyticsService());
+
+        conversationRepository.conversation = VerlaConversation.builder()
+                .id(74L)
+                .userId("free_user")
+                .status(ConversationStatus.ACTIVE.getDbValue())
+                .build();
+        turnRepository.turn = VerlaTurn.builder()
+                .id(700L)
+                .conversationId(74L)
+                .userMessageId(901L)
+                .resolvedIntent("ASSIGNMENT")
+                .status(TurnStatus.PLANNING.name())
+                .build();
+        sessionRepository.sessionsByTurn = List.of(VerlaSession.builder()
+                .id(880L)
+                .turnId(700L)
+                .kind(VerlaSessionKind.ASSIGNMENT.name())
+                .status(SessionStatus.SUCCEEDED.name())
+                .resultJson(objectMapper.writeValueAsString(Map.of(
+                        "requirementForm", Map.of(
+                                "subject", "Marketing",
+                                "deliverable_count", Map.of("markdown", 1, "ppt", 1, "code", 0)))))
+                .build());
+
+        assertThrows(BusinessException.class,
+                () -> orchestrator.finalizeAssignmentClarify(
+                        "free_user",
+                        74L,
+                        null,
+                        "form-inferred-ppt",
+                        "PPT inferred from request",
+                        Map.of("subject", "Marketing"),
+                        List.of(),
+                        Map.of("subject", "Marketing", "academic_level", "University"),
+                        List.of(),
+                        null));
+        assertNull(messageRepository.saved);
+        assertNull(mqOutboxRepository.findSavedByAction("cmd.assignment.clarify"));
+        Mockito.verify(quotaService, Mockito.never()).consumeForAssignmentRun(Mockito.any());
+    }
+
+    @Test
     void finalizeAssignmentClarify_quotaShortageWinsOverOutputTypeAndFileLimit() {
         FakeMessageRepository messageRepository = new FakeMessageRepository();
         FakeConversationRepository conversationRepository = new FakeConversationRepository();

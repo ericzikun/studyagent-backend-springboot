@@ -785,7 +785,8 @@ public class DemoNoteService {
      * <p>best-effort：extras 只是附加视图，缺任意一项都不影响笔记本身。
      */
     @Transactional
-    public NoteConversation applyExtras(Long verlaConversationId, String mindmapJson, String blogMd) {
+    public NoteConversation applyExtras(Long verlaConversationId, String mindmapJson, String blogMd,
+                                        String quizJson) {
         NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
         if (c == null) {
             log.warn("[Notes] extras dropped: no note conversation for verlaConvId={}", verlaConversationId);
@@ -810,15 +811,20 @@ public class DemoNoteService {
             c.setBlogMd(blogMd);
             changed = true;
         }
+        if (quizJson != null && !quizJson.isBlank()) {
+            c.setQuizJson(quizJson);
+            changed = true;
+        }
         if (!changed) {
             return c;
         }
         // 音频 reaper 用 updated_at 判断 PROCESSING 是否过旧；extras 是新活动，必须刷新。
         c.setUpdatedAt(LocalDateTime.now());
         repo.saveConversation(c);
-        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} audioStatus={}",
+        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} quizChars={} audioStatus={}",
                 verlaConversationId, c.getMindmapJson() != null,
                 c.getBlogMd() == null ? 0 : c.getBlogMd().length(),
+                c.getQuizJson() == null ? 0 : c.getQuizJson().length(),
                 c.getBlogAudioStatus());
         return c;
     }

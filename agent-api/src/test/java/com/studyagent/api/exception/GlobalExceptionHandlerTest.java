@@ -20,6 +20,30 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class GlobalExceptionHandlerTest {
+    @org.springframework.web.bind.annotation.RestController
+    static class RecoveryReadProbe {
+        @org.springframework.web.bind.annotation.GetMapping("/recovery-read-probe")
+        public void read() { throw new com.studyagent.service.domain.billing.PaymentRecoveryReadException("sub_private",404,"invoice_upcoming_none","req_private",new IllegalStateException("provider private detail")); }
+        @org.springframework.web.bind.annotation.GetMapping("/ordinary-state-probe")
+        public void ordinary() { throw new IllegalStateException("ordinary business state"); }
+    }
+
+    @Test void recoveryProviderReadFailureIs503WithoutExposingProviderDetails() throws Exception {
+        var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new RecoveryReadProbe())
+                .setControllerAdvice(new GlobalExceptionHandler(Mockito.mock(BillingDomainService.class))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/recovery-read-probe"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isServiceUnavailable())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.meta.statusCode").value(ApiCode.PAYMENT_PROCESSING.getCode()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private"))));
+    }
+
+    @Test void unrelatedIllegalStateKeepsItsExisting400Mapping() throws Exception {
+        var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new RecoveryReadProbe())
+                .setControllerAdvice(new GlobalExceptionHandler(Mockito.mock(BillingDomainService.class))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ordinary-state-probe"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.meta.statusCode").value(ApiCode.ILLEGAL_STATE.getCode()));
+    }
 
     @Test
     void handleInsufficientQuotaException_enrichesCurrentPlan() {

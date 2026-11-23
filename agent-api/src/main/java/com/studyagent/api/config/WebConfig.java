@@ -34,9 +34,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/v1/public/email-leads",  // 公开邮箱留资，使用蜜罐 + Redis 限流保护
                 "/v1/internal/reports/**",   // 数据报表手动触发，使用 X-Report-Token
                 "/v1/internal/**",           // Verla 内部 API（Python -> Java），使用 IP 白名单 + Token + HMAC
-                // 附件内容上传：使用 upload ticket（绑定 user + objectId，TTL 1h）鉴权。
-                // 慢上传耗时可能超过 Clerk JWT 的 60s 有效期，鉴权必须发生在 ticket 层。
-                "/v1/verla/v2/uploads/*/content",
+                // 普通附件内容上传在 AuthInterceptor 内按请求类型放行给 upload ticket 鉴权。
+                // 普通 finalize 始终用 upload ticket 鉴权。
                 "/v1/verla/v2/uploads/*/finalize",
                 // 笔记博客音频：audio 标签带不了 Authorization，鉴权用 exp + HMAC 签名。
                 "/v1/demo/note/blog-audio/**"

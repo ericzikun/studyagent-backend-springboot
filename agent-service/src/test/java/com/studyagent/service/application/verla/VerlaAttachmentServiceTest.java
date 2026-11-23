@@ -39,6 +39,7 @@ class VerlaAttachmentServiceTest {
     FakeAttachmentRepository attachmentRepository;
     OssStorageService ossStorageService;
     EntitlementService entitlementService;
+    MqOutboxService mqOutboxService;
 
     VerlaAttachmentService service;
 
@@ -48,8 +49,9 @@ class VerlaAttachmentServiceTest {
         conversationService = new VerlaConversationService(new FakeConversationRepository(), null, null, new com.fasterxml.jackson.databind.ObjectMapper());
         ossStorageService = new DisabledOssStorageService();
         entitlementService = org.mockito.Mockito.mock(EntitlementService.class);
+        mqOutboxService = org.mockito.Mockito.mock(MqOutboxService.class);
         service = new VerlaAttachmentService(
-                conversationService, attachmentRepository, new MqOutboxService(null, null, null), ossStorageService,
+                conversationService, attachmentRepository, mqOutboxService, ossStorageService,
                 entitlementService);
         ReflectionTestUtils.setField(service, "maxBytes", 1024L);
         ReflectionTestUtils.setField(service, "signTtlSeconds", 3600L);
@@ -252,6 +254,48 @@ class VerlaAttachmentServiceTest {
         assertTrue(Files.exists(tempDir.resolve(pending.getOssKey())));
     }
 
+    @Test
+    void assignment_recovery_waits_for_complete_bytes_and_only_dispatches_parse_once() throws Exception {
+        String objectId = service.requestAssignmentUploadSign(
+                USER_ID, 74L, "brief.txt", "text/plain", 5L).getObjectId();
+        assertFalse(service.recoverAssignmentUpload(USER_ID, objectId));
+        assertThrows(BusinessException.class, () -> service.uploadAssignmentContent(
+                USER_ID, objectId, new ByteArrayInputStream("he".getBytes())));
+        assertFalse(service.recoverAssignmentUpload(USER_ID, objectId));
+
+        service.uploadAssignmentContent(USER_ID, objectId, new ByteArrayInputStream("hello".getBytes()));
+        assertTrue(service.recoverAssignmentUpload(USER_ID, objectId));
+        assertTrue(service.recoverAssignmentUpload(USER_ID, objectId));
+        assertEquals("PARSING", attachmentRepository.findByObjectId(objectId).getStatus());
+        org.mockito.Mockito.verify(mqOutboxService, org.mockito.Mockito.times(1))
+                .createVerlaCommand(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.nullable(String.class),
+                        org.mockito.ArgumentMatchers.eq("cmd.attachment.parse"));
+    }
+
+    @Test
+    void assignment_resume_rechecks_an_expired_file_reservation() throws Exception {
+        String objectId = service.requestAssignmentUploadSign(
+                USER_ID, 74L, "brief.txt", "text/plain", 5L).getObjectId();
+        attachmentRepository.findByObjectId(objectId).setCreatedAt(LocalDateTime.now().minusDays(1));
+
+        service.uploadAssignmentContent(USER_ID, objectId, new ByteArrayInputStream("hello".getBytes()));
+
+        org.mockito.Mockito.verify(entitlementService, org.mockito.Mockito.times(2))
+                .assertCanReserveUserUpload(USER_ID, 74L);
+    }
+
+    @Test
+    void assignment_recovery_does_not_finalize_an_unmarked_user_upload() {
+        VerlaUploadSignResult signed = service.requestSign(
+                USER_ID, 74L, "brief.txt", "text/plain", 5L, null, null, null, null);
+        VerlaAttachment attachment = attachmentRepository.findByObjectId(signed.getObjectId());
+        attachment.setStorageUri("oss://bucket/brief.txt");
+        attachment.setChecksumSha256("saved");
+        assertThrows(BusinessException.class, () -> service.recoverAssignmentUpload(USER_ID, signed.getObjectId()));
+        org.mockito.Mockito.verifyNoInteractions(mqOutboxService);
+    }
+
     private static class FakeConversationRepository implements VerlaConversationRepository {
         @Override
         public VerlaConversation save(VerlaConversation conversation) {
@@ -356,12 +400,19 @@ class VerlaAttachmentServiceTest {
 
         @Override
         public VerlaAttachment updateParseProgress(VerlaAttachment patch) {
+            VerlaAttachment row = findByObjectId(patch.getObjectId());
+            if (row != null && patch.getStatus() != null) row.setStatus(patch.getStatus());
             return patch;
         }
 
         @Override
         public VerlaAttachment updateByObjectIdSelective(VerlaAttachment patch) {
             lastPatch = patch;
+            VerlaAttachment row = findByObjectId(patch.getObjectId());
+            if (row != null && patch.getStorageUri() != null) {
+                row.setStorageUri(patch.getStorageUri());
+                row.setChecksumSha256(patch.getChecksumSha256());
+            }
             return patch;
         }
 

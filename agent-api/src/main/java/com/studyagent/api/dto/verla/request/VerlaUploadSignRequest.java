@@ -33,4 +33,5 @@ public class VerlaUploadSignRequest {
     private String attachmentOrigin;
     /** Optional attachment metadata JSON supplied by the caller. */
     private String metaJson;
+    private Boolean assignmentFirstSubmit;
 }

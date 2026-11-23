@@ -40,6 +40,8 @@ import com.studyagent.service.domain.verla.state.TurnStatus;
 import com.studyagent.service.application.verla.dto.PlanConfirmResult;
 import com.studyagent.service.application.verla.dto.SendMessageResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 import java.time.LocalDateTime;
@@ -552,6 +554,42 @@ class VerlaTurnOrchestratorTest {
         MqOutbox clarifyCommand = mqOutboxRepository.findSavedByAction("cmd.assignment.init");
         assertNotNull(clarifyCommand);
         Mockito.verify(quotaService, Mockito.never()).assertSufficientForAssignmentRun(Mockito.eq("user_1"), Mockito.any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void assignment_first_submit_retry_reuses_the_user_message_and_turn(boolean explicitAssignment) {
+        FakeSessionRepository sessions = new FakeSessionRepository();
+        FakeTurnRepository turns = new FakeTurnRepository();
+        FakeMessageRepository messages = new FakeMessageRepository();
+        FakeConversationRepository conversations = new FakeConversationRepository();
+        FakeMqOutboxRepository outbox = new FakeMqOutboxRepository();
+        ObjectMapper json = new ObjectMapper().registerModule(new JavaTimeModule());
+        VerlaTurnOrchestrator orchestrator = new VerlaTurnOrchestrator(
+                new VerlaConversationService(conversations, messages, new ConversationStateMachine(), json),
+                conversations, turns, sessions, messages, new NoopAttachmentRepository(),
+                new NoopArtifactRepository(), null, new TurnStateMachine(), new SessionStateMachine(),
+                new MqOutboxService(outbox, event -> {}, json), json,
+                new NoopQuotaService(), mockEntitlementService(), null, event -> {}, mockAnalyticsService());
+
+        conversations.conversation = VerlaConversation.builder().id(74L).userId("user_1")
+                .status(ConversationStatus.ACTIVE.getDbValue()).build();
+        SendMessageCommand command = SendMessageCommand.builder()
+                .conversationId(74L).userId("user_1").text("Use the attached file.")
+                .forceIntent(explicitAssignment ? "ASSIGNMENT" : null)
+                .clientMessageId("assignment-first-submit-78a4225b-5530-4335-a7c3-c90720dee3ce")
+                .attachmentsJson("[{\"objectId\":\"att_file\"}]")
+                .build();
+
+        SendMessageResult accepted = orchestrator.onUserMessage(command);
+        SendMessageResult retried = orchestrator.onUserMessage(command);
+
+        assertEquals(accepted.getUserMessageId(), retried.getUserMessageId());
+        assertEquals(accepted.getTurnId(), retried.getTurnId());
+        assertEquals(accepted.getAgentSessionId(), retried.getAgentSessionId());
+        assertEquals(accepted.getPlanSessionId(), retried.getPlanSessionId());
+        assertEquals(1, messages.savedMessages.size());
+        assertEquals(command.getAttachmentsJson(), messages.savedMessages.get(0).getAttachmentsJson());
     }
 
     @Test
@@ -2480,6 +2518,14 @@ class VerlaTurnOrchestratorTest {
                     .filter(message -> id.equals(message.getId()))
                     .findFirst()
                     .orElse(null);
+        }
+
+        @Override
+        public VerlaMessage findAssignmentFirstSubmit(Long conversationId, String submitId) {
+            return savedMessages.stream()
+                    .filter(message -> conversationId.equals(message.getConversationId())
+                            && message.getMetaJson() != null && message.getMetaJson().contains(submitId))
+                    .findFirst().orElse(null);
         }
 
         @Override

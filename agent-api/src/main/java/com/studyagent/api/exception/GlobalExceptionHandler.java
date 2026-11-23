@@ -192,6 +192,14 @@ public class GlobalExceptionHandler {
     /**
      * 状态异常
      */
+    @ExceptionHandler(com.studyagent.service.domain.billing.PaymentRecoveryReadException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handlePaymentRecoveryReadException(com.studyagent.service.domain.billing.PaymentRecoveryReadException ex) {
+        log.warn("Payment recovery provider read failed: status={}, code={}, request={}",
+                ex.getProviderStatus(), ex.getProviderCode(), ex.getProviderRequestId());
+        return Result.error(ApiCode.PAYMENT_PROCESSING);
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleIllegalStateException(IllegalStateException ex) {

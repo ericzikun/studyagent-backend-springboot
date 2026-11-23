@@ -1390,6 +1390,94 @@ class SubscriptionPaymentRecoveryServiceTest {
         var order=new RechargeOrderEntity();order.setOrderNo("order_new");order.setClerkUserId("user");order.setOrderType("subscription_replacement");order.setTargetPlanCode("pro_monthly");order.setPriceCents(2900);order.setQuotedAmountCents(2900);order.setCurrency("usd");when(orders.selectOne(any())).thenReturn(order);
         var plan=new SubscriptionPlanEntity();plan.setPlanCode("pro_monthly");plan.setTier("pro");plan.setBillingInterval("month");when(plans.selectOne(any())).thenReturn(plan);return order;
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"month","year"})
+    void completedCancellationFromRenewalDoesNotRequireAnotherInvoiceOrRepeatTheWrite(String interval) {
+        var f=paidPreferenceFixture(interval);var admitted=com.google.gson.JsonParser.parseString(f.root().getContractSnapshot()).getAsJsonObject().get("recovery_admission").deepCopy();
+        when(stripe.preview("sub_old")).thenThrow(new IllegalStateException("invoice_upcoming_none"));
+        when(stripe.execute(any())).thenAnswer(call->{
+            f.snapshot().subscription().setCancelAtPeriodEnd(true);
+            f.snapshot().subscription().setCancelAt(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(f.root().getEntitlementEndAt()));
+            return new SubscriptionRecoveryStripeGateway.WriteResult("SUCCEEDED","req_cancel",null,f.snapshot().subscription());
+        });
+        assertDoesNotThrow(()->service.setCancellationPreference("user",1L,true));
+        assertDoesNotThrow(()->service.setCancellationPreference("user",1L,true));
+        assertDoesNotThrow(()->service.reconcile(1L));
+        assertEquals(1,f.ledger().stream().filter(a->"SET_CANCEL_PREFERENCE".equals(a.getActionType())).count());
+        assertEquals("CONFIRMED",f.root().getAnchorSyncState());assertEquals("RELEASED",f.root().getProtectionState());assertEquals("GRANTED",f.root().getGrantState());assertEquals("NONE",f.root().getReviewState());
+        assertEquals(admitted,com.google.gson.JsonParser.parseString(f.root().getContractSnapshot()).getAsJsonObject().get("recovery_admission"));
+        assertTrue(users.selectByUser("user").getCancelAtPeriodEnd());verify(stripe,times(1)).execute(any());verify(stripe,never()).preview(anyString());verifyNoInteractions(f.quota());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"READY","UNKNOWN","FOREIGN","MISMATCH","FIXED_DATE","PRICE","QUANTITY","CURRENCY","NEW_SCHEDULE"})
+    void pendingOrConflictingCancellationCannotConfirmRenewalOrClearPaidRights(String condition) {
+        var f=paidPreferenceFixture("year");var sub=f.snapshot().subscription();sub.setCancelAtPeriodEnd(true);sub.setCancelAt(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(f.root().getEntitlementEndAt()));
+        var cancel=readyAction("SET_CANCEL_PREFERENCE","FOREIGN".equals(condition)?"sub_other":"sub_old");cancel.setActionKey("cancel_intent");cancel.setStatus(Set.of("READY","UNKNOWN").contains(condition)?condition:"SUCCEEDED");cancel.setPayloadJson("{\"cancel_at_period_end\":true}");f.ledger().add(cancel);
+        var saved=com.google.gson.JsonParser.parseString(f.root().getContractSnapshot()).getAsJsonObject();saved.add("cancellation_intent",com.google.gson.JsonParser.parseString("{\"action_key\":\"cancel_intent\",\"requested\":true}"));f.root().setContractSnapshot(saved.toString());
+        if("MISMATCH".equals(condition))sub.setCancelAt(sub.getCancelAt()-1);
+        if("FIXED_DATE".equals(condition))sub.setCancelAtPeriodEnd(false);
+        if("PRICE".equals(condition)){var price=ApiResource.GSON.fromJson(sub.getItems().getData().get(0).getPrice().toJson(),Price.class);price.setId("price_changed");sub.getItems().getData().get(0).setPrice(price);}
+        if("QUANTITY".equals(condition))sub.getItems().getData().get(0).setQuantity(2L);
+        if("CURRENCY".equals(condition))sub.setCurrency("sgd");
+        if("NEW_SCHEDULE".equals(condition))sub.setSchedule("sched_changed");
+        when(stripe.preview("sub_old")).thenThrow(new IllegalStateException("invoice_upcoming_none"));
+        assertDoesNotThrow(()->service.reconcile(1L));
+        if(!Set.of("READY","UNKNOWN").contains(condition)){assertEquals("REVIEW",f.root().getAnchorSyncState());assertNotEquals("NONE",f.root().getReviewState());}
+        assertEquals("GRANTED",f.root().getGrantState());assertNotNull(f.root().getEntitlementEndAt());verify(stripe,never()).preview(anyString());verify(stripe,never()).execute(any());verifyNoInteractions(f.quota());
+    }
+
+    @Test void untrackedPeriodEndCancellationIsReviewedInsteadOfAssumingAnInvoiceWillExist() {
+        var f=paidPreferenceFixture("month");f.snapshot().subscription().setCancelAtPeriodEnd(true);f.snapshot().subscription().setCancelAt(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(f.root().getEntitlementEndAt()));
+        when(stripe.preview("sub_old")).thenThrow(new IllegalStateException("invoice_upcoming_none"));
+        assertDoesNotThrow(()->service.reconcile(1L));assertEquals("REVIEW",f.root().getAnchorSyncState());assertEquals("GRANTED",f.root().getGrantState());verify(stripe,never()).preview(anyString());verifyNoInteractions(f.quota());
+    }
+
+    @Test void completedResumeOfAnAdmittedPeriodEndContractMustVerifyTheNextInvoice() {
+        var f=paidPreferenceFixture("month");var saved=com.google.gson.JsonParser.parseString(f.root().getContractSnapshot()).getAsJsonObject();saved.getAsJsonObject("recovery_admission").addProperty("cancelMode","PERIOD_END");
+        saved.add("cancellation_intent",com.google.gson.JsonParser.parseString("{\"action_key\":\"resume_intent\",\"requested\":false}"));f.root().setContractSnapshot(saved.toString());
+        var resume=readyAction("SET_CANCEL_PREFERENCE","sub_old");resume.setActionKey("resume_intent");resume.setStatus("SUCCEEDED");resume.setPayloadJson("{\"cancel_at_period_end\":false}");f.ledger().add(resume);
+        service.reconcile(1L);assertEquals("CONFIRMED",f.root().getAnchorSyncState());verify(stripe).preview("sub_old");verifyNoInteractions(f.quota());
+    }
+
+    @Test void anOppositePreferenceArrivingDuringPreviewCannotBeConfirmedByTheOldRead() {
+        var f=paidPreferenceFixture("month");f.root().setAnchorSyncState("PENDING");var preview=stripe.preview("sub_old");clearInvocations(stripe);
+        when(stripe.preview("sub_old")).thenAnswer(call->{
+            var saved=com.google.gson.JsonParser.parseString(f.root().getContractSnapshot()).getAsJsonObject();saved.add("cancellation_intent",com.google.gson.JsonParser.parseString("{\"action_key\":\"new_cancel\",\"requested\":true}"));f.root().setContractSnapshot(saved.toString());
+            return preview;
+        });
+        service.reconcile(1L);assertEquals("PENDING",f.root().getAnchorSyncState());assertEquals("GRANTED",f.root().getGrantState());verifyNoInteractions(f.quota());
+    }
+
+    @Test void aReadFailureAfterConfirmedCancellationDoesNotReportThatTheWriteFailed() {
+        var f=paidPreferenceFixture("year");var reads=new java.util.concurrent.atomic.AtomicInteger();
+        when(stripe.readInvoice("in_old")).thenAnswer(call->{
+            if(reads.incrementAndGet()>=3)throw new PaymentRecoveryReadException("in_old",0,null,null,new java.net.SocketTimeoutException());
+            return f.snapshot();
+        });
+        when(stripe.execute(any())).thenAnswer(call->{f.snapshot().subscription().setCancelAtPeriodEnd(true);f.snapshot().subscription().setCancelAt(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(f.root().getEntitlementEndAt()));return new SubscriptionRecoveryStripeGateway.WriteResult("SUCCEEDED","req_cancel",null,f.snapshot().subscription());});
+        assertDoesNotThrow(()->service.setCancellationPreference("user",1L,true));
+        var cancel=f.ledger().stream().filter(a->"SET_CANCEL_PREFERENCE".equals(a.getActionType())).findFirst().orElseThrow();
+        assertEquals("SUCCEEDED",cancel.getStatus());assertNotNull(f.root().getNextReconcileAt());assertEquals("GRANTED",f.root().getGrantState());verify(stripe,times(1)).execute(any());verifyNoInteractions(f.quota());
+    }
+
+    @Test void aReadFailureBeforeCancellationCannotCreateOrDispatchAnIntent() {
+        var f=paidPreferenceFixture("year");var failure=new PaymentRecoveryReadException("in_old",0,null,null,new java.net.SocketTimeoutException());
+        when(stripe.readInvoice("in_old")).thenThrow(failure);
+        assertSame(failure,assertThrows(PaymentRecoveryReadException.class,()->service.setCancellationPreference("user",1L,true)));
+        assertTrue(f.ledger().stream().noneMatch(a->"SET_CANCEL_PREFERENCE".equals(a.getActionType())));assertEquals("GRANTED",f.root().getGrantState());verify(stripe,never()).execute(any());verifyNoInteractions(f.quota());
+    }
+
+    private record PaidPreferenceFixture(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot,List<SubscriptionRecoveryActionEntity> ledger,BillingQuotaGateway quota) {}
+    private PaidPreferenceFixture paidPreferenceFixture(String interval) {
+        var snap=paidSnapshot();var root=confirmedPaidRoot(snap);root.setBillingInterval(interval);root.setPlanCode("year".equals(interval)?"pro_yearly":"pro_monthly");
+        var end=SubscriptionRecoveryPolicy.paidPeriodEnd(now,interval,1);root.setEntitlementEndAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(end));root.setAnchorSyncState("CONFIRMED");root.setProtectionState("RELEASED");root.setReviewState("NONE");
+        snap.lines().get(0).getPrice().getRecurring().setInterval(interval);snap.lines().get(0).getPeriod().setEnd(end.getEpochSecond());snap.subscription().setCurrentPeriodEnd(end.getEpochSecond());snap.subscription().setTrialEnd(end.getEpochSecond());snap.subscription().setCancelAtPeriodEnd(false);
+        ownedFixture(root,snap);users.selectByUser("user").setPlanCode(root.getPlanCode());stubConfirmedShift(root,snap,2900L);
+        var shift=actions.selectByRecovery(1L).get(0);var ledger=failureLedger();ledger.add(shift);bindSequenceActions(ledger);
+        return new PaidPreferenceFixture(root,snap,ledger,injectQuota());
+    }
+
     @Test void cancellationIntentIsDurableAndDoesNotClearThePaidPeriod() {
         var snap=paidSnapshot();var root=confirmedPaidRoot(snap);ownedFixture(root,snap);
         when(actions.insert(any(SubscriptionRecoveryActionEntity.class))).thenAnswer(i->{((SubscriptionRecoveryActionEntity)i.getArgument(0)).setId(99L);return 1;});

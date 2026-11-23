@@ -27,6 +27,7 @@ import java.security.MessageDigest;
 /** Coordinates durable recovery facts. Network reads precede short user/recovery/action/quota transactions. */
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class SubscriptionPaymentRecoveryService {
     @org.springframework.beans.factory.annotation.Autowired private SubscriptionContractMutationCoordinator contractMutations;
     private final UserSubscriptionMapper users;
@@ -1531,7 +1532,15 @@ public class SubscriptionPaymentRecoveryService {
             r.setNextReconcileAt(DateTimeFormats.now());recoveries.updateById(r);return action.getId();
         });
         if(actionId!=null){
-            runDueAction(actionId);var saved=actions.selectById(actionId);
+            try{runDueAction(actionId);}
+            catch(PaymentRecoveryReadException readFailure){
+                // A completed provider write remains successful if the subsequent reconciliation read fails.
+                var completed=actions.selectById(actionId);
+                if(completed==null || !"SUCCEEDED".equals(completed.getStatus()))throw readFailure;
+                log.warn("Cancellation action {} succeeded; reconciliation read pending: status={}, code={}, request={}",
+                        actionId,readFailure.getProviderStatus(),readFailure.getProviderCode(),readFailure.getProviderRequestId());
+            }
+            var saved=actions.selectById(actionId);
             if(saved==null || !"SUCCEEDED".equals(saved.getStatus()))throw new BillingDomainException("PAYMENT_PROCESSING","Cancellation preference is still being reconciled");
         }
     }
@@ -1592,13 +1601,17 @@ public class SubscriptionPaymentRecoveryService {
         }
         var all=stripe.listInvoices(root.getStripeSubscriptionId());
         long end=DateTimeFormats.toEpochSecond(root.getEntitlementEndAt());
-        var admission=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject().getAsJsonObject("recovery_admission");
-        boolean periodEnd="PERIOD_END".equals(string(admission,"cancelMode"));
+        var intentAtRead=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject().get("cancellation_intent");
+        var expectedCancellation=intentAtRead==null?null:intentAtRead.deepCopy();
+        Boolean periodEnd=renewalCancellationMode(root,snapshot.subscription());
+        if(periodEnd==null)return;
+        if(periodEnd&&(snapshot.subscription().getSchedule()!=null||!matchesPaidSubscriptionItem(root,snapshot))){reviewCancellationMismatch(root);return;}
         boolean aligned=Objects.equals(snapshot.subscription().getTrialEnd(),end)&&Objects.equals(snapshot.subscription().getCurrentPeriodEnd(),end)
                 &&(!periodEnd||(Boolean.TRUE.equals(snapshot.subscription().getCancelAtPeriodEnd())&&Objects.equals(snapshot.subscription().getCancelAt(),end)));
         boolean nextInvoiceVerified=periodEnd || verifyRenewalPreview(root,snapshot,stripe.preview(root.getStripeSubscriptionId()),end);
         locked(root.getId(),(u,r)->{
             if(!currentRecovery(u,r))return null;
+            if(!Objects.equals(expectedCancellation,JsonParser.parseString(r.getContractSnapshot()).getAsJsonObject().get("cancellation_intent")))return null;
             r.setTechnicalInvoiceIds(JSON.toJson(technical));
             if("canceled".equals(snapshot.subscription().getStatus())){r.setAnchorSyncState("REVIEW");review(r,"REMOTE_CANCELED_PAID_CYCLE_PRESERVED");}
             else if(!nextInvoiceVerified){r.setAnchorSyncState("REVIEW");review(r,"NEXT_INVOICE_CONTRACT_OR_AMOUNT_MISMATCH");repairProtection(r,snapshot);}
@@ -1621,16 +1634,56 @@ public class SubscriptionPaymentRecoveryService {
             recoveries.updateById(r);return null;
         });
     }
-    private boolean verifyRenewalPreview(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot,SubscriptionRecoveryStripeGateway.Preview preview,long end) {
-        if(preview==null || preview.invoice()==null || preview.lines()==null || !Objects.equals(root.getCurrency(),preview.invoice().getCurrency())
-                || preview.invoice().getStartingBalance()==null || preview.invoice().getStartingBalance()!=0 || !equivalentPaidLine(root,snapshot))return false;
+    /** Admission is immutable. A later, settled preference action owns the current cancellation intent. */
+    private Boolean renewalCancellationMode(SubscriptionPaymentRecoveryEntity root,Subscription sub) {
+        var saved=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject();
+        boolean periodEnd="PERIOD_END".equals(string(saved.getAsJsonObject("recovery_admission"),"cancelMode"));
+        var intent=saved.getAsJsonObject("cancellation_intent");
+        if(intent!=null){
+            var requested=intent.get("requested");var action=actions.selectByKey(string(intent,"action_key"));
+            boolean valid=requested!=null&&requested.isJsonPrimitive()&&requested.getAsJsonPrimitive().isBoolean()
+                    &&action!=null&&Objects.equals(root.getId(),action.getRecoveryId())
+                    &&"SET_CANCEL_PREFERENCE".equals(action.getActionType())&&Objects.equals(root.getStripeSubscriptionId(),action.getTargetId());
+            if(valid){
+                try{valid=Objects.equals(requested.getAsBoolean(),SubscriptionRecoveryStripeGateway.thaw(action.getPayloadJson()).get("cancel_at_period_end"));}
+                catch(IllegalArgumentException incomplete){valid=false;}
+            }
+            if(!valid){reviewCancellationMismatch(root);return null;}
+            if(!"SUCCEEDED".equals(action.getStatus())){
+                if(!Set.of("READY","DISPATCHING","UNKNOWN","REVIEW").contains(Objects.toString(action.getStatus(),"")))reviewCancellationMismatch(root);
+                return null;
+            }
+            periodEnd=requested.getAsBoolean();
+            if(periodEnd!=Boolean.TRUE.equals(sub.getCancelAtPeriodEnd())){reviewCancellationMismatch(root);return null;}
+        }
+        // Untracked cancellation or a custom fixed date cannot be treated as a verified renewal.
+        if(!periodEnd&&(Boolean.TRUE.equals(sub.getCancelAtPeriodEnd())||sub.getCancelAt()!=null)){
+            reviewCancellationMismatch(root);return null;
+        }
+        return periodEnd;
+    }
+    private void reviewCancellationMismatch(SubscriptionPaymentRecoveryEntity root) {
+        locked(root.getId(),(u,r)->{
+            if(currentRecovery(u,r)){r.setAnchorSyncState("REVIEW");review(r,"RENEWAL_CANCELLATION_INTENT_UNVERIFIED");recoveries.updateById(r);}
+            return null;
+        });
+    }
+    private boolean matchesPaidSubscriptionItem(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot) {
+        if(!equivalentPaidLine(root,snapshot)||!Objects.equals(root.getCurrency(),snapshot.subscription().getCurrency()))return false;
         var saved=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject();
         String priceId=string(saved,"price_id");long quantity=saved.has("quantity")?saved.get("quantity").getAsLong():1;
         var items=snapshot.subscription().getItems();
         if(items==null || items.getData()==null || items.getData().size()!=1)return false;
         var item=items.getData().get(0);
-        if(item.getPrice()==null || !Objects.equals(priceId,item.getPrice().getId()) || !Objects.equals(quantity,item.getQuantity())
-                || item.getPrice().getUnitAmount()==null)return false;
+        return item.getPrice()!=null && Objects.equals(priceId,item.getPrice().getId()) && Objects.equals(quantity,item.getQuantity())
+                && item.getPrice().getUnitAmount()!=null;
+    }
+    private boolean verifyRenewalPreview(SubscriptionPaymentRecoveryEntity root,SubscriptionRecoveryStripeGateway.Snapshot snapshot,SubscriptionRecoveryStripeGateway.Preview preview,long end) {
+        if(preview==null || preview.invoice()==null || preview.lines()==null || !Objects.equals(root.getCurrency(),preview.invoice().getCurrency())
+                || preview.invoice().getStartingBalance()==null || preview.invoice().getStartingBalance()!=0 || !matchesPaidSubscriptionItem(root,snapshot))return false;
+        var saved=JsonParser.parseString(root.getContractSnapshot()).getAsJsonObject();
+        String priceId=string(saved,"price_id");long quantity=saved.has("quantity")?saved.get("quantity").getAsLong():1;
+        var item=snapshot.subscription().getItems().getData().get(0);
         var lines=preview.lines();if(lines.size()!=1)return false;var line=lines.get(0);
         if(line.getPrice()==null || !Objects.equals(priceId,line.getPrice().getId()) || !Objects.equals(quantity,line.getQuantity())
                 || !Objects.equals(root.getCurrency(),line.getCurrency()) || Boolean.TRUE.equals(line.getProration())

@@ -223,6 +223,7 @@ public class SubscriptionRecoveryStripeGateway {
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Recovery network I/O cannot run inside a database transaction");
     }
     private static IllegalStateException readFailure(String id,StripeException e){
-        return new IllegalStateException("RECOVERY_ADMISSION_READ_TIMEOUT:"+Objects.toString(id,"unknown"),e);
+        return new com.studyagent.service.domain.billing.PaymentRecoveryReadException(
+                id,e.getStatusCode(),e.getCode(),e.getRequestId(),e);
     }
 }

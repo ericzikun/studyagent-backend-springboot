@@ -9,6 +9,16 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SubscriptionRecoveryStripeGatewayTest {
+    @Test void aMissingUpcomingInvoiceRetainsItsProviderErrorInsteadOfClaimingATimeout() {
+        var provider=new com.stripe.exception.InvalidRequestException("No upcoming invoices","subscription","req_preview_none","invoice_upcoming_none",404,null);
+        try(var invoices=org.mockito.Mockito.mockStatic(com.stripe.model.Invoice.class)){
+            invoices.when(()->com.stripe.model.Invoice.upcoming(org.mockito.ArgumentMatchers.anyMap())).thenThrow(provider);
+            var failure=assertThrows(IllegalStateException.class,()->new SubscriptionRecoveryStripeGateway().preview("sub_old"));
+            assertEquals("RECOVERY_PROVIDER_READ_FAILED:sub_old",failure.getMessage());assertSame(provider,failure.getCause());
+            var read=assertInstanceOf(com.studyagent.service.domain.billing.PaymentRecoveryReadException.class,failure);
+            assertEquals(404,read.getProviderStatus());assertEquals("invoice_upcoming_none",read.getProviderCode());assertEquals("req_preview_none",read.getProviderRequestId());
+        }
+    }
     @Test void realCollectionOmitsTheTwoInvalidFalseFlags() {
         assertEquals(Map.of("off_session",true),SubscriptionRecoveryStripeGateway.retryParams());
     }

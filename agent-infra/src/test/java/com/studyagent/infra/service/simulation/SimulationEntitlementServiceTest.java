@@ -66,6 +66,7 @@ class SimulationEntitlementServiceTest {
                 BillingPlan.builder().assignmentQuota(3L).build());
         when(billing.getCurrentSubscription("member")).thenReturn(
                 SubscriptionResult.builder()
+                        .planCode("pro_monthly")
                         .quotaPeriodStart(startUtc)
                         .quotaPeriodEnd(endUtc)
                         .build());
@@ -102,6 +103,7 @@ class SimulationEntitlementServiceTest {
                 BillingPlan.builder().assignmentQuota(3L).build());
         when(billing.getCurrentSubscription("member")).thenReturn(
                 SubscriptionResult.builder()
+                        .planCode("pro_monthly")
                         .quotaPeriodStart(start)
                         .quotaPeriodEnd(end)
                         .build());
@@ -156,6 +158,7 @@ class SimulationEntitlementServiceTest {
                 BillingPlan.builder().assignmentQuota(16L).build());
         when(billing.getCurrentSubscription("member_with_pass")).thenReturn(
                 SubscriptionResult.builder()
+                        .planCode("pro_monthly")
                         .quotaPeriodStart(start)
                         .quotaPeriodEnd(end)
                         .build());
@@ -181,6 +184,9 @@ class SimulationEntitlementServiceTest {
 
     @Test
     void activeLegacySubscriptionWithoutPlanFallsBackToFreeTrial() {
+        // BillingDomainService.isPaidMember only checks status + stripe subscription id,
+        // so a legacy free row still looks like a paid member there.
+        when(billing.isPaidMember("legacy_free")).thenReturn(true);
         when(billing.getCurrentSubscription("legacy_free")).thenReturn(
                 SubscriptionResult.builder()
                         .tier("free")

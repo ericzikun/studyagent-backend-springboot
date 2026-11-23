@@ -121,13 +121,14 @@ public class SimulationEntitlementService {
     }
 
     private boolean isPaidMember(String clerkUserId) {
+        SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
+        if (subscription == null || subscription.getPlanCode() == null) {
+            return false;
+        }
         if (billingDomainService.isPaidMember(clerkUserId)) {
             return true;
         }
-        SubscriptionResult subscription = billingDomainService.getCurrentSubscription(clerkUserId);
-        return subscription != null
-                && subscription.getPlanCode() != null
-                && Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
+        return Boolean.TRUE.equals(subscription.getCanConsumePaidEntitlements());
     }
 
     private long countSucceeded(String clerkUserId, LocalDateTime start, LocalDateTime end) {

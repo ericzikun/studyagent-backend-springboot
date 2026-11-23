@@ -20,6 +20,14 @@ public interface VerlaAttachmentRepository {
 
     VerlaAttachment findByObjectId(String objectId);
 
+    default VerlaAttachment findActiveUserUploadForUpdate(String userId, String objectId) {
+        return findByObjectId(objectId);
+    }
+
+    default List<VerlaAttachment> findAssignmentUploadsToFinalize(LocalDateTime cutoff, int limit) {
+        return List.of();
+    }
+
     List<VerlaAttachment> findByObjectIds(List<String> objectIds);
 
     List<VerlaAttachment> listByConversation(Long conversationId, int limit);

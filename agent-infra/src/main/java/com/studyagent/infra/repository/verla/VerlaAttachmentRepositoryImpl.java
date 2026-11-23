@@ -53,6 +53,17 @@ public class VerlaAttachmentRepositoryImpl
     }
 
     @Override
+    public VerlaAttachment findActiveUserUploadForUpdate(String userId, String objectId) {
+        return toDomain(this.baseMapper.selectActiveUserUploadForUpdate(userId, objectId));
+    }
+
+    @Override
+    public List<VerlaAttachment> findAssignmentUploadsToFinalize(LocalDateTime cutoff, int limit) {
+        return this.baseMapper.selectAssignmentUploadsToFinalize(cutoff, limit)
+                .stream().map(this::toDomain).toList();
+    }
+
+    @Override
     public List<VerlaAttachment> findByObjectIds(List<String> objectIds) {
         if (objectIds == null || objectIds.isEmpty()) {
             return Collections.emptyList();

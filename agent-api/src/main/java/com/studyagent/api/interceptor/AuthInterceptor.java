@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -55,6 +56,14 @@ public class AuthInterceptor implements HandlerInterceptor {
                 && (request.getHeader("Authorization") == null || request.getHeader("Authorization").isBlank())) return true;
         // 允许 OPTIONS 预检请求（CORS）
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
+        // 普通上传用 upload ticket，首次提交恢复上传仍需校验 Clerk 身份。
+        if ("PUT".equals(request.getMethod())
+                && "/v1/verla/v2/uploads/{objectId}/content".equals(
+                        request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE))
+                && !"true".equals(request.getParameter("assignmentRecovery"))) {
             return true;
         }
 

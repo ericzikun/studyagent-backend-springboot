@@ -148,11 +148,11 @@ class DefaultEntitlementServiceTest {
     }
 
     @Test
-    void assertAssignmentFileLimitRejectsWhenPlanLimitReached() {
+    void assertAssignmentFileLimitRejectsWhenPlanLimitExceeded() {
         when(billingDomainService.getEffectivePlanOrFree("free_user"))
                 .thenReturn(freePlan());
         when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
-                .thenReturn(3L);
+                .thenReturn(4L);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.assertAssignmentFileLimit(service.getEffectiveEntitlements("free_user"), 74L));
@@ -163,7 +163,17 @@ class DefaultEntitlementServiceTest {
         assertEquals("assignment_generate", data.getBlockedAction());
         assertEquals("assignment", data.getPurchaseProductId());
         assertEquals(Integer.valueOf(3), data.getMaxFiles());
-        assertEquals(Long.valueOf(3L), data.getActiveFiles());
+        assertEquals(Long.valueOf(4L), data.getActiveFiles());
+    }
+
+    @Test
+    void assertAssignmentFileLimitAllowsExactPlanLimit() {
+        when(billingDomainService.getEffectivePlanOrFree("free_user"))
+                .thenReturn(freePlan());
+        when(attachmentRepository.countActiveUserUploadsForConversation(eq(74L), any(LocalDateTime.class)))
+                .thenReturn(3L);
+
+        service.assertAssignmentFileLimit(service.getEffectiveEntitlements("free_user"), 74L);
     }
 
     @Test

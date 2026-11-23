@@ -147,7 +147,7 @@ public class DefaultEntitlementService implements EntitlementService {
             return;
         }
         long activeCount = countActiveUserUploads(conversationId);
-        if (limit <= 0 || activeCount >= limit) {
+        if (limit <= 0 || activeCount > limit) {
             throw BusinessException.withData(ApiCode.FILE_LIMIT_REACHED, CommercialBlockData.builder()
                     .currentPlan(currentPlanData(entitlements))
                     .reasonCode("file_limit_reached")

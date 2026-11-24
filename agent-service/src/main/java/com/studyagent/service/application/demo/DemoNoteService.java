@@ -770,7 +770,9 @@ public class DemoNoteService {
         long next = (c.getNoteVersion() == null ? 0L : c.getNoteVersion()) + 1;
         c.setNoteMd(contentMd);
         c.setNoteVersion(next);
-        c.setStatus(STATUS_COMPLETED);
+        // 正文就绪不等于回合完成：extras（导图/播客/测验/知识图）还在生成，
+        // 此时置 completed 会让前端把“extras 未到”误判成失败。完成态由
+        // NOTE_TURN_COMPLETED -> completeTurn 统一收口。
         repo.saveConversation(c);
         if (reportedVersionNo != null && reportedVersionNo != next) {
             // 对账：不一致通常意味着用户在 AI 回合中途手改过（AI 与用户各自推进版本）

@@ -370,6 +370,7 @@ class DemoNoteServiceTest {
     @Test
     void artifact_commit_advances_version_from_db_baseline_not_from_ai_echo() {
         NoteConversation conversation = draft();
+        conversation.setStatus("generating");
         conversation.setNoteVersion(1L);
         when(repo.findByVerlaConversationId(VERLA_CONVERSATION_ID)).thenReturn(Optional.of(conversation));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -379,7 +380,8 @@ class DemoNoteServiceTest {
 
         assertEquals("# 新生成的笔记", conversation.getNoteMd());
         assertEquals(2L, conversation.getNoteVersion());
-        assertEquals("completed", conversation.getStatus());
+        // extras 还没生成完，不能提前把回合标 completed
+        assertEquals("generating", conversation.getStatus());
     }
 
     @Test

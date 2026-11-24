@@ -111,14 +111,15 @@ public class NoteEventHandler implements VerlaEventHandler {
         demoNoteService.applyArtifactCommit(row.getConversationId(), contentMd, asLong(payload.get("versionNo")));
     }
 
-    /** 导图/博客 extras：任何一项缺失都只跳过；绝不让 extras 把回合标失败。 */
+    /** 导图/播客/测验/知识图 extras：任何一项缺失都只跳过；绝不让 extras 把回合标失败。 */
     private void saveExtras(VerlaEventInbox row, Map<String, Object> payload) {
         String blogMd = asString(payload.get("blogMd"));
         NoteConversation saved = demoNoteService.applyExtras(
                 row.getConversationId(),
                 asString(payload.get("mindmapJson")),
                 blogMd,
-                asString(payload.get("quizJson")));
+                asString(payload.get("quizJson")),
+                asString(payload.get("infographicUrl")));
         // 事务提交后再异步合成播客语音；失败只置 FAILED，前端回退按需合成
         if (saved != null && blogMd != null && !blogMd.isBlank()
                 && DemoNoteService.BLOG_AUDIO_PROCESSING.equals(saved.getBlogAudioStatus())) {

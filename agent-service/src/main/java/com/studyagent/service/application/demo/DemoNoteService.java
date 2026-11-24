@@ -255,6 +255,7 @@ public class DemoNoteService {
         // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
         c.setMindmapJson(null);
         c.setBlogMd(null);
+        c.setInfographicUrl(null);
         c.setBlogAudioStatus(null);
         c.setBlogAudioJson(null);
         c.setBlogAudioSourceHash(null);
@@ -781,12 +782,12 @@ public class DemoNoteService {
     }
 
     /**
-     * 笔记 extras（{@code NOTE_EXTRAS_COMMIT}）：导图 JSON / 博客 Markdown。
+     * 笔记 extras（{@code NOTE_EXTRAS_COMMIT}）：导图 JSON / 播客 Markdown / 测验 / 知识图。
      * <p>best-effort：extras 只是附加视图，缺任意一项都不影响笔记本身。
      */
     @Transactional
     public NoteConversation applyExtras(Long verlaConversationId, String mindmapJson, String blogMd,
-                                        String quizJson) {
+                                        String quizJson, String infographicUrl) {
         NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
         if (c == null) {
             log.warn("[Notes] extras dropped: no note conversation for verlaConvId={}", verlaConversationId);
@@ -815,16 +816,21 @@ public class DemoNoteService {
             c.setQuizJson(quizJson);
             changed = true;
         }
+        if (infographicUrl != null && !infographicUrl.isBlank()) {
+            c.setInfographicUrl(infographicUrl);
+            changed = true;
+        }
         if (!changed) {
             return c;
         }
         // 音频 reaper 用 updated_at 判断 PROCESSING 是否过旧；extras 是新活动，必须刷新。
         c.setUpdatedAt(LocalDateTime.now());
         repo.saveConversation(c);
-        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} quizChars={} audioStatus={}",
+        log.info("[Notes] extras saved verlaConvId={} mindmap={} blogChars={} quizChars={} infographic={} audioStatus={}",
                 verlaConversationId, c.getMindmapJson() != null,
                 c.getBlogMd() == null ? 0 : c.getBlogMd().length(),
                 c.getQuizJson() == null ? 0 : c.getQuizJson().length(),
+                c.getInfographicUrl() != null,
                 c.getBlogAudioStatus());
         return c;
     }

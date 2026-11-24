@@ -55,6 +55,9 @@ public class DemoNoteConversationEntity {
     /** 四选一测验 JSON；重新生成时必须能写回 NULL。 */
     @TableField(value = "quiz_json", updateStrategy = FieldStrategy.ALWAYS)
     private String quizJson;
+    /** 知识图 OSS URL；重新生成时必须能写回 NULL。 */
+    @TableField(value = "infographic_url", updateStrategy = FieldStrategy.ALWAYS)
+    private String infographicUrl;
     /** PROCESSING / READY / FAILED；重新生成时必须能写回 NULL。 */
     @TableField(value = "blog_audio_status", updateStrategy = FieldStrategy.ALWAYS)
     private String blogAudioStatus;

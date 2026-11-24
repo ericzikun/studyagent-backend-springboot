@@ -103,13 +103,14 @@ class NoteEventHandlerTest {
         saved.setVerlaConversationId(VERLA_CONVERSATION_ID);
         saved.setBlogAudioStatus(DemoNoteService.BLOG_AUDIO_PROCESSING);
         when(demoNoteService.applyExtras(VERLA_CONVERSATION_ID, "{\"label\":\"root\"}", "# blog",
-                "{\"questions\":[]}")).thenReturn(saved);
+                "{\"questions\":[]}", "https://oss.test/note.png")).thenReturn(saved);
 
         handler.handle(
                 row(VerlaAgentEventType.NOTE_EXTRAS_COMMIT),
                 env(VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
                         Map.of("mindmapJson", "{\"label\":\"root\"}", "blogMd", "# blog",
-                                "quizJson", "{\"questions\":[]}")));
+                                "quizJson", "{\"questions\":[]}",
+                                "infographicUrl", "https://oss.test/note.png")));
 
         verify(blogAudioPrefetchService).schedule(saved, "# blog");
     }

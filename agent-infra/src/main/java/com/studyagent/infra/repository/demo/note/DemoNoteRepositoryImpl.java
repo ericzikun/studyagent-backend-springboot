@@ -158,6 +158,7 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         e.setBlogMd(c.getBlogMd());
         e.setQuizJson(c.getQuizJson());
         e.setInfographicUrl(c.getInfographicUrl());
+        e.setInfographicStyle(c.getInfographicStyle());
         e.setBlogAudioStatus(c.getBlogAudioStatus());
         e.setBlogAudioJson(c.getBlogAudioJson());
         e.setBlogAudioSourceHash(c.getBlogAudioSourceHash());
@@ -211,6 +212,7 @@ public class DemoNoteRepositoryImpl implements DemoNoteRepository {
         c.setBlogMd(e.getBlogMd());
         c.setQuizJson(e.getQuizJson());
         c.setInfographicUrl(e.getInfographicUrl());
+        c.setInfographicStyle(e.getInfographicStyle());
         c.setBlogAudioStatus(e.getBlogAudioStatus());
         c.setBlogAudioJson(e.getBlogAudioJson());
         c.setBlogAudioSourceHash(e.getBlogAudioSourceHash());

@@ -110,6 +110,23 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void first_turn_persists_infographic_style_and_falls_back_to_classic() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation styled = service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null,
+                null, null, "zh-CN", null, "game_hud").getConversation();
+        assertEquals("game_hud", styled.getInfographicStyle());
+
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        NoteConversation fallback = service.prepareFirstTurn(
+                "user_1", NOTE_CONVERSATION_ID, "text", null, "材料", null,
+                null, null, "zh-CN", null, "not_a_style").getConversation();
+        assertEquals("classic", fallback.getInfographicStyle());
+    }
+
+    @Test
     void first_turn_syncs_the_filename_to_the_mainline_conversation_title() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));

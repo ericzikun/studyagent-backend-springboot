@@ -95,6 +95,11 @@ public class DemoNoteService {
             "take_notes", "generate_questions", "flashcards", "other");
     private static final String LEARNING_GOAL_DEFAULT = "take_notes";
 
+    /** 知识图风格：classic / game_hud / hand_comic / mii_3d；未知值回落 classic。 */
+    public static final String INFOGRAPHIC_STYLE_CLASSIC = "classic";
+    private static final Set<String> INFOGRAPHIC_STYLES = Set.of(
+            INFOGRAPHIC_STYLE_CLASSIC, "game_hud", "hand_comic", "mii_3d");
+
     /**
      * 文本类输入的 UTF-8 字节上限（粘贴素材与单轮用户消息共用）。
      * <p>{@code mq_outbox.payload} 仍是 TEXT（65535 字节，见 026），而文本会整段进
@@ -222,6 +227,16 @@ public class DemoNoteService {
                                                 String text, String filename,
                                                 String courseName, String learningGoal,
                                                 String outputLanguage, String query) {
+        return prepareFirstTurn(clerkUserId, conversationId, sourceType, objectId, text, filename,
+                courseName, learningGoal, outputLanguage, query, null);
+    }
+
+    public NoteTurnPreparation prepareFirstTurn(String clerkUserId, Long conversationId,
+                                                String sourceType, String objectId,
+                                                String text, String filename,
+                                                String courseName, String learningGoal,
+                                                String outputLanguage, String query,
+                                                String infographicStyle) {
         NoteConversation c = getOwned(clerkUserId, conversationId);
         String normalizedType = normalizeSourceType(sourceType, objectId, text);
         if (SOURCE_TYPE_FILE.equals(normalizedType)) {
@@ -251,6 +266,12 @@ public class DemoNoteService {
         c.setCourseName(truncateToNull(courseName, COURSE_NAME_MAX_LENGTH));
         c.setLearningGoal(normalizeLearningGoal(learningGoal));
         c.setOutputLanguage(truncateToNull(outputLanguage, OUTPUT_LANGUAGE_MAX_LENGTH));
+        // 空值表示“没改风格”：重新生成时沿用会话已有选择；旧会话/首轮回落 classic。
+        String requestedStyle = normalizeInfographicStyle(infographicStyle);
+        c.setInfographicStyle(requestedStyle != null
+                ? requestedStyle
+                : (c.getInfographicStyle() == null || c.getInfographicStyle().isBlank()
+                        ? INFOGRAPHIC_STYLE_CLASSIC : c.getInfographicStyle()));
         c.setNoteMd(null);
         // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
         c.setMindmapJson(null);
@@ -1006,6 +1027,20 @@ public class DemoNoteService {
     }
 
     /** 空值给默认目标；未知码回落 other（前端先行上线新目标时不至于报错）。 */
+    /** 空值返回 null（保留会话已有风格）；未知值回落 classic。 */
+    private static String normalizeInfographicStyle(String raw) {
+        String value = blankToNull(raw);
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (INFOGRAPHIC_STYLES.contains(normalized)) {
+            return normalized;
+        }
+        log.warn("[Notes] unknown infographicStyle={} → 回落 classic", raw);
+        return INFOGRAPHIC_STYLE_CLASSIC;
+    }
+
     private static String normalizeLearningGoal(String raw) {
         String value = blankToNull(raw);
         if (value == null) {

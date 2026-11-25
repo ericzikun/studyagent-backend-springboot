@@ -58,6 +58,9 @@ public class DemoNoteConversationEntity {
     /** 知识图 OSS URL；重新生成时必须能写回 NULL。 */
     @TableField(value = "infographic_url", updateStrategy = FieldStrategy.ALWAYS)
     private String infographicUrl;
+    /** 知识图风格：classic / game_hud / hand_comic / mii_3d。 */
+    @TableField(value = "infographic_style", updateStrategy = FieldStrategy.ALWAYS)
+    private String infographicStyle;
     /** PROCESSING / READY / FAILED；重新生成时必须能写回 NULL。 */
     @TableField(value = "blog_audio_status", updateStrategy = FieldStrategy.ALWAYS)
     private String blogAudioStatus;

@@ -221,6 +221,9 @@ public class NoteVerlaCommandDispatcher {
         // 课程名/学习目标是会话级设置：首轮落库后每轮都从会话行下发，后续轮不必再传表单
         payload.put("courseName", noteConv.getCourseName());
         payload.put("learningGoal", noteConv.getLearningGoal());
+        payload.put("infographicStyle",
+                noteConv.getInfographicStyle() == null || noteConv.getInfographicStyle().isBlank()
+                        ? DemoNoteService.INFOGRAPHIC_STYLE_CLASSIC : noteConv.getInfographicStyle());
         payload.put("noteConversationId", noteConv.getId());
         if (ctx.isFirstTurn()) {
             payload.put("sourceType", noteConv.getSourceType());

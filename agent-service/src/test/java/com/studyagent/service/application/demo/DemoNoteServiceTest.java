@@ -1,6 +1,8 @@
 package com.studyagent.service.application.demo;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.service.application.demo.dto.NoteTurnPreparation;
 import com.studyagent.service.application.verla.VerlaConversationService;
@@ -40,13 +42,16 @@ class DemoNoteServiceTest {
 
     private DemoNoteRepository repo;
     private VerlaConversationService verlaConversationService;
+    private AnalyticsService analyticsService;
     private DemoNoteService service;
 
     @BeforeEach
     void setUp() {
         repo = mock(DemoNoteRepository.class);
         verlaConversationService = mock(VerlaConversationService.class);
-        service = new DemoNoteService(repo, verlaConversationService, new ObjectMapper());
+        analyticsService = mock(AnalyticsService.class);
+        service = new DemoNoteService(
+                repo, verlaConversationService, new ObjectMapper(), analyticsService);
         when(repo.appendMessage(any(NoteMessage.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -427,6 +432,8 @@ class DemoNoteServiceTest {
         verify(repo).appendMessage(msg.capture());
         assertEquals(NoteMessage.ROLE_ASSISTANT, msg.getValue().getRole());
         assertEquals("这是回答", msg.getValue().getContentMd());
+        verify(analyticsService).capture(
+                eq("user_1"), eq(AnalyticsEvents.NOTE_GENERATION_COMPLETED), any());
     }
 
     @Test

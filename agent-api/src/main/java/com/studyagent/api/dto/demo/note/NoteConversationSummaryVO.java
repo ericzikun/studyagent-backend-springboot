@@ -1,6 +1,8 @@
 package com.studyagent.api.dto.demo.note;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.common.datetime.UtcLocalDateTimeSerializer;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,7 +28,9 @@ public class NoteConversationSummaryVO {
     private String title;
     private String sourceType;
     private String status;
+    @JsonSerialize(using = UtcLocalDateTimeSerializer.class)
     private LocalDateTime createdAt;
+    @JsonSerialize(using = UtcLocalDateTimeSerializer.class)
     private LocalDateTime updatedAt;
 
     public static NoteConversationSummaryVO from(NoteConversation c) {

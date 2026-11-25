@@ -1,6 +1,8 @@
 package com.studyagent.api.dto.demo.note;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.studyagent.api.dto.verla.support.VerlaPublicIdVoSupport;
+import com.studyagent.common.datetime.UtcLocalDateTimeSerializer;
 import com.studyagent.service.domain.demo.note.NoteConversation;
 import com.studyagent.service.domain.demo.note.NoteMessage;
 import lombok.AllArgsConstructor;
@@ -75,7 +77,9 @@ public class NoteConversationVO {
     private String blogAudioStatus;
     /** 播客音频 manifest JSON（分段 URL/时长/sourceHash）；READY 时有值。 */
     private String blogAudioJson;
+    @JsonSerialize(using = UtcLocalDateTimeSerializer.class)
     private LocalDateTime createdAt;
+    @JsonSerialize(using = UtcLocalDateTimeSerializer.class)
     private LocalDateTime updatedAt;
 
     public static NoteConversationVO from(NoteConversation c) {

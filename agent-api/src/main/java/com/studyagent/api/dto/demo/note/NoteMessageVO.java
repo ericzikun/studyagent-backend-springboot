@@ -1,5 +1,7 @@
 package com.studyagent.api.dto.demo.note;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.studyagent.common.datetime.UtcLocalDateTimeSerializer;
 import com.studyagent.service.domain.demo.note.NoteMessage;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +23,7 @@ public class NoteMessageVO {
     private String contentMd;
     /** 会话内递增序号（前端据此稳定排序 / 去重）。 */
     private Integer seq;
+    @JsonSerialize(using = UtcLocalDateTimeSerializer.class)
     private LocalDateTime createdAt;
 
     public static NoteMessageVO from(NoteMessage m) {

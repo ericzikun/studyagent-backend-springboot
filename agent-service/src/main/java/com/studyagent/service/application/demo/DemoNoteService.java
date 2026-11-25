@@ -514,6 +514,7 @@ public class DemoNoteService {
         c.setNoteVersion(current + 1);
         c.setPendingProposalJson(null);
         c.setStatus(STATUS_COMPLETED);
+        c.setUpdatedAt(LocalDateTime.now());
         repo.saveConversation(c);
         log.info("[Notes] proposal committed verlaConvId={} accepted={}/{} version={}",
                 c.getVerlaConversationId(), accepted.size(), changes.size(), c.getNoteVersion());
@@ -772,6 +773,8 @@ public class DemoNoteService {
         if (!STATUS_COMPLETED.equals(c.getStatus())) {
             c.setStatus(STATUS_COMPLETED);
         }
+        // 手改也是「上次编辑」：不刷新 updatedAt 的话顶栏会一直停在首轮生成时间。
+        c.setUpdatedAt(LocalDateTime.now());
         return repo.saveConversation(c);
     }
 
@@ -794,6 +797,7 @@ public class DemoNoteService {
         long next = (c.getNoteVersion() == null ? 0L : c.getNoteVersion()) + 1;
         c.setNoteMd(contentMd);
         c.setNoteVersion(next);
+        c.setUpdatedAt(LocalDateTime.now());
         // 正文就绪不等于回合完成：extras（导图/播客/测验/知识图）还在生成，
         // 此时置 completed 会让前端把“extras 未到”误判成失败。完成态由
         // NOTE_TURN_COMPLETED -> completeTurn 统一收口。

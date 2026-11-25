@@ -41,6 +41,13 @@ public class NoteGenerateRequest {
     /** 输出语言（可选，如 zh-CN / chinese）；缺省沿用会话偏好。 */
     private String outputLanguage;
 
+    /**
+     * 上传表单：知识图风格。
+     * <p>classic / game_hud / hand_comic / mii_3d；缺省 classic，
+     * 未知值回落 classic，空值在重新生成时沿用会话已有风格。
+     */
+    private String infographicStyle;
+
     /** 上传表单：课程名称（可选）。 */
     private String courseName;
 

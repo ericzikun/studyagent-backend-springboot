@@ -282,7 +282,7 @@ public class DemoNoteController {
         NoteTurnPreparation prepared = firstTurn
                 ? service.prepareFirstTurn(clerkUserId, id, req.getSourceType(), req.getObjectId(), req.getText(),
                         req.getFilename(), req.getCourseName(), req.getLearningGoal(),
-                        req.getOutputLanguage(), req.getMessage())
+                        req.getOutputLanguage(), req.getMessage(), req.getInfographicStyle())
                 : service.prepareFollowUpTurn(clerkUserId, id, req.getMessage());
 
         NoteTurnContext turn = NoteTurnContext.builder()

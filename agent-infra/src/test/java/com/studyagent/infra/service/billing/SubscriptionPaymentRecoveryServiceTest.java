@@ -2283,4 +2283,158 @@ class SubscriptionPaymentRecoveryServiceTest {
         var original=f.root().getContractSnapshot();when(stripe.execute(any())).thenReturn(new SubscriptionRecoveryStripeGateway.WriteResult("SUCCEEDED","req_trial_year",null,null));service.runDueAction(10L);assertEquals("SUCCEEDED",f.action().getStatus());assertEquals(original,f.root().getContractSnapshot());assertEquals("GRANTED",f.root().getGrantState());verify(stripe,times(1)).execute(any());
     }
 
+    // ---- S05 unpaid replacement checkout natural expiry (local only) ----
+
+    @Test void openReplacementPastExpiryStillBlocksCollectionUntilRemoteClosureIsConfirmed() {
+        var snap=s05Snapshot(now);var root=s05Root(snap);ownedFixture(root,snap);
+        var replacement=s05Replacement("order_s05","cs_s05",now.minusSeconds(600),now.plusSeconds(1860));
+        when(replacements.selectActive("sub_old")).thenReturn(replacement);
+        when(replacements.selectByOrder("order_s05")).thenReturn(replacement);
+        when(replacements.selectByRecovery(1L)).thenReturn(List.of(replacement));
+        when(stripe.readCheckout("cs_s05")).thenReturn(s05Session("cs_s05","open","order_s05"));
+        var wall=com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(3600));
+        try(var clock=mockStatic(com.studyagent.common.datetime.DateTimeFormats.class,org.mockito.Mockito.CALLS_REAL_METHODS)){
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(wall);
+            service.reconcile(1L);
+        }
+        assertEquals("OPEN",replacement.getState());
+        assertEquals("sub_old",replacement.getActiveSubscriptionKey());
+        assertNull(replacement.getClosedAt());
+        assertEquals("OPEN_AUTO",root.getStatus());
+        assertEquals(3499L,root.getAmountDueMinor());assertEquals(0L,root.getAmountPaidMinor());assertEquals(3499L,root.getAmountRemainingMinor());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(23*86400)),root.getDeadlineAt());
+        var expiredPayload=s05ExpiredEvent("cs_s05","order_s05");
+        assertTrue(service.tryProcessEvent(expiredPayload));
+        assertEquals("OPEN",replacement.getState());
+        assertEquals("sub_old",replacement.getActiveSubscriptionKey());
+        assertNull(replacement.getClosedAt());
+        properties.setAutomaticPayEnabled(true);
+        var slot=s05Slot(10L,1,now);
+        when(actions.selectByRecovery(1L)).thenReturn(List.of(slot));
+        service.runDueAction(10L);
+        assertEquals("SKIPPED",slot.getStatus());
+        assertEquals("SKIPPED_REPLACEMENT",slot.getSkipReason());
+        verify(actions,never()).claim(anyLong(),anyInt(),anyString(),any(),any());
+        verify(stripe,never()).execute(any());
+    }
+
+    @Test void expiredReplacementEventAndPollingKeepTheSameClosedInterval() {
+        var snap=s05Snapshot(now);var root=s05Root(snap);ownedFixture(root,snap);
+        var paused=now.minusSeconds(600);var expires=now.plusSeconds(1860);
+        var replacement=s05Replacement("order_s05","cs_s05",paused,expires);
+        when(replacements.selectActive("sub_old")).thenReturn(replacement);
+        when(replacements.selectByOrder("order_s05")).thenReturn(replacement);
+        when(stripe.readCheckout("cs_s05")).thenReturn(s05Session("cs_s05","expired","order_s05"));
+        var event=s05ExpiredEvent("cs_s05","order_s05");
+        var t1=com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(3600));
+        var t2=com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(7*86400+3600));
+        var d14=now.plusSeconds(7*86400);
+        try(var clock=mockStatic(com.studyagent.common.datetime.DateTimeFormats.class,org.mockito.Mockito.CALLS_REAL_METHODS)){
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(t1);
+            assertTrue(service.tryProcessEvent(event));
+            var firstClosed=replacement.getClosedAt();
+            var firstClosedAt=firstClosed==null?null:java.time.Instant.ofEpochSecond(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(firstClosed));
+            var firstCoverage=SubscriptionRecoveryPolicy.pauseCovers(d14,paused,firstClosedAt);
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(t2);
+            assertTrue(service.tryProcessEvent(event));
+            var secondClosed=replacement.getClosedAt();
+            var secondClosedAt=secondClosed==null?null:java.time.Instant.ofEpochSecond(com.studyagent.common.datetime.DateTimeFormats.toEpochSecond(secondClosed));
+            var secondCoverage=SubscriptionRecoveryPolicy.pauseCovers(d14,paused,secondClosedAt);
+            assertEquals(firstClosed,secondClosed,"repeat expired event must keep the first closed_at; D14 pause coverage "+firstCoverage+" -> "+secondCoverage);
+            assertFalse(secondCoverage,"repeat expired event must not expand the pause interval to D14");
+            assertEquals("EXPIRED",replacement.getState());
+            assertNull(replacement.getActiveSubscriptionKey());
+        }
+    }
+
+    @Test void expiredReplacementSkipsCoveredSlotAndPreservesTheNextOriginalRetry() {
+        var snap=s05Snapshot(now);var root=s05Root(snap);ownedFixture(root,snap);
+        var paused=now.minusSeconds(600);var expires=now.plusSeconds(1860);
+        var replacement=s05Replacement("order_s05","cs_s05",paused,expires);
+        when(replacements.selectActive("sub_old")).thenReturn(replacement);
+        when(replacements.selectByOrder("order_s05")).thenReturn(replacement);
+        when(replacements.selectByRecovery(1L)).thenReturn(List.of(replacement));
+        when(stripe.readCheckout("cs_s05")).thenReturn(s05Session("cs_s05","expired","order_s05"));
+        properties.setAutomaticPayEnabled(true);
+        var slot1=s05Slot(10L,1,now);var slot2=s05Slot(11L,2,now.plusSeconds(7*86400));var slot3=s05Slot(12L,3,now.plusSeconds(14*86400));var slot4=s05Slot(13L,4,now.plusSeconds(21*86400));
+        when(actions.selectByRecovery(1L)).thenReturn(List.of(slot1,slot2,slot3,slot4));
+        service.runDueAction(10L);
+        assertEquals("SKIPPED",slot1.getStatus());assertEquals("SKIPPED_REPLACEMENT",slot1.getSkipReason());
+        verify(stripe,never()).execute(any());
+        var wall=com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(3600));
+        try(var clock=mockStatic(com.studyagent.common.datetime.DateTimeFormats.class,org.mockito.Mockito.CALLS_REAL_METHODS)){
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(wall);
+            service.reconcile(1L);
+        }
+        assertEquals("EXPIRED",replacement.getState());assertNull(replacement.getActiveSubscriptionKey());assertNotNull(replacement.getClosedAt());
+        when(replacements.selectActive("sub_old")).thenReturn(null);
+        service.runDueAction(10L);
+        assertEquals("SKIPPED",slot1.getStatus());
+        verify(stripe,never()).execute(any());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(7*86400)),slot2.getScheduledAt());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(14*86400)),slot3.getScheduledAt());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(21*86400)),slot4.getScheduledAt());
+        assertEquals(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(23*86400)),root.getDeadlineAt());
+        var d14Snap=s05Snapshot(now.plusSeconds(7*86400));
+        when(stripe.readInvoice("in_old")).thenReturn(d14Snap);when(stripe.listInvoices("sub_old")).thenReturn(List.of(d14Snap.invoice()));
+        when(actions.claim(eq(11L),anyInt(),anyString(),any(),any())).thenReturn(1);
+        when(actions.markDispatched(eq(11L),anyInt(),anyString(),any(),anyString())).thenReturn(1);
+        when(actions.complete(eq(11L),anyInt(),anyString(),anyString(),anyString(),any())).thenAnswer(i->{slot2.setStatus((String)i.getArgument(3));slot2.setResultJson((String)i.getArgument(4));return 1;});
+        when(stripe.execute(slot2)).thenReturn(new SubscriptionRecoveryStripeGateway.WriteResult("DECLINED","req_slot2","insufficient_funds",null));
+        service.runDueAction(11L);
+        verify(stripe,times(1)).execute(slot2);
+        assertNotEquals("READY",slot2.getStatus());
+        service.runDueAction(11L);
+        verify(stripe,times(1)).execute(slot2);
+        assertEquals("OPEN_AUTO",root.getStatus());assertEquals("NONE",root.getGrantState());assertEquals(0L,root.getAmountPaidMinor());
+    }
+
+    private SubscriptionRecoveryStripeGateway.Snapshot s05Snapshot(java.time.Instant businessNow){
+        long t0=now.minusSeconds(7*86400).getEpochSecond();
+        long t0End=SubscriptionRecoveryPolicy.paidPeriodEnd(now.minusSeconds(7*86400),"month",1).getEpochSecond();
+        Invoice invoice=ApiResource.GSON.fromJson("{\"id\":\"in_old\",\"object\":\"invoice\",\"customer\":\"cus_old\",\"subscription\":\"sub_old\",\"status\":\"open\",\"created\":"+t0+",\"billing_reason\":\"subscription_cycle\",\"currency\":\"sgd\",\"amount_due\":3499,\"amount_paid\":0,\"amount_remaining\":3499,\"total\":3499,\"subtotal\":3499,\"livemode\":false,\"auto_advance\":false,\"payment_intent\":\"pi_old\"}",Invoice.class);
+        Subscription sub=ApiResource.GSON.fromJson("{\"id\":\"sub_old\",\"customer\":\"cus_old\",\"status\":\"past_due\",\"cancel_at_period_end\":false,\"pause_collection\":{\"behavior\":\"keep_as_draft\"},\"default_payment_method\":\"pm_old\",\"current_period_start\":"+t0+",\"current_period_end\":"+t0End+",\"items\":{\"data\":[{\"price\":{\"id\":\"price_sgd\"},\"quantity\":1}]}}",Subscription.class);
+        InvoiceLineItem line=ApiResource.GSON.fromJson("{\"id\":\"il_sgd\",\"type\":\"subscription\",\"subscription\":\"sub_old\",\"subscription_item\":\"si_sgd\",\"proration\":false,\"currency\":\"sgd\",\"amount\":3499,\"price\":{\"id\":\"price_sgd\",\"type\":\"recurring\",\"currency\":\"sgd\",\"unit_amount\":3499,\"recurring\":{\"interval\":\"month\",\"interval_count\":1}},\"period\":{\"start\":"+t0+",\"end\":"+t0End+"},\"quantity\":1}",InvoiceLineItem.class);
+        PaymentIntent pi=ApiResource.GSON.fromJson("{\"id\":\"pi_old\",\"status\":\"requires_payment_method\",\"latest_charge\":\"ch_old\",\"last_payment_error\":{\"decline_code\":\"insufficient_funds\"}}",PaymentIntent.class);
+        Charge ch=ApiResource.GSON.fromJson("{\"object\":\"charge\",\"id\":\"ch_old\",\"customer\":\"cus_old\",\"invoice\":\"in_old\",\"payment_intent\":\"pi_old\",\"currency\":\"sgd\",\"amount\":3499,\"amount_captured\":0,\"paid\":false,\"captured\":false,\"status\":\"failed\"}",Charge.class);
+        return new SubscriptionRecoveryStripeGateway.Snapshot(invoice,sub,null,List.of(line),pi,ch,businessNow);
+    }
+    private SubscriptionPaymentRecoveryEntity s05Root(SubscriptionRecoveryStripeGateway.Snapshot snap){
+        var root=existingRoot();
+        root.setCurrency("sgd");root.setBillingInterval("month");root.setIntervalCount(1);
+        root.setGrantState("NONE");root.setReviewState("NONE");
+        root.setAmountDueMinor(3499L);root.setAmountPaidMinor(0L);root.setAmountRemainingMinor(3499L);
+        root.setFirstFailedAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.minusSeconds(7*86400)));
+        root.setDeadlineAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(now.plusSeconds(23*86400)));
+        var hash=RecoveryContractClassifier.classify(snap.subscription(),null,true,"price_sgd",1L).contractHash();
+        root.setContractSnapshot("{\"price_id\":\"price_sgd\",\"quantity\":1,\"subscription_item_id\":\"si_sgd\",\"recovery_admission\":{\"sourceKey\":\"formal\",\"cancelMode\":\"RENEW\",\"contractHash\":\""+hash+"\"}}");
+        var plan=new SubscriptionPlanEntity();plan.setPlanCode("pro_monthly");plan.setTier("pro");plan.setBillingInterval("month");plan.setStripePriceId("price_sgd");
+        when(plans.selectList(any())).thenReturn(List.of(plan));
+        return root;
+    }
+    private SubscriptionRecoveryReplacementEntity s05Replacement(String orderNo,String sessionId,java.time.Instant pausedAt,java.time.Instant expiresAt){
+        var r=new SubscriptionRecoveryReplacementEntity();
+        r.setId(20L);r.setRecoveryId(1L);r.setClerkUserId("user");r.setOldSubscriptionId("sub_old");
+        r.setOrderNo(orderNo);r.setTargetPlanCode("pro_monthly");r.setState("OPEN");
+        r.setActiveSubscriptionKey("sub_old");r.setCheckoutSessionId(sessionId);
+        r.setPausedAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(pausedAt));
+        r.setExpiresAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(expiresAt));
+        r.setQuoteSnapshot("{\"line_items\":[{\"price\":\"price_sgd\",\"quantity\":1}]}");
+        return r;
+    }
+    private com.stripe.model.checkout.Session s05Session(String id,String status,String orderNo){
+        return ApiResource.GSON.fromJson("{\"id\":\""+id+"\",\"object\":\"checkout.session\",\"customer\":\"cus_old\",\"mode\":\"subscription\",\"status\":\""+status+"\",\"payment_status\":\"unpaid\",\"metadata\":{\"order_no\":\""+orderNo+"\",\"purchase_type\":\"subscription_replacement\",\"recovery_id\":\"1\",\"clerk_user_id\":\"user\",\"old_subscription_id\":\"sub_old\"}}",com.stripe.model.checkout.Session.class);
+    }
+    private Event s05ExpiredEvent(String sessionId,String orderNo){
+        var session=s05Session(sessionId,"expired",orderNo);
+        return ApiResource.GSON.fromJson("{\"id\":\"evt_s05_expired\",\"type\":\"checkout.session.expired\",\"data\":{\"object\":"+session.toJson()+"}}",Event.class);
+    }
+    private SubscriptionRecoveryActionEntity s05Slot(long id,int slot,java.time.Instant scheduledAt){
+        var a=new SubscriptionRecoveryActionEntity();
+        a.setId(id);a.setRecoveryId(1L);a.setActionType("RETRY_PAY");a.setTargetId("in_old");a.setActionKey("recovery:in_old:retry:"+slot);a.setProviderIdempotencyKey(a.getActionKey());a.setRetrySlot(slot);a.setStatus("READY");a.setVersion(0);
+        a.setScheduledAt(com.studyagent.common.datetime.DateTimeFormats.fromInstant(scheduledAt));a.setNextRunAt(a.getScheduledAt());a.setPayloadJson("{\"off_session\":true}");
+        when(actions.selectById(id)).thenReturn(a);when(actions.selectForUpdate(id)).thenReturn(a);
+        return a;
+    }
+
 }

@@ -1331,6 +1331,117 @@ class SubscriptionPaymentRecoveryMysqlIT {
     private static void insertReplacement(Statement s,int id,String order)throws SQLException {
         s.executeUpdate("INSERT INTO subscription_payment_recovery_replacements(id,recovery_id,clerk_user_id,old_subscription_id,order_no,target_plan_code,state,active_subscription_key,paused_at,quote_snapshot) VALUES("+id+",1,'test_user','sub_test','"+order+"','pro_monthly','CREATING','sub_test',NOW(3),'{}')");
     }
+    @Test void unpaidOpenReplacementExpiresByReconciliationAndReleasesItsDatabaseSlot() throws Exception {
+        var fixture=s05OpenReplacementFixture();
+        try(var clock=org.mockito.Mockito.mockStatic(com.studyagent.common.datetime.DateTimeFormats.class,org.mockito.Mockito.CALLS_REAL_METHODS)){
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(NOW.plusHours(1));
+            fixture.service().reconcile(1L);
+        }
+        try(var session=factory.openSession(true)){
+            var replacements=session.getMapper(SubscriptionRecoveryReplacementMapper.class);
+            var replacement=replacements.selectByOrder("s05_order");
+            assertEquals("EXPIRED",replacement.getState());
+            assertNull(replacement.getActiveSubscriptionKey());
+            assertEquals("cs_s05_expired",replacement.getCheckoutSessionId());
+            assertEquals(NOW.plusHours(1),replacement.getClosedAt());
+            assertNull(replacements.selectActive("sub_test"));
+            var order=session.getMapper(RechargeOrderMapper.class).selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.studyagent.infra.entity.RechargeOrderEntity>().eq(com.studyagent.infra.entity.RechargeOrderEntity::getOrderNo,"s05_order"));
+            assertEquals("pending",order.getStatus());assertNull(order.getStripeSubscriptionId());assertNull(order.getStripeInvoiceId());
+            var root=session.getMapper(SubscriptionPaymentRecoveryMapper.class).selectById(1L);
+            assertEquals("OPEN_AUTO",root.getStatus());assertEquals("ACTIVE",root.getProtectionState());
+            assertEquals(3499L,root.getAmountDueMinor());assertEquals(0L,root.getAmountPaidMinor());assertEquals(3499L,root.getAmountRemainingMinor());
+            assertEquals(LocalDateTime.of(2026,11,4,10,0),root.getFirstFailedAt());assertEquals(LocalDateTime.of(2026,12,4,10,0),root.getDeadlineAt());
+            var retries=session.getMapper(SubscriptionRecoveryActionMapper.class).selectByRecovery(1L).stream().filter(a->"RETRY_PAY".equals(a.getActionType())).map(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity::getScheduledAt).sorted().toList();
+            assertEquals(java.util.List.of(NOW,NOW.plusDays(7),NOW.plusDays(14),NOW.plusDays(21)),retries);
+        }
+        assertEquals(1,scalar("SELECT COUNT(*) FROM recharge_orders"));
+        assertEquals(0,scalar("SELECT COUNT(*) FROM quota_ledger"));
+        assertEquals(0,scalar("SELECT COUNT(*) FROM user_ai_quotas"));
+        assertEquals(4,scalar("SELECT COUNT(*) FROM subscription_payment_recovery_actions WHERE action_type='RETRY_PAY'"));
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+    }
+    @Test void lateExpiredEventAfterPollingPreservesPersistedCloseAndFutureRetry() throws Exception {
+        var fixture=s05OpenReplacementFixture();
+        var firstClose=NOW.plusHours(1);var d14=NOW.plusDays(7);
+        var event=com.stripe.net.ApiResource.GSON.fromJson(new com.google.gson.Gson().toJson(java.util.Map.of(
+                "id","evt_s05_late_expired","type","checkout.session.expired","data",java.util.Map.of("object",java.util.Map.of(
+                        "id","cs_s05_expired","object","checkout.session","metadata",replacementMetadata("s05_order"))))),com.stripe.model.Event.class);
+        try(var clock=org.mockito.Mockito.mockStatic(com.studyagent.common.datetime.DateTimeFormats.class,org.mockito.Mockito.CALLS_REAL_METHODS)){
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(firstClose);
+            fixture.service().reconcile(1L);
+            try(var session=factory.openSession(true)){
+                var closed=session.getMapper(SubscriptionRecoveryReplacementMapper.class).selectByOrder("s05_order");
+                assertEquals(firstClose,closed.getClosedAt());
+                assertFalse(SubscriptionRecoveryPolicy.pauseCovers(d14.atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant(),
+                        closed.getPausedAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant(),
+                        closed.getClosedAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant()));
+            }
+            // Polling has already closed this session. Its first webhook can arrive after D14.
+            clock.when(com.studyagent.common.datetime.DateTimeFormats::now).thenReturn(d14.plusHours(1));
+            assertTrue(fixture.service().tryProcessEvent(event));
+            assertTrue(fixture.service().tryProcessEvent(event));
+            fixture.service().reconcile(1L);
+        }
+        try(var session=factory.openSession(true)){
+            var replacements=session.getMapper(SubscriptionRecoveryReplacementMapper.class);var closed=replacements.selectByOrder("s05_order");
+            assertEquals(firstClose,closed.getClosedAt(),"a late first webhook must not extend the already closed pause");
+            assertEquals("EXPIRED",closed.getState());assertNull(closed.getActiveSubscriptionKey());assertNull(replacements.selectActive("sub_test"));
+            assertFalse(SubscriptionRecoveryPolicy.pauseCovers(d14.atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant(),
+                    closed.getPausedAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant(),
+                    closed.getClosedAt().atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant()));
+            var root=session.getMapper(SubscriptionPaymentRecoveryMapper.class).selectById(1L);
+            assertEquals("OPEN_AUTO",root.getStatus());assertEquals(NOW.minusDays(7),root.getFirstFailedAt());assertEquals(NOW.plusDays(23),root.getDeadlineAt());
+            var retries=session.getMapper(SubscriptionRecoveryActionMapper.class).selectByRecovery(1L).stream().filter(a->"RETRY_PAY".equals(a.getActionType())).sorted(java.util.Comparator.comparing(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity::getRetrySlot)).toList();
+            assertEquals(java.util.List.of(NOW,NOW.plusDays(7),NOW.plusDays(14),NOW.plusDays(21)),retries.stream().map(com.studyagent.infra.entity.SubscriptionRecoveryActionEntity::getScheduledAt).toList());
+            assertTrue(retries.stream().allMatch(a->"READY".equals(a.getStatus())));
+        }
+        assertEquals(1,scalar("SELECT COUNT(*) FROM recharge_orders WHERE status='pending'"));assertEquals(0,scalar("SELECT COUNT(*) FROM quota_ledger"));
+        assertEquals(0,scalar("SELECT COUNT(*) FROM subscription_payment_recovery_actions WHERE action_type='EXPIRE_CHECKOUT'"));
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+    }
+    @Test void verifiedReplacementPaymentAfterExpiryStillSwitchesExactlyOnce() throws Exception {
+        var fixture=paymentFixture(false);String orderNo="paid_after_expiry";prepareReplacement(fixture,orderNo);
+        try(var session=factory.openSession(true)){
+            var mapper=session.getMapper(SubscriptionRecoveryReplacementMapper.class);var replacement=mapper.selectByOrder(orderNo);
+            replacement.setState("EXPIRED");replacement.setClosedAt(NOW.plusHours(1));replacement.setActiveSubscriptionKey(null);mapper.updateById(replacement);
+        }
+        replacementReads(fixture,replacementPayment(orderNo),false);
+        assertTrue(fixture.service().tryProcessEvent(replacementCheckoutEvent(orderNo)));assertReplacementGranted(orderNo);
+        assertTrue(fixture.service().tryProcessEvent(replacementCheckoutEvent(orderNo)));assertReplacementGranted(orderNo);
+        org.mockito.Mockito.verify(fixture.stripe(),org.mockito.Mockito.never()).execute(org.mockito.ArgumentMatchers.any());
+    }
+    private PaymentFixture s05OpenReplacementFixture() throws Exception {
+        var fixture=paymentFixture(false);paymentReads(fixture.stripe(),java.util.Map.of("in_test",unpaidSgdSnapshot()),false);
+        try(Connection c=ds.getConnection();Statement q=c.createStatement()){
+            q.executeUpdate("UPDATE subscription_payment_recoveries SET currency='sgd',amount_due_minor=3499,amount_paid_minor=0,amount_remaining_minor=3499,first_failed_at='2026-11-04 10:00:00',deadline_at='2026-12-04 10:00:00' WHERE id=1");
+            q.executeUpdate("UPDATE user_subscriptions SET stripe_customer_id='cus_test',stripe_subscription_id='sub_test',payment_recovery_id=1,plan_code='pro_monthly',tier='pro',status='past_due',stripe_schedule_id=NULL WHERE id=1");
+            q.executeUpdate("INSERT INTO recharge_orders(order_no,order_type,clerk_user_id,target_plan_code,currency,price_cents,quoted_amount_cents,status) VALUES('s05_order','subscription_replacement','test_user','pro_monthly','sgd',3499,3499,'pending')");
+            q.executeUpdate("INSERT INTO subscription_payment_recovery_replacements(recovery_id,clerk_user_id,old_subscription_id,order_no,target_plan_code,state,active_subscription_key,checkout_session_id,paused_at,expires_at,quote_snapshot,version) VALUES(1,'test_user','sub_test','s05_order','pro_monthly','OPEN','sub_test','cs_s05_expired','2026-11-11 09:50:00','2026-11-11 10:31:00','{\"line_items\":[{\"price\":\"price_admit\",\"quantity\":1}]}',0)");
+            for(int slot=1;slot<=4;slot++){
+                LocalDateTime at=NOW.plusDays(7L*(slot-1));
+                q.executeUpdate("INSERT INTO subscription_payment_recovery_actions(id,recovery_id,action_type,action_key,target_id,retry_slot,scheduled_at,next_run_at,payload_json) VALUES("+slot+",1,'RETRY_PAY','s05-retry-"+slot+"','in_test',"+slot+",'"+at+"','"+at+"','{}')");
+            }
+        }
+        org.mockito.Mockito.when(fixture.stripe().readCheckout("cs_s05_expired")).thenReturn(s05ExpiredSession());return fixture;
+    }
+    private static SubscriptionRecoveryStripeGateway.Snapshot unpaidSgdSnapshot(){
+        var snapshot=admissionSnapshot();
+        long t0=NOW.minusDays(7).atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toEpochSecond();
+        long t0End=NOW.minusDays(7).plusMonths(1).atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toEpochSecond();
+        snapshot.invoice().setId("in_test");snapshot.invoice().setCustomer("cus_test");snapshot.invoice().setSubscription("sub_test");
+        snapshot.invoice().setCurrency("sgd");snapshot.invoice().setAmountDue(3499L);snapshot.invoice().setAmountPaid(0L);snapshot.invoice().setAmountRemaining(3499L);
+        snapshot.invoice().setTotal(3499L);snapshot.invoice().setSubtotal(3499L);snapshot.invoice().setStatus("open");snapshot.invoice().setAutoAdvance(false);
+        snapshot.invoice().setCreated(t0);snapshot.invoice().setPaymentIntent("pi_test");
+        snapshot.subscription().setId("sub_test");snapshot.subscription().setCustomer("cus_test");snapshot.subscription().setCurrency("sgd");
+        snapshot.subscription().setCurrentPeriodStart(t0);snapshot.subscription().setCurrentPeriodEnd(t0End);
+        var line=snapshot.lines().get(0);line.setSubscription("sub_test");line.setCurrency("sgd");line.getPrice().setCurrency("sgd");line.getPrice().setUnitAmount(3499L);line.getPeriod().setStart(t0);line.getPeriod().setEnd(t0End);
+        snapshot.paymentIntent().setId("pi_test");snapshot.paymentIntent().setCurrency("sgd");snapshot.paymentIntent().setAmountReceived(0L);snapshot.paymentIntent().setLatestCharge("ch_test");
+        snapshot.charge().setId("ch_test");snapshot.charge().setCurrency("sgd");snapshot.charge().setAmount(3499L);snapshot.charge().setAmountCaptured(0L);snapshot.charge().setInvoice("in_test");snapshot.charge().setPaymentIntent("pi_test");
+        return new SubscriptionRecoveryStripeGateway.Snapshot(snapshot.invoice(),snapshot.subscription(),null,snapshot.lines(),snapshot.paymentIntent(),snapshot.charge(),NOW.atZone(com.studyagent.common.datetime.DateTimeFormats.APP_ZONE).toInstant());
+    }
+    private static com.stripe.model.checkout.Session s05ExpiredSession(){
+        var session=new com.stripe.model.checkout.Session();session.setId("cs_s05_expired");session.setObject("checkout.session");session.setCustomer("cus_test");session.setStatus("expired");session.setPaymentStatus("unpaid");session.setMetadata(replacementMetadata("s05_order"));return session;
+    }
     @AfterAll static void cleanup() throws Exception {
         if(ds==null)return;
         try {

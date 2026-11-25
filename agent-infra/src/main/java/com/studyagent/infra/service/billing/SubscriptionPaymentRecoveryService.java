@@ -1763,7 +1763,16 @@ public class SubscriptionPaymentRecoveryService {
                 if(r.getEntitlementInvoiceId()!=null)review(r,"OLD_PAYMENT_AFTER_REPLACEMENT");r.setCloseReason("REPLACEMENT_PAID");r.setStatus("CLOSING");skipRetries(r,"SWITCHED");r.setNextReconcileAt(DateTimeFormats.now());recoveries.updateById(r);return null;
             });
         }else if("expired".equals(session.getStatus())){
-            locked(root.getId(),(u,r)->{var replacement=replacements.selectByOrder(before.getOrderNo());if(!"PAID".equals(replacement.getState())){replacement.setState("EXPIRED");replacement.setCheckoutSessionId(session.getId());replacement.setClosedAt(DateTimeFormats.now());replacement.setActiveSubscriptionKey(null);replacements.updateById(replacement);}return null;});
+            locked(root.getId(),(u,r)->{
+                var replacement=replacements.selectByOrder(before.getOrderNo());
+                if(!"PAID".equals(replacement.getState())){
+                    replacement.setState("EXPIRED");replacement.setCheckoutSessionId(session.getId());
+                    // Late events must not extend the pause interval and cover future retry slots.
+                    if(replacement.getClosedAt()==null)replacement.setClosedAt(DateTimeFormats.now());
+                    replacement.setActiveSubscriptionKey(null);replacements.updateById(replacement);
+                }
+                return null;
+            });
         }else{
             locked(root.getId(),(u,r)->{var replacement=replacements.selectByOrder(before.getOrderNo());replacement.setCheckoutSessionId(session.getId());replacement.setNewSubscriptionId(session.getSubscription());replacement.setState("complete".equals(session.getStatus())?"PROCESSING":"OPEN");replacements.updateById(replacement);return null;});
         }

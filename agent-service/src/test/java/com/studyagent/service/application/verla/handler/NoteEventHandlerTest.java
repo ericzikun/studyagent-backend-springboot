@@ -169,7 +169,7 @@ class NoteEventHandlerTest {
                 row(VerlaAgentEventType.NOTE_FAILED),
                 env(VerlaAgentEventType.NOTE_FAILED, Map.of("errorMessage", "boom")));
 
-        verify(demoNoteService).markFailed(VERLA_CONVERSATION_ID);
+        verify(demoNoteService).markFailed(VERLA_CONVERSATION_ID, "boom");
         ArgumentCaptor<VerlaSession> captor = ArgumentCaptor.forClass(VerlaSession.class);
         verify(sessionRepository).save(captor.capture());
         assertEquals("FAILED", captor.getValue().getStatus());
@@ -182,7 +182,7 @@ class NoteEventHandlerTest {
         handler.handle(row(VerlaAgentEventType.NOTE_CANCELLED),
                 env(VerlaAgentEventType.NOTE_CANCELLED, Map.of("reason", "user cancel")));
 
-        verify(demoNoteService).markFailed(VERLA_CONVERSATION_ID);
+        verify(demoNoteService).markFailed(VERLA_CONVERSATION_ID, "user cancel");
         ArgumentCaptor<VerlaSession> captor = ArgumentCaptor.forClass(VerlaSession.class);
         verify(sessionRepository).save(captor.capture());
         assertEquals("CANCELLED", captor.getValue().getStatus());

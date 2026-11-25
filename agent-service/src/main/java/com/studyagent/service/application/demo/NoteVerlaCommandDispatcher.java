@@ -37,8 +37,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
+
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +75,7 @@ public class NoteVerlaCommandDispatcher {
     private final VerlaConversationService conversationService;
     private final MqOutboxService mqOutboxService;
     private final VerlaQuotaService verlaQuotaService;
+    private final AnalyticsService analyticsService;
 
     /**
      * 派发一轮笔记回合。调用方须已把素材/消息落库
@@ -174,6 +179,23 @@ public class NoteVerlaCommandDispatcher {
 
         mqOutboxService.createVerlaCommand(
                 envelope, commandExchange, VerlaCommandAction.CMD_NOTE_GENERATE.getCode());
+
+        Map<String, Object> analyticsProps = new HashMap<>();
+        analyticsProps.put("task_type", "note");
+        analyticsProps.put("conversation_id", verlaConversationId);
+        analyticsProps.put("note_conversation_id", noteConv.getId());
+        analyticsProps.put("turn_id", turn.getId());
+        analyticsProps.put("session_id", session.getId());
+        if (noteConv.getSourceType() != null) {
+            analyticsProps.put("source_type", noteConv.getSourceType());
+        }
+        analyticsProps.put("first_turn", ctx.isFirstTurn());
+        analyticsProps.put("has_file", noteConv.getAttachmentObjectId() != null);
+        if (ctx.getOutputLanguage() != null) {
+            analyticsProps.put("output_language", ctx.getOutputLanguage());
+        }
+        analyticsService.capture(
+                noteConv.getClerkUserId(), AnalyticsEvents.NOTE_GENERATION_STARTED, analyticsProps);
 
         log.info("[Notes] dispatched cmd.note.generate noteConvId={}, verlaConvId={}, turnId={}, sessionId={}, "
                         + "firstTurn={}, historyMessages={}",

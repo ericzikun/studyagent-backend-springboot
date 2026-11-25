@@ -3,6 +3,8 @@ package com.studyagent.service.application.demo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.api.ApiCode;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.verla.enums.OutputLanguage;
@@ -116,6 +118,7 @@ public class DemoNoteService {
     private final DemoNoteRepository repo;
     private final VerlaConversationService verlaConversationService;
     private final ObjectMapper objectMapper;
+    private final AnalyticsService analyticsService;
 
     // ============ 会话 ============
 
@@ -927,15 +930,45 @@ public class DemoNoteService {
         }
         c.setStatus(STATUS_COMPLETED);
         repo.saveConversation(c);
+        Map<String, Object> props = new HashMap<>();
+        props.put("note_version", c.getNoteVersion());
+        props.put("note_chars", c.getNoteMd() == null ? 0 : c.getNoteMd().length());
+        props.put("has_mindmap", c.getMindmapJson() != null);
+        props.put("has_podcast", c.getBlogMd() != null);
+        props.put("has_quiz", c.getQuizJson() != null);
+        props.put("has_infographic", c.getInfographicUrl() != null);
+        props.put("blog_audio_status", c.getBlogAudioStatus());
+        captureNoteAnalytics(c, AnalyticsEvents.NOTE_GENERATION_COMPLETED, props);
     }
 
     /** 失败态是 best-effort：只影响前端提示，不阻塞事件 drain。 */
     @Transactional
     public void markFailed(Long verlaConversationId) {
+        markFailed(verlaConversationId, "failed");
+    }
+
+    @Transactional
+    public void markFailed(Long verlaConversationId, String reason) {
         repo.findByVerlaConversationId(verlaConversationId).ifPresent(c -> {
+            boolean firstFailure = !STATUS_FAILED.equals(c.getStatus());
             c.setStatus(STATUS_FAILED);
             repo.saveConversation(c);
+            if (firstFailure) {
+                Map<String, Object> props = new HashMap<>();
+                props.put("note_version", c.getNoteVersion());
+                props.put("note_chars", c.getNoteMd() == null ? 0 : c.getNoteMd().length());
+                props.put("reason", truncate(reason == null ? "failed" : reason, 200));
+                captureNoteAnalytics(c, AnalyticsEvents.NOTE_GENERATION_FAILED, props);
+            }
         });
+    }
+
+    private void captureNoteAnalytics(NoteConversation c, String event, Map<String, Object> props) {
+        Map<String, Object> properties = new HashMap<>(props);
+        properties.put("task_type", "note");
+        properties.put("conversation_id", c.getVerlaConversationId());
+        properties.put("note_conversation_id", c.getId());
+        analyticsService.capture(c.getClerkUserId(), event, properties);
     }
 
     // ============ helpers ============
@@ -1027,6 +1060,19 @@ public class DemoNoteService {
     }
 
     /** 空值给默认目标；未知码回落 other（前端先行上线新目标时不至于报错）。 */
+    private static String normalizeLearningGoal(String raw) {
+        String value = blankToNull(raw);
+        if (value == null) {
+            return LEARNING_GOAL_DEFAULT;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (LEARNING_GOALS.contains(normalized)) {
+            return normalized;
+        }
+        log.warn("[Notes] unknown learningGoal={} → 回落 other", raw);
+        return "other";
+    }
+
     /** 空值返回 null（保留会话已有风格）；未知值回落 classic。 */
     private static String normalizeInfographicStyle(String raw) {
         String value = blankToNull(raw);
@@ -1039,19 +1085,6 @@ public class DemoNoteService {
         }
         log.warn("[Notes] unknown infographicStyle={} → 回落 classic", raw);
         return INFOGRAPHIC_STYLE_CLASSIC;
-    }
-
-    private static String normalizeLearningGoal(String raw) {
-        String value = blankToNull(raw);
-        if (value == null) {
-            return LEARNING_GOAL_DEFAULT;
-        }
-        String normalized = value.toLowerCase(Locale.ROOT);
-        if (LEARNING_GOALS.contains(normalized)) {
-            return normalized;
-        }
-        log.warn("[Notes] unknown learningGoal={} → 回落 other", raw);
-        return "other";
     }
 
     private static String truncate(String value, int maxLength) {

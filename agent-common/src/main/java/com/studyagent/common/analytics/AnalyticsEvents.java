@@ -58,6 +58,12 @@ public final class AnalyticsEvents {
     public static final String ASSIGNMENT_GENERATION_SUCCEEDED = "assignment:generation:succeeded";
     public static final String ASSIGNMENT_GENERATION_FAILED = "assignment:generation:failed";
 
+    // ==================== AI Note 生成事件 ====================
+
+    public static final String NOTE_GENERATION_STARTED = "note:generation:started";
+    public static final String NOTE_GENERATION_COMPLETED = "note:generation:completed";
+    public static final String NOTE_GENERATION_FAILED = "note:generation:failed";
+
     // ==================== 支付 alias 事件（与前端冒号命名对齐，保留老事件兼容） ====================
 
     public static final String BILLING_CHECKOUT_SESSION_CREATED = "billing:checkout:session_created";

@@ -86,7 +86,8 @@ public class NoteEventHandler implements VerlaEventHandler {
             case NOTE_FAILED -> {
                 log.warn("[Notes] turn failed sessionId={} error={}",
                         row.getSessionId(), payload.get("errorMessage"));
-                demoNoteService.markFailed(row.getConversationId());
+                demoNoteService.markFailed(
+                        row.getConversationId(), asString(payload.get("errorMessage")));
                 verlaQuotaService.refundBySessionId(row.getSessionId(), "note_failed");
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_FAILED);
             }
@@ -94,7 +95,10 @@ public class NoteEventHandler implements VerlaEventHandler {
                 log.info("[Notes] turn cancelled sessionId={} reason={}",
                         row.getSessionId(), payload.get("reason"));
                 // 取消按「未完成」收口：前端据此提示可重试，不落 failed 事件语义
-                demoNoteService.markFailed(row.getConversationId());
+                String cancelReason = asString(payload.get("reason"));
+                demoNoteService.markFailed(
+                        row.getConversationId(),
+                        cancelReason == null ? "cancelled" : cancelReason);
                 verlaQuotaService.refundBySessionId(row.getSessionId(), "note_cancelled");
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_CANCELLED);
             }

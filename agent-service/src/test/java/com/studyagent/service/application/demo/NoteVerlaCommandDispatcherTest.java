@@ -1,5 +1,7 @@
 package com.studyagent.service.application.demo;
 
+import com.studyagent.common.analytics.AnalyticsEvents;
+import com.studyagent.common.analytics.AnalyticsService;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.quota.FeatureCode;
 import com.studyagent.common.verla.envelope.VerlaCommandEnvelope;
@@ -68,6 +70,7 @@ class NoteVerlaCommandDispatcherTest {
     private VerlaConversationService conversationService;
     private MqOutboxService mqOutboxService;
     private VerlaQuotaService verlaQuotaService;
+    private AnalyticsService analyticsService;
     private NoteVerlaCommandDispatcher dispatcher;
 
     @BeforeEach
@@ -78,6 +81,7 @@ class NoteVerlaCommandDispatcherTest {
         conversationService = mock(VerlaConversationService.class);
         mqOutboxService = mock(MqOutboxService.class);
         verlaQuotaService = mock(VerlaQuotaService.class);
+        analyticsService = mock(AnalyticsService.class);
 
         dispatcher = new NoteVerlaCommandDispatcher(
                 conversationRepository,
@@ -86,7 +90,8 @@ class NoteVerlaCommandDispatcherTest {
                 new SessionStateMachine(),
                 conversationService,
                 mqOutboxService,
-                verlaQuotaService);
+                verlaQuotaService,
+                analyticsService);
         ReflectionTestUtils.setField(dispatcher, "commandExchange", COMMAND_EXCHANGE);
 
         when(turnRepository.save(any(VerlaTurn.class))).thenAnswer(invocation -> {
@@ -114,6 +119,8 @@ class NoteVerlaCommandDispatcherTest {
         verify(conversationRepository).touchOnNewTurn(VERLA_CONVERSATION_ID, TURN_ID);
         // 首轮扣 1 次作业额度（TASK_CREATE），与作业共用同一份会员额度
         verify(verlaQuotaService).consumeForAssignmentRun(any(VerlaQuotaContext.class));
+        verify(analyticsService).capture(
+                eq("user_1"), eq(AnalyticsEvents.NOTE_GENERATION_STARTED), any());
 
         ArgumentCaptor<VerlaSession> sessionCaptor = ArgumentCaptor.forClass(VerlaSession.class);
         verify(sessionRepository, org.mockito.Mockito.times(2)).save(sessionCaptor.capture());

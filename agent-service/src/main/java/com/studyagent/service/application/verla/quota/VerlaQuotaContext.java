@@ -14,6 +14,7 @@ import lombok.Builder;
  * @param sessionId    agent session id（{@code verla_sessions.id}）；refund 索引列
  * @param intent       上层 intent：{@code ASSIGNMENT / AI_DETECTION / AI_HUMANIZER}
  * @param userMessageId 本轮用户消息 ID（用于审计写入 biz_context；可空）
+ * @param requestId    客户端重试请求 ID（知识图单图重试幂等键；可空）
  */
 @Builder
 public record VerlaQuotaContext(
@@ -22,5 +23,6 @@ public record VerlaQuotaContext(
         Long turnId,
         Long sessionId,
         String intent,
-        Long userMessageId
+        Long userMessageId,
+        String requestId
 ) {}

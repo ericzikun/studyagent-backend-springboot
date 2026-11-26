@@ -4397,6 +4397,8 @@ public class BillingDomainServiceImpl implements BillingDomainService {
                 .detectionQuotaUnit("words")
                 .humanizerQuota(entity.getHumanizerQuota())
                 .humanizerQuotaUnit("words")
+                .noteInfographicQuota(entity.getNoteInfographicQuota() == null ? 0L : entity.getNoteInfographicQuota())
+                .noteInfographicQuotaUnit("time")
                 .maxFiles(entity.getMaxFiles())
                 .maxFollowupEdits(entity.getMaxFollowupEdits())
                 .allowedOutputTypes(entity.getAllowedOutputTypes())

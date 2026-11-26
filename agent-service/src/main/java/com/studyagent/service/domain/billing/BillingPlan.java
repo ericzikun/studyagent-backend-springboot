@@ -25,6 +25,8 @@ public class BillingPlan {
     private String detectionQuotaUnit;
     private Long humanizerQuota;
     private String humanizerQuotaUnit;
+    private Long noteInfographicQuota;
+    private String noteInfographicQuotaUnit;
     private Integer maxFiles;
     private Integer maxFollowupEdits;
     private String allowedOutputTypes;
@@ -45,6 +47,8 @@ public class BillingPlan {
                 .detectionQuotaUnit("words")
                 .humanizerQuota(1_000L)
                 .humanizerQuotaUnit("words")
+                .noteInfographicQuota(0L)
+                .noteInfographicQuotaUnit("time")
                 .maxFiles(3)
                 .maxFollowupEdits(3)
                 .allowedOutputTypes("[\"writing\"]")
@@ -71,6 +75,8 @@ public class BillingPlan {
                 .detectionQuotaUnit("words")
                 .humanizerQuota(0L)
                 .humanizerQuotaUnit("words")
+                .noteInfographicQuota(0L)
+                .noteInfographicQuotaUnit("time")
                 .maxFiles(3)
                 .maxFollowupEdits(0)
                 .allowedOutputTypes("[\"writing\"]")

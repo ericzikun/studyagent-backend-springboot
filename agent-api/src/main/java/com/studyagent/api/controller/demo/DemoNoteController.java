@@ -10,6 +10,7 @@ import com.studyagent.api.dto.demo.note.NoteGenerateRequest;
 import com.studyagent.api.dto.demo.note.NoteGenerateResponseVO;
 import com.studyagent.api.dto.demo.note.NoteProposalCommitRequest;
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.NoteAccessService;
 import com.studyagent.service.application.demo.note.NoteBlogTtsService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
@@ -54,6 +55,7 @@ import java.util.Map;
 public class DemoNoteController {
 
     private final DemoNoteService service;
+    private final NoteAccessService noteAccessService;
     private final NoteVerlaCommandDispatcher commandDispatcher;
     private final VerlaEditorPdfExportService pdfExportService;
     private final NoteBlogTtsService blogTtsService;
@@ -262,6 +264,24 @@ public class DemoNoteController {
     }
 
     /**
+     * 知识图单图重试：额度不足时返回 INSUFFICIENT_QUOTA，前端打开会员升级弹窗。
+     * <p>只重跑图片，不重写笔记、不追加聊天消息。
+     */
+    @PostMapping("/conversations/{id}/infographic/retry")
+    public Result<NoteGenerateResponseVO> retryInfographic(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        noteAccessService.assertCanUseNotes(clerkUserId);
+        NoteConversation conv = service.getOwned(
+                clerkUserId, service.resolveConversationId(clerkUserId, id));
+        Object rawRequestId = body == null ? null : body.get("requestId");
+        String requestId = rawRequestId == null ? null : String.valueOf(rawRequestId);
+        return Result.success(NoteGenerateResponseVO.from(
+                commandDispatcher.dispatchInfographicRetry(conv, requestId)));
+    }
+
+    /**
      * 派发一轮笔记回合。
      * <p>首轮（带 {@code objectId}/{@code text}）：落素材 + 把 query 落成第 1 条用户消息 →
      * 解析 → 归纳 → 写整篇笔记。<br>
@@ -277,6 +297,7 @@ public class DemoNoteController {
             throw new com.studyagent.common.exception.BusinessException(
                     com.studyagent.common.api.ApiCode.PARAM_ERROR.getCode(), "request body is required");
         }
+        noteAccessService.assertCanUseNotes(clerkUserId);
         boolean firstTurn = DemoNoteService.isFirstTurnInput(req.getSourceType(), req.getObjectId(), req.getText());
 
         NoteTurnPreparation prepared = firstTurn

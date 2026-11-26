@@ -46,7 +46,8 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
     private static final List<String> PLAN_FEATURE_CODES = List.of(
             FeatureCode.TASK_CREATE.getCode(),
             FeatureCode.AI_DETECTION.getCode(),
-            FeatureCode.HUMANIZER.getCode());
+            FeatureCode.HUMANIZER.getCode(),
+            FeatureCode.NOTE_INFOGRAPHIC.getCode());
     private static final String LEDGER_TYPE_PLAN_RESET = "plan_reset";
     private static final String LEDGER_TYPE_UPGRADE_GRANT = "upgrade_grant";
     private static final String LEDGER_TYPE_PLAN_CLEAR = "plan_clear";
@@ -861,6 +862,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
         grants.add(new FeatureGrant(FeatureCode.TASK_CREATE.getCode(), defaultLong(plan.getAssignmentQuota())));
         grants.add(new FeatureGrant(FeatureCode.AI_DETECTION.getCode(), defaultLong(plan.getDetectionQuota())));
         grants.add(new FeatureGrant(FeatureCode.HUMANIZER.getCode(), defaultLong(plan.getHumanizerQuota())));
+        grants.add(new FeatureGrant(FeatureCode.NOTE_INFOGRAPHIC.getCode(), defaultLong(plan.getNoteInfographicQuota())));
         return grants;
     }
 
@@ -869,6 +871,7 @@ public class PlanQuotaServiceImpl implements PlanQuotaService {
             case "task_create" -> defaultLong(plan.getAssignmentQuota());
             case "ai_detection" -> defaultLong(plan.getDetectionQuota());
             case "humanizer" -> defaultLong(plan.getHumanizerQuota());
+            case "note_infographic" -> defaultLong(plan.getNoteInfographicQuota());
             default -> throw new IllegalArgumentException("Unsupported feature for plan refresh: " + featureCode);
         };
     }

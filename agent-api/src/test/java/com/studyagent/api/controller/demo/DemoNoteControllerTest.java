@@ -1,6 +1,7 @@
 package com.studyagent.api.controller.demo;
 
 import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.NoteAccessService;
 import com.studyagent.service.application.demo.note.NoteBlogTtsService;
 import com.studyagent.service.application.demo.NoteVerlaCommandDispatcher;
 import com.studyagent.service.application.verla.VerlaEditorPdfExportService;
@@ -44,6 +45,7 @@ class DemoNoteControllerTest {
 
     private DemoNoteService service;
     private NoteVerlaCommandDispatcher dispatcher;
+    private NoteAccessService noteAccessService;
     private VerlaEditorPdfExportService pdfExportService;
     private NoteBlogTtsService blogTtsService;
     private MockMvc mockMvc;
@@ -52,10 +54,11 @@ class DemoNoteControllerTest {
     void setUp() {
         service = mock(DemoNoteService.class);
         dispatcher = mock(NoteVerlaCommandDispatcher.class);
+        noteAccessService = mock(NoteAccessService.class);
         pdfExportService = mock(VerlaEditorPdfExportService.class);
         blogTtsService = mock(NoteBlogTtsService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DemoNoteController(service, dispatcher, pdfExportService, blogTtsService))
+                .standaloneSetup(new DemoNoteController(service, noteAccessService, dispatcher, pdfExportService, blogTtsService))
                 .build();
     }
 
@@ -156,7 +159,7 @@ class DemoNoteControllerTest {
     void generate_prepares_first_turn_then_dispatches() throws Exception {
         NoteConversation prepared = conversation();
         when(service.prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记"))
+                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记", null))
                 .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
         when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
                 .thenReturn(NoteGenerateDispatchResult.builder()
@@ -179,7 +182,7 @@ class DemoNoteControllerTest {
                 .andExpect(jsonPath("$.data.correlationId").value("conv:11:turn:22:sess:33"));
 
         verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, "file", "obj_123", null, "lecture.pdf",
-                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记");
+                "数据结构", "exam_prep", "zh-CN", "给我一份复习笔记", null);
         ArgumentCaptor<NoteTurnContext> ctx = ArgumentCaptor.forClass(NoteTurnContext.class);
         verify(dispatcher).dispatch(eq(prepared), ctx.capture());
         assertTrue(ctx.getValue().isFirstTurn());
@@ -255,7 +258,7 @@ class DemoNoteControllerTest {
     void generate_treats_text_source_as_first_turn() throws Exception {
         NoteConversation prepared = conversation();
         when(service.prepareFirstTurn(eq("user_1"), eq(NOTE_CONVERSATION_ID), eq(null), eq(null),
-                eq("一段材料"), eq(null), eq(null), eq(null), eq(null), eq(null)))
+                eq("一段材料"), eq(null), eq(null), eq(null), eq(null), eq(null), eq(null)))
                 .thenReturn(NoteTurnPreparation.builder().conversation(prepared).history(List.of()).build());
         when(dispatcher.dispatch(eq(prepared), any(NoteTurnContext.class)))
                 .thenReturn(NoteGenerateDispatchResult.builder().build());
@@ -266,7 +269,7 @@ class DemoNoteControllerTest {
                         .content("{\"text\":\"一段材料\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null, null);
+        verify(service).prepareFirstTurn("user_1", NOTE_CONVERSATION_ID, null, null, "一段材料", null, null, null, null, null, null);
     }
 
     @Test

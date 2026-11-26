@@ -60,6 +60,7 @@ class NoteEventHandlerTest {
                         VerlaAgentEventType.NOTE_TITLE_RESOLVED,
                         VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
                         VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
+                        VerlaAgentEventType.NOTE_INFOGRAPHIC_STATUS,
                         VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
                         VerlaAgentEventType.NOTE_TURN_COMPLETED,
                         VerlaAgentEventType.NOTE_FAILED,
@@ -113,6 +114,24 @@ class NoteEventHandlerTest {
                                 "infographicUrl", "https://oss.test/note.png")));
 
         verify(blogAudioPrefetchService).schedule(saved, "# blog");
+    }
+
+    @Test
+    void infographic_failure_refunds_the_reserved_image_credit() {
+        com.studyagent.service.domain.demo.note.NoteConversation failed =
+                new com.studyagent.service.domain.demo.note.NoteConversation();
+        failed.setId(7L);
+        failed.setVerlaConversationId(VERLA_CONVERSATION_ID);
+        failed.setInfographicStatus(DemoNoteService.INFOGRAPHIC_STATUS_FAILED);
+        when(demoNoteService.applyInfographicStatus(
+                VERLA_CONVERSATION_ID, "FAILED", null)).thenReturn(failed);
+
+        handler.handle(
+                row(VerlaAgentEventType.NOTE_INFOGRAPHIC_STATUS),
+                env(VerlaAgentEventType.NOTE_INFOGRAPHIC_STATUS,
+                        Map.of("status", "FAILED", "error", "provider down")));
+
+        verify(quotaService).refundBySessionId(SESSION_ID, "note_infographic_failed");
     }
 
     @Test

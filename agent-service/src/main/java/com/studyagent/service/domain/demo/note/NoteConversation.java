@@ -58,6 +58,8 @@ public class NoteConversation {
     private String quizJson;
     /** 知识图 OSS URL；与首轮 extras 同批生成，旧会话为 null。 */
     private String infographicUrl;
+    /** 知识图状态：NONE / GENERATING / READY / FAILED / QUOTA_EXHAUSTED。 */
+    private String infographicStatus;
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d；旧会话为 null。 */
     private String infographicStyle;
     /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */

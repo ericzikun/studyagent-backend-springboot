@@ -16,9 +16,11 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
+import com.studyagent.service.application.verla.quota.NoteInfographicReservation;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.repo.DemoNoteRepository;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
@@ -75,6 +77,7 @@ public class NoteVerlaCommandDispatcher {
     private final VerlaConversationService conversationService;
     private final MqOutboxService mqOutboxService;
     private final VerlaQuotaService verlaQuotaService;
+    private final DemoNoteRepository noteRepository;
     private final AnalyticsService analyticsService;
 
     /**
@@ -139,16 +142,21 @@ public class NoteVerlaCommandDispatcher {
         session.setUpdatedAt(LocalDateTime.now());
         sessionRepository.save(session);
 
-        // 商业化：笔记与作业共用同一份作业额度（TASK_CREATE），只在首轮扣 1 次，
-        // 多轮追问不重复收费；失败/取消由 NoteEventHandler 按 session 退款。
+        // 商业化：笔记正文/导图/播客/测验不限次；只有知识图按张预占 1 次。
+        // 余额不足不阻断笔记，只把图片状态置为 QUOTA_EXHAUSTED，由前端引导升级。
         if (ctx.isFirstTurn()) {
-            verlaQuotaService.consumeForAssignmentRun(VerlaQuotaContext.builder()
-                    .clerkUserId(noteConv.getClerkUserId())
-                    .conversationId(verlaConversationId)
-                    .turnId(turn.getId())
-                    .sessionId(session.getId())
-                    .intent("NOTE_MAKER")
-                    .build());
+            NoteInfographicReservation reservation = verlaQuotaService.reserveForNoteInfographic(
+                    VerlaQuotaContext.builder()
+                            .clerkUserId(noteConv.getClerkUserId())
+                            .conversationId(verlaConversationId)
+                            .turnId(turn.getId())
+                            .sessionId(session.getId())
+                            .intent("NOTE_MAKER")
+                            .build());
+            noteConv.setInfographicStatus(reservation.allowed()
+                    ? DemoNoteService.INFOGRAPHIC_STATUS_GENERATING
+                    : DemoNoteService.INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED);
+            noteRepository.saveConversation(noteConv);
         }
 
         VerlaCommandEnvelope envelope = VerlaCommandEnvelope.builder()
@@ -211,6 +219,152 @@ public class NoteVerlaCommandDispatcher {
     }
 
     /**
+     * 知识图单图重试：只重跑图片，不重写笔记、不追加聊天消息。
+     * <p>复用 {@code cmd.note.generate} 动作以避免新增 MQ 路由；payload.mode 让 Python
+     * 直接进入 infographic_only 分支。额度预占失败时抛 InsufficientQuotaException，
+     * 前端据此打开会员升级弹窗。
+     */
+    @Transactional
+    public NoteGenerateDispatchResult dispatchInfographicRetry(NoteConversation noteConv, String requestId) {
+        if (noteConv == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "会话不存在");
+        }
+        if (noteConv.getNoteMd() == null || noteConv.getNoteMd().isBlank()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "笔记正文为空，无法生成知识图");
+        }
+        String currentStatus = noteConv.getInfographicStatus();
+        if (DemoNoteService.INFOGRAPHIC_STATUS_GENERATING.equals(currentStatus)) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "知识图正在生成，请稍候");
+        }
+        if (DemoNoteService.INFOGRAPHIC_STATUS_READY.equals(currentStatus)) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "知识图已生成");
+        }
+
+        Long verlaConversationId = noteConv.getVerlaConversationId();
+        if (verlaConversationId == null) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "会话尚未接入主线事件通道");
+        }
+        VerlaConversation verlaConv = conversationRepository.findById(verlaConversationId);
+        if (verlaConv == null) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
+                    "主线会话不存在: " + verlaConversationId);
+        }
+
+        LocalDateTime now = DateTimeFormats.now();
+        VerlaTurn turn = VerlaTurn.builder()
+                .conversationId(verlaConversationId)
+                .status(TurnStatus.CREATED.name())
+                .completedSteps(0)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        turnRepository.save(turn);
+        conversationRepository.touchOnNewTurn(verlaConversationId, turn.getId());
+
+        VerlaSession session = VerlaSession.builder()
+                .conversationId(verlaConversationId)
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.NOTE.name())
+                .featureCode(FeatureCode.DEMO_NOTE_MAKER.getCode())
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(session);
+        session.setCorrelationId(
+                VerlaCorrelationId.of(verlaConversationId, turn.getId(), session.getId()));
+        SessionStatus dispatching = sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH);
+        session.setStatus(dispatching.name());
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        String retryId = requestId == null || requestId.isBlank()
+                ? UUID.randomUUID().toString() : requestId.trim();
+        verlaQuotaService.reserveForNoteInfographic(
+                VerlaQuotaContext.builder()
+                        .clerkUserId(noteConv.getClerkUserId())
+                        .conversationId(verlaConversationId)
+                        .turnId(turn.getId())
+                        .sessionId(session.getId())
+                        .intent("NOTE_MAKER_INFOGRAPHIC_RETRY")
+                        .requestId(retryId)
+                        .build(),
+                true);
+
+        noteConv.setInfographicStatus(DemoNoteService.INFOGRAPHIC_STATUS_GENERATING);
+        noteConv.setInfographicUrl(null);
+        noteConv.setUpdatedAt(LocalDateTime.now());
+        noteRepository.saveConversation(noteConv);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("mode", "infographic_only");
+        payload.put("noteMd", noteConv.getNoteMd());
+        payload.put("title", noteConv.getTitle());
+        payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
+        payload.put("infographicStyle",
+                noteConv.getInfographicStyle() == null || noteConv.getInfographicStyle().isBlank()
+                        ? DemoNoteService.INFOGRAPHIC_STYLE_CLASSIC : noteConv.getInfographicStyle());
+        payload.put("noteConversationId", noteConv.getId());
+        payload.put("requestId", retryId);
+
+        VerlaCommandEnvelope envelope = VerlaCommandEnvelope.builder()
+                .schemaVersion(1)
+                .messageId("cmd-" + UUID.randomUUID())
+                .correlationId(session.getCorrelationId())
+                .orderingKey(VerlaCorrelationId.orderingKey(session.getId()))
+                .action(VerlaCommandAction.CMD_NOTE_GENERATE.getCode())
+                .timestamp(Instant.now())
+                .producer(VerlaProducerInfo.builder()
+                        .service(PRODUCER_SERVICE)
+                        .instanceId(INSTANCE_ID)
+                        .build())
+                .conversation(VerlaConversationRef.builder()
+                        .conversationId(verlaConversationId)
+                        .userId(verlaConv.getUserId())
+                        .build())
+                .turn(VerlaTurnRef.builder()
+                        .turnId(turn.getId())
+                        .build())
+                .session(VerlaSessionRef.builder()
+                        .sessionId(session.getId())
+                        .kind(VerlaSessionKind.NOTE)
+                        .feature(session.getFeatureCode())
+                        .build())
+                .payload(payload)
+                .build();
+
+        mqOutboxService.createVerlaCommand(
+                envelope, commandExchange, VerlaCommandAction.CMD_NOTE_GENERATE.getCode());
+
+        Map<String, Object> analyticsProps = new HashMap<>();
+        analyticsProps.put("task_type", "note");
+        analyticsProps.put("conversation_id", verlaConversationId);
+        analyticsProps.put("note_conversation_id", noteConv.getId());
+        analyticsProps.put("turn_id", turn.getId());
+        analyticsProps.put("session_id", session.getId());
+        analyticsProps.put("mode", "infographic_only");
+        analyticsService.capture(
+                noteConv.getClerkUserId(), AnalyticsEvents.NOTE_GENERATION_STARTED, analyticsProps);
+
+        log.info("[Notes] dispatched infographic retry noteConvId={}, verlaConvId={}, turnId={}, sessionId={}, requestId={}",
+                noteConv.getId(), verlaConversationId, turn.getId(), session.getId(), retryId);
+
+        return NoteGenerateDispatchResult.builder()
+                .verlaConversationId(verlaConversationId)
+                .turnId(turn.getId())
+                .sessionId(session.getId())
+                .correlationId(session.getCorrelationId())
+                .build();
+    }
+
+    /**
      * payload 字段是 Java / Python 的隐式契约，Python 侧 {@code NoteService} 直接按 key 取值：
      * <ul>
      *   <li>{@code message} —— 本轮用户说了什么（首轮 = 表单 query，可空；后续轮必填）</li>
@@ -246,6 +400,9 @@ public class NoteVerlaCommandDispatcher {
         payload.put("infographicStyle",
                 noteConv.getInfographicStyle() == null || noteConv.getInfographicStyle().isBlank()
                         ? DemoNoteService.INFOGRAPHIC_STYLE_CLASSIC : noteConv.getInfographicStyle());
+        // 首轮才生成知识图；额度不足时 Python 只跳过图片，其他 extras 照常。
+        payload.put("infographicEnabled", ctx.isFirstTurn()
+                && !DemoNoteService.INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED.equals(noteConv.getInfographicStatus()));
         payload.put("noteConversationId", noteConv.getId());
         if (ctx.isFirstTurn()) {
             payload.put("sourceType", noteConv.getSourceType());

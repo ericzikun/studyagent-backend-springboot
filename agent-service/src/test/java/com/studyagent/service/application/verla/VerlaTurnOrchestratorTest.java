@@ -2771,6 +2771,21 @@ class VerlaTurnOrchestratorTest {
         }
 
         @Override
+        public boolean isCommercialExempt(String clerkUserId) {
+            return false;
+        }
+
+        @Override
+        public com.studyagent.service.application.verla.quota.NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx) {
+            return com.studyagent.service.application.verla.quota.NoteInfographicReservation.exempt();
+        }
+
+        @Override
+        public com.studyagent.service.application.verla.quota.NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx, boolean throwIfInsufficient) {
+            return com.studyagent.service.application.verla.quota.NoteInfographicReservation.exempt();
+        }
+
+        @Override
         public void assertSufficientForAssignmentRun(String clerkUserId, Long turnId) {
         }
 

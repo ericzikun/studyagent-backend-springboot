@@ -99,6 +99,15 @@ public class DemoNoteService {
 
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d；未知值回落 classic。 */
     public static final String INFOGRAPHIC_STYLE_CLASSIC = "classic";
+    /** 知识图独立状态：NONE / GENERATING / READY / FAILED / QUOTA_EXHAUSTED。 */
+    public static final String INFOGRAPHIC_STATUS_NONE = "NONE";
+    public static final String INFOGRAPHIC_STATUS_GENERATING = "GENERATING";
+    public static final String INFOGRAPHIC_STATUS_READY = "READY";
+    public static final String INFOGRAPHIC_STATUS_FAILED = "FAILED";
+    public static final String INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED = "QUOTA_EXHAUSTED";
+    private static final Set<String> INFOGRAPHIC_STATUSES = Set.of(
+            INFOGRAPHIC_STATUS_NONE, INFOGRAPHIC_STATUS_GENERATING, INFOGRAPHIC_STATUS_READY,
+            INFOGRAPHIC_STATUS_FAILED, INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED);
     private static final Set<String> INFOGRAPHIC_STYLES = Set.of(
             INFOGRAPHIC_STYLE_CLASSIC, "game_hud", "hand_comic", "mii_3d");
 
@@ -183,6 +192,7 @@ public class DemoNoteService {
         c.setClerkUserId(clerkUserId);
         c.setTitle(DRAFT_TITLE);
         c.setStatus(STATUS_DRAFT);
+        c.setInfographicStatus(INFOGRAPHIC_STATUS_NONE);
         c.setVerlaConversationId(linkVerlaConversation(clerkUserId, DRAFT_TITLE, outputLanguage));
         LocalDateTime now = LocalDateTime.now();
         c.setCreatedAt(now);
@@ -283,6 +293,8 @@ public class DemoNoteService {
         c.setBlogAudioStatus(null);
         c.setBlogAudioJson(null);
         c.setBlogAudioSourceHash(null);
+        // 重新提交素材意味着旧知识图作废；新图由派发器按额度置为 GENERATING / QUOTA_EXHAUSTED。
+        c.setInfographicStatus(INFOGRAPHIC_STATUS_NONE);
         // 新一轮生成重新计数：旧版本基线对本次结果不再有意义
         c.setNoteVersion(0L);
         c.setStatus(STATUS_GENERATING);
@@ -848,6 +860,7 @@ public class DemoNoteService {
         }
         if (infographicUrl != null && !infographicUrl.isBlank()) {
             c.setInfographicUrl(infographicUrl);
+            c.setInfographicStatus(INFOGRAPHIC_STATUS_READY);
             changed = true;
         }
         if (!changed) {
@@ -863,6 +876,42 @@ public class DemoNoteService {
                 c.getInfographicUrl() != null,
                 c.getBlogAudioStatus());
         return c;
+    }
+
+    /** 只读：事件处理器按主线 id 反查笔记会话（知识图状态/退款判断用）。 */
+    public NoteConversation findByVerlaConversationId(Long verlaConversationId) {
+        return repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+    }
+
+    /**
+     * 知识图独立状态（{@code NOTE_INFOGRAPHIC_STATUS}）。
+     * <p>URL 到达即视为 READY；否则按 Python 上报状态落库。旧 Python 只发
+     * {@code NOTE_EXTRAS_COMMIT} 时由 {@link #applyExtras} 兼容置 READY。
+     */
+    @Transactional
+    public NoteConversation applyInfographicStatus(Long verlaConversationId, String status, String url) {
+        NoteConversation c = repo.findByVerlaConversationId(verlaConversationId).orElse(null);
+        if (c == null) {
+            log.warn("[Notes] infographic status dropped: no note conversation for verlaConvId={}",
+                    verlaConversationId);
+            return null;
+        }
+        if (url != null && !url.isBlank()) {
+            c.setInfographicUrl(url);
+            c.setInfographicStatus(INFOGRAPHIC_STATUS_READY);
+        } else {
+            c.setInfographicStatus(normalizeInfographicStatus(status));
+        }
+        c.setUpdatedAt(LocalDateTime.now());
+        repo.saveConversation(c);
+        log.info("[Notes] infographic status verlaConvId={} status={} url={}",
+                verlaConversationId, c.getInfographicStatus(), c.getInfographicUrl() != null);
+        return c;
+    }
+
+    private static String normalizeInfographicStatus(String raw) {
+        String normalized = raw == null ? "" : raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return INFOGRAPHIC_STATUSES.contains(normalized) ? normalized : INFOGRAPHIC_STATUS_NONE;
     }
 
     /** 异步预生成完成：只有 blog 内容仍是任务输入的那一份才落 manifest（防止旧任务覆盖新内容）。 */
@@ -932,6 +981,12 @@ public class DemoNoteService {
         if (!text.isEmpty()) {
             appendMessage(c, NoteMessage.ROLE_ASSISTANT, NoteMessage.TYPE_TEXT, text);
         }
+        // Python 没发独立图片状态时的兜底：回合已收口（extras 已 await），
+        // 仍在 GENERATING 且没有 URL 说明图片没有交付。
+        if (INFOGRAPHIC_STATUS_GENERATING.equals(c.getInfographicStatus())
+                && (c.getInfographicUrl() == null || c.getInfographicUrl().isBlank())) {
+            c.setInfographicStatus(INFOGRAPHIC_STATUS_FAILED);
+        }
         c.setStatus(STATUS_COMPLETED);
         repo.saveConversation(c);
         Map<String, Object> props = new HashMap<>();
@@ -956,6 +1011,10 @@ public class DemoNoteService {
         repo.findByVerlaConversationId(verlaConversationId).ifPresent(c -> {
             boolean firstFailure = !STATUS_FAILED.equals(c.getStatus());
             c.setStatus(STATUS_FAILED);
+            if (INFOGRAPHIC_STATUS_GENERATING.equals(c.getInfographicStatus())
+                    && (c.getInfographicUrl() == null || c.getInfographicUrl().isBlank())) {
+                c.setInfographicStatus(INFOGRAPHIC_STATUS_FAILED);
+            }
             repo.saveConversation(c);
             if (firstFailure) {
                 Map<String, Object> props = new HashMap<>();

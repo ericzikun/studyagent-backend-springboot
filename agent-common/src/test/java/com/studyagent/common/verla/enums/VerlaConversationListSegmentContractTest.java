@@ -29,7 +29,8 @@ class VerlaConversationListSegmentContractTest {
             "ai_detection",
             "ai_humanizer",
             "note",
-            "video_tutor");
+            "video_tutor",
+            "simulation");
 
     @Test
     void queryKeysMustMatchTheFrontendSegmentValuesVerbatim() {

@@ -774,11 +774,13 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
                 case "task" -> featureDisplayName + " consumed " + absAmount + " " + unitStr;
                 // V2 verla 链路扣费：与 V1 task 文案一致，前端无需新增分支
                 case "verla_session" -> featureDisplayName + " consumed " + absAmount + " " + unitStr;
+                case "note_infographic" -> "Knowledge image generated";
                 default -> "Consumed " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_REFUND -> switch (entity.getSourceType()) {
                 case "task" -> "Task failed, refunded " + absAmount + " " + unitStr;
                 case "verla_session" -> "Task failed, refunded " + absAmount + " " + unitStr;
+                case "note_infographic" -> "Knowledge image not delivered, refunded " + absAmount + " " + unitStr;
                 default -> "Refunded " + absAmount + " " + unitStr;
             };
             case LEDGER_TYPE_RECHARGE -> {
@@ -899,6 +901,7 @@ public class QuotaDomainServiceImpl implements QuotaDomainService {
             case "task_create" -> "Assignment";
             case "ai_detection" -> "AI Detection";
             case "humanizer" -> "Humanizer";
+            case "note_infographic" -> "Knowledge Image";
             case "simulation" -> "Simulation Lab";
             default -> featureCode;
         };

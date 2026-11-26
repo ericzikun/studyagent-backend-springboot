@@ -49,6 +49,7 @@ public class NoteEventHandler implements VerlaEventHandler {
             VerlaAgentEventType.NOTE_TITLE_RESOLVED,
             VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
             VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
+            VerlaAgentEventType.NOTE_INFOGRAPHIC_STATUS,
             VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
             VerlaAgentEventType.NOTE_TURN_COMPLETED,
             VerlaAgentEventType.NOTE_FAILED,
@@ -80,15 +81,19 @@ public class NoteEventHandler implements VerlaEventHandler {
             // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
             case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
             case NOTE_EXTRAS_COMMIT -> saveExtras(row, payload);
+            case NOTE_INFOGRAPHIC_STATUS -> saveInfographicStatus(row, payload);
             // 后续轮改文档只**提案**：存成待审，等用户接受才写正文（首轮不走这里）
             case NOTE_EDIT_PROPOSAL_READY -> saveProposal(row, payload);
             case NOTE_TURN_COMPLETED -> completeTurn(row, payload);
             case NOTE_FAILED -> {
                 log.warn("[Notes] turn failed sessionId={} error={}",
                         row.getSessionId(), payload.get("errorMessage"));
+                boolean imageDelivered = hasDeliveredInfographic(row.getConversationId());
                 demoNoteService.markFailed(
                         row.getConversationId(), asString(payload.get("errorMessage")));
-                verlaQuotaService.refundBySessionId(row.getSessionId(), "note_failed");
+                if (!imageDelivered) {
+                    verlaQuotaService.refundBySessionId(row.getSessionId(), "note_failed");
+                }
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_FAILED);
             }
             case NOTE_CANCELLED -> {
@@ -96,14 +101,38 @@ public class NoteEventHandler implements VerlaEventHandler {
                         row.getSessionId(), payload.get("reason"));
                 // 取消按「未完成」收口：前端据此提示可重试，不落 failed 事件语义
                 String cancelReason = asString(payload.get("reason"));
+                boolean imageDelivered = hasDeliveredInfographic(row.getConversationId());
                 demoNoteService.markFailed(
                         row.getConversationId(),
                         cancelReason == null ? "cancelled" : cancelReason);
-                verlaQuotaService.refundBySessionId(row.getSessionId(), "note_cancelled");
+                if (!imageDelivered) {
+                    verlaQuotaService.refundBySessionId(row.getSessionId(), "note_cancelled");
+                }
                 advanceSession(row.getSessionId(), SessionEvent.AGENT_CANCELLED);
             }
             default -> log.debug("[Notes] ignored event {} sessionId={}", type, row.getSessionId());
         }
+    }
+
+    /**
+     * 知识图独立状态：URL 到达 = READY（不退）；FAILED 且无 URL = 退款。
+     * <p>状态行先落库，再做退款；退款失败不影响状态展示。
+     */
+    private void saveInfographicStatus(VerlaEventInbox row, Map<String, Object> payload) {
+        String status = asString(payload.get("status"));
+        String url = asString(payload.get("url"));
+        NoteConversation saved = demoNoteService.applyInfographicStatus(
+                row.getConversationId(), status, url);
+        if (saved != null
+                && DemoNoteService.INFOGRAPHIC_STATUS_FAILED.equals(saved.getInfographicStatus())
+                && (saved.getInfographicUrl() == null || saved.getInfographicUrl().isBlank())) {
+            verlaQuotaService.refundBySessionId(row.getSessionId(), "note_infographic_failed");
+        }
+    }
+
+    private boolean hasDeliveredInfographic(Long verlaConversationId) {
+        NoteConversation note = demoNoteService.findByVerlaConversationId(verlaConversationId);
+        return note != null && note.getInfographicUrl() != null && !note.getInfographicUrl().isBlank();
     }
 
     private void saveArtifact(VerlaEventInbox row, Map<String, Object> payload) {
@@ -140,7 +169,15 @@ public class NoteEventHandler implements VerlaEventHandler {
     }
 
     private void completeTurn(VerlaEventInbox row, Map<String, Object> payload) {
+        NoteConversation before = demoNoteService.findByVerlaConversationId(row.getConversationId());
+        boolean imagePending = before != null
+                && DemoNoteService.INFOGRAPHIC_STATUS_GENERATING.equals(before.getInfographicStatus())
+                && (before.getInfographicUrl() == null || before.getInfographicUrl().isBlank());
         demoNoteService.completeTurn(row.getConversationId(), asString(payload.get("assistantText")));
+        if (imagePending) {
+            // 兼容旧 Python：没有独立状态事件且 extras 没有 URL，说明图片没交付。
+            verlaQuotaService.refundBySessionId(row.getSessionId(), "note_infographic_missing");
+        }
         advanceSession(row.getSessionId(), SessionEvent.AGENT_COMPLETED);
     }
 

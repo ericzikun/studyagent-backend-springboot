@@ -12,9 +12,11 @@ import com.studyagent.service.application.MqOutboxService;
 import com.studyagent.service.application.demo.dto.NoteGenerateDispatchResult;
 import com.studyagent.service.application.demo.dto.NoteTurnContext;
 import com.studyagent.service.application.verla.VerlaConversationService;
+import com.studyagent.service.application.verla.quota.NoteInfographicReservation;
 import com.studyagent.service.application.verla.quota.VerlaQuotaContext;
 import com.studyagent.service.application.verla.quota.VerlaQuotaService;
 import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.demo.note.repo.DemoNoteRepository;
 import com.studyagent.service.domain.verla.VerlaConversation;
 import com.studyagent.service.domain.verla.VerlaSession;
 import com.studyagent.service.domain.verla.VerlaTurn;
@@ -70,6 +72,7 @@ class NoteVerlaCommandDispatcherTest {
     private VerlaConversationService conversationService;
     private MqOutboxService mqOutboxService;
     private VerlaQuotaService verlaQuotaService;
+    private DemoNoteRepository noteRepository;
     private AnalyticsService analyticsService;
     private NoteVerlaCommandDispatcher dispatcher;
 
@@ -81,7 +84,10 @@ class NoteVerlaCommandDispatcherTest {
         conversationService = mock(VerlaConversationService.class);
         mqOutboxService = mock(MqOutboxService.class);
         verlaQuotaService = mock(VerlaQuotaService.class);
+        noteRepository = mock(DemoNoteRepository.class);
         analyticsService = mock(AnalyticsService.class);
+        when(verlaQuotaService.reserveForNoteInfographic(any(VerlaQuotaContext.class)))
+                .thenReturn(NoteInfographicReservation.reserved(99L));
 
         dispatcher = new NoteVerlaCommandDispatcher(
                 conversationRepository,
@@ -91,6 +97,7 @@ class NoteVerlaCommandDispatcherTest {
                 conversationService,
                 mqOutboxService,
                 verlaQuotaService,
+                noteRepository,
                 analyticsService);
         ReflectionTestUtils.setField(dispatcher, "commandExchange", COMMAND_EXCHANGE);
 
@@ -117,8 +124,9 @@ class NoteVerlaCommandDispatcherTest {
         verify(turnRepository).save(turnCaptor.capture());
         assertEquals(VERLA_CONVERSATION_ID, turnCaptor.getValue().getConversationId());
         verify(conversationRepository).touchOnNewTurn(VERLA_CONVERSATION_ID, TURN_ID);
-        // 首轮扣 1 次作业额度（TASK_CREATE），与作业共用同一份会员额度
-        verify(verlaQuotaService).consumeForAssignmentRun(any(VerlaQuotaContext.class));
+        // 首轮只预占 1 次知识图额度；笔记正文/其他 extras 不扣次
+        verify(verlaQuotaService).reserveForNoteInfographic(any(VerlaQuotaContext.class));
+        org.mockito.Mockito.verify(noteRepository).saveConversation(any(NoteConversation.class));
         verify(analyticsService).capture(
                 eq("user_1"), eq(AnalyticsEvents.NOTE_GENERATION_STARTED), any());
 
@@ -163,6 +171,7 @@ class NoteVerlaCommandDispatcherTest {
         assertEquals(0L, payload.get("documentBaseVersion"));
         assertEquals(List.of(), payload.get("history"));
         assertEquals(NOTE_CONVERSATION_ID, payload.get("noteConversationId"));
+        assertEquals(true, payload.get("infographicEnabled"));
         assertFalse(payload.containsKey("conversationId"));
 
         assertEquals(VERLA_CONVERSATION_ID, result.getVerlaConversationId());

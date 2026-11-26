@@ -69,6 +69,10 @@ public enum ApiCode {
             1033,
             "Resolve the subscription payment to continue",
             "请先处理订阅付款问题"),
+    NOTE_MEMBER_REQUIRED(
+            1034,
+            "A paid membership is required to use AI Notes",
+            "使用 AI 笔记需要先开通付费会员"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

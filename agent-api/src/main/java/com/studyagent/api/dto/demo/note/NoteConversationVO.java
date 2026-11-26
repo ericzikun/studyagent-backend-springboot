@@ -71,6 +71,8 @@ public class NoteConversationVO {
     private String quizJson;
     /** 知识图 OSS URL；旧会话为 null。 */
     private String infographicUrl;
+    /** 知识图状态：NONE / GENERATING / READY / FAILED / QUOTA_EXHAUSTED。 */
+    private String infographicStatus;
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d；旧会话返回 classic。 */
     private String infographicStyle;
     /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
@@ -115,6 +117,8 @@ public class NoteConversationVO {
                 .blogMd(c.getBlogMd())
                 .quizJson(c.getQuizJson())
                 .infographicUrl(c.getInfographicUrl())
+                .infographicStatus(c.getInfographicStatus() == null || c.getInfographicStatus().isBlank()
+                        ? "NONE" : c.getInfographicStatus())
                 .infographicStyle(c.getInfographicStyle() == null || c.getInfographicStyle().isBlank()
                         ? "classic" : c.getInfographicStyle())
                 .blogAudioStatus(c.getBlogAudioStatus())

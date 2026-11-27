@@ -27,7 +27,7 @@ INSERT INTO ai_feature_defs (
     feature_code, feature_name, quota_unit, free_quota_period,
     free_quota_amount, is_active, display_order
 ) VALUES (
-    'note_infographic', 'Knowledge Image', 'count', 'monthly',
+    'note_infographic', 'Infographics', 'count', 'monthly',
     0, 1, 40
 )
 ON DUPLICATE KEY UPDATE

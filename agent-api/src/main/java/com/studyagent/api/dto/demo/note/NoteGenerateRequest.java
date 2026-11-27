@@ -48,6 +48,12 @@ public class NoteGenerateRequest {
      */
     private String infographicStyle;
 
+    /**
+     * 首轮要额外生成的功能：mindmap / podcast / quiz / infographic。
+     * <p>缺省（null）表示沿用旧行为生成全部；空列表表示只生成笔记正文。
+     */
+    private java.util.List<String> features;
+
     /** 上传表单：课程名称（可选）。 */
     private String courseName;
 

@@ -144,7 +144,10 @@ public class NoteVerlaCommandDispatcher {
 
         // 商业化：笔记正文/导图/播客/测验不限次；只有知识图按张预占 1 次。
         // 余额不足不阻断笔记，只把图片状态置为 QUOTA_EXHAUSTED，由前端引导升级。
-        if (ctx.isFirstTurn()) {
+        // 用户在表单里取消勾选知识图时既不预占也不生成，避免白扣一次额度。
+        boolean infographicRequested = ctx.getFeatures() == null
+                || ctx.getFeatures().stream().anyMatch("infographic"::equalsIgnoreCase);
+        if (ctx.isFirstTurn() && infographicRequested) {
             NoteInfographicReservation reservation = verlaQuotaService.reserveForNoteInfographic(
                     VerlaQuotaContext.builder()
                             .clerkUserId(noteConv.getClerkUserId())
@@ -365,6 +368,134 @@ public class NoteVerlaCommandDispatcher {
     }
 
     /**
+     * 按功能补生成：只生成 mindmap / podcast / quiz 中的一项；infographic 委托单图重试。
+     * <p>不重写笔记、不追加聊天消息，适合用户在 tab 内点击「生成」。
+     */
+    @Transactional
+    public NoteGenerateDispatchResult dispatchExtraGeneration(NoteConversation noteConv,
+                                                              String rawFeature,
+                                                              String requestId) {
+        if (noteConv == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "会话不存在");
+        }
+        String feature = rawFeature == null ? "" : rawFeature.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("infographic".equals(feature)) {
+            return dispatchInfographicRetry(noteConv, requestId);
+        }
+        if (!List.of("mindmap", "podcast", "quiz").contains(feature)) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(),
+                    "feature 只支持 mindmap、podcast、quiz 或 infographic");
+        }
+        if (noteConv.getNoteMd() == null || noteConv.getNoteMd().isBlank()) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "笔记正文为空，无法生成扩展内容");
+        }
+        boolean alreadyGenerated = switch (feature) {
+            case "mindmap" -> noteConv.getMindmapJson() != null && !noteConv.getMindmapJson().isBlank();
+            case "podcast" -> noteConv.getBlogMd() != null && !noteConv.getBlogMd().isBlank();
+            case "quiz" -> noteConv.getQuizJson() != null && !noteConv.getQuizJson().isBlank();
+            default -> false;
+        };
+        if (alreadyGenerated) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "该功能已经生成");
+        }
+
+        Long verlaConversationId = noteConv.getVerlaConversationId();
+        if (verlaConversationId == null) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(), "会话尚未接入主线事件通道");
+        }
+        VerlaConversation verlaConv = conversationRepository.findById(verlaConversationId);
+        if (verlaConv == null) {
+            throw new BusinessException(ApiCode.ILLEGAL_STATE.getCode(),
+                    "主线会话不存在: " + verlaConversationId);
+        }
+
+        LocalDateTime now = DateTimeFormats.now();
+        VerlaTurn turn = VerlaTurn.builder()
+                .conversationId(verlaConversationId)
+                .status(TurnStatus.CREATED.name())
+                .completedSteps(0)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        turnRepository.save(turn);
+        conversationRepository.touchOnNewTurn(verlaConversationId, turn.getId());
+
+        VerlaSession session = VerlaSession.builder()
+                .conversationId(verlaConversationId)
+                .turnId(turn.getId())
+                .kind(VerlaSessionKind.NOTE.name())
+                .featureCode(FeatureCode.DEMO_NOTE_MAKER.getCode())
+                .status(SessionStatus.CREATED.name())
+                .correlationId("placeholder")
+                .expectedSeq(1L)
+                .lastEventSeq(0L)
+                .startedAt(now)
+                .lastProgressAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        sessionRepository.save(session);
+        session.setCorrelationId(
+                VerlaCorrelationId.of(verlaConversationId, turn.getId(), session.getId()));
+        SessionStatus dispatching = sessionStateMachine.next(SessionStatus.CREATED, SessionEvent.DISPATCH);
+        session.setStatus(dispatching.name());
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+
+        String retryId = requestId == null || requestId.isBlank()
+                ? UUID.randomUUID().toString() : requestId.trim();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("mode", "extras_only");
+        payload.put("feature", feature);
+        payload.put("noteMd", noteConv.getNoteMd());
+        payload.put("title", noteConv.getTitle());
+        payload.put("outputLanguage", conversationService.resolveOutputLanguage(verlaConv));
+        payload.put("noteConversationId", noteConv.getId());
+        payload.put("requestId", retryId);
+
+        VerlaCommandEnvelope envelope = VerlaCommandEnvelope.builder()
+                .schemaVersion(1)
+                .messageId("cmd-" + UUID.randomUUID())
+                .correlationId(session.getCorrelationId())
+                .orderingKey(VerlaCorrelationId.orderingKey(session.getId()))
+                .action(VerlaCommandAction.CMD_NOTE_GENERATE.getCode())
+                .timestamp(Instant.now())
+                .producer(VerlaProducerInfo.builder()
+                        .service(PRODUCER_SERVICE)
+                        .instanceId(INSTANCE_ID)
+                        .build())
+                .conversation(VerlaConversationRef.builder()
+                        .conversationId(verlaConversationId)
+                        .userId(verlaConv.getUserId())
+                        .build())
+                .turn(VerlaTurnRef.builder()
+                        .turnId(turn.getId())
+                        .build())
+                .session(VerlaSessionRef.builder()
+                        .sessionId(session.getId())
+                        .kind(VerlaSessionKind.NOTE)
+                        .feature(session.getFeatureCode())
+                        .build())
+                .payload(payload)
+                .build();
+
+        mqOutboxService.createVerlaCommand(
+                envelope, commandExchange, VerlaCommandAction.CMD_NOTE_GENERATE.getCode());
+
+        log.info("[Notes] dispatched extras generation noteConvId={}, verlaConvId={}, turnId={}, sessionId={}, feature={}, requestId={}",
+                noteConv.getId(), verlaConversationId, turn.getId(), session.getId(), feature, retryId);
+
+        return NoteGenerateDispatchResult.builder()
+                .verlaConversationId(verlaConversationId)
+                .turnId(turn.getId())
+                .sessionId(session.getId())
+                .correlationId(session.getCorrelationId())
+                .build();
+    }
+
+    /**
      * payload 字段是 Java / Python 的隐式契约，Python 侧 {@code NoteService} 直接按 key 取值：
      * <ul>
      *   <li>{@code message} —— 本轮用户说了什么（首轮 = 表单 query，可空；后续轮必填）</li>
@@ -400,11 +531,18 @@ public class NoteVerlaCommandDispatcher {
         payload.put("infographicStyle",
                 noteConv.getInfographicStyle() == null || noteConv.getInfographicStyle().isBlank()
                         ? DemoNoteService.INFOGRAPHIC_STYLE_CLASSIC : noteConv.getInfographicStyle());
-        // 首轮才生成知识图；额度不足时 Python 只跳过图片，其他 extras 照常。
+        // 首轮才生成知识图；额度不足或用户未勾选时 Python 只跳过图片，其他 extras 照常。
+        boolean infographicRequested = ctx.getFeatures() == null
+                || ctx.getFeatures().stream().anyMatch("infographic"::equalsIgnoreCase);
         payload.put("infographicEnabled", ctx.isFirstTurn()
+                && infographicRequested
                 && !DemoNoteService.INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED.equals(noteConv.getInfographicStatus()));
         payload.put("noteConversationId", noteConv.getId());
         if (ctx.isFirstTurn()) {
+            // null 表示旧客户端未选择，Python 沿用「全部生成」；空列表表示只生成笔记正文。
+            if (ctx.getFeatures() != null) {
+                payload.put("features", ctx.getFeatures());
+            }
             payload.put("sourceType", noteConv.getSourceType());
             payload.put("objectId", noteConv.getAttachmentObjectId());
             payload.put("inputText", noteConv.getInputText());

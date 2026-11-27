@@ -282,6 +282,26 @@ public class DemoNoteController {
     }
 
     /**
+     * 按功能补生成：用户在上传时不生成某一项，之后仍可在对应 tab 单独生成。
+     * <p>只补该项，不重写笔记、不追加聊天消息；infographic 复用单图重试的额度逻辑。
+     */
+    @PostMapping("/conversations/{id}/extras/generate")
+    public Result<NoteGenerateResponseVO> generateExtra(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        noteAccessService.assertCanUseNotes(clerkUserId);
+        NoteConversation conv = service.getOwned(
+                clerkUserId, service.resolveConversationId(clerkUserId, id));
+        String feature = body == null || body.get("feature") == null
+                ? null : String.valueOf(body.get("feature"));
+        String requestId = body == null || body.get("requestId") == null
+                ? null : String.valueOf(body.get("requestId"));
+        return Result.success(NoteGenerateResponseVO.from(
+                commandDispatcher.dispatchExtraGeneration(conv, feature, requestId)));
+    }
+
+    /**
      * 派发一轮笔记回合。
      * <p>首轮（带 {@code objectId}/{@code text}）：落素材 + 把 query 落成第 1 条用户消息 →
      * 解析 → 归纳 → 写整篇笔记。<br>
@@ -317,6 +337,7 @@ public class DemoNoteController {
                 // 引用历史笔记：归属校验 + 双预算裁剪都在 service 里做，前端只传 id
                 .referencedNotes(service.resolveReferencedNotes(clerkUserId, id, req.getReferencedNoteIds()))
                 .webSearch(Boolean.TRUE.equals(req.getWebSearch()))
+                .features(req.getFeatures())
                 .build();
 
         return Result.success(NoteGenerateResponseVO.from(

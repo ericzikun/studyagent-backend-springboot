@@ -272,6 +272,73 @@ class NoteVerlaCommandDispatcherTest {
         verifyNoInteractions(mqOutboxService);
     }
 
+    @Test
+    void dispatch_without_infographic_feature_does_not_reserve_quota_or_enable_image() {
+        when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
+
+        NoteTurnContext context = NoteTurnContext.builder()
+                .firstTurn(true)
+                .message("只做笔记和导图")
+                .documentContentMd("")
+                .documentBaseVersion(0L)
+                .history(List.of())
+                .features(List.of("mindmap", "quiz"))
+                .build();
+
+        dispatcher.dispatch(fileConversation(), context);
+
+        // 用户没勾知识图：既不预占额度，也不让 Python 去生成图片
+        verify(verlaQuotaService, never()).reserveForNoteInfographic(any(VerlaQuotaContext.class));
+        ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
+                ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
+        verify(mqOutboxService).createVerlaCommand(envelopeCaptor.capture(), any(), any());
+        Map<String, Object> payload = envelopeCaptor.getValue().getPayload();
+        assertEquals(List.of("mindmap", "quiz"), payload.get("features"));
+        assertEquals(false, payload.get("infographicEnabled"));
+    }
+
+    @Test
+    void dispatch_extra_generation_only_targets_requested_feature() {
+        when(conversationRepository.findById(VERLA_CONVERSATION_ID)).thenReturn(verlaConversation());
+        when(conversationService.resolveOutputLanguage(any())).thenReturn("chinese");
+        NoteConversation conversation = fileConversation();
+        conversation.setNoteMd("# 主题\n\n正文");
+
+        NoteGenerateDispatchResult result =
+                dispatcher.dispatchExtraGeneration(conversation, "mindmap", "req-1");
+
+        ArgumentCaptor<VerlaCommandEnvelope> envelopeCaptor =
+                ArgumentCaptor.forClass(VerlaCommandEnvelope.class);
+        verify(mqOutboxService).createVerlaCommand(envelopeCaptor.capture(), any(), any());
+        Map<String, Object> payload = envelopeCaptor.getValue().getPayload();
+        assertEquals("extras_only", payload.get("mode"));
+        assertEquals("mindmap", payload.get("feature"));
+        assertEquals("# 主题\n\n正文", payload.get("noteMd"));
+        assertEquals("req-1", payload.get("requestId"));
+        assertFalse(payload.containsKey("history"));
+        assertFalse(payload.containsKey("documentContentMd"));
+        // 文本类 extras 不限次，不预占知识图额度
+        verify(verlaQuotaService, never()).reserveForNoteInfographic(any(VerlaQuotaContext.class));
+        assertEquals(TURN_ID, result.getTurnId());
+        assertEquals(SESSION_ID, result.getSessionId());
+    }
+
+    @Test
+    void dispatch_extra_generation_rejects_unknown_feature_and_empty_note() {
+        NoteConversation conversation = fileConversation();
+        conversation.setNoteMd("# 主题\n\n正文");
+
+        assertThrows(BusinessException.class,
+                () -> dispatcher.dispatchExtraGeneration(conversation, "flashcards", "req-1"));
+
+        NoteConversation emptyNote = fileConversation();
+        assertThrows(BusinessException.class,
+                () -> dispatcher.dispatchExtraGeneration(emptyNote, "quiz", "req-1"));
+
+        verifyNoInteractions(mqOutboxService);
+    }
+
     private static NoteTurnContext firstTurn(String outputLanguage) {
         return NoteTurnContext.builder()
                 .firstTurn(true)

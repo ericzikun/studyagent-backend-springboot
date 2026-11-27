@@ -47,4 +47,7 @@ public class NoteTurnContext {
 
     /** 本轮输出语言覆盖（可空，缺省沿用会话偏好）。 */
     private String outputLanguage;
+
+    /** 首轮要生成的扩展功能；null = 旧行为（全部）。 */
+    private List<String> features;
 }

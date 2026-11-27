@@ -75,6 +75,11 @@ public class NoteConversationVO {
     private String infographicStatus;
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d；旧会话返回 classic。 */
     private String infographicStyle;
+    /**
+     * 首轮勾选的扩展功能（mindmap/podcast/quiz/infographic）。
+     * <p>null = 旧会话（按全部处理）；空数组 = 只生成笔记。
+     */
+    private List<String> features;
     /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
     private String blogAudioStatus;
     /** 播客音频 manifest JSON（分段 URL/时长/sourceHash）；READY 时有值。 */
@@ -93,8 +98,7 @@ public class NoteConversationVO {
     }
 
     public static NoteConversationVO from(NoteConversation c, List<NoteMessage> messages,
-                                         Map<String, Object> pendingProposal) {
-        if (c == null) {
+                                         Map<String, Object> pendingProposal) {        if (c == null) {
             return null;
         }
         return NoteConversationVO.builder()
@@ -121,10 +125,25 @@ public class NoteConversationVO {
                         ? "NONE" : c.getInfographicStatus())
                 .infographicStyle(c.getInfographicStyle() == null || c.getInfographicStyle().isBlank()
                         ? "classic" : c.getInfographicStyle())
+                .features(splitFeatures(c.getFeatures()))
                 .blogAudioStatus(c.getBlogAudioStatus())
                 .blogAudioJson(c.getBlogAudioJson())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .build();
+    }
+
+    /** null 原样保留（旧会话=全部）；空串切成空数组（只生成笔记）。 */
+    private static List<String> splitFeatures(String features) {
+        if (features == null) {
+            return null;
+        }
+        if (features.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(features.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
     }
 }

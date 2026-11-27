@@ -289,6 +289,7 @@ public class DemoNoteService {
         // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
         c.setMindmapJson(null);
         c.setBlogMd(null);
+        c.setQuizJson(null);
         c.setInfographicUrl(null);
         c.setBlogAudioStatus(null);
         c.setBlogAudioJson(null);

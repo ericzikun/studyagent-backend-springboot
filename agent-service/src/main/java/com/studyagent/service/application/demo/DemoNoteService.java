@@ -110,6 +110,9 @@ public class DemoNoteService {
             INFOGRAPHIC_STATUS_FAILED, INFOGRAPHIC_STATUS_QUOTA_EXHAUSTED);
     private static final Set<String> INFOGRAPHIC_STYLES = Set.of(
             INFOGRAPHIC_STYLE_CLASSIC, "game_hud", "hand_comic", "mii_3d");
+    /** 首轮可勾选的扩展功能；顺序即落库顺序。 */
+    private static final List<String> NOTE_FEATURES =
+            List.of("mindmap", "podcast", "quiz", "infographic");
 
     /**
      * 文本类输入的 UTF-8 字节上限（粘贴素材与单轮用户消息共用）。
@@ -241,7 +244,7 @@ public class DemoNoteService {
                                                 String courseName, String learningGoal,
                                                 String outputLanguage, String query) {
         return prepareFirstTurn(clerkUserId, conversationId, sourceType, objectId, text, filename,
-                courseName, learningGoal, outputLanguage, query, null);
+                courseName, learningGoal, outputLanguage, query, null, null);
     }
 
     public NoteTurnPreparation prepareFirstTurn(String clerkUserId, Long conversationId,
@@ -250,6 +253,16 @@ public class DemoNoteService {
                                                 String courseName, String learningGoal,
                                                 String outputLanguage, String query,
                                                 String infographicStyle) {
+        return prepareFirstTurn(clerkUserId, conversationId, sourceType, objectId, text, filename,
+                courseName, learningGoal, outputLanguage, query, infographicStyle, null);
+    }
+
+    public NoteTurnPreparation prepareFirstTurn(String clerkUserId, Long conversationId,
+                                                String sourceType, String objectId,
+                                                String text, String filename,
+                                                String courseName, String learningGoal,
+                                                String outputLanguage, String query,
+                                                String infographicStyle, List<String> features) {
         NoteConversation c = getOwned(clerkUserId, conversationId);
         String normalizedType = normalizeSourceType(sourceType, objectId, text);
         if (SOURCE_TYPE_FILE.equals(normalizedType)) {
@@ -285,6 +298,8 @@ public class DemoNoteService {
                 ? requestedStyle
                 : (c.getInfographicStyle() == null || c.getInfographicStyle().isBlank()
                         ? INFOGRAPHIC_STYLE_CLASSIC : c.getInfographicStyle()));
+        // null = 旧客户端（按全部生成）；空列表 = 只生成笔记正文。
+        c.setFeatures(normalizeNoteFeatures(features));
         c.setNoteMd(null);
         // 重新生成时先清掉旧 extras：否则导图/博客 tab 会在新结果到达前展示上一版内容
         c.setMindmapJson(null);
@@ -1135,6 +1150,27 @@ public class DemoNoteService {
         }
         log.warn("[Notes] unknown learningGoal={} → 回落 other", raw);
         return "other";
+    }
+
+    /** 空值返回 null（保留「全部生成」语义）；空列表落空串（只生成笔记）。 */
+    private static String normalizeNoteFeatures(List<String> raw) {
+        if (raw == null) {
+            return null;
+        }
+        LinkedHashSet<String> selected = new LinkedHashSet<>();
+        for (String item : raw) {
+            String normalized = blankToNull(item);
+            if (normalized == null) {
+                continue;
+            }
+            String code = normalized.toLowerCase(Locale.ROOT);
+            if (NOTE_FEATURES.contains(code)) {
+                selected.add(code);
+            } else {
+                log.warn("[Notes] unknown feature={} ignored", item);
+            }
+        }
+        return String.join(",", selected);
     }
 
     /** 空值返回 null（保留会话已有风格）；未知值回落 classic。 */

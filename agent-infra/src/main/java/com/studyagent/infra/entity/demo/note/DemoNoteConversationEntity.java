@@ -64,6 +64,9 @@ public class DemoNoteConversationEntity {
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d。 */
     @TableField(value = "infographic_style", updateStrategy = FieldStrategy.ALWAYS)
     private String infographicStyle;
+    /** 首轮勾选的扩展功能（逗号分隔）；NULL = 旧会话（全部），空串 = 只生成笔记。 */
+    @TableField(value = "features", updateStrategy = FieldStrategy.ALWAYS)
+    private String features;
     /** PROCESSING / READY / FAILED；重新生成时必须能写回 NULL。 */
     @TableField(value = "blog_audio_status", updateStrategy = FieldStrategy.ALWAYS)
     private String blogAudioStatus;

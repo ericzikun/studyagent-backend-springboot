@@ -62,6 +62,8 @@ public class NoteConversation {
     private String infographicStatus;
     /** 知识图风格：classic / game_hud / hand_comic / mii_3d；旧会话为 null。 */
     private String infographicStyle;
+    /** 首轮勾选的扩展功能（逗号分隔）；null = 旧会话（全部），空串 = 只生成笔记。 */
+    private String features;
     /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
     private String blogAudioStatus;
     /** 播客音频 manifest（分段 OSS/签名 URL + 时长 + sourceHash）；READY 时有值。 */

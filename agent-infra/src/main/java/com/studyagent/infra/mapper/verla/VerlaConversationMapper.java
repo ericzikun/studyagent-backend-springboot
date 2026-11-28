@@ -48,6 +48,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"simulation\"'> AND primary_intent = 'SIMULATION' </when>"
             + "</choose>"
             + "</if>"
+            + " AND NOT (primary_intent = 'NOTE_MAKER' AND COALESCE(turn_count, 0) = 0) "
             + " ORDER BY COALESCE(last_active_at, last_message_at, created_at) DESC, id DESC "
             + "LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
@@ -74,6 +75,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"simulation\"'> AND primary_intent = 'SIMULATION' </when>"
             + "</choose>"
             + "</if>"
+            + " AND NOT (primary_intent = 'NOTE_MAKER' AND COALESCE(turn_count, 0) = 0) "
             + "</script>")
     long countByUserFiltered(@Param("userId") String userId,
                              @Param("segment") String segment,
@@ -101,6 +103,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"simulation\"'> AND c.primary_intent = 'SIMULATION' </when>"
             + "</choose>"
             + "</if>"
+            + " AND NOT (c.primary_intent = 'NOTE_MAKER' AND COALESCE(c.turn_count, 0) = 0) "
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
             + "OR EXISTS (SELECT 1 FROM verla_messages m "
             + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "
@@ -132,6 +135,7 @@ public interface VerlaConversationMapper extends BaseMapper<VerlaConversationEnt
             + "<when test='segment == \"simulation\"'> AND c.primary_intent = 'SIMULATION' </when>"
             + "</choose>"
             + "</if>"
+            + " AND NOT (c.primary_intent = 'NOTE_MAKER' AND COALESCE(c.turn_count, 0) = 0) "
             + " AND (c.title LIKE CONCAT('%', #{keyword}, '%') "
             + "OR EXISTS (SELECT 1 FROM verla_messages m "
             + "WHERE m.conversation_id = c.id AND m.text_content LIKE CONCAT('%', #{keyword}, '%'))) "

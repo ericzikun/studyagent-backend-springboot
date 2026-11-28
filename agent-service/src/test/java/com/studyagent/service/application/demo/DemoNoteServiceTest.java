@@ -156,6 +156,30 @@ class DemoNoteServiceTest {
     }
 
     @Test
+    void rename_title_updates_demo_and_mainline_titles() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+        when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteConversation renamed = service.renameTitle(
+                "user_1", NOTE_CONVERSATION_ID, "  细胞呼吸复习笔记  ");
+
+        assertEquals("细胞呼吸复习笔记", renamed.getTitle());
+        verify(repo).saveConversation(renamed);
+        verify(verlaConversationService).rename("user_1", VERLA_CONVERSATION_ID, "细胞呼吸复习笔记");
+    }
+
+    @Test
+    void rename_title_rejects_blank_and_does_not_touch_storage() {
+        when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
+
+        assertThrows(BusinessException.class,
+                () -> service.renameTitle("user_1", NOTE_CONVERSATION_ID, "   "));
+
+        verify(repo, never()).saveConversation(any(NoteConversation.class));
+        verify(verlaConversationService, never()).rename(any(), any(), any());
+    }
+
+    @Test
     void first_turn_syncs_the_filename_to_the_mainline_conversation_title() {
         when(repo.getOwnedConversation("user_1", NOTE_CONVERSATION_ID)).thenReturn(Optional.of(draft()));
         when(repo.saveConversation(any(NoteConversation.class))).thenAnswer(inv -> inv.getArgument(0));

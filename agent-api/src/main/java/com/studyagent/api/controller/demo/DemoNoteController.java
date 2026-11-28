@@ -230,6 +230,21 @@ public class DemoNoteController {
     }
 
     /**
+     * 重命名笔记标题（面包屑当前项直接编辑）。
+     * <p>demo 标题与主线 title 同步更新；不涉及正文/版本。
+     */
+    @PatchMapping("/conversations/{id}/title")
+    public Result<NoteConversationVO> renameTitle(
+            @RequestAttribute("clerkUserId") String clerkUserId,
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        String title = body == null || body.get("title") == null
+                ? null : String.valueOf(body.get("title"));
+        return Result.success(NoteConversationVO.from(
+                service.renameTitle(clerkUserId, id, title)));
+    }
+
+    /**
      * 提交待审提案：用户在编辑器里逐块接受/忽略后一次性提交。
      * <p>只应用 accepted 的块；一个都没接受就只清空提案，正文与版本都不动。
      * <p>不是流式端点：写库后直接返回最新会话（正文 + 版本），前端据此替换编辑器内容。

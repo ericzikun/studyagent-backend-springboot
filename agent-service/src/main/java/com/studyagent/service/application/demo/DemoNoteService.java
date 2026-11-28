@@ -781,6 +781,24 @@ public class DemoNoteService {
 
 
     /**
+     * 用户重命名笔记标题：demo 表与主线 title 一起改，保证工作台/历史/Dashboard 一致。
+     * <p>只改标题，不动正文、版本与状态。
+     */
+    @Transactional
+    public NoteConversation renameTitle(String clerkUserId, Long conversationId, String title) {
+        NoteConversation c = getOwned(clerkUserId, conversationId);
+        String next = truncateToNull(title, TITLE_MAX_LENGTH);
+        if (next == null) {
+            throw new BusinessException(ApiCode.PARAM_ERROR.getCode(), "标题不能为空");
+        }
+        c.setTitle(next);
+        c.setUpdatedAt(LocalDateTime.now());
+        repo.saveConversation(c);
+        syncMainlineTitle(clerkUserId, c);
+        return c;
+    }
+
+    /**
      * 用户手改保存：以传入 baseVersion 做乐观锁，成功后版本 +1。
      * <p>与 AI 写入（{@link #applyArtifactCommit}）分开：AI 写入不能被记成用户编辑，
      * 用户编辑也不能覆盖 AI 之后的新版本 —— 版本不匹配时让前端重新拉快照再重试。

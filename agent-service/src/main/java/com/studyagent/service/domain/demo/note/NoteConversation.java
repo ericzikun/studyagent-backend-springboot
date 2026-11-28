@@ -1,0 +1,77 @@
+package com.studyagent.service.domain.demo.note;
+
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+/** 笔记会话（demo_note_conversation）。 */
+@Data
+public class NoteConversation {
+
+    private Long id;
+    private String clerkUserId;
+
+    /**
+     * 主线 {@code verla_conversations.id}。
+     * <p>demo 会话建表时同事务创建，作为 SSE 事件通道
+     * （{@code /v1/verla/conversations/{cid}/events}）与事件归属校验的键。
+     */
+    private Long verlaConversationId;
+
+    private String title;
+    /** 素材类型：file / text；提交前为 null。 */
+    private String sourceType;
+    /** 上传文件的附件 objectId（sourceType=file 时有值）。 */
+    private String attachmentObjectId;
+    /**
+     * 上传附件的原始文件名（sourceType=file 时有值）。
+     * <p>单独存一份是因为 {@link #title} 会被 AI 起的会话名覆盖，
+     * 只留 objectId 的话前端画不出「文件 + 类型图标」。
+     */
+    private String attachmentFilename;
+    /** 粘贴的原始文本（sourceType=text 时有值）。 */
+    private String inputText;
+    /** 表单：课程名称（可为空）。 */
+    private String courseName;
+    /** 表单：学习目标枚举码（exam_prep / quiz_review / homework / understand_lesson / take_notes / generate_questions / flashcards / other）。 */
+    private String learningGoal;
+    /** 表单：笔记输出语言码。 */
+    private String outputLanguage;
+    /** 生成出的笔记 Markdown。 */
+    private String noteMd;
+    /**
+     * 笔记版本号：AI 生成或用户手改各 +1。
+     * <p>用户保存带 baseVersion 做乐观锁，与 AI Tutor 的双向基线同语义。
+     */
+    private Long noteVersion;
+    /**
+     * 待用户接受/忽略的章节级改动提案（JSON 原文）。
+     * <p>后续轮 agent 改文档不再直接落库：提案先存这里等用户在编辑器里逐块决策，
+     * 提交时才写 {@link #noteMd} 并推进版本。NULL = 无待审提案。
+     */
+    private String pendingProposalJson;
+    /** 思维导图 JSON（root/children），与笔记同轮生成；旧会话为 null。 */
+    private String mindmapJson;
+    /** 博客 Markdown，与笔记同轮生成；旧会话为 null。 */
+    private String blogMd;
+    /** 四选一测验 JSON（questions/options/answerIndex/explanation）；旧会话为 null。 */
+    private String quizJson;
+    /** 知识图 OSS URL；与首轮 extras 同批生成，旧会话为 null。 */
+    private String infographicUrl;
+    /** 知识图状态：NONE / GENERATING / READY / FAILED / QUOTA_EXHAUSTED。 */
+    private String infographicStatus;
+    /** 知识图风格：classic / game_hud / hand_comic / mii_3d；旧会话为 null。 */
+    private String infographicStyle;
+    /** 首轮勾选的扩展功能（逗号分隔）；null = 旧会话（全部），空串 = 只生成笔记。 */
+    private String features;
+    /** 播客音频预生成状态：PROCESSING / READY / FAILED；无博客为 null。 */
+    private String blogAudioStatus;
+    /** 播客音频 manifest（分段 OSS/签名 URL + 时长 + sourceHash）；READY 时有值。 */
+    private String blogAudioJson;
+    /** manifest 对应的 blogMd 哈希，用于重新生成时判定旧音频失效。 */
+    private String blogAudioSourceHash;
+    /** draft / generating / completed / failed。 */
+    private String status;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+}

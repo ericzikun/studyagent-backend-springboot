@@ -213,11 +213,12 @@ class PlanQuotaServiceImplTest {
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
         UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
         UserAiQuotaEntity humanizer = quota(13L, "humanizer", 1L, 0L, 0L);
+        UserAiQuotaEntity noteInfographic = quota(14L, "note_infographic", 0L, 0L, 0L);
 
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
-                .thenReturn(assignment, detection, humanizer);
+                .thenReturn(assignment, detection, humanizer, noteInfographic);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
@@ -238,13 +239,13 @@ class PlanQuotaServiceImplTest {
                 "in_upgrade_1");
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
-        verify(userAiQuotaMapper, times(3)).updateById(quotaCaptor.capture());
+        verify(userAiQuotaMapper, times(4)).updateById(quotaCaptor.capture());
         List<UserAiQuotaEntity> updated = quotaCaptor.getAllValues();
         assertEquals(5L, updated.get(0).getPlanBalance());
         assertEquals(4L, updated.get(1).getPlanBalance());
         assertEquals(2L, updated.get(2).getPlanBalance());
         ArgumentCaptor<QuotaGrantAnalyticsEvent> analyticsCaptor = ArgumentCaptor.forClass(QuotaGrantAnalyticsEvent.class);
-        verify(quotaGrantAnalyticsPublisher, times(3)).publishAfterCommit(analyticsCaptor.capture());
+        verify(quotaGrantAnalyticsPublisher, times(4)).publishAfterCommit(analyticsCaptor.capture());
         assertTrue(analyticsCaptor.getAllValues().stream()
                 .allMatch(event -> "subscription_upgrade".equals(event.grantType())));
     }
@@ -255,11 +256,12 @@ class PlanQuotaServiceImplTest {
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 2L, 0L);
         UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
         UserAiQuotaEntity humanizer = quota(13L, "humanizer", 1L, 0L, 0L);
+        UserAiQuotaEntity noteInfographic = quota(14L, "note_infographic", 0L, 0L, 0L);
 
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
-                .thenReturn(assignment, detection, humanizer);
+                .thenReturn(assignment, detection, humanizer, noteInfographic);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
@@ -279,7 +281,7 @@ class PlanQuotaServiceImplTest {
                 "upgrade_ord_1");
 
         ArgumentCaptor<UserAiQuotaEntity> quotaCaptor = ArgumentCaptor.forClass(UserAiQuotaEntity.class);
-        verify(userAiQuotaMapper, times(3)).updateById(quotaCaptor.capture());
+        verify(userAiQuotaMapper, times(4)).updateById(quotaCaptor.capture());
         List<UserAiQuotaEntity> updated = quotaCaptor.getAllValues();
         assertEquals(5L, updated.get(0).getPlanBalance());
         assertEquals(4L, updated.get(1).getPlanBalance());
@@ -292,11 +294,12 @@ class PlanQuotaServiceImplTest {
         UserAiQuotaEntity assignment = quota(11L, "task_create", 1L, 0L, 0L);
         UserAiQuotaEntity detection = quota(12L, "ai_detection", 1L, 1L, 0L);
         UserAiQuotaEntity humanizer = quota(13L, "humanizer", 1L, 5L, 0L);
+        UserAiQuotaEntity noteInfographic = quota(14L, "note_infographic", 0L, 0L, 0L);
 
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(userAiQuotaMapper.selectOne(any(Wrapper.class)))
-                .thenReturn(assignment, detection, humanizer);
+                .thenReturn(assignment, detection, humanizer, noteInfographic);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
 
@@ -321,7 +324,7 @@ class PlanQuotaServiceImplTest {
                 "in_1");
 
         ArgumentCaptor<QuotaLedgerEntity> ledgerCaptor = ArgumentCaptor.forClass(QuotaLedgerEntity.class);
-        verify(quotaLedgerMapper, times(3)).insert(ledgerCaptor.capture());
+        verify(quotaLedgerMapper, times(4)).insert(ledgerCaptor.capture());
         List<QuotaLedgerEntity> ledgers = ledgerCaptor.getAllValues();
         assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(0).getCreatedAt());
         assertEquals(LocalDateTime.parse("2026-08-25T12:00:00"), ledgers.get(1).getCreatedAt());
@@ -787,8 +790,8 @@ class PlanQuotaServiceImplTest {
         when(userSubscriptionMapper.update(any(), any(Wrapper.class))).thenReturn(1);
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(userAiQuotaMapper.selectList(any(Wrapper.class)))
-                .thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota))
-                .thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota));
+                .thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota, quota(14L, "note_infographic", 1L, 0L, 0L)))
+                .thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota, quota(14L, "note_infographic", 1L, 0L, 0L)));
         when(quotaLedgerMapper.selectOne(any(Wrapper.class))).thenReturn(null);
         when(userAiQuotaMapper.updateById(any(UserAiQuotaEntity.class))).thenReturn(1);
         when(quotaLedgerMapper.insert(any(QuotaLedgerEntity.class))).thenReturn(1);
@@ -806,8 +809,8 @@ class PlanQuotaServiceImplTest {
         verify(userSubscriptionMapper, times(1)).selectByUserForUpdate("user_1");
         verify(subscriptionPlanMapper, times(1)).selectOne(any(Wrapper.class));
         verify(userAiQuotaMapper, times(2)).selectList(any(Wrapper.class));
-        verify(userAiQuotaMapper, times(3)).updateById(any(UserAiQuotaEntity.class));
-        verify(quotaLedgerMapper, times(3)).insert(any(QuotaLedgerEntity.class));
+        verify(userAiQuotaMapper, times(4)).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, times(4)).insert(any(QuotaLedgerEntity.class));
     }
 
     @Test
@@ -832,7 +835,10 @@ class PlanQuotaServiceImplTest {
         humanizerQuota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
 
         when(userSubscriptionMapper.selectByUser("user_1")).thenReturn(subscription);
-        when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota));
+        UserAiQuotaEntity noteQuota = quota(14L, "note_infographic", 1L, 5L, 0L);
+        noteQuota.setPlanPeriodStart(LocalDateTime.parse("2026-06-15T00:00:00"));
+        noteQuota.setPlanPeriodEnd(LocalDateTime.parse("2026-07-15T00:00:00"));
+        when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(taskQuota, detectionQuota, humanizerQuota, noteQuota));
 
         PlanQuotaServiceImpl service = new PlanQuotaServiceImpl(
                 subscriptionPlanMapper,
@@ -867,7 +873,7 @@ class PlanQuotaServiceImplTest {
         when(subscriptionPlanMapper.selectOne(any(Wrapper.class))).thenReturn(plan);
         when(userAiQuotaMapper.selectList(any(Wrapper.class))).thenReturn(List.of(), List.of());
         when(aiFeatureDefsMapper.selectOne(any(Wrapper.class)))
-                .thenReturn(featureDef("task_create", 1L), featureDef("ai_detection", 3000L), featureDef("humanizer", 1000L));
+                .thenReturn(featureDef("task_create", 1L), featureDef("ai_detection", 3000L), featureDef("humanizer", 1000L), featureDef("note_infographic", 0L));
         AtomicInteger quotaIds = new AtomicInteger(100);
         when(userAiQuotaMapper.insert(any(UserAiQuotaEntity.class))).thenAnswer(invocation -> {
             UserAiQuotaEntity quota = invocation.getArgument(0);
@@ -895,9 +901,9 @@ class PlanQuotaServiceImplTest {
         verify(userSubscriptionMapper).selectByUser("user_1");
         verify(userSubscriptionMapper).selectByUserForUpdate("user_1");
         verify(subscriptionPlanMapper).selectOne(any(Wrapper.class));
-        verify(userAiQuotaMapper, times(3)).insert(any(UserAiQuotaEntity.class));
-        verify(userAiQuotaMapper, times(3)).updateById(any(UserAiQuotaEntity.class));
-        verify(quotaLedgerMapper, times(3)).insert(any(QuotaLedgerEntity.class));
+        verify(userAiQuotaMapper, times(4)).insert(any(UserAiQuotaEntity.class));
+        verify(userAiQuotaMapper, times(4)).updateById(any(UserAiQuotaEntity.class));
+        verify(quotaLedgerMapper, times(4)).insert(any(QuotaLedgerEntity.class));
     }
 
     private SubscriptionPlanEntity plan(String code, long assignment, long detection, long humanizer) {
@@ -906,6 +912,7 @@ class PlanQuotaServiceImplTest {
         plan.setAssignmentQuota(assignment);
         plan.setDetectionQuota(detection);
         plan.setHumanizerQuota(humanizer);
+        plan.setNoteInfographicQuota(5L);
         plan.setIsActive(true);
         return plan;
     }

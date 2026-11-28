@@ -70,4 +70,28 @@ class DateTimeFormatsTest {
 
         assertThat(json).contains("\"createdAt\":\"2026-06-03T12:00:00+08:00\"");
     }
+
+    @Test
+    void formatUtcApi_shouldMarkUtcWallClockAsZ() {
+        LocalDateTime value = LocalDateTime.of(2026, 6, 3, 4, 0, 0);
+
+        assertThat(DateTimeFormats.formatUtcApi(value)).isEqualTo("2026-06-03T04:00:00Z");
+        assertThat(DateTimeFormats.formatUtcApi(null)).isNull();
+    }
+
+    @Test
+    void utcSerializer_shouldSerializeLocalDateTimeAsUtc() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .registerModule(new JavaTimeModule())
+                .registerModule(new SimpleModule()
+                        .addSerializer(LocalDateTime.class, new UtcLocalDateTimeSerializer()));
+
+        record Payload(LocalDateTime updatedAt) {
+        }
+
+        String json = objectMapper.writeValueAsString(new Payload(LocalDateTime.of(2026, 6, 3, 4, 0, 0)));
+
+        assertThat(json).contains("\"updatedAt\":\"2026-06-03T04:00:00Z\"");
+    }
 }

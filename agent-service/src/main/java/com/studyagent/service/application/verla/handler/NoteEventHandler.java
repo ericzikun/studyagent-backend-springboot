@@ -1,0 +1,228 @@
+package com.studyagent.service.application.verla.handler;
+
+import com.studyagent.common.verla.envelope.VerlaEventEnvelope;
+import com.studyagent.common.verla.enums.VerlaAgentEventType;
+import com.studyagent.service.application.demo.DemoNoteService;
+import com.studyagent.service.application.demo.note.NoteBlogAudioPrefetchService;
+import com.studyagent.service.application.verla.quota.VerlaQuotaService;
+import com.studyagent.service.domain.demo.note.NoteConversation;
+import com.studyagent.service.domain.verla.VerlaEventInbox;
+import com.studyagent.service.domain.verla.VerlaSession;
+import com.studyagent.service.domain.verla.repo.VerlaSessionRepository;
+import com.studyagent.service.domain.verla.state.SessionEvent;
+import com.studyagent.service.domain.verla.state.SessionStateMachine;
+import com.studyagent.service.domain.verla.state.SessionStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDateTime;
+import java.util.EnumSet;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Notes demo 的事件投影：把主线通道回流的 {@code NOTE_*} 事件落进 demo 自己的会话行
+ * （并把 AI 写入的文档、助手回复一起落库），同时推进 {@code verla_sessions.status}。
+ *
+ * <p><b>只订阅需要 Java 侧动作的 6 个事件。</b>{@code NOTE_PARSE_COMPLETED /
+ * NOTE_SUMMARIZE_STARTED / NOTE_CHAT_STREAM_CHUNK / NOTE_ARTIFACT_BEGIN /
+ * NOTE_ARTIFACT_DELTA} 是纯前端渲染事件，由
+ * {@link com.studyagent.service.application.verla.VerlaInboxService} 无条件推给 SSE，
+ * 不需要 handler；不订阅可避免每个流式 chunk 都触发一次无意义的 DB 往返。
+ *
+ * <p><b>不碰 {@code verla_turns} 状态机、不碰 quota、不回调 orchestrator</b> ——
+ * demo 会话的 {@code primary_intent='NOTE_MAKER'} 不属于任何商业化功能点，
+ * 刻意不复用 {@link VerlaAgentLifecycleEventHandler}（后者耦合 assignment 状态机与配额退款）。
+ *
+ * <p><b>异常策略</b>：session 状态推进是 best-effort（失败只 warn，且非法转换不该中断整条
+ * inbox drain）；笔记正文/消息落库失败刻意向上抛 —— handler 与 inbox 共享事务，抛出会让该行
+ * 标记 FAILED 而不推进 cursor，事件可重试；吞掉会造成「前端看到笔记、库里没有」的静默丢失。
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class NoteEventHandler implements VerlaEventHandler {
+
+    private static final Set<VerlaAgentEventType> SUPPORTED = EnumSet.of(
+            VerlaAgentEventType.NOTE_PARSE_STARTED,
+            VerlaAgentEventType.NOTE_TITLE_RESOLVED,
+            VerlaAgentEventType.NOTE_ARTIFACT_COMMIT,
+            VerlaAgentEventType.NOTE_EXTRAS_COMMIT,
+            VerlaAgentEventType.NOTE_INFOGRAPHIC_STATUS,
+            VerlaAgentEventType.NOTE_EDIT_PROPOSAL_READY,
+            VerlaAgentEventType.NOTE_TURN_COMPLETED,
+            VerlaAgentEventType.NOTE_FAILED,
+            VerlaAgentEventType.NOTE_CANCELLED);
+
+    private final DemoNoteService demoNoteService;
+    private final NoteBlogAudioPrefetchService blogAudioPrefetchService;
+    private final VerlaSessionRepository sessionRepository;
+    private final SessionStateMachine sessionStateMachine;
+    private final VerlaQuotaService verlaQuotaService;
+
+    @Override
+    public Set<VerlaAgentEventType> supportedTypes() {
+        return SUPPORTED;
+    }
+
+    @Override
+    public void handle(VerlaEventInbox row, VerlaEventEnvelope env) {
+        VerlaAgentEventType type = VerlaAgentEventType.valueOf(row.getEventType());
+        Map<String, Object> payload = env == null || env.getPayload() == null
+                ? Map.of() : env.getPayload();
+
+        switch (type) {
+            // 首轮解析开始 = 本回合真正启动（后续轮没有解析阶段，靠 TURN_COMPLETED 直接收口）
+            case NOTE_PARSE_STARTED -> advanceSession(row.getSessionId(), SessionEvent.AGENT_STARTED);
+            // AI 起的会话名：demo 表 + 主线表一起写（两处展示读的是不同表）
+            case NOTE_TITLE_RESOLVED ->
+                    demoNoteService.applyGeneratedTitle(row.getConversationId(), asString(payload.get("title")));
+            // 每写一次文档落一次库并推进版本；一轮内可能写多次（改多个章节）
+            case NOTE_ARTIFACT_COMMIT -> saveArtifact(row, payload);
+            case NOTE_EXTRAS_COMMIT -> saveExtras(row, payload);
+            case NOTE_INFOGRAPHIC_STATUS -> saveInfographicStatus(row, payload);
+            // 后续轮改文档只**提案**：存成待审，等用户接受才写正文（首轮不走这里）
+            case NOTE_EDIT_PROPOSAL_READY -> saveProposal(row, payload);
+            case NOTE_TURN_COMPLETED -> completeTurn(row, payload);
+            case NOTE_FAILED -> {
+                log.warn("[Notes] turn failed sessionId={} error={}",
+                        row.getSessionId(), payload.get("errorMessage"));
+                boolean imageDelivered = hasDeliveredInfographic(row.getConversationId());
+                demoNoteService.markFailed(
+                        row.getConversationId(), asString(payload.get("errorMessage")));
+                if (!imageDelivered) {
+                    verlaQuotaService.refundBySessionId(row.getSessionId(), "note_failed");
+                }
+                advanceSession(row.getSessionId(), SessionEvent.AGENT_FAILED);
+            }
+            case NOTE_CANCELLED -> {
+                log.info("[Notes] turn cancelled sessionId={} reason={}",
+                        row.getSessionId(), payload.get("reason"));
+                // 取消按「未完成」收口：前端据此提示可重试，不落 failed 事件语义
+                String cancelReason = asString(payload.get("reason"));
+                boolean imageDelivered = hasDeliveredInfographic(row.getConversationId());
+                demoNoteService.markFailed(
+                        row.getConversationId(),
+                        cancelReason == null ? "cancelled" : cancelReason);
+                if (!imageDelivered) {
+                    verlaQuotaService.refundBySessionId(row.getSessionId(), "note_cancelled");
+                }
+                advanceSession(row.getSessionId(), SessionEvent.AGENT_CANCELLED);
+            }
+            default -> log.debug("[Notes] ignored event {} sessionId={}", type, row.getSessionId());
+        }
+    }
+
+    /**
+     * 知识图独立状态：URL 到达 = READY（不退）；FAILED 且无 URL = 退款。
+     * <p>状态行先落库，再做退款；退款失败不影响状态展示。
+     */
+    private void saveInfographicStatus(VerlaEventInbox row, Map<String, Object> payload) {
+        String status = asString(payload.get("status"));
+        String url = asString(payload.get("url"));
+        NoteConversation saved = demoNoteService.applyInfographicStatus(
+                row.getConversationId(), status, url);
+        if (saved != null
+                && DemoNoteService.INFOGRAPHIC_STATUS_FAILED.equals(saved.getInfographicStatus())
+                && (saved.getInfographicUrl() == null || saved.getInfographicUrl().isBlank())) {
+            verlaQuotaService.refundBySessionId(row.getSessionId(), "note_infographic_failed");
+        }
+    }
+
+    private boolean hasDeliveredInfographic(Long verlaConversationId) {
+        NoteConversation note = demoNoteService.findByVerlaConversationId(verlaConversationId);
+        return note != null && note.getInfographicUrl() != null && !note.getInfographicUrl().isBlank();
+    }
+
+    private void saveArtifact(VerlaEventInbox row, Map<String, Object> payload) {
+        String contentMd = asString(payload.get("contentMd"));
+        if (contentMd == null || contentMd.isBlank()) {
+            throw new IllegalStateException(
+                    "NOTE_ARTIFACT_COMMIT without contentMd, sessionId=" + row.getSessionId());
+        }
+        demoNoteService.applyArtifactCommit(row.getConversationId(), contentMd, asLong(payload.get("versionNo")));
+    }
+
+    /** 导图/播客/测验/知识图 extras：任何一项缺失都只跳过；绝不让 extras 把回合标失败。 */
+    private void saveExtras(VerlaEventInbox row, Map<String, Object> payload) {
+        String blogMd = asString(payload.get("blogMd"));
+        NoteConversation saved = demoNoteService.applyExtras(
+                row.getConversationId(),
+                asString(payload.get("mindmapJson")),
+                blogMd,
+                asString(payload.get("quizJson")),
+                asString(payload.get("infographicUrl")));
+        // 事务提交后再异步合成播客语音；失败只置 FAILED，前端回退按需合成
+        if (saved != null && blogMd != null && !blogMd.isBlank()
+                && DemoNoteService.BLOG_AUDIO_PROCESSING.equals(saved.getBlogAudioStatus())) {
+            blogAudioPrefetchService.schedule(saved, blogMd);
+        }
+    }
+
+    /**
+     * 待审提案：整份 payload 交给 service 存起来（Java 不解读 hunk 细节，提交时再按用户决策重放）。
+     * <p>提案缺了只是"没得审"，所以 service 侧是 best-effort —— 别让它把 inbox cursor 卡住。
+     */
+    private void saveProposal(VerlaEventInbox row, Map<String, Object> payload) {
+        demoNoteService.savePendingProposal(row.getConversationId(), payload);
+    }
+
+    private void completeTurn(VerlaEventInbox row, Map<String, Object> payload) {
+        NoteConversation before = demoNoteService.findByVerlaConversationId(row.getConversationId());
+        boolean imagePending = before != null
+                && DemoNoteService.INFOGRAPHIC_STATUS_GENERATING.equals(before.getInfographicStatus())
+                && (before.getInfographicUrl() == null || before.getInfographicUrl().isBlank());
+        demoNoteService.completeTurn(row.getConversationId(), asString(payload.get("assistantText")));
+        if (imagePending) {
+            // 兼容旧 Python：没有独立状态事件且 extras 没有 URL，说明图片没交付。
+            verlaQuotaService.refundBySessionId(row.getSessionId(), "note_infographic_missing");
+        }
+        advanceSession(row.getSessionId(), SessionEvent.AGENT_COMPLETED);
+    }
+
+    /** best-effort 推进 session 状态；失败只记录，绝不中断 inbox drain。 */
+    private void advanceSession(Long sessionId, SessionEvent event) {
+        try {
+            VerlaSession session = sessionRepository.findById(sessionId);
+            if (session == null) {
+                log.warn("[Notes] session not found: {}", sessionId);
+                return;
+            }
+            SessionStatus current = SessionStatus.valueOf(session.getStatus());
+            SessionStatus next = sessionStateMachine.next(current, event);
+            if (next == current) {
+                return;
+            }
+            LocalDateTime now = LocalDateTime.now();
+            session.setStatus(next.name());
+            session.setLastProgressAt(now);
+            session.setUpdatedAt(now);
+            if (next.isTerminal()) {
+                session.setEndedAt(now);
+            }
+            sessionRepository.save(session);
+        } catch (RuntimeException ex) {
+            log.warn("[Notes] session state advance skipped: sessionId={} event={} reason={}",
+                    sessionId, event, ex.getMessage());
+        }
+    }
+
+    private static String asString(Object raw) {
+        return raw == null ? null : raw.toString();
+    }
+
+    private static Long asLong(Object raw) {
+        if (raw instanceof Number n) {
+            return n.longValue();
+        }
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+}

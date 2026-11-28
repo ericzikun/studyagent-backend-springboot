@@ -61,6 +61,10 @@ public enum ApiCode {
             1031,
             "A Simulation Lab pass is required to create a new lab",
             "创建新 Lab 需要先购买 Simulation Lab 通行证"),
+    NOTE_MEMBER_REQUIRED(
+            1032,
+            "A paid membership is required to use AI Notes",
+            "使用 AI 笔记需要先开通付费会员"),
 
     // 4xxx - 文件上传
     FILE_UPLOAD_FAILED(4000, "File upload failed: %s", "文件上传失败: %s"),

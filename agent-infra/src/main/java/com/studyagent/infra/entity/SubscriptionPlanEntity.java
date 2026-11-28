@@ -33,6 +33,8 @@ public class SubscriptionPlanEntity extends BaseEntity {
     private Long detectionQuota;
     @TableField("humanizer_quota")
     private Long humanizerQuota;
+    @TableField("note_infographic_quota")
+    private Long noteInfographicQuota;
     @TableField("max_files")
     private Integer maxFiles;
     @TableField("max_followup_edits")

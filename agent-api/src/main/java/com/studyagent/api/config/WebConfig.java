@@ -36,7 +36,9 @@ public class WebConfig implements WebMvcConfigurer {
                 "/v1/internal/**",           // Verla 内部 API（Python -> Java），使用 IP 白名单 + Token + HMAC
                 // 普通附件内容上传在 AuthInterceptor 内按请求类型放行给 upload ticket 鉴权。
                 // 普通 finalize 始终用 upload ticket 鉴权。
-                "/v1/verla/v2/uploads/*/finalize"
+                "/v1/verla/v2/uploads/*/finalize",
+                // 笔记博客音频：audio 标签带不了 Authorization，鉴权用 exp + HMAC 签名。
+                "/v1/demo/note/blog-audio/**"
             );
     }
 

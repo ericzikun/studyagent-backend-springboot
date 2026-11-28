@@ -274,6 +274,57 @@ class VerlaConversationDashboardStatusServiceTest {
         assertEquals(VerlaConversationDashboardStatusService.STATUS_NEEDS_CHOICE, result.get(7L));
     }
 
+    @Test
+    void resolve_noteConversationIsCompletedOnceAnySessionSucceeded() {
+        // 笔记的 verla_turns 永远是 CREATED（NoteEventHandler 刻意不推进 turn 状态机），
+        // 所以状态只能看 session —— 线上 vc_rtkD0 显示「进行中」就是这个原因。
+        VerlaConversation conversation = conversation(50L, 500L)
+                .primaryIntent("NOTE_MAKER")
+                .build();
+        VerlaTurn first = turn(500L, 50L, TurnStatus.CREATED, 5000L);
+        turnRepository.byId.put(500L, first);
+        turnRepository.byConversation.put(50L, List.of(first));
+        sessionRepository.byId.put(5000L, session(5000L, 500L, SessionStatus.SUCCEEDED));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_COMPLETED,
+                service.resolve(conversation));
+    }
+
+    @Test
+    void resolve_noteConversationKeepsCompletedWhileFollowUpRuns() {
+        // 首轮已完成：后续对话（哪怕正在跑）不该把卡片改回「进行中」
+        VerlaConversation conversation = conversation(51L, 512L)
+                .primaryIntent("NOTE_MAKER")
+                .build();
+        VerlaTurn first = turn(511L, 51L, TurnStatus.CREATED, 5110L);
+        VerlaTurn followUp = turn(512L, 51L, TurnStatus.CREATED, 5120L);
+        turnRepository.byId.put(511L, first);
+        turnRepository.byId.put(512L, followUp);
+        turnRepository.byConversation.put(51L, List.of(first, followUp));
+        sessionRepository.byId.put(5110L, session(5110L, 511L, SessionStatus.SUCCEEDED));
+        sessionRepository.byId.put(5120L, session(5120L, 512L, SessionStatus.RUNNING));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_COMPLETED,
+                service.resolve(conversation));
+    }
+
+    @Test
+    void resolve_noteConversationFailsWhenOnlyFailures() {
+        VerlaConversation conversation = conversation(52L, 520L)
+                .primaryIntent("NOTE_MAKER")
+                .build();
+        VerlaTurn first = turn(520L, 52L, TurnStatus.CREATED, 5200L);
+        turnRepository.byId.put(520L, first);
+        turnRepository.byConversation.put(52L, List.of(first));
+        sessionRepository.byId.put(5200L, session(5200L, 520L, SessionStatus.FAILED));
+
+        assertEquals(
+                VerlaConversationDashboardStatusService.STATUS_FAILED,
+                service.resolve(conversation));
+    }
+
     private static VerlaConversation.VerlaConversationBuilder conversation(Long id, Long lastTurnId) {
         return VerlaConversation.builder()
                 .id(id)

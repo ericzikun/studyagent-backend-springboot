@@ -154,7 +154,32 @@ public enum VerlaAgentEventType {
     SIMULATION_CHAT_THINKING_DELTA(false),
     SIMULATION_CHAT_COMPLETED(true),
     SIMULATION_CHAT_FAILED(true),
-    SIMULATION_CHAT_CANCELLED(true);
+    SIMULATION_CHAT_CANCELLED(true),
+
+    /**
+     * Notes 域 —— 「一轮回合」：对话 +（agent 决定）改文档。
+     * <p>首轮才有 NOTE_PARSE_STARTED / NOTE_PARSE_COMPLETED（解析素材），
+     * NOTE_SUMMARIZE_STARTED 每轮都有（前端右侧竖排步骤②）。
+     * <p>聊天文本（NOTE_CHAT_STREAM_CHUNK）与文档写入（NOTE_ARTIFACT_*，**全量快照**）
+     * 是两条独立流；单回合以 NOTE_TURN_COMPLETED 收口，NOTE_FAILED / NOTE_CANCELLED 为异常终态。
+     */
+    NOTE_PARSE_STARTED(false),
+    NOTE_PARSE_COMPLETED(false),
+    /** 会话名：首轮由便宜模型依据素材内容生成（与主 Agent 并发）。Java 同步写 demo 表 + 主线表标题。 */
+    NOTE_TITLE_RESOLVED(false),
+    NOTE_SUMMARIZE_STARTED(false),
+    NOTE_CHAT_STREAM_CHUNK(false),
+    NOTE_ARTIFACT_BEGIN(false),
+    NOTE_ARTIFACT_DELTA(false),
+    NOTE_ARTIFACT_COMMIT(false),
+    NOTE_EXTRAS_COMMIT(false),
+    /** 知识图独立状态：READY / FAILED / QUOTA_EXHAUSTED；Java 据此落状态并退款。 */
+    NOTE_INFOGRAPHIC_STATUS(false),
+    /** 后续轮改文档的**待确认提案**（hunk：改前/改后 + 上下文）。Java 只落待审列，不动正文与版本。 */
+    NOTE_EDIT_PROPOSAL_READY(false),
+    NOTE_TURN_COMPLETED(true),
+    NOTE_FAILED(true),
+    NOTE_CANCELLED(true);
 
     /**
      * 是否是 session 终态事件（用于 TerminalHandler 判定）
@@ -204,7 +229,10 @@ public enum VerlaAgentEventType {
             SIMULATION_CANCELLED,
             SIMULATION_CHAT_COMPLETED,
             SIMULATION_CHAT_FAILED,
-            SIMULATION_CHAT_CANCELLED);
+            SIMULATION_CHAT_CANCELLED,
+            NOTE_TURN_COMPLETED,
+            NOTE_FAILED,
+            NOTE_CANCELLED);
 
     public static boolean isTerminal(VerlaAgentEventType type) {
         return TERMINALS.contains(type);

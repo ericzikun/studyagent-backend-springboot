@@ -44,6 +44,7 @@ import java.util.Optional;
 public class VerlaQuotaServiceImpl implements VerlaQuotaService {
 
     private static final String SOURCE_TYPE_VERLA_SESSION = "verla_session";
+    private static final String SOURCE_TYPE_NOTE_INFOGRAPHIC = "note_infographic";
     private static final String SOURCE_TYPE_SIMULATION_SESSION = "simulation_session";
 
     private final QuotaDomainService quotaDomainService;
@@ -72,6 +73,11 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         if (!quotaEnabled) {
             return true;
         }
+        return isCommercialExempt(clerkUserId);
+    }
+
+    @Override
+    public boolean isCommercialExempt(String clerkUserId) {
         if (clerkUserId == null || clerkUserId.isBlank()) {
             return false;
         }
@@ -85,6 +91,85 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
             return true;
         }
         return whitelistUserIds != null && whitelistUserIds.contains(clerkUserId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx) {
+        return reserveForNoteInfographic(ctx, false);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx, boolean throwIfInsufficient) {
+        if (ctx == null || ctx.sessionId() == null) {
+            throw new IllegalArgumentException("VerlaQuotaContext.sessionId is required");
+        }
+        if (isQuotaExempt(ctx.clerkUserId())) {
+            log.info("[VerlaQuota] note infographic exempt: userId={}, sessionId={}",
+                    ctx.clerkUserId(), ctx.sessionId());
+            return NoteInfographicReservation.exempt();
+        }
+        if (!quotaDomainService.canConsume(ctx.clerkUserId(), FeatureCode.NOTE_INFOGRAPHIC.getCode(), 1L)) {
+            log.info("[VerlaQuota] note infographic insufficient: userId={}, sessionId={}",
+                    ctx.clerkUserId(), ctx.sessionId());
+            if (throwIfInsufficient) {
+                throwNoteInfographicInsufficient(ctx.clerkUserId());
+            }
+            return NoteInfographicReservation.insufficient();
+        }
+
+        Map<String, Object> biz = baseBizContext(ctx);
+        biz.put("charged_mode", "per_image");
+        ConsumeResult cr = quotaDomainService.consume(
+                ctx.clerkUserId(),
+                FeatureCode.NOTE_INFOGRAPHIC.getCode(),
+                1L,
+                SOURCE_TYPE_NOTE_INFOGRAPHIC,
+                String.valueOf(ctx.sessionId()),
+                biz,
+                noteInfographicIdempotencyKey(ctx));
+        boolean bound = sessionRepository.bindQuotaLedger(ctx.sessionId(), cr.ledgerId(), 1L);
+        if (!bound) {
+            VerlaSession current = sessionRepository.findById(ctx.sessionId());
+            Long alreadyBound = current == null ? null : current.getQuotaLedgerId();
+            log.error("[VerlaQuota] note infographic duplicate consume: sessionId={}, newLedgerId={}, existingLedgerId={}",
+                    ctx.sessionId(), cr.ledgerId(), alreadyBound);
+            throw new IllegalStateException(
+                    "Concurrent note infographic billing detected: sessionId=" + ctx.sessionId()
+                            + ", existingLedgerId=" + alreadyBound);
+        }
+        log.info("[VerlaQuota] note infographic reserved: userId={}, sessionId={}, ledgerId={}",
+                ctx.clerkUserId(), ctx.sessionId(), cr.ledgerId());
+        return NoteInfographicReservation.reserved(cr.ledgerId());
+    }
+
+    private void throwNoteInfographicInsufficient(String clerkUserId) {
+        QuotaBalance balance = quotaDomainService.getUserQuota(
+                clerkUserId, FeatureCode.NOTE_INFOGRAPHIC.getCode());
+        throw new InsufficientQuotaException(
+                "Insufficient quota for note_infographic, required=1, available="
+                        + balance.totalAvailable(),
+                InsufficientQuotaData.builder()
+                        .clerkUserId(clerkUserId)
+                        .featureCode(balance.featureCode())
+                        .featureName(balance.featureName())
+                        .purchaseProductId(purchaseProductId(FeatureCode.NOTE_INFOGRAPHIC))
+                        .blockedAction(blockedAction(FeatureCode.NOTE_INFOGRAPHIC))
+                        .quotaUnit(balance.quotaUnit())
+                        .freeBalance(balance.freeBalance())
+                        .freePeriodTotal(balance.freePeriodTotal())
+                        .paidBalance(balance.paidBalance())
+                        .totalAvailable(balance.totalAvailable())
+                        .totalWords(1)
+                        .build());
+    }
+
+    private String noteInfographicIdempotencyKey(VerlaQuotaContext ctx) {
+        if (ctx.requestId() != null && !ctx.requestId().isBlank()) {
+            return "note-infographic-request:" + ctx.requestId().trim();
+        }
+        return "note-infographic:" + ctx.conversationId() + ":" + ctx.turnId();
     }
 
     @Override
@@ -280,6 +365,9 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         if (feature == FeatureCode.HUMANIZER) {
             return "humanizer";
         }
+        if (feature == FeatureCode.NOTE_INFOGRAPHIC) {
+            return "note_infographic";
+        }
         return "assignment";
     }
 
@@ -289,6 +377,9 @@ public class VerlaQuotaServiceImpl implements VerlaQuotaService {
         }
         if (feature == FeatureCode.HUMANIZER) {
             return "humanizer_start";
+        }
+        if (feature == FeatureCode.NOTE_INFOGRAPHIC) {
+            return "note_infographic_generate";
         }
         return "assignment_generate";
     }

@@ -83,6 +83,17 @@ public final class DateTimeFormats {
     }
 
     /**
+     * 序列化「UTC 墙钟」的 LocalDateTime（如 note demo 表在 UTC 容器里写入的时间）。
+     * <p>这类值不能补 +08:00，否则前端会整体早 8 小时。
+     */
+    public static String formatUtcApi(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        return value.atZone(ZoneOffset.UTC).format(API_FORMATTER);
+    }
+
+    /**
      * quota_ledger.created_at → Unix epoch 秒。
      * 修复写入时区前，DATETIME 存的是 UTC 墙钟；之后存北京时间墙钟。
      */

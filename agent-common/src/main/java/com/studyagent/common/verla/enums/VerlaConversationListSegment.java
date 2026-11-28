@@ -13,6 +13,7 @@ import lombok.Getter;
  *     <li>{@link #AI_DETECTION} — AI Detection</li>
  *     <li>{@link #AI_HUMANIZER} — Humanizer</li>
  *     <li>{@link #SIMULATION} — Simulation Lab（单轮生成仿真 HTML）</li>
+ *     <li>{@link #NOTE} — AI Note（笔记 demo 域，intent = NOTE_MAKER）</li>
  * </ul>
  * GET {@code /v1/verla/conversations?segment=...} 使用 {@link #queryKey}。
  */
@@ -24,7 +25,8 @@ public enum VerlaConversationListSegment {
     AI_WRITING("ai_writing"),
     AI_DETECTION("ai_detection"),
     AI_HUMANIZER("ai_humanizer"),
-    SIMULATION("simulation");
+    SIMULATION("simulation"),
+    NOTE("note");
 
     private final String queryKey;
 

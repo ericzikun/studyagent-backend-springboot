@@ -57,6 +57,27 @@ public interface VerlaQuotaService {
     boolean isQuotaExempt(String clerkUserId);
 
     /**
+     * 商业化豁免（admin / Quota VIP / env 白名单）。
+     * <p>
+     * 与 {@link #isQuotaExempt(String)} 的区别：这里不受全局配额开关影响，
+     * 用于「笔记是否允许免费会员使用」这类会员准入判断。
+     */
+    boolean isCommercialExempt(String clerkUserId);
+
+    /**
+     * 知识图预占：成功则扣 1 次并绑定 session；余额不足返回
+     * {@link NoteInfographicReservation.Status#INSUFFICIENT}，<b>不抛异常</b>，
+     * 由调用方决定是跳过图片（首轮）还是提示升级（重试）。
+     */
+    NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx);
+
+    /**
+     * 知识图预占；{@code throwIfInsufficient=true} 时余额不足抛
+     * {@link com.studyagent.common.exception.InsufficientQuotaException}，供重试端点触发升级弹窗。
+     */
+    NoteInfographicReservation reserveForNoteInfographic(VerlaQuotaContext ctx, boolean throwIfInsufficient);
+
+    /**
      * Assignment Clarify 流程入口前只读校验：余额不足时抛 {@link com.studyagent.common.exception.InsufficientQuotaException}，
      * 不扣费。真正扣费在 {@link #consumeForAssignmentRun}（{@code assignment/clarify/finalize} 派发前）。
      * 同 turn 已扣费时直接放行，与 {@link #consumeForAssignmentRun} 的 ledger 复用规则一致。

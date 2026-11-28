@@ -11,7 +11,11 @@ public enum FeatureCode {
     TASK_CREATE("task_create"),
     AI_DETECTION("ai_detection"),
     HUMANIZER("humanizer"),
-    SIMULATION("simulation");
+    SIMULATION("simulation"),
+    /** Notes demo：素材 → 笔记生成（pure-free 记账） */
+    DEMO_NOTE_MAKER("demo_note_maker"),
+    /** Notes：知识图生成（按张计费，独立于笔记正文） */
+    NOTE_INFOGRAPHIC("note_infographic");
 
     private final String code;
 

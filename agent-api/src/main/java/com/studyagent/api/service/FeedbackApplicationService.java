@@ -71,6 +71,10 @@ public class FeedbackApplicationService {
         register("detection_complete_first", "humanizer_task", "thumb", "detection-thumb-v1");
         register("humanizer_complete_first", "humanizer_task", "thumb", "humanizer-thumb-v1");
 
+        // AI Note：编辑器顶栏点赞/点踩与举报（复用 feedback_prompt_sessions / submissions）
+        register("note_thumb_first", "verla_conversation", "thumb", "note-thumb-v1");
+        register("note_report_first", "verla_conversation", "thumb", "note-report-v1");
+
         // V2 AI Writing（Verla conversation 粒度）
         register("detection_complete_first", "verla_conversation", "thumb", "detection-thumb-v1");
         register("humanizer_complete_first", "verla_conversation", "thumb", "humanizer-thumb-v1");
